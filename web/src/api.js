@@ -10,6 +10,7 @@ export const api = {
   years: () => http.get('/years'),
   hot: (limit) => http.get('/hot', { params: { limit } }),
   related: (params) => http.get('/related', { params }),
+  weekly: () => http.get('/weekly'),
   resolve: (url) => http.get('/resolve', { params: { url } }),
   site: () => http.get('/site'),
 }

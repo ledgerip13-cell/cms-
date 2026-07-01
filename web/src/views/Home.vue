@@ -69,6 +69,33 @@
         </span>
       </div>
 
+      <!-- 每日更新 -->
+      <section class="row" v-if="weekReady">
+        <div class="row-head"><div class="row-title">每日更新</div></div>
+        <div class="week-tabs">
+          <div v-for="d in weekOrder" :key="d" class="week-tab" :class="{on: weekDay===d}" @click="weekDay=d">
+            <span class="wd">周{{ WDS[d] }}</span>
+            <span class="wt" :class="{'today-dot': d===todayDow}">{{ d===todayDow ? '• 今天' : '更新' }}</span>
+          </div>
+        </div>
+        <div class="row-scroll" v-if="weekly[weekDay] && weekly[weekDay].length">
+          <div v-for="v in weekly[weekDay]" :key="v.id" class="card2" @click="goPlay(v.id)">
+            <div class="poster">
+              <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+              <div v-else class="noimg">暂无封面</div>
+              <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
+              <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+            </div>
+            <div class="c-info">
+              <div class="c-name">{{ v.name }}</div>
+              <div class="c-sub">{{ v.typeName || '未分类' }} · {{ v.year || '—' }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="row-empty">周{{ WDS[weekDay] }}暂无更新</div>
+      </section>
+
       <!-- 内容分行 -->
       <section v-for="row in rows" :key="row.type" class="row">
         <div class="row-head">
@@ -178,6 +205,11 @@ const hero = ref([]); const heroIdx = ref(0)
 const cur = computed(() => hero.value[heroIdx.value] || {})
 const rows = ref([]); const rowsLoading = ref(false)
 let heroTimer = null
+// 每日更新
+const WDS = ['日','一','二','三','四','五','六']
+const weekOrder = [1,2,3,4,5,6,0]
+const todayDow = new Date().getDay()
+const weekly = ref({}); const weekDay = ref(todayDow); const weekReady = ref(false)
 
 async function loadDiscover() {
   if (hero.value.length) return
@@ -194,6 +226,16 @@ async function loadDiscover() {
   ))
   rows.value = results.filter(r => r.list.length)
   rowsLoading.value = false
+  // 每日更新（后台按星期分组）
+  try {
+    weekly.value = await api.weekly(); weekReady.value = true
+    // 今天无更新则默认选数据最多的一天
+    if (!(weekly.value[todayDow] && weekly.value[todayDow].length)) {
+      let best = todayDow, max = -1
+      for (const d of weekOrder) { const n = (weekly.value[d]||[]).length; if (n > max) { max = n; best = d } }
+      weekDay.value = best
+    }
+  } catch {}
 }
 function startHeroLoop() {
   if (heroTimer) clearInterval(heroTimer)

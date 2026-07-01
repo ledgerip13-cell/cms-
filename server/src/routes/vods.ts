@@ -71,6 +71,23 @@ export default async function vodRoutes(app: FastifyInstance) {
     return [...rated, ...more];
   });
 
+  // 每日更新：按 updatedAt 的星期分组（近7天），每天最多14部
+  app.get("/api/weekly", async () => {
+    const since = new Date(Date.now() - 7 * 864e5);
+    const rows = await prisma.vod.findMany({
+      where: { status: "online", updatedAt: { gte: since } },
+      orderBy: { updatedAt: "desc" },
+      take: 600,
+      include: { _count: { select: { plays: true } } },
+    });
+    const week: Record<number, any[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    for (const v of rows) {
+      const d = new Date(v.updatedAt).getDay();
+      if (week[d].length < 14) week[d].push(v);
+    }
+    return week;
+  });
+
   // 相关推荐：同大类优先，其次同小类，排除自身。用于播放页右栏
   app.get("/api/related", async (req) => {
     const q = req.query as any;

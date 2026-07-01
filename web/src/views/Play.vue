@@ -6,7 +6,6 @@
         <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video"></video>
         <iframe v-if="mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
-        <div v-if="!curUrl" class="video-ph">选择线路和剧集开始播放</div>
         <div v-if="mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
         <div v-if="resolving" class="video-ph">正在解析播放地址…</div>
       </div>
