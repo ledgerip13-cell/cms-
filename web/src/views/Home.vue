@@ -4,16 +4,14 @@
     <template v-if="discover">
       <!-- 骨架屏 -->
       <template v-if="rowsLoading && !hero.length">
-        <div class="hero sk-hero">
+        <div class="home-hero sk-hero">
           <div class="hero-in">
-            <div class="sk" style="width:186px;aspect-ratio:2/3;flex-shrink:0"></div>
-            <div style="flex:1;max-width:480px">
-              <div class="sk" style="width:60%;height:32px"></div>
-              <div class="sk" style="width:40%;height:16px;margin-top:16px"></div>
-              <div class="sk" style="width:100%;height:14px;margin-top:16px"></div>
-              <div class="sk" style="width:85%;height:14px;margin-top:8px"></div>
-              <div class="sk" style="width:140px;height:44px;margin-top:22px;border-radius:12px"></div>
-            </div>
+            <div class="sk" style="width:100px;height:28px;margin-bottom:20px"></div>
+            <div class="sk" style="width:55%;height:46px"></div>
+            <div class="sk" style="width:38%;height:18px;margin-top:20px"></div>
+            <div class="sk" style="width:70%;height:15px;margin-top:22px"></div>
+            <div class="sk" style="width:60%;height:15px;margin-top:8px"></div>
+            <div class="sk" style="width:180px;height:48px;margin-top:32px;border-radius:12px"></div>
           </div>
         </div>
         <div class="chip-bar">
@@ -27,34 +25,39 @@
         </section>
       </template>
 
-      <!-- Hero 轮播 -->
-      <section class="hero" v-if="hero.length">
+      <!-- Hero 全屏贯穿 -->
+      <section class="home-hero" v-if="hero.length">
         <div class="hero-bg" :style="{ backgroundImage: `url(${heroPic(cur)})` }"></div>
         <div class="hero-mask"></div>
         <div class="hero-in">
-          <div class="hero-poster" @click="goPlay(cur.id)">
-            <img :src="heroPic(cur)" :alt="cur.name" @error="onErr" />
+          <span class="hero-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2s4 3 4 7a4 4 0 0 1-8 0c0-1 .5-2 .5-2S8 16 12 22c4-6 3.5-13 3.5-13S16 6 12 2z"/></svg>
+            热门推荐
+          </span>
+          <h1 class="hero-title">{{ cur.name }}</h1>
+          <div class="hero-meta">
+            <span v-if="cur.rating" class="score">★ {{ cur.rating }}</span>
+            <span class="m">{{ cur.year || '—' }}</span>
+            <span class="m">{{ cur.typeName || '未分类' }}</span>
+            <span class="m" v-if="cur.area">{{ cur.area }}</span>
+            <span class="m" v-if="cur.remarks">{{ cur.remarks }}</span>
           </div>
-          <div class="hero-info">
-            <div class="hero-title">{{ cur.name }}</div>
-            <div class="hero-meta">
-              <span v-if="cur.rating" class="score">⭐ {{ cur.rating }}</span>
-              <span class="m">{{ cur.year || '—' }}</span>
-              <span class="m">{{ cur.typeName || '未分类' }}</span>
-              <span class="m" v-if="cur.area">{{ cur.area }}</span>
-              <span class="m" v-if="cur.remarks">{{ cur.remarks }}</span>
-            </div>
-            <div class="hero-desc" v-if="cur.officialIntro || cur.blurb">{{ cur.officialIntro || cur.blurb }}</div>
+          <p class="hero-desc" v-if="cur.officialIntro || cur.blurb">{{ cur.officialIntro || cur.blurb }}</p>
+          <div class="hero-actions">
             <button class="hero-play" @click="goPlay(cur.id)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               立即播放
             </button>
+            <button class="hero-fav" @click="goPlay(cur.id)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+              查看详情
+            </button>
           </div>
-          <div class="hero-rail">
-            <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
-              @click="heroIdx=i" @mouseenter="heroIdx=i">
-              <img :src="heroPic(h)" :alt="h.name" @error="onErr" />
-            </div>
+        </div>
+        <div class="hero-rail">
+          <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
+            @click="heroIdx=i" @mouseenter="heroIdx=i">
+            <img :src="heroPic(h)" :alt="h.name" @error="onErr" />
           </div>
         </div>
       </section>
