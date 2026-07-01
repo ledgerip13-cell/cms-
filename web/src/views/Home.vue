@@ -2,6 +2,31 @@
   <div class="page home">
     <!-- ============ 发现模式（首页，无筛选） ============ -->
     <template v-if="discover">
+      <!-- 骨架屏 -->
+      <template v-if="rowsLoading && !hero.length">
+        <div class="hero sk-hero">
+          <div class="hero-in">
+            <div class="sk" style="width:186px;aspect-ratio:2/3;flex-shrink:0"></div>
+            <div style="flex:1;max-width:480px">
+              <div class="sk" style="width:60%;height:32px"></div>
+              <div class="sk" style="width:40%;height:16px;margin-top:16px"></div>
+              <div class="sk" style="width:100%;height:14px;margin-top:16px"></div>
+              <div class="sk" style="width:85%;height:14px;margin-top:8px"></div>
+              <div class="sk" style="width:140px;height:44px;margin-top:22px;border-radius:12px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="chip-bar">
+          <div v-for="i in 8" :key="i" class="sk" style="width:76px;height:35px;border-radius:11px"></div>
+        </div>
+        <section v-for="r in 3" :key="r" class="row">
+          <div class="sk" style="width:120px;height:22px;margin-bottom:18px"></div>
+          <div class="row-scroll">
+            <div v-for="i in 8" :key="i" class="sk-card"><div class="sk sk-poster"></div><div class="sk sk-line"></div><div class="sk sk-line s"></div></div>
+          </div>
+        </section>
+      </template>
+
       <!-- Hero 轮播 -->
       <section class="hero" v-if="hero.length">
         <div class="hero-bg" :style="{ backgroundImage: `url(${heroPic(cur)})` }"></div>
@@ -42,8 +67,7 @@
       </div>
 
       <!-- 内容分行 -->
-      <div v-if="rowsLoading" class="loading">加载中…</div>
-      <section v-for="row in rows" :key="row.type" class="row" v-else>
+      <section v-for="row in rows" :key="row.type" class="row">
         <div class="row-head">
           <div class="row-title">{{ row.type || '推荐' }}</div>
           <div class="row-more" @click="$router.push({path:'/',query:{type:row.type}})">
@@ -98,7 +122,9 @@
 
       <div class="section-title">{{ title }} <span class="cnt">共 {{ total }} 部</span></div>
 
-      <div v-if="loading" class="loading">加载中…</div>
+      <div v-if="loading" class="grid">
+        <div v-for="i in 18" :key="i" class="sk-card"><div class="sk sk-poster"></div><div class="sk sk-line"></div><div class="sk sk-line s"></div></div>
+      </div>
       <div v-else-if="!list.length" class="empty">没有找到相关影片</div>
       <div v-else class="grid">
         <div v-for="v in list" :key="v.id" class="card2" @click="goPlay(v.id)">
@@ -130,6 +156,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
+defineOptions({ name: 'Home' })
 const route = useRoute()
 const router = useRouter()
 

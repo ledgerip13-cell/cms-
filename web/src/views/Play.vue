@@ -77,7 +77,21 @@
       <div v-else class="rec-empty">暂无推荐</div>
     </aside>
   </div>
-  <div v-else class="loading page">加载中…</div>
+  <div v-else class="page play-wrap">
+    <div class="player-col">
+      <div class="sk" style="aspect-ratio:16/9;border-radius:14px"></div>
+      <div class="sk" style="height:120px;border-radius:14px;margin:18px 0"></div>
+      <div class="sk" style="height:56px;border-radius:12px;margin:16px 0"></div>
+      <div class="sk" style="height:200px;border-radius:12px"></div>
+    </div>
+    <aside class="rec-col">
+      <div class="sk" style="width:100px;height:18px;margin-bottom:16px"></div>
+      <div v-for="i in 6" :key="i" style="display:flex;gap:11px;margin-bottom:14px">
+        <div class="sk" style="width:68px;aspect-ratio:2/3;flex-shrink:0;border-radius:8px"></div>
+        <div style="flex:1"><div class="sk" style="height:14px"></div><div class="sk" style="height:11px;width:60%;margin-top:8px"></div></div>
+      </div>
+    </aside>
+  </div>
 </template>
 
 <script setup>
@@ -85,6 +99,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
+defineOptions({ name: 'Play' })
 
 const route = useRoute()
 const router = useRouter()

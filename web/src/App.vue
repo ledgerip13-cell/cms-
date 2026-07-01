@@ -7,6 +7,7 @@
     <aside class="sidebar" :class="{open: drawer}">
       <div class="sb-brand" @click="goHome">
         <img v-if="site.logo" :src="site.logo" alt="logo" />
+        <span v-else class="dot"></span>
         {{ site.siteName || '次元港' }}
       </div>
       <nav class="sb-nav">
@@ -55,7 +56,11 @@
         </div>
       </header>
 
-      <router-view :key="$route.fullPath" />
+      <router-view v-slot="{ Component }">
+        <keep-alive :include="['Home']" :max="1">
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
 
       <footer class="foot">{{ site.footer || '次元港 · 多源聚合' }} · 仅供技术演示</footer>
     </div>
