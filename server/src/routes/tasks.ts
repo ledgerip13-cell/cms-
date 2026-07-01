@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyToken } from "../auth.js";
-import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
   // SSE 实时推送：任务变更时推送活跃任务快照（EventSource 不能带 header，故用 query token）
@@ -103,7 +103,24 @@ export default async function taskRoutes(app: FastifyInstance) {
       const nt = await createMetaTask(opts);
       return { ok: true, taskId: nt.id };
     }
+    if (t.type === "keyword" && opts.keyword) {
+      const nt = await createKeywordTask(opts.keyword);
+      return { ok: true, taskId: nt.id };
+    }
     return { ok: false, error: "该类型不支持重试" };
+  });
+
+  // 按片名单独采集：遍历所有启用源搜索关键词入库
+  secured.post("/api/collect/keyword", async (req) => {
+    const kw = String((req.body as any)?.keyword || "").trim();
+    if (!kw) return { ok: false, error: "片名不能为空" };
+    if (kw.length > 40) return { ok: false, error: "片名过长" };
+    try {
+      const t = await createKeywordTask(kw);
+      return { ok: true, taskId: t.id };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
   });
 
   // 触发补全小类任务

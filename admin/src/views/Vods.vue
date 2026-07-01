@@ -8,12 +8,28 @@
           <el-option v-for="t in types" :key="t.name" :label="`${t.name||'未分类'}(${t.count})`" :value="t.name" />
         </el-select>
         <el-button type="primary" @click="load">查询</el-button>
+        <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
           豆瓣匹配<span v-if="mstat.none" style="margin-left:2px">（{{ mstat.none }} 待匹）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
       </div>
     </div>
+
+    <!-- 按片名单独采集 -->
+    <el-dialog v-model="kwDlg" title="按片名采集" width="460">
+      <el-form label-width="70px">
+        <el-form-item label="片名">
+          <el-input v-model="kwInput" placeholder="输入完整或部分片名，如：师兄啊师兄" clearable @keyup.enter="submitKeyword" />
+        </el-form-item>
+      </el-form>
+      <el-alert type="info" :closable="false"
+        title="会遍历所有已启用采集源搜索该片名，命中则拉取详情入库（重复片自动合并不重复）。异步执行，进度去「采集任务」页看。" />
+      <template #footer>
+        <el-button @click="kwDlg=false">取消</el-button>
+        <el-button type="primary" :loading="kwSubmitting" @click="submitKeyword">提交采集</el-button>
+      </template>
+    </el-dialog>
 
     <el-table :data="list" v-loading="loading" stripe @row-click="openDetail">
       <el-table-column label="封面" width="70">
@@ -157,9 +173,30 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag } from '@element-plus/icons-vue'
+import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { api } from '../api'
+const router = useRouter()
+
+const kwDlg = ref(false); const kwInput = ref(''); const kwSubmitting = ref(false)
+async function submitKeyword() {
+  const kw = kwInput.value.trim()
+  if (!kw) { ElMessage.warning('请输入片名'); return }
+  kwSubmitting.value = true
+  try {
+    const r = await api.collectByKeyword(kw)
+    if (r.ok) {
+      ElMessage.success('已提交，去「采集任务」页看进度')
+      kwDlg.value = false; kwInput.value = ''
+      ElMessageBox.confirm('采集在后台运行中，是否前往「采集任务」页查看进度？', '已提交', {
+        confirmButtonText: '去看进度', cancelButtonText: '留在本页', type: 'success'
+      }).then(() => router.push('/tasks')).catch(() => {})
+    } else {
+      ElMessage.error(r.error || '提交失败')
+    }
+  } catch (e) { ElMessage.error('提交失败: ' + e.message) } finally { kwSubmitting.value = false }
+}
 
 const list = ref([]); const total = ref(0); const loading = ref(false); const types = ref([])
 const mstat = ref({})

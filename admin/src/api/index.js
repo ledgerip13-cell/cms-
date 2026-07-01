@@ -36,6 +36,7 @@ export const api = {
   sourceTypes: (id) => http.get(`/sources/${id}/types`),
   sourceClasses: (id) => http.get(`/sources/${id}/classes`),
   sourceTypeCount: (id, t, hours) => http.get(`/sources/${id}/typecount`, { params: { t, hours } }),
+  collectByKeyword: (keyword) => http.post('/collect/keyword', { keyword }),
   probe: (d) => http.post('/probe', d),
   // vods
   vods: (params) => http.get('/vods', { params }),

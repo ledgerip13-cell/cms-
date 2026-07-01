@@ -17,7 +17,7 @@
       <el-table-column prop="id" label="#" width="60" />
       <el-table-column label="类型" width="90">
         <template #default="{ row }">
-          <el-tag size="small" :type="row.type==='collect'?'primary':row.type==='meta'?'success':'info'">
+          <el-tag size="small" :type="row.type==='collect'?'primary':row.type==='meta'?'success':row.type==='keyword'?'warning':'info'">
             {{ typeLabel(row.type) }}
           </el-tag>
         </template>
@@ -76,7 +76,7 @@ const list = ref([]); const total = ref(0); const page = ref(1); const size = 20
 const loading = ref(false); const active = ref(0); const connected = ref(false)
 let es = null
 
-const typeLabel = (t) => ({ collect:'采集', probe:'探活', meta:'元数据' }[t] || t)
+const typeLabel = (t) => ({ collect:'采集', probe:'探活', meta:'元数据', keyword:'按片名', subtype:'补小类' }[t] || t)
 const statusLabel = (s) => ({ pending:'排队', running:'进行中', done:'完成', failed:'失败', canceled:'取消' }[s] || s)
 const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', pending:'info' }[s] || 'info')
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'

@@ -1,6 +1,6 @@
 // 采集编排：拉取某个源 → 详情解析 → 分类映射 → 去重合并入库
 import { prisma } from "../db.js";
-import { fetchList, fetchDetail, parsePlay, fetchClasses, type RawVod } from "./maccms.js";
+import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, type RawVod } from "./maccms.js";
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
 
@@ -265,6 +265,53 @@ async function upsertVod(
   await prisma.play.upsert({ where: key, create: payload, update: payload });
 
   return { added: before ? 0 : 1, updated: before ? 1 : 0, merged: existing ? mergedFlag : 0 };
+}
+
+// 按片名采集：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
+export async function syncByKeyword(
+  keyword: string,
+  onProgress?: (p: { sourceNow: number; sourceTotal: number; sourceName: string; added: number; updated: number; merged: number; hits: number }) => void | Promise<void>
+) {
+  const kw = keyword.trim();
+  if (!kw) throw new Error("片名不能为空");
+  const sources = await prisma.source.findMany({ where: { enabled: true }, orderBy: { priority: "asc" } });
+  if (!sources.length) throw new Error("没有已启用的采集源");
+
+  let added = 0, updated = 0, merged = 0, hits = 0;
+  const perSource: { source: string; hits: number; added: number; updated: number; ok: boolean; msg?: string }[] = [];
+  const catCache = new Map<string, string>();
+
+  for (let i = 0; i < sources.length; i++) {
+    const src = sources[i];
+    let sAdded = 0, sUpdated = 0, sHits = 0;
+    try {
+      const list = await searchByKeyword(src.apiUrl, kw);
+      // 名字包含关键词才算命中（部分源 wd 参数只是模糊提示，需二次过滤）
+      const hitList = list.filter((v) => (v.vod_name || "").includes(kw));
+      sHits = hitList.length;
+      hits += sHits;
+      if (hitList.length) {
+        const ids = hitList.map((v) => v.vod_id);
+        for (let j = 0; j < ids.length; j += 20) {
+          const batch = ids.slice(j, j + 20);
+          const details = await fetchDetail(src.apiUrl, batch);
+          for (const raw of details) {
+            try {
+              const r = await upsertVod(src.id, raw, catCache);
+              added += r.added; updated += r.updated; merged += r.merged;
+              sAdded += r.added; sUpdated += r.updated;
+            } catch {}
+          }
+        }
+      }
+      perSource.push({ source: src.name, hits: sHits, added: sAdded, updated: sUpdated, ok: true });
+    } catch (e: any) {
+      perSource.push({ source: src.name, hits: 0, added: 0, updated: 0, ok: false, msg: e?.message || String(e) });
+    }
+    if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sources.length, sourceName: src.name, added, updated, merged, hits });
+  }
+
+  return { ok: true, keyword: kw, hits, added, updated, merged, perSource };
 }
 
 export async function syncSource(sourceId: number, opts: SyncOptions = {}, onProgress?: ProgressCb) {

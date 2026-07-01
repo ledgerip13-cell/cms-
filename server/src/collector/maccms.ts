@@ -136,12 +136,20 @@ export async function fetchList(
   page = 1,
   hours = 0,
   timeoutMs = 15000,
-  typeId?: string | number
+  typeId?: string | number,
+  keyword?: string
 ): Promise<ListResult> {
   const params: Record<string, string | number> = { ac: "list", pg: page, at: "json" };
   if (hours > 0) params.h = hours;
   if (typeId) params.t = typeId; // 苹果CMS 按分类采集
+  if (keyword) params.wd = keyword; // 苹果CMS 标准关键词搜索
   return getData(buildUrl(apiUrl, params), timeoutMs);
+}
+
+// 按片名搜索（不分页，取首页所有命中项，通常搜索结果不多）
+export async function searchByKeyword(apiUrl: string, keyword: string, timeoutMs = 15000): Promise<RawVod[]> {
+  const r = await fetchList(apiUrl, 1, 0, timeoutMs, undefined, keyword);
+  return r.list;
 }
 
 // 拉详情：先 ac=detail，若无任何播放地址则回退 ac=videolist（部分XML源如此）

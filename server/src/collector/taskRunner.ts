@@ -1,6 +1,6 @@
 // 异步采集任务执行器：前端点击后立即返回 taskId，任务在后台跑并更新进度
 import { prisma } from "../db.js";
-import { syncSource, backfillSubTypes, type SyncOptions } from "./sync.js";
+import { syncSource, backfillSubTypes, syncByKeyword, type SyncOptions } from "./sync.js";
 import { matchDouban, sleep } from "./douban.js";
 
 import { EventEmitter } from "node:events";
@@ -109,6 +109,47 @@ async function runSubtypeTask(taskId: number) {
     await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
   } finally {
     subtypeRunning = false;
+  }
+}
+
+// ============ 按片名单独采集 ============
+let keywordRunning = false;
+export async function createKeywordTask(keyword: string) {
+  const task = await prisma.task.create({
+    data: { type: "keyword", sourceName: `片名「${keyword}」`, mode: "full", status: "pending", params: JSON.stringify({ keyword }) },
+  });
+  emitTaskChange();
+  void runKeywordTask(task.id, keyword);
+  return task;
+}
+async function runKeywordTask(taskId: number, keyword: string) {
+  if (keywordRunning) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "已有按片名采集任务进行中，请稍后重试", finishedAt: new Date() } });
+    return;
+  }
+  keywordRunning = true;
+  await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date() } });
+  try {
+    const r = await syncByKeyword(keyword, async (p) => {
+      const progress = p.sourceTotal ? Math.round((p.sourceNow / p.sourceTotal) * 100) : 0;
+      await taskUpdate({
+        where: { id: taskId },
+        data: { progress, pageNow: p.sourceNow, pageTotal: p.sourceTotal, added: p.added, updated: p.updated, message: `正在搜索「${p.sourceName}」… 命中${p.hits}` },
+      });
+    });
+    const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `命中${s.hits}/入库${s.added}` : "失败"}`).join(" | ");
+    await taskUpdate({
+      where: { id: taskId },
+      data: {
+        status: "done", progress: 100, added: r.added, updated: r.updated, merged: r.merged,
+        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}`,
+        finishedAt: new Date(),
+      },
+    });
+  } catch (e: any) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+  } finally {
+    keywordRunning = false;
   }
 }
 
