@@ -9,6 +9,7 @@ import resolveRoutes from "./routes/resolve.js";
 import taskRoutes from "./routes/tasks.js";
 import metaRoutes from "./routes/meta.js";
 import siteRoutes from "./routes/site.js";
+import imgRoutes from "./routes/img.js";
 import { seedAdmin } from "./auth.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
@@ -26,6 +27,7 @@ await app.register(resolveRoutes);
 await app.register(taskRoutes);
 await app.register(metaRoutes);
 await app.register(siteRoutes);
+await app.register(imgRoutes);
 
 await seedAdmin();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）

@@ -71,6 +71,46 @@ export default async function vodRoutes(app: FastifyInstance) {
     return [...rated, ...more];
   });
 
+  // 相关推荐：同大类优先，其次同小类，排除自身。用于播放页右栏
+  app.get("/api/related", async (req) => {
+    const q = req.query as any;
+    const id = Number(q.id) || 0;
+    const take = Math.min(24, Number(q.limit) || 12);
+    const type = String(q.type || "");
+    const sub = String(q.sub || "");
+    const baseWhere: any = { status: "online", id: { not: id } };
+    const picks: any[] = [];
+    const seen = new Set<number>([id]);
+    const pushRows = (rows: any[]) => {
+      for (const r of rows) { if (!seen.has(r.id)) { seen.add(r.id); picks.push(r); } }
+    };
+    // 1) 同小类
+    if (sub) {
+      pushRows(await prisma.vod.findMany({
+        where: { ...baseWhere, subType: sub },
+        orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
+        take, include: { _count: { select: { plays: true } } },
+      }));
+    }
+    // 2) 同大类补足
+    if (picks.length < take && type) {
+      pushRows(await prisma.vod.findMany({
+        where: { ...baseWhere, typeName: type, id: { notIn: [...seen] } },
+        orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
+        take: take - picks.length, include: { _count: { select: { plays: true } } },
+      }));
+    }
+    // 3) 仍不足用热门补
+    if (picks.length < take) {
+      pushRows(await prisma.vod.findMany({
+        where: { ...baseWhere, id: { notIn: [...seen] } },
+        orderBy: { updatedAt: "desc" },
+        take: take - picks.length, include: { _count: { select: { plays: true } } },
+      }));
+    }
+    return picks.slice(0, take);
+  });
+
   // 影片详情 + 所有线路（按源优先级排序）
   app.get("/api/vods/:id", async (req) => {
     const id = Number((req.params as any).id);
