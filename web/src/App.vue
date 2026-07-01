@@ -45,13 +45,26 @@
             </button>
           </div>
           <transition name="fade">
-            <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch">
-              <div class="sp-title">热门影片</div>
-              <div class="hot-list">
-                <div v-for="(h,i) in hot" :key="h.id" class="hot-item" @click="goPlay(h.id)">
-                  <span class="hot-rank" :class="{top:i<3}">{{ i+1 }}</span>
-                  <span class="hot-name">{{ h.name }}</span>
-                  <span v-if="h.rating" class="hot-score">{{ h.rating }}</span>
+            <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch" @mousedown.stop>
+              <div class="sp-head">
+                <span class="sp-tab on">热搜榜</span>
+              </div>
+              <div class="sp-grid">
+                <div v-for="(h,i) in hot" :key="h.id" class="sp-item" @click="goPlay(h.id)">
+                  <span class="sp-rank" :class="['r'+(i+1), {top:i<3}]">{{ i+1 }}</span>
+                  <div class="sp-thumb">
+                    <img v-if="h.officialPic || h.pic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr" />
+                    <div v-else class="noimg"></div>
+                    <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                  </div>
+                  <div class="sp-info">
+                    <div class="sp-name">{{ h.name }}</div>
+                    <div class="sp-sub">
+                      <span v-if="h.rating" class="sp-score">★{{ h.rating }}</span>
+                      <span>{{ h.typeName || '未分类' }}</span>
+                      <span v-if="h.year">{{ h.year }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="sp-foot" @click="doSearch" v-if="kw">搜索“{{ kw }}” →</div>
@@ -74,7 +87,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { api } from './api'
+import { api, imgUrl } from './api'
 
 const router = useRouter()
 const route = useRoute()
@@ -86,11 +99,14 @@ const searchInput = ref(null)
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
 
+function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
+function onErr(e) { e.target.style.visibility='hidden' }
 function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
 async function openSearch() {
+  if (searchOpen.value) return
   searchOpen.value = true
   if (!hot.value.length) hot.value = await api.hot(10)
 }
@@ -113,12 +129,13 @@ function iconFor(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
 }
 
+// 用 mousedown 而非延迟绑定的 click：避免与当次点击事件时序冲突导致“点一下消失”
 const vClickOutside = {
   mounted(el, binding) {
     el._handler = (e) => { if (!el.contains(e.target)) binding.value() }
-    setTimeout(() => document.addEventListener('click', el._handler), 0)
+    document.addEventListener('mousedown', el._handler)
   },
-  unmounted(el) { document.removeEventListener('click', el._handler) }
+  unmounted(el) { document.removeEventListener('mousedown', el._handler) }
 }
 
 function applySite(s) {
