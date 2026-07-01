@@ -1,0 +1,159 @@
+import type { FastifyInstance } from "fastify";
+import { prisma } from "../db.js";
+import { ping, fetchClasses, fetchTypeTotal } from "../collector/maccms.js";
+import { syncSource } from "../collector/sync.js";
+import { createCollectTask } from "../collector/taskRunner.js";
+import { probeBatch } from "../collector/probe.js";
+import { reloadSchedules } from "../scheduler.js";
+import { authGuard } from "../auth.js";
+
+export default async function sourceRoutes(app: FastifyInstance) {
+  // 采集源管理全部需要登录（含列表，避免泄露源站）
+  app.addHook("preHandler", authGuard);
+  // 列表
+  app.get("/api/sources", async () => {
+    return prisma.source.findMany({ orderBy: { priority: "asc" } });
+  });
+
+  // 新建
+  app.post("/api/sources", async (req) => {
+    const b = req.body as any;
+    const s = await prisma.source.create({
+      data: {
+        name: b.name,
+        apiUrl: b.apiUrl,
+        flag: b.flag || "",
+        priority: b.priority ?? 100,
+        enabled: b.enabled ?? true,
+        autoSync: b.autoSync ?? false,
+        syncHours: b.syncHours ?? 24,
+        cronExpr: b.cronExpr || "0 * * * *",
+      },
+    });
+    await reloadSchedules();
+    return s;
+  });
+
+  // 更新
+  app.put("/api/sources/:id", async (req) => {
+    const id = Number((req.params as any).id);
+    const b = req.body as any;
+    const s = await prisma.source.update({
+      where: { id },
+      data: {
+        name: b.name,
+        apiUrl: b.apiUrl,
+        flag: b.flag,
+        priority: b.priority,
+        enabled: b.enabled,
+        autoSync: b.autoSync,
+        syncHours: b.syncHours,
+        cronExpr: b.cronExpr,
+      },
+    });
+    await reloadSchedules();
+    return s;
+  });
+
+  // 删除
+  app.delete("/api/sources/:id", async (req) => {
+    const id = Number((req.params as any).id);
+    await prisma.source.delete({ where: { id } });
+    await reloadSchedules();
+    return { ok: true };
+  });
+
+  // 手动探活一批
+  app.post("/api/probe", async (req) => {
+    const limit = Number((req.body as any)?.limit) || 50;
+    return probeBatch(limit);
+  });
+
+  // 测活
+  app.post("/api/sources/:id/ping", async (req) => {
+    const id = Number((req.params as any).id);
+    const s = await prisma.source.findUnique({ where: { id } });
+    if (!s) return { ok: false, error: "not found" };
+    const r = await ping(s.apiUrl);
+    await prisma.source.update({
+      where: { id },
+      data: { status: r.ok ? "ok" : "fail", lastError: r.ok ? null : (r as any).error },
+    });
+    return r;
+  });
+
+  // 触发采集（异步：创建任务后立即返回 taskId，后台执行，去任务页看进度）
+  app.post("/api/sources/:id/sync", async (req) => {
+    const id = Number((req.params as any).id);
+    const b = (req.body as any) || {};
+    const task = await createCollectTask(id, {
+      mode: b.mode || "incr",
+      maxPages: b.maxPages,
+      hours: b.hours,
+      typeId: b.typeId || undefined,
+    });
+    return { taskId: task.id, status: task.status, message: "采集任务已提交，请到「采集任务」查看进度" };
+  });
+
+  // 源的分类列表(供前端按分类采集选择)
+  app.get("/api/sources/:id/types", async (req) => {
+    const id = Number((req.params as any).id);
+    const maps = await prisma.sourceTypeMap.findMany({
+      where: { sourceId: id },
+      orderBy: { sourceTypeName: "asc" },
+    });
+    return maps.map((m) => ({ typeId: m.sourceTypeId, typeName: m.sourceTypeName }));
+  });
+
+  // 源的实时分类树（从上游拉，含父子关系）——按分类采集下拉用
+  app.get("/api/sources/:id/classes", async (req) => {
+    const id = Number((req.params as any).id);
+    const s = await prisma.source.findUnique({ where: { id } });
+    if (!s) return { ok: false, error: "not found", tree: [] };
+    try {
+      const classes = await fetchClasses(s.apiUrl);
+      // 构建父→子树；typePid=="0" 或无对应父节点的为顶级
+      const byId = new Map(classes.map((c) => [c.typeId, c]));
+      const parents = classes.filter((c) => c.typePid === "0" || !byId.has(c.typePid));
+      const tree = parents.map((p) => ({
+        typeId: p.typeId,
+        typeName: p.typeName,
+        children: classes
+          .filter((c) => c.typePid === p.typeId && c.typeId !== p.typeId)
+          .map((c) => ({ typeId: c.typeId, typeName: c.typeName })),
+      }));
+      return { ok: true, tree };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e), tree: [] };
+    }
+  });
+
+  // 预估某分类可采总量（父类自动汇总其子类）
+  app.get("/api/sources/:id/typecount", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = String((req.query as any).t || "");
+    const hours = Number((req.query as any).hours) || 0;
+    const s = await prisma.source.findUnique({ where: { id } });
+    if (!s || !t) return { ok: false, total: 0 };
+    try {
+      const classes = await fetchClasses(s.apiUrl);
+      const children = classes.filter((c) => c.typePid === t).map((c) => c.typeId);
+      const targets = children.length ? children : [t];
+      let total = 0;
+      for (const tid of targets) total += await fetchTypeTotal(s.apiUrl, tid, hours);
+      return { ok: true, total, expanded: children.length };
+    } catch (e: any) {
+      return { ok: false, total: 0, error: e?.message || String(e) };
+    }
+  });
+
+  // 采集日志
+  app.get("/api/sources/:id/logs", async (req) => {
+    const id = Number((req.params as any).id);
+    return prisma.syncLog.findMany({
+      where: { sourceId: id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+  });
+}

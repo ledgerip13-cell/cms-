@@ -1,0 +1,76 @@
+/* ============ 视频CMS 后台设计规范 ============ */
+:root {
+  /* 主色：专业靛蓝 */
+  --el-color-primary: #4f6ef7;
+  --el-color-primary-light-3: #7d92f9;
+  --el-color-primary-light-5: #a3b2fb;
+  --el-color-primary-light-7: #c9d3fc;
+  --el-color-primary-light-8: #dce2fd;
+  --el-color-primary-light-9: #eef1fe;
+  --el-color-primary-dark-2: #3f58d6;
+  --el-border-radius-base: 8px;
+
+  /* 语义色 */
+  --brand-1: #4f6ef7;
+  --brand-2: #7b5cff;
+  --side-bg: #171b26;
+  --side-bg-hover: #222735;
+  --side-text: #aeb6c4;
+  --side-active: #ffffff;
+  --page-bg: #f5f6f8;
+  --card-bg: #ffffff;
+  --border: #eaecef;
+  --text-1: #1a1f2b;
+  --text-2: #5a6472;
+  --text-3: #98a1b0;
+
+  /* 间距刻度 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --shadow-card: 0 1px 2px rgba(20,26,45,.04), 0 4px 16px rgba(20,26,45,.04);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page-bg); color: var(--text-1);
+  font-family: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; }
+
+/* 统一卡片 */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--sp-5);
+  box-shadow: var(--shadow-card);
+}
+
+/* 页面区块标题 */
+.sec-title { font-size: 15px; font-weight: 650; color: var(--text-1);
+  display: flex; align-items: center; gap: var(--sp-2); }
+.sec-title small { color: var(--text-3); font-weight: 400; font-size: 13px; }
+
+/* 工具条：标题左 + 操作右 */
+.toolbar { display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: var(--sp-5); gap: var(--sp-3); flex-wrap: wrap; }
+.toolbar .actions { display: flex; align-items: center; gap: var(--sp-2); }
+.filters { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* 表格圆角/表头 */
+.el-table { --el-table-header-bg-color: #fafbfc; border-radius: 10px; }
+.el-table th { font-weight: 600; color: var(--text-2); }
+
+/* 分页右对齐 */
+.pager { margin-top: var(--sp-5); display: flex; justify-content: flex-end; }
+
+/* 通用行内图标按钮间距 */
+.el-button + .el-button { margin-left: var(--sp-2); }
+
+/* 评分展示 */
+.rating { color: #f7a23b; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
+.rating .el-icon { font-size: 14px; }
