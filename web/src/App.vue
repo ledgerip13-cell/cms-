@@ -33,12 +33,16 @@
         </button>
         <div class="search-box">
           <div class="search" @click="openSearch">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
             </svg>
-            <input ref="searchInput" v-model="kw" placeholder="搜索影片、演员…"
+            <input ref="searchInput" v-model="kw" placeholder="搜索你想看的影片、演员…"
               @focus="openSearch" @keyup.enter="doSearch" />
             <span v-if="kw" class="clear" @click.stop="kw=''">×</span>
+            <button class="search-btn" @click.stop="doSearch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              搜索
+            </button>
           </div>
           <transition name="fade">
             <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch">
