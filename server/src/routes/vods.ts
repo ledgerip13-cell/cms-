@@ -52,18 +52,25 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 热门推荐（搜索框点击时展示）：有评分优先，否则按线路数/更新
+  // cat: 可选榜单分类，hot(默认/热搜榜全部) | guoman(国产动漫) | anime(动漫大类全部) | shortplay(短剧)
   app.get("/api/hot", async (req) => {
-    const take = Math.min(20, Number((req.query as any).limit) || 10);
+    const q = req.query as any;
+    const take = Math.min(20, Number(q.limit) || 10);
+    const cat = String(q.cat || "hot");
+    const catWhere: any =
+      cat === "guoman" ? { typeName: "动漫", subType: "国产动漫" } :
+      cat === "anime" ? { typeName: "动漫" } :
+      cat === "shortplay" ? { typeName: "短剧" } : {};
     const rated = await prisma.vod.findMany({
-      where: { status: "online", rating: { not: null } },
+      where: { status: "online", rating: { not: null }, ...catWhere },
       orderBy: [{ ratingCount: "desc" }, { rating: "desc" }],
       take,
       include: { _count: { select: { plays: true } } },
     });
     if (rated.length >= take) return rated;
-    // 评分片不够，补最近更新
+    // 评分片不够，补最近更新(同榜单分类过滤)
     const more = await prisma.vod.findMany({
-      where: { status: "online", id: { notIn: rated.map((v) => v.id) } },
+      where: { status: "online", id: { notIn: rated.map((v) => v.id) }, ...catWhere },
       orderBy: { updatedAt: "desc" },
       take: take - rated.length,
       include: { _count: { select: { plays: true } } },
@@ -136,25 +143,50 @@ export default async function vodRoutes(app: FastifyInstance) {
       include: { plays: { include: { source: true } } },
     });
     if (!vod) return { error: "not found" };
-    const lines = vod.plays
-      .map((p) => ({
-        id: p.id,
-        sourceName: p.source.name,
-        priority: p.source.priority,
-        flag: p.flag,
-        epCount: p.epCount,
-        alive: p.alive,
-        score: p.score,
-        checkMs: p.checkMs,
-        playKind: p.playKind,
-        episodes: JSON.parse(p.episodes || "[]"),
-      }))
-      // 健康优选：存活优先 → 评分高优先 → 源优先级
-      .sort((a, b) => {
-        if (a.alive !== b.alive) return a.alive ? -1 : 1;
-        if (b.score !== a.score) return b.score - a.score;
-        return a.priority - b.priority;
-      });
+    const allChannels = vod.plays.map((p) => ({
+      id: p.id,
+      sourceId: p.sourceId,
+      sourceName: p.source.name,
+      priority: p.source.priority,
+      flag: p.flag,
+      epCount: p.epCount,
+      alive: p.alive,
+      score: p.score,
+      checkMs: p.checkMs,
+      playKind: p.playKind,
+      episodes: JSON.parse(p.episodes || "[]"),
+    }));
+    // 健康优选排序：存活优先 → 评分高优先 → 源优先级
+    const byHealth = (a: { alive: boolean; score: number; priority: number }, b: { alive: boolean; score: number; priority: number }) => {
+      if (a.alive !== b.alive) return a.alive ? -1 : 1;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.priority - b.priority;
+    };
+    // 按源分组：每个源可能有多条 flag 通道，组内按健康分排序，默认选中组内第0个
+    const bySource = new Map<number, typeof allChannels>();
+    for (const c of allChannels) {
+      if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, []);
+      bySource.get(c.sourceId)!.push(c);
+    }
+    const lines = [...bySource.values()]
+      .map((channels) => {
+        const sorted = [...channels].sort(byHealth);
+        const best = sorted[0];
+        return {
+          id: best.id,
+          sourceId: best.sourceId,
+          sourceName: best.sourceName,
+          priority: best.priority,
+          flag: best.flag,
+          epCount: best.epCount,
+          alive: best.alive,
+          score: best.score,
+          playKind: best.playKind,
+          episodes: best.episodes,
+          channels: sorted, // 同源全部备用通道(按健康分降序)，前端需展示备用tab时用
+        };
+      })
+      .sort(byHealth);
     return { ...vod, plays: undefined, lines };
   });
 

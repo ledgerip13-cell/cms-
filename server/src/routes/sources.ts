@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
-import { ping, fetchClasses, fetchTypeTotal } from "../collector/maccms.js";
+import { ping, fetchClasses, fetchTypeTotal, resolveApiUrls, withFailover } from "../collector/maccms.js";
 import { syncSource } from "../collector/sync.js";
 import { createCollectTask } from "../collector/taskRunner.js";
 import { probeBatch } from "../collector/probe.js";
@@ -18,10 +18,12 @@ export default async function sourceRoutes(app: FastifyInstance) {
   // 新建
   app.post("/api/sources", async (req) => {
     const b = req.body as any;
+    const apiUrls: string[] = Array.isArray(b.apiUrls) ? b.apiUrls.map((s: string) => String(s || "").trim()).filter(Boolean) : [];
     const s = await prisma.source.create({
       data: {
         name: b.name,
-        apiUrl: b.apiUrl,
+        apiUrl: b.apiUrl || apiUrls[0] || "",
+        apiUrls: JSON.stringify(apiUrls),
         flag: b.flag || "",
         priority: b.priority ?? 100,
         enabled: b.enabled ?? true,
@@ -38,19 +40,22 @@ export default async function sourceRoutes(app: FastifyInstance) {
   app.put("/api/sources/:id", async (req) => {
     const id = Number((req.params as any).id);
     const b = req.body as any;
-    const s = await prisma.source.update({
-      where: { id },
-      data: {
-        name: b.name,
-        apiUrl: b.apiUrl,
-        flag: b.flag,
-        priority: b.priority,
-        enabled: b.enabled,
-        autoSync: b.autoSync,
-        syncHours: b.syncHours,
-        cronExpr: b.cronExpr,
-      },
-    });
+    const data: any = {
+      name: b.name,
+      apiUrl: b.apiUrl,
+      flag: b.flag,
+      priority: b.priority,
+      enabled: b.enabled,
+      autoSync: b.autoSync,
+      syncHours: b.syncHours,
+      cronExpr: b.cronExpr,
+    };
+    if (Array.isArray(b.apiUrls)) {
+      const apiUrls = b.apiUrls.map((s: string) => String(s || "").trim()).filter(Boolean);
+      data.apiUrls = JSON.stringify(apiUrls);
+      if (!b.apiUrl && apiUrls[0]) data.apiUrl = apiUrls[0];
+    }
+    const s = await prisma.source.update({ where: { id }, data });
     await reloadSchedules();
     return s;
   });
@@ -69,17 +74,30 @@ export default async function sourceRoutes(app: FastifyInstance) {
     return probeBatch(limit);
   });
 
-  // 测活
+  // 测活：按顺序逐个试 apiUrls，返回每个入口的结果+最终生效的那个
   app.post("/api/sources/:id/ping", async (req) => {
     const id = Number((req.params as any).id);
     const s = await prisma.source.findUnique({ where: { id } });
     if (!s) return { ok: false, error: "not found" };
-    const r = await ping(s.apiUrl);
+    const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
+    const results: any[] = [];
+    let firstOk: any = null;
+    for (const u of urls) {
+      const r = await ping(u);
+      results.push({ url: u, ...r });
+      if (r.ok && !firstOk) firstOk = { url: u, ...r };
+    }
     await prisma.source.update({
       where: { id },
-      data: { status: r.ok ? "ok" : "fail", lastError: r.ok ? null : (r as any).error },
+      data: {
+        status: firstOk ? "ok" : "fail",
+        lastError: firstOk ? null : results.map((r) => r.error).filter(Boolean).join("; "),
+        activeApiUrl: firstOk ? firstOk.url : s.activeApiUrl,
+      },
     });
-    return r;
+    return firstOk
+      ? { ...firstOk, multi: urls.length > 1, results }
+      : { ok: false, error: "全部入口均失败", multi: urls.length > 1, results };
   });
 
   // 触发采集（异步：创建任务后立即返回 taskId，后台执行，去任务页看进度）
@@ -111,7 +129,8 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const s = await prisma.source.findUnique({ where: { id } });
     if (!s) return { ok: false, error: "not found", tree: [] };
     try {
-      const classes = await fetchClasses(s.apiUrl);
+      const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
+      const { result: classes } = await withFailover(urls, (u) => fetchClasses(u));
       // 构建父→子树；typePid=="0" 或无对应父节点的为顶级
       const byId = new Map(classes.map((c) => [c.typeId, c]));
       const parents = classes.filter((c) => c.typePid === "0" || !byId.has(c.typePid));
@@ -136,11 +155,12 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const s = await prisma.source.findUnique({ where: { id } });
     if (!s || !t) return { ok: false, total: 0 };
     try {
-      const classes = await fetchClasses(s.apiUrl);
+      const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
+      const { result: classes, usedUrl } = await withFailover(urls, (u) => fetchClasses(u));
       const children = classes.filter((c) => c.typePid === t).map((c) => c.typeId);
       const targets = children.length ? children : [t];
       let total = 0;
-      for (const tid of targets) total += await fetchTypeTotal(s.apiUrl, tid, hours);
+      for (const tid of targets) total += await fetchTypeTotal(usedUrl, tid, hours);
       return { ok: true, total, expanded: children.length };
     } catch (e: any) {
       return { ok: false, total: 0, error: e?.message || String(e) };

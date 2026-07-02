@@ -15,7 +15,12 @@
       <el-table-column prop="flag" label="播放标识" width="110">
         <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.flag || '-' }}</el-tag></template>
       </el-table-column>
-      <el-table-column prop="apiUrl" label="采集 API" min-width="240" show-overflow-tooltip />
+      <el-table-column label="采集 API" min-width="240">
+        <template #default="{ row }">
+          <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.apiUrl }}</div>
+          <el-tag v-if="apiUrlCount(row)>1" size="small" type="success" style="margin-top:3px">{{ apiUrlCount(row) }}个入口(已failover)</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag v-if="row.status==='ok'" type="success" size="small">正常</el-tag>
@@ -53,7 +58,18 @@
   <el-dialog v-model="dlg" :title="form.id ? '编辑采集源' : '新增采集源'" width="520">
     <el-form :model="form" label-width="90px">
       <el-form-item label="源名称"><el-input v-model="form.name" placeholder="如：如意资源网" /></el-form-item>
-      <el-form-item label="采集API"><el-input v-model="form.apiUrl" placeholder="https://xxx/api.php/provide/vod/" /></el-form-item>
+      <el-form-item label="采集API">
+        <div style="width:100%">
+          <div v-for="(u,i) in form.apiUrls" :key="i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+            <el-input v-model="form.apiUrls[i]" placeholder="https://xxx/api.php/provide/vod/" />
+            <el-tag v-if="i===0" size="small" type="primary">主</el-tag>
+            <el-tag v-else size="small">备用{{ i }}</el-tag>
+            <el-button :icon="Close" circle size="small" @click="form.apiUrls.splice(i,1)" v-if="form.apiUrls.length>1" />
+          </div>
+          <el-button :icon="Plus" size="small" @click="form.apiUrls.push('')">加备用入口</el-button>
+          <div style="font-size:12px;color:#9aa4b2;margin-top:6px">多个入口时自动failover：主入口失败/超时自动切备用，下次优先试上次生效的入口。</div>
+        </div>
+      </el-form-item>
       <el-form-item label="播放标识"><el-input v-model="form.flag" placeholder="rym3u8（可留空）" /></el-form-item>
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
       <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
@@ -126,7 +142,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 const router = useRouter()
@@ -146,12 +162,25 @@ async function doProbe() {
     ElMessage.success(`探活完成: 检测${r.checked} 存活${r.alive} 死链${r.dead}`); load()
   } catch (e) { ElMessage.error('探活失败: ' + e.message) } finally { probing.value = false }
 }
-function openAdd() { form.value = { name:'', apiUrl:'', flag:'', priority:100, enabled:true, autoSync:false, cronExpr:'0 * * * *', syncHours:24 }; dlg.value = true }
-function openEdit(row) { form.value = { ...row }; dlg.value = true }
+function parseApiUrls(row) {
+  try { const a = JSON.parse(row.apiUrls || '[]'); return Array.isArray(a) ? a.filter(Boolean) : [] } catch { return [] }
+}
+function apiUrlCount(row) {
+  const a = parseApiUrls(row)
+  return a.length || (row.apiUrl ? 1 : 0)
+}
+function openAdd() { form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, cronExpr:'0 * * * *', syncHours:24 }; dlg.value = true }
+function openEdit(row) {
+  const arr = parseApiUrls(row)
+  form.value = { ...row, apiUrls: arr.length ? arr : [row.apiUrl || ''] }
+  dlg.value = true
+}
 async function save() {
   try {
-    if (form.value.id) await api.updateSource(form.value.id, form.value)
-    else await api.addSource(form.value)
+    const payload = { ...form.value, apiUrls: (form.value.apiUrls || []).map(s => (s||'').trim()).filter(Boolean) }
+    if (!payload.apiUrl) payload.apiUrl = payload.apiUrls[0] || ''
+    if (form.value.id) await api.updateSource(form.value.id, payload)
+    else await api.addSource(payload)
     ElMessage.success('已保存'); dlg.value = false; load()
   } catch (e) { ElMessage.error('保存失败: ' + e.message) }
 }
@@ -162,8 +191,14 @@ async function del(row) {
 }
 async function ping(row) {
   row._pinging = true
-  try { const r = await api.pingSource(row.id)
-    r.ok ? ElMessage.success(`正常 ${r.ms}ms · 总量${r.total} · 样本「${r.sample}」`) : ElMessage.error('失败: ' + r.error)
+  try {
+    const r = await api.pingSource(row.id)
+    if (r.ok) {
+      const extra = r.multi ? `（${r.results.filter(x=>x.ok).length}/${r.results.length}个入口存活）` : ''
+      ElMessage.success(`正常 ${r.ms}ms · 总量${r.total} · 样本「${r.sample}」 ${extra}`)
+    } else {
+      ElMessage.error('全部入口失败: ' + r.error)
+    }
     load()
   } finally { row._pinging = false }
 }

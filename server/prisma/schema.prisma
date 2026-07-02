@@ -10,114 +10,117 @@ datasource db {
 
 // 采集源（管理后台核心：管理这些源头）
 model Source {
-  id        Int      @id @default(autoincrement())
-  name      String                      // 源名称，如 "如意资源网"
-  apiUrl    String                      // 采集API地址 /api.php/provide/vod/
-  flag      String   @default("")       // from标识，如 rym3u8（可为空，自动探测）
-  priority  Int      @default(100)      // 线路优先级，越小越靠前
-  enabled   Boolean  @default(true)     // 开关
-  status    String   @default("unknown")// ok / fail / unknown（测活结果）
-  lastError String?                     // 最近错误
-  lastSyncAt DateTime?                  // 最近采集时间
-  syncCount Int      @default(0)        // 累计入库线路数
+  id           Int             @id @default(autoincrement())
+  name         String // 源名称，如 "如意资源网"
+  apiUrl       String // 采集API地址（主用/兼容旧数据，实际请求优先用 apiUrls）
+  apiUrls      String          @default("[]") // JSON数组：多个API入口(主备)，按序尝试failover，空则回退用apiUrl
+  activeApiUrl String          @default("") // 最近一次采集实际生效的url(运维可见性)
+  flag         String          @default("") // from标识，如 rym3u8（可为空，自动探测）
+  priority     Int             @default(100) // 线路优先级，越小越靠前
+  enabled      Boolean         @default(true) // 开关
+  status       String          @default("unknown") // ok / fail / unknown（测活结果）
+  lastError    String? // 最近错误
+  lastSyncAt   DateTime? // 最近采集时间
+  syncCount    Int             @default(0) // 累计入库线路数
   // 定时采集
-  autoSync  Boolean  @default(false)    // 是否纳入定时采集
-  syncHours Int      @default(24)       // 增量小时窗口
-  cronExpr  String   @default("0 * * * *") // 采集频率(默认每小时)
-  cursor    String?                     // 增量游标(最近成功采集时间点)
-  plays     Play[]
-  typeMaps  SourceTypeMap[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  autoSync     Boolean         @default(false) // 是否纳入定时采集
+  syncHours    Int             @default(24) // 增量小时窗口
+  cronExpr     String          @default("0 * * * *") // 采集频率(默认每小时)
+  cursor       String? // 增量游标(最近成功采集时间点)
+  plays        Play[]
+  typeMaps     SourceTypeMap[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 }
 
 // 统一分类体系（本站标准分类）
 model Category {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique            // 统一分类名，如 "日韩动漫"
-  slug      String   @default("")       // 英文标识
-  sort      Int      @default(100)      // 展示排序
-  parentId  Int?                        // 支持二级分类
-  enabled   Boolean  @default(true)
+  id        Int             @id @default(autoincrement())
+  name      String          @unique // 统一分类名，如 "日韩动漫"
+  slug      String          @default("") // 英文标识
+  sort      Int             @default(100) // 展示排序
+  parentId  Int? // 支持二级分类
+  enabled   Boolean         @default(true)
   maps      SourceTypeMap[]
-  createdAt DateTime @default(now())
+  createdAt DateTime        @default(now())
 }
 
 // 源分类映射：各源 type_id → 本站统一 Category
 model SourceTypeMap {
-  id          Int      @id @default(autoincrement())
-  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  sourceId    Int
-  sourceTypeId String                   // 源内 type_id
-  sourceTypeName String @default("")    // 源内分类名(参考)
-  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId  Int?                       // 映射到的统一分类(null=未映射)
+  id             Int       @id @default(autoincrement())
+  source         Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceId       Int
+  sourceTypeId   String // 源内 type_id
+  sourceTypeName String    @default("") // 源内分类名(参考)
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId     Int? // 映射到的统一分类(null=未映射)
+
   @@unique([sourceId, sourceTypeId])
 }
 
 // 站点基础信息（单例 id=1）
 model SiteConfig {
-  id          Int      @id @default(1)
-  siteName    String   @default("次元港")     // 网站名称
-  logo        String   @default("")         // 图标/Logo（URL 或 data URI）
-  description String   @default("")         // 网站描述
-  keywords    String   @default("")         // SEO 关键词
-  footer      String   @default("")         // 页脚文字
-  announcement String  @default("")         // 公告(可选)
-  updatedAt   DateTime @updatedAt
+  id           Int      @id @default(1)
+  siteName     String   @default("次元港") // 网站名称
+  logo         String   @default("") // 图标/Logo（URL 或 data URI）
+  description  String   @default("") // 网站描述
+  keywords     String   @default("") // SEO 关键词
+  footer       String   @default("") // 页脚文字
+  announcement String   @default("") // 公告(可选)
+  updatedAt    DateTime @updatedAt
 }
 
 // 元数据(豆瓣)采集配置（单例 id=1）
 model MetaConfig {
   id         Int      @id @default(1)
-  intervalMs Int      @default(2500)     // 限速间隔(毫秒/条)
-  batchLimit Int      @default(50)       // 每批处理数
-  autoMatch  Boolean  @default(false)    // 定时自动匹配
+  intervalMs Int      @default(2500) // 限速间隔(毫秒/条)
+  batchLimit Int      @default(50) // 每批处理数
+  autoMatch  Boolean  @default(false) // 定时自动匹配
   cronExpr   String   @default("0 4 * * *") // 频率(默认每天凌晨4点)
-  redoFailed Boolean  @default(false)    // 定时时是否一并重试失败的
+  redoFailed Boolean  @default(false) // 定时时是否一并重试失败的
   updatedAt  DateTime @updatedAt
 }
 
 // 后台用户
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  password  String                      // bcrypt hash
-  role      String   @default("admin")  // admin / editor
-  enabled   Boolean  @default(true)
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String // bcrypt hash
+  role      String    @default("admin") // admin / editor
+  enabled   Boolean   @default(true)
   lastLogin DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 // 影片（去重后唯一）
 model Vod {
-  id        Int      @id @default(autoincrement())
-  name      String                      // 片名
-  fingerprint String @unique            // 去重指纹：normalize(name)|year
-  year      String   @default("")
-  typeName  String   @default("")       // 统一大类名（电影/电视剧/…）
-  subType   String   @default("")       // 原始小类/标签（剧情片/恐怖片/…）供大类下钻
-  pic       String   @default("")       // 封面
-  actor     String   @default("")
-  director  String   @default("")
-  area      String   @default("")
-  lang      String   @default("")
-  remarks   String   @default("")       // 更新至X集
-  blurb     String   @default("")       // 简介
-  status    String   @default("online") // online / offline（下架）
-  pinned    Boolean  @default(false)     // 置顶
+  id            Int       @id @default(autoincrement())
+  name          String // 片名
+  fingerprint   String    @unique // 去重指纹：normalize(name)|year
+  year          String    @default("")
+  typeName      String    @default("") // 统一大类名（电影/电视剧/…）
+  subType       String    @default("") // 原始小类/标签（剧情片/恐怖片/…）供大类下钻
+  pic           String    @default("") // 封面
+  actor         String    @default("")
+  director      String    @default("")
+  area          String    @default("")
+  lang          String    @default("")
+  remarks       String    @default("") // 更新至X集
+  blurb         String    @default("") // 简介
+  status        String    @default("online") // online / offline（下架）
+  pinned        Boolean   @default(false) // 置顶
   // 豆瓣元数据（落库持久化，前端读库不实时抓）
-  doubanId    String?                    // 豆瓣条目id
-  rating      Float?                     // 豆瓣评分
-  ratingCount Int      @default(0)       // 评分人数
-  officialPic String   @default("")      // 豆瓣高清封面
-  officialIntro String @default("")      // 豆瓣正规简介
-  genres      String   @default("")      // 类型标签(逗号分隔)
-  metaMatched String   @default("none")  // none/matched/manual/failed/skip
-  metaAt      DateTime?                  // 元数据抓取时间
-  plays     Play[]
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
+  doubanId      String? // 豆瓣条目id
+  rating        Float? // 豆瓣评分
+  ratingCount   Int       @default(0) // 评分人数
+  officialPic   String    @default("") // 豆瓣高清封面
+  officialIntro String    @default("") // 豆瓣正规简介
+  genres        String    @default("") // 类型标签(逗号分隔)
+  metaMatched   String    @default("none") // none/matched/manual/failed/skip
+  metaAt        DateTime? // 元数据抓取时间
+  plays         Play[]
+  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
 
   @@index([name])
   @@index([typeName])
@@ -126,48 +129,49 @@ model Vod {
 
 // 播放线路（一部片挂 N 条，来自不同源）
 model Play {
-  id        Int      @id @default(autoincrement())
-  vod       Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
-  vodId     Int
-  source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  sourceId  Int
-  flag      String                      // 播放器标识 from
-  sourceVodId String                    // 该源内的原始 vod_id（增量更新用）
-  episodes  String   @default("[]")     // JSON: [{name,url}] 集数+m3u8
-  epCount   Int      @default(0)        // 集数
-  syncedAt  DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  vod         Vod       @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId       Int
+  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceId    Int
+  flag        String // 播放器标识 from(如 rym3u8/wjm3u8)，同源同片可有多条不同flag线路
+  sourceVodId String // 该源内的原始 vod_id（增量更新用）
+  episodes    String    @default("[]") // JSON: [{name,url}] 集数+m3u8
+  epCount     Int       @default(0) // 集数
+  syncedAt    DateTime  @default(now())
   // 探活与健康评分
-  alive     Boolean  @default(true)     // 首集探活结果
-  checkMs   Int      @default(0)        // 探活响应耗时(ms)
-  lastCheck DateTime?                   // 最近探活时间
-  score     Int      @default(0)        // 健康评分(越高越优先)
-  playKind  String   @default("hls")    // hls(直链) / iframe(分享页) / resolved(已解析)
+  alive       Boolean   @default(true) // 首集探活结果
+  checkMs     Int       @default(0) // 探活响应耗时(ms)
+  lastCheck   DateTime? // 最近探活时间
+  score       Int       @default(0) // 健康评分(越高越优先)
+  playKind    String    @default("hls") // hls(直链) / iframe(分享页) / resolved(已解析)
 
-  @@unique([sourceId, sourceVodId])     // 同源同片唯一，重复采集则更新
+  @@unique([sourceId, sourceVodId, flag]) // 同源同片同 flag 唯一，允许同源多 flag 并存
   @@index([vodId])
+  @@index([sourceId, sourceVodId])
 }
 
 // 采集任务（异步执行，前端点击后立即返回，去任务页看进度）
 model Task {
-  id        Int      @id @default(autoincrement())
-  type      String   @default("collect") // collect 采集 / probe 探活 / meta 元数据
-  sourceId  Int?                          // 关联源（采集任务）
-  sourceName String  @default("")
-  mode      String   @default("incr")     // incr / full
-  status    String   @default("pending")  // pending / running / done / failed / canceled
-  progress  Int      @default(0)          // 0-100
-  pageNow   Int      @default(0)
-  pageTotal Int      @default(0)
-  added     Int      @default(0)
-  updated   Int      @default(0)
-  merged    Int      @default(0)
-  message   String   @default("")
-  params    String   @default("{}")       // JSON 任务参数
-  cursor    String?                        // JSON 断点续采游标(resume)
-  resumeCount Int    @default(0)           // 已自动续跑次数(防死循环)
-  createdAt DateTime @default(now())
-  startedAt DateTime?
-  finishedAt DateTime?
+  id          Int       @id @default(autoincrement())
+  type        String    @default("collect") // collect 采集 / probe 探活 / meta 元数据
+  sourceId    Int? // 关联源（采集任务）
+  sourceName  String    @default("")
+  mode        String    @default("incr") // incr / full
+  status      String    @default("pending") // pending / running / done / failed / canceled
+  progress    Int       @default(0) // 0-100
+  pageNow     Int       @default(0)
+  pageTotal   Int       @default(0)
+  added       Int       @default(0)
+  updated     Int       @default(0)
+  merged      Int       @default(0)
+  message     String    @default("")
+  params      String    @default("{}") // JSON 任务参数
+  cursor      String? // JSON 断点续采游标(resume)
+  resumeCount Int       @default(0) // 已自动续跑次数(防死循环)
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
 
   @@index([status])
   @@index([type])
@@ -177,10 +181,10 @@ model Task {
 model SyncLog {
   id        Int      @id @default(autoincrement())
   sourceId  Int
-  mode      String                      // full / incr
+  mode      String // full / incr
   added     Int      @default(0)
   updated   Int      @default(0)
-  merged    Int      @default(0)        // 合并到已有影片数
+  merged    Int      @default(0) // 合并到已有影片数
   ok        Boolean  @default(true)
   message   String   @default("")
   ms        Int      @default(0)

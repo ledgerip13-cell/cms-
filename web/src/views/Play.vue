@@ -36,21 +36,31 @@
       </div>
 
       <div class="now-playing" v-if="curEp">
-        正在播放：<b>{{ vod.name }}</b> · {{ curLine?.sourceName }} · {{ curEp.name }}
+        正在播放：<b>{{ vod.name }}</b> · {{ curLine?.sourceName }}<span v-if="curLine?.channels?.length>1"> · {{ chanIdx===0?'推荐通道':'线路'+(chanIdx+1) }}</span> · {{ curEp.name }}
       </div>
 
-      <!-- 线路切换 -->
+      <!-- 线路切换（按源分组，不因多channel而膨胀） -->
       <div class="lines-bar">
         <span class="lbl">线路</span>
         <span v-for="(l,i) in vod.lines" :key="l.id" class="line-btn" :class="{on: lineIdx===i}"
           @click="switchLine(i)">{{ l.sourceName }} <em>{{ l.epCount }}集</em></span>
       </div>
 
+      <!-- 备用通道：仅当前选中的源有≥2条flag才显示，单flag时完全不渲染(零侵入) -->
+      <div class="channels-bar" v-if="curLine && curLine.channels && curLine.channels.length > 1">
+        <span class="lbl">通道</span>
+        <span v-for="(c,i) in curLine.channels" :key="c.id" class="chan-btn"
+          :class="{on: chanIdx===i, dead: !c.alive}" @click="c.alive && switchChannel(i)">
+          {{ i===0 ? '推荐' : ('线路'+(i+1)) }}
+          <em v-if="!c.alive">失效</em>
+        </span>
+      </div>
+
       <!-- 剧集列表 -->
-      <div class="eps-box" v-if="curLine">
-        <div class="eps-head">选集 <span>{{ curLine.episodes.length }} 集</span></div>
+      <div class="eps-box" v-if="curChannel">
+        <div class="eps-head">选集 <span>{{ curChannel.episodes.length }} 集</span></div>
         <div class="eps-grid">
-          <span v-for="(e,i) in curLine.episodes" :key="i" class="ep"
+          <span v-for="(e,i) in curChannel.episodes" :key="i" class="ep"
             :class="{on: epIdx===i}" @click="playEp(i)">{{ e.name }}</span>
         </div>
       </div>
@@ -106,7 +116,7 @@ const vod = ref({})
 const related = ref([])
 const introOpen = ref(false)
 const videoEl = ref(null)
-const lineIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
+const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 let hls = null
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
@@ -115,7 +125,9 @@ function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function goPlay(id) { router.push('/play/'+id) }
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value])
-const curEp = computed(() => curLine.value?.episodes?.[epIdx.value])
+// 当前选中的具体通道(flag)：有channels则取chanIdx对应项，否则回退用line本身(兼容旧数据)
+const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
+const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
 
 function playHls(url) {
   mode.value = 'hls'
@@ -143,15 +155,20 @@ async function play(url) {
   finally { resolving.value = false }
   mode.value = 'iframe'; curUrl.value = url
 }
-function playEp(i) { epIdx.value = i; const u = curLine.value.episodes[i]?.url; if (u) play(u) }
+function playEp(i) { epIdx.value = i; const u = curChannel.value?.episodes?.[i]?.url; if (u) play(u) }
 function switchLine(i) {
-  lineIdx.value = i
-  const n = Math.min(epIdx.value, curLine.value.episodes.length - 1)
+  lineIdx.value = i; chanIdx.value = 0
+  const n = Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1)
+  playEp(n < 0 ? 0 : n)
+}
+function switchChannel(i) {
+  chanIdx.value = i
+  const n = Math.min(epIdx.value, (curLine.value.channels[i]?.episodes?.length || 1) - 1)
   playEp(n < 0 ? 0 : n)
 }
 
 async function loadVod(id) {
-  introOpen.value = false; lineIdx.value = 0; epIdx.value = 0; curUrl.value = ''
+  introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
   vod.value = await api.vod(id)
   await nextTick()
   if (vod.value.lines?.length) playEp(0)
@@ -198,6 +215,14 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 .now-playing b { color: var(--text); }
 .lines-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 16px 0;
   padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.channels-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; padding: 10px 14px;
+  background: rgba(255,255,255,.02); border: 1px dashed var(--line); border-radius: 10px; }
+.chan-btn { padding: 5px 12px; border-radius: 7px; background: var(--bg2); border: 1px solid var(--line);
+  font-size: 12.5px; cursor: pointer; transition: .15s; }
+.chan-btn:hover { border-color: var(--accent); }
+.chan-btn.on { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+.chan-btn.dead { opacity: .4; cursor: not-allowed; text-decoration: line-through; }
+.chan-btn em { font-style: normal; font-size: 11px; margin-left: 4px; opacity: .8; }
 .lbl { color: var(--muted); font-size: 14px; }
 .line-btn { padding: 6px 14px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
   font-size: 13px; cursor: pointer; transition: .2s; }

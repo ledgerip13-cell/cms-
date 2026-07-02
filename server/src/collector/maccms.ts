@@ -252,3 +252,38 @@ export async function ping(apiUrl: string, timeoutMs = 10000) {
     return { ok: false, ms: Date.now() - start, error: e?.message || String(e) };
   }
 }
+
+// ============ 多 API 入口 failover ============
+// 解析 Source.apiUrls(JSON数组) ，空/异常则回退单个 apiUrl
+export function resolveApiUrls(apiUrl: string, apiUrlsJson?: string | null): string[] {
+  let arr: string[] = [];
+  if (apiUrlsJson) {
+    try {
+      const parsed = JSON.parse(apiUrlsJson);
+      if (Array.isArray(parsed)) arr = parsed.map((s) => String(s || "").trim()).filter(Boolean);
+    } catch { /* 忽略解析失败，回退单urL */ }
+  }
+  if (!arr.length && apiUrl) arr = [apiUrl];
+  // 去重，保留顺序
+  return [...new Set(arr)];
+}
+
+// 带 failover 的请求包装：按顺序尝试多个入口，前一个失败/超时则自动切下一个，返回结果+实际生效的url
+export async function withFailover<T>(
+  urls: string[],
+  fn: (url: string) => Promise<T>
+): Promise<{ result: T; usedUrl: string; tried: { url: string; ok: boolean; error?: string }[] }> {
+  const tried: { url: string; ok: boolean; error?: string }[] = [];
+  let lastErr: any = null;
+  for (const url of urls) {
+    try {
+      const result = await fn(url);
+      tried.push({ url, ok: true });
+      return { result, usedUrl: url, tried };
+    } catch (e: any) {
+      tried.push({ url, ok: false, error: e?.message || String(e) });
+      lastErr = e;
+    }
+  }
+  throw new Error(`全部${urls.length}个API入口均失败: ` + (lastErr?.message || String(lastErr)));
+}

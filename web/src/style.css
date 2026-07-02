@@ -83,8 +83,10 @@ button { font-family: inherit; }
 .search-panel { position: absolute; top: 60px; left: 0; right: 0; background: #16181f;
   border: 1px solid var(--line-hi); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); max-height: 70vh; overflow-y: auto; }
 .sp-head { display: flex; align-items: center; gap: 22px; margin-bottom: 14px; padding: 0 2px; }
-.sp-tab { font-size: 15px; font-weight: 700; color: var(--muted); cursor: default; padding-bottom: 4px; }
-.sp-tab.on { color: var(--text); border-bottom: 2px solid var(--accent); }
+.sp-tab { font-size: 15px; font-weight: 700; color: var(--muted); cursor: pointer; padding-bottom: 8px; border-bottom: 2px solid transparent; transition: .15s; }
+.sp-tab:hover { color: var(--muted2); }
+.sp-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.sp-loading, .sp-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 40px 0; }
 .sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; }
 .sp-item { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; cursor: pointer; transition: background .14s; }
 .sp-item:hover { background: rgba(255,255,255,.055); }

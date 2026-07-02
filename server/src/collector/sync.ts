@@ -1,6 +1,6 @@
 // 采集编排：拉取某个源 → 详情解析 → 分类映射 → 去重合并入库
 import { prisma } from "../db.js";
-import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, type RawVod } from "./maccms.js";
+import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, resolveApiUrls, withFailover, type RawVod } from "./maccms.js";
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
 
@@ -247,24 +247,28 @@ async function upsertVod(
     vod = await prisma.vod.create({ data: { fingerprint: fp, ...vodData } });
   }
 
-  // 取该源第一条线路
-  const line = lines[0];
-  const kind = line.episodes.every((e) => isDirectM3u8(e.url)) ? "hls" : "iframe";
-  const key = { sourceId_sourceVodId: { sourceId, sourceVodId: String(raw.vod_id) } };
-  const payload = {
-    vodId: vod.id,
-    sourceId,
-    flag: line.flag,
-    sourceVodId: String(raw.vod_id),
-    episodes: JSON.stringify(line.episodes),
-    epCount: line.episodes.length,
-    playKind: kind,
-    syncedAt: new Date(),
-  };
-  const before = await prisma.play.findUnique({ where: key });
-  await prisma.play.upsert({ where: key, create: payload, update: payload });
+  // 存全部 flag 线路（不再只取 lines[0]），同源多通道并存，供探活后择优
+  let added = 0, updated = 0;
+  for (const line of lines) {
+    if (!line.flag) continue; // 无 flag 无法区分多条，跳过异常空标识
+    const kind = line.episodes.every((e) => isDirectM3u8(e.url)) ? "hls" : "iframe";
+    const key = { sourceId_sourceVodId_flag: { sourceId, sourceVodId: String(raw.vod_id), flag: line.flag } };
+    const payload = {
+      vodId: vod.id,
+      sourceId,
+      flag: line.flag,
+      sourceVodId: String(raw.vod_id),
+      episodes: JSON.stringify(line.episodes),
+      epCount: line.episodes.length,
+      playKind: kind,
+      syncedAt: new Date(),
+    };
+    const before = await prisma.play.findUnique({ where: key });
+    await prisma.play.upsert({ where: key, create: payload, update: payload });
+    if (before) updated++; else added++;
+  }
 
-  return { added: before ? 0 : 1, updated: before ? 1 : 0, merged: existing ? mergedFlag : 0 };
+  return { added, updated, merged: existing ? mergedFlag : 0 };
 }
 
 // 按片名采集：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
@@ -327,6 +331,17 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   let ok = true, message = "";
   const catCache = new Map<string, string>();
 
+  // 多API入口failover：按顺序尝试，记录最终生效url（本次采集过程中内存缓存，避免每页都重新探）
+  const candidateUrls = resolveApiUrls(source.apiUrl, source.apiUrls);
+  let activeUrl = candidateUrls[0];
+  async function withApi<T>(fn: (url: string) => Promise<T>): Promise<T> {
+    if (candidateUrls.length === 1) return fn(candidateUrls[0]);
+    const ordered = [activeUrl, ...candidateUrls.filter((u) => u !== activeUrl)];
+    const r = await withFailover(ordered, fn);
+    activeUrl = r.usedUrl;
+    return r.result;
+  }
+
   const rawTypeId = opts.typeId ? String(opts.typeId) : undefined;
   try {
     // 分类列表：续采直接用游标里已展开的；首次才去展开父类
@@ -337,7 +352,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
       typeIds = [rawTypeId ?? null];
       if (rawTypeId) {
         try {
-          const classes = await fetchClasses(source.apiUrl);
+          const classes = await withApi((u) => fetchClasses(u));
           const children = classes.filter((c) => c.typePid === rawTypeId).map((c) => c.typeId);
           if (children.length) {
             typeIds = children;
@@ -353,7 +368,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
     const perTypePages: number[] = [];
     let pageTotal = 0;
     for (const tid of typeIds) {
-      const first = await fetchList(source.apiUrl, 1, hours, 15000, norm(tid));
+      const first = await withApi((u) => fetchList(u, 1, hours, 15000, norm(tid)));
       firstResults.push(first);
       const pages = Math.min(first.pagecount, maxPages);
       perTypePages.push(pages);
@@ -374,14 +389,14 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
       const from = i === startTi ? startPg : 1;
       for (let pg = from; pg <= pages; pg++) {
         pageNow++;
-        const listRes = pg === 1 ? firstResults[i] : await fetchList(source.apiUrl, pg, hours, 15000, norm(tid));
+        const listRes = pg === 1 ? firstResults[i] : await withApi((u) => fetchList(u, pg, hours, 15000, norm(tid)));
         const ids = listRes.list.map((v) => v.vod_id);
         if (!ids.length) break;
         for (let j = 0; j < ids.length; j += 20) {
           const batch = ids.slice(j, j + 20);
           let details: RawVod[] = [];
           try {
-            details = await fetchDetail(source.apiUrl, batch);
+            details = await withApi((u) => fetchDetail(u, batch));
           } catch (e: any) {
             message += ` [detail err t${tid} p${pg}: ${e?.message}]`;
             continue;
@@ -416,6 +431,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
       lastSyncAt: new Date(),
       cursor: ok ? new Date().toISOString() : source.cursor,
       syncCount: { increment: added + updated },
+      activeApiUrl: activeUrl || source.activeApiUrl,
     },
   });
   await prisma.syncLog.create({

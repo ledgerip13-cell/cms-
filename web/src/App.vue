@@ -47,9 +47,10 @@
           <transition name="fade">
             <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch" @mousedown.stop>
               <div class="sp-head">
-                <span class="sp-tab on">热搜榜</span>
+                <span v-for="t in rankTabs" :key="t.cat" class="sp-tab" :class="{on: rankCat===t.cat}"
+                  @click="switchRank(t.cat)">{{ t.label }}</span>
               </div>
-              <div class="sp-grid">
+              <div class="sp-grid" v-if="!rankLoading">
                 <div v-for="(h,i) in hot" :key="h.id" class="sp-item" @click="goPlay(h.id)">
                   <span class="sp-rank" :class="['r'+(i+1), {top:i<3}]">{{ i+1 }}</span>
                   <div class="sp-thumb">
@@ -67,6 +68,8 @@
                   </div>
                 </div>
               </div>
+              <div v-else class="sp-loading">加载中…</div>
+              <div v-if="!rankLoading && !hot.length" class="sp-empty">该榜单暂无数据</div>
               <div class="sp-foot" @click="doSearch" v-if="kw">搜索“{{ kw }}” →</div>
             </div>
           </transition>
@@ -93,6 +96,14 @@ const router = useRouter()
 const route = useRoute()
 const types = ref([]); const kw = ref('')
 const searchOpen = ref(false); const drawer = ref(false); const hot = ref([])
+const rankTabs = [
+  { cat: 'hot', label: '热搜榜' },
+  { cat: 'guoman', label: '国漫榜' },
+  { cat: 'anime', label: '动漫榜' },
+  { cat: 'shortplay', label: '短剧榜' },
+]
+const rankCat = ref('hot'); const rankLoading = ref(false)
+const rankCache = new Map()
 const site = ref({ siteName:'次元港', logo:'', footer:'' })
 const searchInput = ref(null)
 
@@ -105,10 +116,19 @@ function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
+async function loadRank(cat) {
+  if (rankCache.has(cat)) { hot.value = rankCache.get(cat); return }
+  rankLoading.value = true
+  try {
+    const r = await api.hot(10, cat === 'hot' ? undefined : cat)
+    rankCache.set(cat, r); hot.value = r
+  } catch { hot.value = [] } finally { rankLoading.value = false }
+}
+function switchRank(cat) { rankCat.value = cat; loadRank(cat) }
 async function openSearch() {
   if (searchOpen.value) return
   searchOpen.value = true
-  if (!hot.value.length) hot.value = await api.hot(10)
+  if (!hot.value.length) await loadRank(rankCat.value)
 }
 function closeSearch() { searchOpen.value = false }
 
