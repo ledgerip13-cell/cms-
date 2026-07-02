@@ -250,11 +250,14 @@ const list = ref([]); const total = ref(0); const page = ref(1); const size = 30
 const title = ref(''); const years = ref([]); const year = ref(''); const sort = ref('recent')
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 
-function setSub(s) { sub.value = s; page.value = 1; load() }
+function setSub(s) { sub.value = s; year.value = ''; page.value = 1; loadYears(); load() }
 async function loadSubs() {
   sub.value = ''
   if (!curType.value) { subs.value = []; return }
   try { subs.value = (await api.subtypes(curType.value)).filter(s => s.count > 0) } catch { subs.value = [] }
+}
+async function loadYears() {
+  try { years.value = await api.years({ type: curType.value, sub: sub.value }) } catch { years.value = [] }
 }
 async function load() {
   loading.value = true
@@ -270,8 +273,8 @@ function setYear(y) { year.value = y; page.value = 1; load() }
 
 async function boot() {
   if (discover.value) { await loadDiscover(); return }
-  if (!years.value.length) years.value = await api.years()
   await loadSubs()
+  await loadYears()
   load()
 }
 watch(() => route.query, async () => { page.value = 1; year.value=''; sort.value='recent'; await boot() })

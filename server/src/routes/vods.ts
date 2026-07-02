@@ -39,10 +39,15 @@ export default async function vodRoutes(app: FastifyInstance) {
     return { total, page, size, list };
   });
 
-  // 年份索引（聚合，降序）
-  app.get("/api/years", async () => {
+  // 年份索引（聚合，降序）：支持按 type/sub 联动，只返回该分类下实际存在的年份
+  app.get("/api/years", async (req) => {
+    const q = req.query as any;
+    const where: any = {};
+    if (q.type) where.typeName = q.type;
+    if (q.sub) where.subType = q.sub;
     const rows = await prisma.vod.groupBy({
       by: ["year"],
+      where,
       _count: { _all: true },
       orderBy: { year: "desc" },
     });
