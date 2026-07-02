@@ -9,41 +9,41 @@
       </div>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe>
-      <el-table-column prop="priority" label="优先级" width="80" sortable />
-      <el-table-column prop="name" label="源名称" width="140" />
-      <el-table-column prop="flag" label="播放标识" width="110">
+    <el-table :data="list" v-loading="loading" stripe style="width:100%" table-layout="fixed">
+      <el-table-column prop="priority" label="优先级" width="70" sortable />
+      <el-table-column prop="name" label="源名称" width="110" show-overflow-tooltip />
+      <el-table-column prop="flag" label="播放标识" width="90">
         <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.flag || '-' }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="采集 API" min-width="240">
+      <el-table-column label="采集 API" min-width="160">
         <template #default="{ row }">
           <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.apiUrl }}</div>
           <el-tag v-if="apiUrlCount(row)>1" size="small" type="success" style="margin-top:3px">{{ apiUrlCount(row) }}个入口(已failover)</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90">
+      <el-table-column label="状态" width="70">
         <template #default="{ row }">
           <el-tag v-if="row.status==='ok'" type="success" size="small">正常</el-tag>
           <el-tag v-else-if="row.status==='fail'" type="danger" size="small">失败</el-tag>
           <el-tag v-else type="info" size="small">未知</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="启用" width="70">
+      <el-table-column label="启用" width="60">
         <template #default="{ row }">
           <el-switch v-model="row.enabled" @change="toggle(row)" />
         </template>
       </el-table-column>
-      <el-table-column label="定时采集" width="130">
+      <el-table-column label="定时采集" width="110">
         <template #default="{ row }">
           <el-switch v-model="row.autoSync" @change="toggle(row)" />
           <div v-if="row.autoSync" style="font-size:11px;color:#9aa4b2">{{ row.cronExpr }} · {{ row.syncHours }}h</div>
         </template>
       </el-table-column>
-      <el-table-column prop="syncCount" label="累计入库" width="90" />
-      <el-table-column label="最近采集" width="160">
+      <el-table-column prop="syncCount" label="入库" width="70" />
+      <el-table-column label="最近采集" width="110">
         <template #default="{ row }">{{ fmt(row.lastSyncAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="ping(row)" :loading="row._pinging">测活</el-button>
           <el-button size="small" type="success" @click="openSync(row)">采集</el-button>
@@ -56,9 +56,9 @@
 
   <!-- 新增/编辑 -->
   <el-dialog v-model="dlg" :title="form.id ? '编辑采集源' : '新增采集源'" width="520">
-    <el-form :model="form" label-width="90px">
-      <el-form-item label="源名称"><el-input v-model="form.name" placeholder="如：如意资源网" /></el-form-item>
-      <el-form-item label="采集API">
+    <el-form ref="formRef" :model="form" :rules="formRules" label-width="90px">
+      <el-form-item label="源名称" prop="name"><el-input v-model="form.name" placeholder="如：如意资源网" /></el-form-item>
+      <el-form-item label="采集API" prop="apiUrls">
         <div style="width:100%">
           <div v-for="(u,i) in form.apiUrls" :key="i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
             <el-input v-model="form.apiUrls[i]" placeholder="https://xxx/api.php/provide/vod/" />
@@ -148,7 +148,14 @@ import { api } from '../api'
 const router = useRouter()
 
 const list = ref([]); const loading = ref(false)
-const dlg = ref(false); const form = ref({})
+const dlg = ref(false); const form = ref({}); const formRef = ref(null)
+const formRules = {
+  name: [{ required: true, message: '源名称不能为空', trigger: 'blur' }],
+  apiUrls: [{ validator: (_, v, cb) => {
+    const has = (v || []).some(u => (u||'').trim())
+    has ? cb() : cb(new Error('至少填写一个采集API地址'))
+  }, trigger: 'blur' }],
+}
 const syncDlg = ref(false); const syncing = ref(false)
 const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5 }); let syncTarget = null
 
@@ -176,13 +183,15 @@ function openEdit(row) {
   dlg.value = true
 }
 async function save() {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   try {
     const payload = { ...form.value, apiUrls: (form.value.apiUrls || []).map(s => (s||'').trim()).filter(Boolean) }
     if (!payload.apiUrl) payload.apiUrl = payload.apiUrls[0] || ''
     if (form.value.id) await api.updateSource(form.value.id, payload)
     else await api.addSource(payload)
     ElMessage.success('已保存'); dlg.value = false; load()
-  } catch (e) { ElMessage.error('保存失败: ' + e.message) }
+  } catch (e) { ElMessage.error('保存失败: ' + (e?.response?.data?.error || e.message)) }
 }
 async function toggle(row) { await api.updateSource(row.id, row); ElMessage.success(row.enabled?'已启用':'已禁用') }
 async function del(row) {
@@ -253,4 +262,5 @@ onMounted(load)
 .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .sec-title { font-size: 16px; font-weight: 600; }
 .sec-title small { color: #9aa4b2; font-weight: 400; margin-left: 6px; }
+:deep(.el-table) { overflow-x: auto; }
 </style>

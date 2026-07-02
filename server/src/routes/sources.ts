@@ -16,13 +16,17 @@ export default async function sourceRoutes(app: FastifyInstance) {
   });
 
   // 新建
-  app.post("/api/sources", async (req) => {
+  app.post("/api/sources", async (req, reply) => {
     const b = req.body as any;
+    const name = String(b.name || "").trim();
     const apiUrls: string[] = Array.isArray(b.apiUrls) ? b.apiUrls.map((s: string) => String(s || "").trim()).filter(Boolean) : [];
+    const apiUrl = String(b.apiUrl || apiUrls[0] || "").trim();
+    if (!name) return reply.code(400).send({ error: "源名称不能为空" });
+    if (!apiUrl) return reply.code(400).send({ error: "采集API地址不能为空" });
     const s = await prisma.source.create({
       data: {
-        name: b.name,
-        apiUrl: b.apiUrl || apiUrls[0] || "",
+        name,
+        apiUrl,
         apiUrls: JSON.stringify(apiUrls),
         flag: b.flag || "",
         priority: b.priority ?? 100,
@@ -37,7 +41,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
   });
 
   // 更新
-  app.put("/api/sources/:id", async (req) => {
+  app.put("/api/sources/:id", async (req, reply) => {
     const id = Number((req.params as any).id);
     const b = req.body as any;
     const data: any = {
@@ -55,6 +59,9 @@ export default async function sourceRoutes(app: FastifyInstance) {
       data.apiUrls = JSON.stringify(apiUrls);
       if (!b.apiUrl && apiUrls[0]) data.apiUrl = apiUrls[0];
     }
+    // 必填校验：编辑时也不允许清空名称/API（只在传了该字段时检查，避免阻碍部分字段更新）
+    if (b.name !== undefined && !String(b.name).trim()) return reply.code(400).send({ error: "源名称不能为空" });
+    if (b.apiUrl !== undefined && !data.apiUrls && !String(b.apiUrl).trim()) return reply.code(400).send({ error: "采集API地址不能为空" });
     const s = await prisma.source.update({ where: { id }, data });
     await reloadSchedules();
     return s;

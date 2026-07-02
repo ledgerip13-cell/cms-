@@ -45,10 +45,12 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (!y) continue;
       merged.set(y, (merged.get(y) || 0) + r._count._all);
     }
+    // 去除异常未来年份(超出当前年+1的视为脏数据)，不再硬限制只取16个，让老片也能被筛选到
+    const curYear = new Date().getFullYear();
     return [...merged.entries()]
+      .filter(([y]) => Number(y) <= curYear + 1)
       .sort((a, b) => Number(b[0]) - Number(a[0]))
-      .map(([year, count]) => ({ year, count }))
-      .slice(0, 16);
+      .map(([year, count]) => ({ year, count }));
   });
 
   // 热门推荐（搜索框点击时展示）：有评分优先，否则按线路数/更新
@@ -136,13 +138,13 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 影片详情 + 所有线路（按源优先级排序）
-  app.get("/api/vods/:id", async (req) => {
+  app.get("/api/vods/:id", async (req, reply) => {
     const id = Number((req.params as any).id);
     const vod = await prisma.vod.findUnique({
       where: { id },
       include: { plays: { include: { source: true } } },
     });
-    if (!vod) return { error: "not found" };
+    if (!vod) return reply.code(404).send({ error: "not found" });
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
       sourceId: p.sourceId,

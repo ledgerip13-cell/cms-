@@ -88,7 +88,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api, imgUrl } from './api'
 
@@ -109,6 +109,9 @@ const searchInput = ref(null)
 
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
+
+// 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
+watch(() => route.fullPath, () => { drawer.value = false })
 
 function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function onErr(e) { e.target.style.visibility='hidden' }

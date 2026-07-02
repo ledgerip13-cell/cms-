@@ -86,6 +86,21 @@
       <div v-else class="rec-empty">暂无推荐</div>
     </aside>
   </div>
+  <div v-else-if="notFound" class="page not-found">
+    <div class="nf-box">
+      <div class="nf-icon">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M9 9l4 4M13 9l-4 4"/>
+        </svg>
+      </div>
+      <div class="nf-title">该影片不存在或已下架</div>
+      <div class="nf-desc">可能链接有误、影片已被移除，或临时维护中</div>
+      <div class="nf-actions">
+        <button class="nf-btn primary" @click="$router.push('/')">返回首页</button>
+        <button class="nf-btn" @click="loadVod(route.params.id)">重新加载</button>
+      </div>
+    </div>
+  </div>
   <div v-else class="page play-wrap">
     <div class="player-col">
       <div class="sk" style="aspect-ratio:16/9;border-radius:14px"></div>
@@ -113,6 +128,7 @@ defineOptions({ name: 'Play' })
 const route = useRoute()
 const router = useRouter()
 const vod = ref({})
+const notFound = ref(false)
 const related = ref([])
 const introOpen = ref(false)
 const videoEl = ref(null)
@@ -169,7 +185,14 @@ function switchChannel(i) {
 
 async function loadVod(id) {
   introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
-  vod.value = await api.vod(id)
+  notFound.value = false; vod.value = {}
+  try {
+    vod.value = await api.vod(id)
+  } catch (e) {
+    // 404 或其他请求异常：降级为友好提示，不再永久卡骨架屏
+    notFound.value = true; return
+  }
+  if (!vod.value?.id) { notFound.value = true; return }
   await nextTick()
   if (vod.value.lines?.length) playEp(0)
   // 相关推荐
@@ -185,13 +208,27 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 </script>
 
 <style scoped>
-.play-wrap { display: grid; grid-template-columns: 1fr 316px; gap: 26px; }
+.play-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 26px; }
+.player-col { min-width: 0; }
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .video { width: 100%; height: 100%; background: #000; }
 .video-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #667; pointer-events: none; }
 .iframe-note { position: absolute; left: 0; right: 0; bottom: 0; font-size: 12px; color: #cbd3e0;
   background: rgba(0,0,0,.6); padding: 6px 12px; text-align: center; pointer-events: none; }
+
+/* 影片不存在 */
+.not-found { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
+.nf-box { text-align: center; max-width: 360px; }
+.nf-icon { color: var(--muted); margin-bottom: 20px; display: flex; justify-content: center; }
+.nf-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.nf-desc { font-size: 13px; color: var(--muted); margin-bottom: 26px; }
+.nf-actions { display: flex; gap: 12px; justify-content: center; }
+.nf-btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); transition: .15s; }
+.nf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nf-btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.nf-btn.primary:hover { opacity: .9; color: #fff; }
 
 /* 标题信息条 */
 .pv-head { display: flex; gap: 16px; margin: 18px 0; padding: 16px; background: var(--card);
