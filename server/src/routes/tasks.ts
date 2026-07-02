@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyToken } from "../auth.js";
-import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { previewByKeyword } from "../collector/sync.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
   // SSE 实时推送：任务变更时推送活跃任务快照（EventSource 不能带 header，故用 query token）
@@ -103,6 +104,10 @@ export default async function taskRoutes(app: FastifyInstance) {
       const nt = await createMetaTask(opts);
       return { ok: true, taskId: nt.id };
     }
+    if (t.type === "keyword" && Array.isArray(opts.candidates) && opts.candidates.length) {
+      const nt = await createKeywordConfirmTask(opts.keyword || "", opts.candidates);
+      return { ok: true, taskId: nt.id };
+    }
     if (t.type === "keyword" && opts.keyword) {
       const nt = await createKeywordTask(opts.keyword);
       return { ok: true, taskId: nt.id };
@@ -110,13 +115,39 @@ export default async function taskRoutes(app: FastifyInstance) {
     return { ok: false, error: "该类型不支持重试" };
   });
 
-  // 按片名单独采集：遍历所有启用源搜索关键词入库
+  // 按片名单独采集（旧版一步到位，仍保留兼容）：遍历所有启用源搜索关键词入库
   secured.post("/api/collect/keyword", async (req) => {
     const kw = String((req.body as any)?.keyword || "").trim();
     if (!kw) return { ok: false, error: "片名不能为空" };
     if (kw.length > 40) return { ok: false, error: "片名过长" };
     try {
       const t = await createKeywordTask(kw);
+      return { ok: true, taskId: t.id };
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
+  // 按片名预览：只搜索不入库，按(标准化片名+年份)分组返回命中源列表，供前端展示"龙珠GT 3个源"这类卡片让用户选
+  secured.get("/api/collect/keyword/preview", async (req) => {
+    const kw = String((req.query as any)?.kw || "").trim();
+    if (!kw) return { ok: false, error: "片名不能为空" };
+    if (kw.length > 40) return { ok: false, error: "片名过长" };
+    try {
+      return await previewByKeyword(kw);
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
+  // 按片名确认采集：仅对用户勾选的候选(sourceId+vodIds)拉详情入库
+  secured.post("/api/collect/keyword/confirm", async (req) => {
+    const b = (req.body as any) || {};
+    const keyword = String(b.keyword || "").trim();
+    const candidates = Array.isArray(b.candidates) ? b.candidates : [];
+    if (!candidates.length) return { ok: false, error: "未选择任何候选" };
+    try {
+      const t = await createKeywordConfirmTask(keyword, candidates);
       return { ok: true, taskId: t.id };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };

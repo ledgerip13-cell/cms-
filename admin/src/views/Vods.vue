@@ -16,18 +16,49 @@
       </div>
     </div>
 
-    <!-- 按片名单独采集 -->
-    <el-dialog v-model="kwDlg" title="按片名采集" width="460">
-      <el-form label-width="70px">
-        <el-form-item label="片名">
-          <el-input v-model="kwInput" placeholder="输入完整或部分片名，如：师兄啊师兄" clearable @keyup.enter="submitKeyword" />
-        </el-form-item>
-      </el-form>
-      <el-alert type="info" :closable="false"
-        title="会遍历所有已启用采集源搜索该片名，命中则拉取详情入库（重复片自动合并不重复）。异步执行，进度去「采集任务」页看。" />
+    <!-- 按片名采集（两步：搜索预览 → 勾选确认） -->
+    <el-dialog v-model="kwDlg" title="按片名采集" width="640" @close="resetKwDlg">
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <el-input v-model="kwInput" placeholder="输入片名，如：龙珠、师兄啊师兄" clearable @keyup.enter="searchKeyword" :disabled="kwSearching" />
+        <el-button type="primary" :loading="kwSearching" @click="searchKeyword">搜索</el-button>
+      </div>
+
+      <div v-if="kwSearching" style="text-align:center;color:#9aa4b2;padding:30px 0">正在遍历所有采集源搜索…</div>
+
+      <template v-else-if="kwCandidates.length">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:13px;color:#9aa4b2">共找到 {{ kwCandidates.length }} 个候选，选中后只采集所选项</span>
+          <div>
+            <el-button size="small" link @click="kwChecked = kwCandidates.map(c=>c.fingerprint)">全选</el-button>
+            <el-button size="small" link @click="kwChecked = []">清空</el-button>
+          </div>
+        </div>
+        <el-checkbox-group v-model="kwChecked" style="max-height:360px;overflow-y:auto;display:block">
+          <div v-for="c in kwCandidates" :key="c.fingerprint"
+            style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e4e7ed;border-radius:8px;margin-bottom:8px">
+            <el-checkbox :value="c.fingerprint" style="flex:1;min-width:0">
+              <span style="font-weight:600">{{ c.name }}</span>
+              <span v-if="c.year" style="color:#9aa4b2;margin-left:6px">({{ c.year }})</span>
+            </el-checkbox>
+            <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
+              <el-tag size="small" type="success">{{ c.sources.length }} 个源</el-tag>
+              <el-tooltip :content="c.sources.map(s=>s.sourceName+' x'+s.hits).join('\n')" placement="top">
+                <span style="font-size:12px;color:#9aa4b2;cursor:help">详情</span>
+              </el-tooltip>
+            </div>
+          </div>
+        </el-checkbox-group>
+      </template>
+
+      <div v-else-if="kwSearched" style="text-align:center;color:#9aa4b2;padding:30px 0">没有搜到相关影片</div>
+      <el-alert v-else type="info" :closable="false"
+        title="输入片名先搜索预览，按片名+年份分组展示命中源数，选中后再采集，不会误采不相关的同名片。" />
+
       <template #footer>
         <el-button @click="kwDlg=false">取消</el-button>
-        <el-button type="primary" :loading="kwSubmitting" @click="submitKeyword">提交采集</el-button>
+        <el-button type="primary" :disabled="!kwChecked.length" :loading="kwSubmitting" @click="confirmKeyword">
+          采集选中项（{{ kwChecked.length }}）
+        </el-button>
       </template>
     </el-dialog>
 
@@ -179,16 +210,40 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 const router = useRouter()
 
-const kwDlg = ref(false); const kwInput = ref(''); const kwSubmitting = ref(false)
-async function submitKeyword() {
+const kwDlg = ref(false); const kwInput = ref('')
+const kwSearching = ref(false); const kwSearched = ref(false)
+const kwCandidates = ref([]); const kwChecked = ref([]); const kwSubmitting = ref(false)
+
+function resetKwDlg() {
+  kwInput.value = ''; kwSearching.value = false; kwSearched.value = false
+  kwCandidates.value = []; kwChecked.value = []
+}
+async function searchKeyword() {
   const kw = kwInput.value.trim()
   if (!kw) { ElMessage.warning('请输入片名'); return }
+  kwSearching.value = true; kwSearched.value = false; kwChecked.value = []
+  try {
+    const r = await api.previewKeyword(kw)
+    if (r.ok) {
+      kwCandidates.value = r.candidates
+      kwSearched.value = true
+    } else {
+      ElMessage.error(r.error || '搜索失败'); kwCandidates.value = []
+    }
+  } catch (e) { ElMessage.error('搜索失败: ' + e.message) } finally { kwSearching.value = false }
+}
+async function confirmKeyword() {
+  if (!kwChecked.value.length) return
   kwSubmitting.value = true
   try {
-    const r = await api.collectByKeyword(kw)
+    const picked = kwCandidates.value.filter(c => kwChecked.value.includes(c.fingerprint))
+    // 展平为 { sourceId, vodIds } 列表传给后端
+    const candidates = []
+    for (const c of picked) for (const s of c.sources) candidates.push({ sourceId: s.sourceId, vodIds: s.vodIds })
+    const r = await api.confirmKeyword(kwInput.value.trim(), candidates)
     if (r.ok) {
       ElMessage.success('已提交，去「采集任务」页看进度')
-      kwDlg.value = false; kwInput.value = ''
+      kwDlg.value = false
       ElMessageBox.confirm('采集在后台运行中，是否前往「采集任务」页查看进度？', '已提交', {
         confirmButtonText: '去看进度', cancelButtonText: '留在本页', type: 'success'
       }).then(() => router.push('/tasks')).catch(() => {})

@@ -271,7 +271,105 @@ async function upsertVod(
   return { added, updated, merged: existing ? mergedFlag : 0 };
 }
 
-// 按片名采集：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
+// 按片名预览：遍历所有启用源搜索关键词，仅搜索不拉详情不入库。按(标准化片名+年份)指纹分组，
+// 返回每个候选命中了哪些源+每源命中数，供前端展示"龙珠GT 3个源 / 龙珠 2个源"这类列表让用户选。
+export interface KeywordCandidate {
+  fingerprint: string;
+  name: string;
+  year: string;
+  totalHits: number;
+  sources: { sourceId: number; sourceName: string; hits: number; vodIds: (string | number)[] }[];
+}
+
+export async function previewByKeyword(keyword: string): Promise<{ ok: boolean; keyword: string; candidates: KeywordCandidate[]; searched: { source: string; ok: boolean; error?: string }[] }> {
+  const kw = keyword.trim();
+  if (!kw) throw new Error("片名不能为空");
+  const sources = await prisma.source.findMany({ where: { enabled: true }, orderBy: { priority: "asc" } });
+  if (!sources.length) throw new Error("没有已启用的采集源");
+
+  // fingerprint -> 候选聚合
+  const byFp = new Map<string, KeywordCandidate>();
+  const searched: { source: string; ok: boolean; error?: string }[] = [];
+
+  for (const src of sources) {
+    try {
+      const list = await searchByKeyword(src.apiUrl, kw);
+      const hitList = list.filter((v) => (v.vod_name || "").includes(kw));
+      // 按fingerprint汇总该源内的命中
+      const bySrcFp = new Map<string, { hits: number; vodIds: (string|number)[] }>();
+      for (const v of hitList) {
+        const fp = makeFingerprint(v.vod_name, v.vod_year);
+        const cur = bySrcFp.get(fp) || { hits: 0, vodIds: [] };
+        cur.hits++; cur.vodIds.push(v.vod_id);
+        bySrcFp.set(fp, cur);
+        if (!byFp.has(fp)) {
+          byFp.set(fp, { fingerprint: fp, name: v.vod_name, year: v.vod_year || "", totalHits: 0, sources: [] });
+        }
+      }
+      for (const [fp, agg] of bySrcFp) {
+        const cand = byFp.get(fp)!;
+        cand.sources.push({ sourceId: src.id, sourceName: src.name, hits: agg.hits, vodIds: agg.vodIds });
+        cand.totalHits += agg.hits;
+      }
+      searched.push({ source: src.name, ok: true });
+    } catch (e: any) {
+      searched.push({ source: src.name, ok: false, error: e?.message || String(e) });
+    }
+  }
+
+  const candidates = [...byFp.values()].sort((a, b) => b.sources.length - a.sources.length || b.totalHits - a.totalHits);
+  return { ok: true, keyword: kw, candidates, searched };
+}
+
+// 按确认结果采集：仅对用户勾选的 fingerprint 对应的 (sourceId, vodId) 拉详情入库，不再全量扫所有命中结果
+export async function collectKeywordCandidates(
+  candidates: { sourceId: number; vodIds: (string | number)[] }[],
+  onProgress?: (p: { sourceNow: number; sourceTotal: number; sourceName: string; added: number; updated: number; merged: number }) => void | Promise<void>
+) {
+  // 按 sourceId 合并去重 vodIds
+  const bySource = new Map<number, Set<string>>();
+  for (const c of candidates) {
+    if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, new Set());
+    const set = bySource.get(c.sourceId)!;
+    for (const id of c.vodIds) set.add(String(id));
+  }
+  const sourceIds = [...bySource.keys()];
+  const sources = await prisma.source.findMany({ where: { id: { in: sourceIds } } });
+  const srcById = new Map(sources.map((s) => [s.id, s]));
+
+  let added = 0, updated = 0, merged = 0;
+  const catCache = new Map<string, string>();
+  const perSource: { source: string; ok: boolean; added: number; updated: number; msg?: string }[] = [];
+
+  for (let i = 0; i < sourceIds.length; i++) {
+    const sourceId = sourceIds[i];
+    const src = srcById.get(sourceId);
+    if (!src) continue;
+    const ids = [...bySource.get(sourceId)!];
+    let sAdded = 0, sUpdated = 0;
+    try {
+      for (let j = 0; j < ids.length; j += 20) {
+        const batch = ids.slice(j, j + 20);
+        const details = await fetchDetail(src.apiUrl, batch);
+        for (const raw of details) {
+          try {
+            const r = await upsertVod(sourceId, raw, catCache);
+            added += r.added; updated += r.updated; merged += r.merged;
+            sAdded += r.added; sUpdated += r.updated;
+          } catch {}
+        }
+      }
+      perSource.push({ source: src.name, ok: true, added: sAdded, updated: sUpdated });
+    } catch (e: any) {
+      perSource.push({ source: src.name, ok: false, added: sAdded, updated: sUpdated, msg: e?.message || String(e) });
+    }
+    if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sourceIds.length, sourceName: src.name, added, updated, merged });
+  }
+
+  return { ok: true, added, updated, merged, perSource };
+}
+
+// 按片名采集（旧版一步到位，仍保留给向后兼容/其他调用地方）：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
 export async function syncByKeyword(
   keyword: string,
   onProgress?: (p: { sourceNow: number; sourceTotal: number; sourceName: string; added: number; updated: number; merged: number; hits: number }) => void | Promise<void>
