@@ -42,7 +42,9 @@ export const api = {
   probe: (d) => http.post('/probe', d),
   // vods
   vods: (params) => http.get('/vods', { params }),
-  vod: (id) => http.get(`/vods/${id}`),
+  adminVods: (params) => http.get('/admin/vods', { params }),
+  batchVods: (ids, action) => http.post('/admin/vods/batch', { ids, action }),
+  vod: (id) => http.get(`/admin/vods/${id}`),
   patchVod: (id, d) => http.patch(`/vods/${id}`, d),
   editVod: (id, d) => http.put(`/vods/${id}`, d),
   refreshVod: (id) => http.post(`/vods/${id}/refresh`),
@@ -50,6 +52,7 @@ export const api = {
   stats: () => http.get('/stats'),
   // categories & mapping
   categories: () => http.get('/categories'),
+  adminCategories: () => http.get('/admin/categories'),
   unifyCategories: () => http.post('/admin/categories/unify'),
   backfillSubtypes: () => http.post('/tasks/backfill-subtypes'),
   addCategory: (d) => http.post('/admin/categories', d),

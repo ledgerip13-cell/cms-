@@ -62,7 +62,16 @@
       </template>
     </el-dialog>
 
-    <el-table :data="list" v-loading="loading" stripe @row-click="openDetail">
+    <div v-if="selected.length" class="batch-bar">
+      <span>已选 {{ selected.length }} 项</span>
+      <el-button size="small" type="warning" @click="batchAction('offline')">批量下架</el-button>
+      <el-button size="small" type="success" @click="batchAction('online')">批量上架</el-button>
+      <el-button size="small" type="danger" @click="batchAction('delete')">批量删除</el-button>
+      <el-button size="small" link @click="tableRef?.clearSelection()">取消选择</el-button>
+    </div>
+
+    <el-table ref="tableRef" :data="list" v-loading="loading" stripe @row-click="openDetail" @selection-change="v => selected = v">
+      <el-table-column type="selection" width="42" @click.stop />
       <el-table-column label="封面" width="70">
         <template #default="{ row }">
           <el-image v-if="row.officialPic || row.pic" :src="row.officialPic || row.pic" fit="cover" style="width:44px;height:60px;border-radius:4px" lazy>
@@ -270,12 +279,24 @@ async function metaBatch() {
     ElMessage.success(r.message || '已提交')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '提交失败') }
 }
-const q = reactive({ page: 1, size: 20, kw: '', type: '' })
+const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
+const selected = ref([]); const tableRef = ref(null)
 
 async function load() {
   loading.value = true
-  try { const r = await api.vods(q); list.value = r.list; total.value = r.total } finally { loading.value = false }
+  try { const r = await api.adminVods(q); list.value = r.list; total.value = r.total } finally { loading.value = false }
+}
+async function batchAction(action) {
+  if (!selected.value.length) return
+  const label = { offline: '下架', online: '上架', delete: '删除' }[action]
+  try {
+    await ElMessageBox.confirm(`确认${label}选中的 ${selected.value.length} 部影片？${action==='delete'?'删除不可恢复，将同时删除其播放线路。':''}`, `批量${label}`, { type: 'warning' })
+    const ids = selected.value.map(r => r.id)
+    const r = await api.batchVods(ids, action)
+    if (r.ok) { ElMessage.success(`已${label} ${r.count} 部`); tableRef.value?.clearSelection(); load() }
+    else ElMessage.error(r.error || '操作失败')
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '操作失败') }
 }
 async function openDetail(row) {
   cur.value = await api.vod(row.id)
@@ -367,5 +388,11 @@ onMounted(async () => { types.value = await api.categories(); load(); loadMeta()
 }
 .vod-actions .el-button + .el-button {
   margin-left: 0;
+}
+.batch-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: #fdf6ec; border: 1px solid #f5dab1; border-radius: 8px;
+  font-size: 13px; color: #b88230;
 }
 </style>

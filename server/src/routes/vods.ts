@@ -9,7 +9,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Number(q.size) || 20);
-    const where: any = { status: q.status || undefined };
+    // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
+    const where: any = { status: "online" };
     if (q.kw) where.name = { contains: q.kw };
     if (q.type) where.typeName = q.type;
     if (q.sub) where.subType = q.sub;
@@ -165,7 +166,8 @@ export default async function vodRoutes(app: FastifyInstance) {
       where: { id },
       include: { plays: { include: { source: true } } },
     });
-    if (!vod) return reply.code(404).send({ error: "not found" });
+    // 观众端不能看到已下架影片，同列表接口限制保持一致（admin详情页用另外的鲟权接口）
+    if (!vod || vod.status !== "online") return reply.code(404).send({ error: "not found" });
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
       sourceId: p.sourceId,
@@ -234,6 +236,81 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: { _count: { typeName: "desc" } },
     });
     return rows.map((r) => ({ name: r.typeName, count: r._count._all }));
+  });
+
+  // ============ 以下需登录（admin 后台管理专用，可看到全部状态+支持批量操作）============
+  app.register(async (secured) => {
+    secured.addHook("preHandler", authGuard);
+
+    // 后台单片详情（含已下架），供管理页“线路详情”面板用，复用同一份组装逻辑
+    secured.get("/api/admin/vods/:id", async (req, reply) => {
+      const id = Number((req.params as any).id);
+      const vod = await prisma.vod.findUnique({ where: { id }, include: { plays: { include: { source: true } } } });
+      if (!vod) return reply.code(404).send({ error: "not found" });
+      const channels = vod.plays.map((p) => ({
+        id: p.id, sourceId: p.sourceId, sourceName: p.source.name, priority: p.source.priority,
+        flag: p.flag, epCount: p.epCount, alive: p.alive, score: p.score, checkMs: p.checkMs,
+        playKind: p.playKind, episodes: JSON.parse(p.episodes || "[]"),
+      }));
+      const byHealth = (a: any, b: any) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.score !== a.score ? b.score - a.score : a.priority - b.priority);
+      const bySource = new Map<number, typeof channels>();
+      for (const c of channels) { if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, []); bySource.get(c.sourceId)!.push(c); }
+      const lines = [...bySource.values()].map((cs) => { const sorted = [...cs].sort(byHealth); return { ...sorted[0], channels: sorted }; }).sort(byHealth);
+      return { ...vod, plays: undefined, lines };
+    });
+
+    // 后台管理列表：不限 status，支持多条件筛选(同 /api/vods 参数 + status)
+    secured.get("/api/admin/vods", async (req) => {
+      const q = req.query as any;
+      const page = Math.max(1, Number(q.page) || 1);
+      const size = Math.min(200, Number(q.size) || 20);
+      const where: any = {};
+      if (q.status) where.status = q.status;
+      if (q.kw) where.name = { contains: q.kw };
+      if (q.type) where.typeName = q.type;
+      if (q.sub) where.subType = q.sub;
+      if (q.year === "2005年以前") {
+        const years: string[] = [];
+        for (let y = 1900; y < 2005; y++) years.push(String(y));
+        where.year = { in: years };
+      } else if (q.year) {
+        where.year = { contains: q.year };
+      }
+      const [total, list] = await Promise.all([
+        prisma.vod.count({ where }),
+        prisma.vod.findMany({
+          where,
+          orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+          skip: (page - 1) * size,
+          take: size,
+          include: { _count: { select: { plays: true } } },
+        }),
+      ]);
+      return { total, page, size, list };
+    });
+
+    // 批量操作：下架/上架/删除，传 ids 数组，支持多选
+    secured.post("/api/admin/vods/batch", async (req) => {
+      const b = req.body as any;
+      const ids: number[] = Array.isArray(b.ids) ? b.ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n)) : [];
+      const action = String(b.action || "");
+      if (!ids.length) return { ok: false, error: "未选择任何影片" };
+      if (action === "offline") {
+        const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "offline" } });
+        return { ok: true, count: r.count };
+      }
+      if (action === "online") {
+        const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "online" } });
+        return { ok: true, count: r.count };
+      }
+      if (action === "delete") {
+        // 先删关联的播放线路再删影片，避免外键约束报错
+        await prisma.play.deleteMany({ where: { vodId: { in: ids } } });
+        const r = await prisma.vod.deleteMany({ where: { id: { in: ids } } });
+        return { ok: true, count: r.count };
+      }
+      return { ok: false, error: "不支持的操作类型" };
+    });
   });
 
   // 编辑单片（需登录）：只更新允许的字段

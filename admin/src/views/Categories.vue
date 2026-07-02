@@ -10,7 +10,12 @@
         <el-table :data="cats" size="small">
           <el-table-column prop="sort" label="排序" width="60" />
           <el-table-column prop="name" label="分类名" />
-          <el-table-column prop="slug" label="标识" />
+          <el-table-column prop="count" label="影片数" width="70" />
+          <el-table-column label="前台显示" width="80">
+            <template #default="{ row }">
+              <el-switch v-model="row.enabled" @change="v => toggleEnabled(row, v)" />
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="120">
             <template #default="{ row }">
               <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -68,7 +73,13 @@ const cats = ref([]); const sources = ref([]); const maps = ref([])
 const curSource = ref(null); const unmapped = ref(0)
 const dlg = ref(false); const form = ref({})
 
-async function loadCats() { cats.value = await api.categories() }
+async function loadCats() { cats.value = await api.adminCategories() }
+async function toggleEnabled(row, v) {
+  try {
+    await api.updateCategory(row.id, { enabled: v })
+    ElMessage.success(v ? '已在前台显示' : '已在前台隐藏')
+  } catch (e) { row.enabled = !v; ElMessage.error(e.message) }
+}
 async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
 

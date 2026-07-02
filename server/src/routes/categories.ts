@@ -16,6 +16,14 @@ export default async function categoryRoutes(app: FastifyInstance) {
     return cats.map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
   });
 
+  // 后台管理：列出全部大类(含已禁用的)，用于后台开关管理页面（新增/编辑/删除 CRUD 复用下方已有的 admin 作用域，不重复定义）
+  app.get("/api/admin/categories", { preHandler: authGuard }, async () => {
+    const cats = await prisma.category.findMany({ orderBy: { sort: "asc" } });
+    const counts = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
+    const cmap = new Map(counts.map((c) => [c.typeName, c._count._all]));
+    return cats.map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
+  });
+
   // 管理：一键建立统一分类体系（播种大类 + 自动映射196条源type + 回填存量）
   app.post("/api/admin/categories/unify", { preHandler: authGuard }, async () => {
     // 1) upsert 大类
