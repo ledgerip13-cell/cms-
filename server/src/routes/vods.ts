@@ -13,7 +13,15 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (q.kw) where.name = { contains: q.kw };
     if (q.type) where.typeName = q.type;
     if (q.sub) where.subType = q.sub;
-    if (q.year) where.year = { contains: q.year };
+    if (q.year === "2005年以前") {
+      // year 字段是自由文本，不能用字典序比较。列出 1900~2004 全部取值做 IN 查询，
+      // 比 raw SQL 更安全，也避免在应用层做内存分页过滤破坏分页正确性。
+      const years: string[] = [];
+      for (let y = 1900; y < 2005; y++) years.push(String(y));
+      where.year = { in: years };
+    } else if (q.year) {
+      where.year = { contains: q.year };
+    }
     // 排序：recent 最近更新 / hot 热门(评分) / rating 高分
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
     if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
@@ -45,12 +53,20 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (!y) continue;
       merged.set(y, (merged.get(y) || 0) + r._count._all);
     }
-    // 去除异常未来年份(超出当前年+1的视为脏数据)，不再硬限制只取16个，让老片也能被筛选到
+    // 去除异常未来年份(超出当前年+1的视为脏数据)
     const curYear = new Date().getFullYear();
-    return [...merged.entries()]
-      .filter(([y]) => Number(y) <= curYear + 1)
-      .sort((a, b) => Number(b[0]) - Number(a[0]))
-      .map(([year, count]) => ({ year, count }));
+    const OLDEST_YEAR = 2005; // 2005年以前合并为“更早”，避免筛选栏被数十个年份塑破
+    let earlierCount = 0;
+    const recent: { year: string; count: number }[] = [];
+    for (const [y, c] of merged.entries()) {
+      const n = Number(y);
+      if (n > curYear + 1) continue; // 异常未来年份丢弃
+      if (n < OLDEST_YEAR) earlierCount += c;
+      else recent.push({ year: y, count: c });
+    }
+    recent.sort((a, b) => Number(b.year) - Number(a.year));
+    if (earlierCount > 0) recent.push({ year: `${OLDEST_YEAR}年以前`, count: earlierCount });
+    return recent;
   });
 
   // 热门推荐（搜索框点击时展示）：有评分优先，否则按线路数/更新
