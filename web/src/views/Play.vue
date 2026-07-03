@@ -3,10 +3,11 @@
     <!-- 左：播放器 + 选集 + 信息 -->
     <div class="player-col">
       <div class="player-box">
-        <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate"></video>
+        <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
         <iframe v-if="mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
         <div v-if="mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
+        <div v-if="playNotice" class="play-notice">{{ playNotice }}</div>
         <div v-if="resolving" class="video-ph">正在解析播放地址…</div>
       </div>
 
@@ -190,16 +191,48 @@ const videoEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
+const playNotice = ref('')
 let hls = null
 let hlsRecoverCount = 0
 let pendingSeekSec = 0
 let lastHistorySaveAt = 0
+let playNoticeTimer = 0
+let playWatchdogTimer = 0
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
 function onErr(e) { e.target.style.visibility='hidden' }
 function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function goPlay(id) { router.push('/play/'+id) }
 function searchPerson(name) { if (name) router.push({ path: '/', query: { kw: name } }) }
+function showPlayNotice(message) {
+  playNotice.value = message
+  if (playNoticeTimer) clearTimeout(playNoticeTimer)
+  playNoticeTimer = window.setTimeout(() => { playNotice.value = '' }, 5200)
+}
+function clearPlayWatchdog() {
+  if (playWatchdogTimer) clearTimeout(playWatchdogTimer)
+  playWatchdogTimer = 0
+}
+function schedulePlayWatchdog(url) {
+  clearPlayWatchdog()
+  playWatchdogTimer = window.setTimeout(() => {
+    const video = videoEl.value
+    if (curUrl.value !== url || mode.value !== 'hls' || Number(video?.readyState || 0) > 0) return
+    showPlayNotice('连接超时或被当前网络拦截，已尝试切换线路')
+    tryNextPlayback()
+  }, 9000)
+}
+function describePlaybackError(data) {
+  const code = Number(data?.response?.code || 0)
+  if (code === 403 || code === 451) return '限制当前地区或网络访问，已尝试切换线路'
+  if (code === 404 || code === 410) return '播放地址已失效，已尝试切换线路'
+  if (String(data?.details || '').toLowerCase().includes('timeout')) return '连接超时或被当前网络拦截，已尝试切换线路'
+  return '当前网络无法访问，已尝试切换线路'
+}
+function onVideoError() {
+  if (!curUrl.value) return
+  showPlayNotice('播放失败，请切换线路或稍后重试')
+}
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value])
 const actors = computed(() => (vod.value.people || []).filter(p => p.role === 'actor').slice(0, 12))
@@ -223,11 +256,13 @@ function playHls(url) {
     try { video.currentTime = pendingSeekSec } catch {}
   }
   video?.addEventListener('loadedmetadata', seekToPending, { once: true })
+  schedulePlayWatchdog(url)
   if (Hls.isSupported()) {
     hls = new Hls({ maxBufferLength: 30 })
     hls.loadSource(url)
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      clearPlayWatchdog()
       seekToPending()
       video.play().catch(()=>{})
     })
@@ -243,6 +278,8 @@ function playHls(url) {
         hls.recoverMediaError()
         return
       }
+      clearPlayWatchdog()
+      showPlayNotice(describePlaybackError(data))
       tryNextPlayback()
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -277,13 +314,25 @@ async function playResolvedEp(i) {
 }
 
 function tryNextPlayback() {
-  const channels = curLine.value?.channels || []
-  if (channels.length && chanIdx.value < channels.length - 1) {
-    switchChannel(chanIdx.value + 1)
+  const lines = vod.value.lines || []
+  const slots = []
+  lines.forEach((line, li) => {
+    const channels = line.channels?.length ? line.channels : [line]
+    channels.forEach((channel, ci) => {
+      slots.push({ li, ci, channel })
+    })
+  })
+  if (slots.length <= 1) return
+  const current = slots.findIndex(s => s.li === lineIdx.value && s.ci === chanIdx.value)
+  const start = current < 0 ? -1 : current
+  for (let step = 1; step < slots.length; step++) {
+    const next = slots[(start + step) % slots.length]
+    if (!next?.channel || next.channel.alive === false || !next.channel.episodes?.length) continue
+    lineIdx.value = next.li
+    chanIdx.value = next.ci
+    const n = Math.min(epIdx.value, next.channel.episodes.length - 1)
+    playEp(n < 0 ? 0 : n)
     return
-  }
-  if (vod.value.lines?.length && lineIdx.value < vod.value.lines.length - 1) {
-    switchLine(lineIdx.value + 1)
   }
 }
 
@@ -391,6 +440,7 @@ watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 onBeforeUnmount(() => {
   saveWatchHistory(epIdx.value)
   if (hls) hls.destroy()
+  clearPlayWatchdog()
 })
 </script>
 
@@ -401,6 +451,10 @@ onBeforeUnmount(() => {
 .video { width: 100%; height: 100%; background: #000; }
 .video-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #667; pointer-events: none; }
+.play-notice { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3;
+  border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(8,10,15,.82);
+  color: #f6d7db; font-size: 13px; line-height: 1.45; padding: 9px 12px; backdrop-filter: blur(10px);
+  pointer-events: none; }
 .iframe-note { position: absolute; left: 0; right: 0; bottom: 0; font-size: 12px; color: #cbd3e0;
   background: rgba(0,0,0,.6); padding: 6px 12px; text-align: center; pointer-events: none; }
 
@@ -418,9 +472,9 @@ onBeforeUnmount(() => {
 .nf-btn.primary:hover { opacity: .9; color: #fff; }
 
 /* 标题信息条 */
-.pv-head { display: flex; gap: 16px; margin: 18px 0; padding: 16px; background: var(--card);
+.pv-head { display: flex; align-items: flex-start; gap: 16px; margin: 18px 0; padding: 16px; background: var(--card);
   border: 1px solid var(--line); border-radius: 14px; }
-.pv-poster { width: 108px; flex-shrink: 0; aspect-ratio: 2/3; border-radius: 10px; overflow: hidden; }
+.pv-poster { width: 108px; flex-shrink: 0; align-self: flex-start; aspect-ratio: 2/3; border-radius: 10px; overflow: hidden; }
 .pv-poster img { width: 100%; height: 100%; object-fit: cover; }
 .pv-meta { min-width: 0; flex: 1; }
 .pv-title { font-size: 22px; margin-bottom: 10px; }
@@ -523,9 +577,50 @@ onBeforeUnmount(() => {
   .rec-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 @media (max-width: 480px) {
-  .pv-poster { width: 84px; }
-  .pv-title { font-size: 18px; }
-  .still { flex-basis: 42vw; }
+  .pv-head {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 12px;
+    overflow: hidden;
+  }
+  .pv-poster {
+    width: 86px;
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    max-height: 129px;
+  }
+  .pv-meta { display: contents; }
+  .pv-title {
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.25;
+  }
+  .db-rating { margin-left: 6px; font-size: 14px; }
+  .pv-tags {
+    grid-column: 2;
+    gap: 6px;
+    margin: 0;
+  }
+  .pv-tags .t { padding: 3px 8px; }
+  .pv-line {
+    grid-column: 2;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .people-line,
+  .pv-intro,
+  .still-section,
+  .pv-actions {
+    grid-column: 1 / -1;
+  }
+  .people-line { margin: 4px 0 0; }
+  .person-chip { max-width: 104px; }
+  .still { flex-basis: 164px; }
   .gallery-viewer { padding: 62px 44px 54px; }
   .gv-close { top: 16px; right: 16px; width: 38px; height: 38px; }
   .gv-close svg { width: 22px; height: 22px; }

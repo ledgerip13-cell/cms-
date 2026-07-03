@@ -27,61 +27,72 @@
     <!-- 主区 -->
     <div class="main">
       <header class="topbar">
-        <button class="menu-btn" @click="drawer=!drawer" aria-label="menu">
-          <span></span><span></span><span></span>
-        </button>
-        <div class="search-box">
-          <div class="search" @click="openSearch">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
-            </svg>
-            <input ref="searchInput" v-model="kw" placeholder="搜索你想看的影片、演员…"
-              @focus="openSearch" @keyup.enter="doSearch" />
-            <span v-if="kw" class="clear" @click.stop="kw=''">×</span>
-            <button class="search-btn" @click.stop="doSearch">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-              搜索
-            </button>
-          </div>
-          <transition name="fade">
-            <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch" @mousedown.stop>
-              <div class="sp-head">
-                <span v-for="t in rankTabs" :key="t.cat" class="sp-tab" :class="{on: rankCat===t.cat}"
-                  @click="switchRank(t.cat)">{{ t.label }}</span>
+        <div class="mobile-tabs" aria-label="移动端分类导航">
+          <button class="mobile-tab" :class="{on: !curType && !isSearch}" @click="pick('')">首页</button>
+          <button v-for="t in types" :key="t.name" class="mobile-tab" :class="{on: curType===t.name}" @click="pick(t.name)">
+            {{ t.name || '未分类' }}
+          </button>
+        </div>
+        <div class="topbar-main" :class="{searching: searchOpen}">
+          <button class="menu-btn" @click="drawer=!drawer" aria-label="menu">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="search-box" :class="{open: searchOpen}">
+            <div class="search-row">
+              <div class="search" @click="openSearch">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                </svg>
+                <input ref="searchInput" v-model="kw" placeholder="搜索你想看的影片、演员…"
+                  @focus="openSearch" @keyup.enter="doSearch" @keyup.esc="cancelSearch" />
+                <span v-if="kw" class="clear" @click.stop="kw=''">×</span>
+                <button class="search-btn" @click.stop="doSearch">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  搜索
+                </button>
               </div>
-              <div class="sp-grid" v-if="!rankLoading">
-                <div v-for="(h,i) in hot" :key="h.id" class="sp-item" @click="goPlay(h.id)">
-                  <span class="sp-rank" :class="['r'+(i+1), {top:i<3}]">{{ i+1 }}</span>
-                  <div class="sp-thumb">
-                    <img v-if="h.officialPic || h.pic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr" />
-                    <div v-else class="noimg"></div>
-                    <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
-                  </div>
-                  <div class="sp-info">
-                    <div class="sp-name">{{ h.name }}</div>
-                    <div class="sp-sub">
-                      <span v-if="h.rating" class="sp-score">★{{ h.rating }}</span>
-                      <span>{{ h.typeName || '未分类' }}</span>
-                      <span v-if="h.year">{{ h.year }}</span>
+              <button v-if="searchOpen" class="search-cancel" aria-label="取消搜索" @mousedown.stop @click.stop="cancelSearch">取消</button>
+            </div>
+            <transition name="fade">
+              <div v-if="searchOpen" class="search-panel" v-click-outside="closeSearch" @mousedown.stop>
+                <div class="sp-head">
+                  <span v-for="t in rankTabs" :key="t.cat" class="sp-tab" :class="{on: rankCat===t.cat}"
+                    @click="switchRank(t.cat)">{{ t.label }}</span>
+                </div>
+                <div class="sp-grid" v-if="!rankLoading">
+                  <div v-for="(h,i) in hot" :key="h.id" class="sp-item" @click="goPlay(h.id)">
+                    <span class="sp-rank" :class="['r'+(i+1), {top:i<3}]">{{ i+1 }}</span>
+                    <div class="sp-thumb">
+                      <img v-if="h.officialPic || h.pic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr" />
+                      <div v-else class="noimg"></div>
+                      <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                    </div>
+                    <div class="sp-info">
+                      <div class="sp-name">{{ h.name }}</div>
+                      <div class="sp-sub">
+                        <span v-if="h.rating" class="sp-score">★{{ h.rating }}</span>
+                        <span>{{ h.typeName || '未分类' }}</span>
+                        <span v-if="h.year">{{ h.year }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div v-else class="sp-loading">加载中…</div>
+                <div v-if="!rankLoading && !hot.length" class="sp-empty">该榜单暂无数据</div>
+                <div class="sp-foot" @click="doSearch" v-if="kw">搜索“{{ kw }}” →</div>
               </div>
-              <div v-else class="sp-loading">加载中…</div>
-              <div v-if="!rankLoading && !hot.length" class="sp-empty">该榜单暂无数据</div>
-              <div class="sp-foot" @click="doSearch" v-if="kw">搜索“{{ kw }}” →</div>
-            </div>
-          </transition>
-        </div>
-        <div class="top-user">
-          <button v-if="user" class="user-chip" @click="router.push('/me')" aria-label="个人中心">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-            <span class="user-chip-text">{{ user.nickname || user.username }}</span>
-          </button>
-          <button v-else class="user-chip" @click="router.push({path:'/auth',query:{redirect:route.fullPath}})" aria-label="登录">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-            <span class="user-chip-text">登录</span>
-          </button>
+            </transition>
+          </div>
+          <div class="top-user">
+            <button v-if="user" class="user-chip" @click="router.push('/me')" aria-label="个人中心">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span class="user-chip-text">{{ user.nickname || user.username }}</span>
+            </button>
+            <button v-else class="user-chip" @click="router.push({path:'/auth',query:{redirect:route.fullPath}})" aria-label="登录">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span class="user-chip-text">登录</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -134,6 +145,10 @@ function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
+function cancelSearch() {
+  searchOpen.value = false
+  searchInput.value?.blur?.()
+}
 async function loadRank(cat) {
   if (rankCache.has(cat)) { hot.value = rankCache.get(cat); return }
   rankLoading.value = true

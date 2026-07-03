@@ -102,7 +102,7 @@ export async function hotVodQuery(cat = "hot", limit?: number) {
     return {
       config: null,
       take: clamp(Number(limit) || 10, 1, 20),
-      where: { status: "online", rating: { not: null }, ...catWhere },
+      where: { status: "online", ...catWhere },
       orderBy: orderByFor("hot"),
     };
   }
