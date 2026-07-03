@@ -6,6 +6,8 @@ import { createCollectTask } from "../collector/taskRunner.js";
 import { probeBatch } from "../collector/probe.js";
 import { reloadSchedules } from "../scheduler.js";
 import { authGuard } from "../auth.js";
+import { normalizeOrigin, readPlayDomains, refreshSourcePlayDomains } from "../playDomains.js";
+import { writeAudit } from "./access.js";
 
 export default async function sourceRoutes(app: FastifyInstance) {
   // 采集源管理全部需要登录（含列表，避免泄露源站）
@@ -32,6 +34,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         priority: b.priority ?? 100,
         enabled: b.enabled ?? true,
         autoSync: b.autoSync ?? false,
+        autoTypeId: String(b.autoTypeId || "").trim(),
         syncHours: b.syncHours ?? 24,
         cronExpr: b.cronExpr || "0 * * * *",
       },
@@ -51,6 +54,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       priority: b.priority,
       enabled: b.enabled,
       autoSync: b.autoSync,
+      autoTypeId: b.autoTypeId !== undefined ? String(b.autoTypeId || "").trim() : undefined,
       syncHours: b.syncHours,
       cronExpr: b.cronExpr,
     };
@@ -79,6 +83,72 @@ export default async function sourceRoutes(app: FastifyInstance) {
   app.post("/api/probe", async (req) => {
     const limit = Number((req.body as any)?.limit) || 50;
     return probeBatch(limit);
+  });
+
+  // 当前采集源下已入库播放地址域名统计（不读取/修改采集API）
+  app.get("/api/sources/:id/play-domains", async (req, reply) => {
+    const id = Number((req.params as any).id);
+    const source = await prisma.source.findUnique({ where: { id }, select: { id: true, playDomains: true } });
+    if (!source) return reply.code(404).send({ error: "采集源不存在" });
+    const domains = readPlayDomains(source.playDomains);
+    return { sourceId: id, domains };
+  });
+
+  // 替换当前采集源下某个播放域名；只更新 Play.episodes，不触碰 Source.apiUrl/apiUrls
+  app.post("/api/sources/:id/play-domains/replace", async (req, reply) => {
+    const id = Number((req.params as any).id);
+    const b = (req.body as any) || {};
+    const source = await prisma.source.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!source) return reply.code(404).send({ error: "采集源不存在" });
+
+    const oldUrl = normalizeOrigin(b.oldOrigin || b.oldDomain || "");
+    if (!oldUrl) return reply.code(400).send({ error: "旧播放域名无效" });
+    const newUrl = normalizeOrigin(b.newOrigin || b.newDomain || "", oldUrl.protocol);
+    if (!newUrl) return reply.code(400).send({ error: "新播放域名无效" });
+    if (oldUrl.origin === newUrl.origin) return reply.code(400).send({ error: "新旧播放域名相同" });
+
+    const pattern = `%${oldUrl.origin}%`;
+    const statRows = await prisma.$queryRaw<Array<{ affectedPlays: bigint; affectedEpisodes: bigint }>>`
+      select
+        count(*)::bigint as "affectedPlays",
+        coalesce(sum(((length(episodes) - length(replace(episodes, ${oldUrl.origin}, ''))) / length(${oldUrl.origin}))::int), 0)::bigint as "affectedEpisodes"
+      from "Play"
+      where "sourceId" = ${id} and episodes like ${pattern}
+    `;
+    const affectedPlays = Number(statRows[0]?.affectedPlays || 0);
+    const affectedEpisodes = Number(statRows[0]?.affectedEpisodes || 0);
+
+    if (affectedPlays > 0) {
+      await prisma.$executeRaw`
+        update "Play"
+        set
+          episodes = replace(episodes, ${oldUrl.origin}, ${newUrl.origin}),
+          alive = true,
+          score = 0,
+          "checkMs" = 0,
+          "lastCheck" = null
+        where "sourceId" = ${id} and episodes like ${pattern}
+      `;
+    }
+
+    const domains = await refreshSourcePlayDomains(id);
+    await writeAudit(req, "source.playDomain.replace", `Source:${id}`, {
+      oldOrigin: oldUrl.origin,
+      newOrigin: newUrl.origin,
+      affectedPlays,
+      affectedEpisodes,
+    });
+
+    return {
+      ok: true,
+      sourceId: id,
+      sourceName: source.name,
+      oldOrigin: oldUrl.origin,
+      newOrigin: newUrl.origin,
+      affectedPlays,
+      affectedEpisodes,
+      domains,
+    };
   });
 
   // 测活：按顺序逐个试 apiUrls，返回每个入口的结果+最终生效的那个

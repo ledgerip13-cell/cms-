@@ -87,9 +87,9 @@ function openAdd() { form.value = { name:'', slug:'', sort:100 }; dlg.value = tr
 function openEdit(row) { form.value = { ...row }; dlg.value = true }
 async function saveCat() {
   try {
-    if (form.value.id) await api.updateCategory(form.value.id, form.value)
-    else await api.addCategory(form.value)
-    ElMessage.success('已保存'); dlg.value = false; loadCats()
+    const r = form.value.id ? await api.updateCategory(form.value.id, form.value) : await api.addCategory(form.value)
+    ElMessage.success(r?.backfilled ? `已保存，已回刷 ${r.backfilled} 部影片` : '已保存')
+    dlg.value = false; loadCats()
   } catch (e) { ElMessage.error(e.message) }
 }
 async function del(row) {
@@ -97,8 +97,10 @@ async function del(row) {
   await api.delCategory(row.id); ElMessage.success('已删除'); loadCats()
 }
 async function save(row, v) {
-  await api.setTypemap(row.id, v ?? null)
-  ElMessage.success('映射已更新'); loadUnmapped()
+  const r = await api.setTypemap(row.id, v ?? null)
+  ElMessage.success(r?.backfilled ? `映射已更新，已回刷 ${r.backfilled} 部影片` : '映射已更新')
+  loadUnmapped()
+  loadCats()
 }
 onMounted(async () => {
   await loadCats()

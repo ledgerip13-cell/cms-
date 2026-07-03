@@ -1,7 +1,8 @@
 // 异步采集任务执行器：前端点击后立即返回 taskId，任务在后台跑并更新进度
 import { prisma } from "../db.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
-import { matchDouban, sleep } from "./douban.js";
+import { matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
+import { applyDoubanAssets } from "./metaAssets.js";
 
 import { EventEmitter } from "node:events";
 
@@ -20,6 +21,7 @@ async function taskUpdate(args: Parameters<typeof prisma.task.update>[0]) {
 }
 
 const running = new Set<number>(); // 正在跑的 sourceId，防重复
+let collectPumpRunning = false; // 采集任务队列泵：全局串行，避免多任务抢资源
 let metaRunning = false; // 元数据任务全局串行(限速防封)
 const canceled = new Set<number>(); // 请求中止的 taskId
 
@@ -47,7 +49,7 @@ export async function recoverOrphanTasks() {
         where: { id: t.id },
         data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
       });
-      void runTask(t.id, t.sourceId, opts);
+      void pumpCollectQueue();
       resumed++;
     } else {
       await taskUpdate({
@@ -76,10 +78,32 @@ export async function createCollectTask(sourceId: number, opts: SyncOptions = {}
     },
   });
 
-  // fire-and-forget 后台执行
+  // 入持久化队列，由队列泵串行执行
   emitTaskChange();
-  void runTask(task.id, sourceId, opts);
+  void pumpCollectQueue();
   return task;
+}
+
+async function pumpCollectQueue() {
+  if (collectPumpRunning) return;
+  collectPumpRunning = true;
+  try {
+    while (true) {
+      const task = await prisma.task.findFirst({
+        where: { type: "collect", status: "pending", sourceId: { not: null } },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!task?.sourceId) return;
+      let opts: SyncOptions = {};
+      try { opts = task.params ? JSON.parse(task.params) : {}; } catch {}
+      let cur: any = null;
+      try { cur = task.cursor ? JSON.parse(task.cursor) : null; } catch {}
+      if (cur) opts.resume = cur;
+      await runTask(task.id, task.sourceId, opts);
+    }
+  } finally {
+    collectPumpRunning = false;
+  }
 }
 
 // ============ 补全小类任务 ============
@@ -192,6 +216,50 @@ async function runKeywordTask(taskId: number, keyword: string) {
 }
 
 // ============ 元数据任务（豆瓣，限速批处理） ============
+function metaCandidateSnapshot(candidates: DoubanCandidate[]) {
+  return candidates.slice(0, 5).map((c) => ({
+    id: c.id,
+    title: c.title,
+    subTitle: c.subTitle,
+    year: c.year,
+    type: c.type,
+    img: c.img,
+    score: c.score,
+    titleSim: c.titleSim,
+    reasons: c.reasons,
+    rating: c.meta?.rating ?? null,
+    ratingCount: c.meta?.ratingCount ?? 0,
+  }));
+}
+
+function metaReason(r: DoubanMatchResult) {
+  return JSON.stringify({
+    score: r.score,
+    reasons: r.reasons,
+    candidates: metaCandidateSnapshot(r.candidates),
+  });
+}
+
+function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
+  const best = r.candidates[0];
+  return {
+    ...(status === "matched" && r.meta ? {
+      doubanId: r.meta.doubanId,
+      rating: r.meta.rating,
+      ratingCount: r.meta.ratingCount,
+      officialPic: r.meta.pic,
+      officialIntro: r.meta.intro,
+      genres: r.meta.genres.join(","),
+    } : {}),
+    metaMatched: status,
+    metaScore: r.score,
+    metaReason: metaReason(r),
+    matchedTitle: r.meta?.title || best?.title || "",
+    matchedYear: r.meta?.year || best?.year || "",
+    metaAt: new Date(),
+  };
+}
+
 export async function createMetaTask(opts: { limit?: number; intervalMs?: number; redo?: boolean } = {}) {
   const task = await prisma.task.create({
     data: {
@@ -235,38 +303,36 @@ async function runMetaTask(
       orderBy: opts.redo ? { metaAt: "asc" } : { id: "asc" },
       take: limit,
     });
-    let matched = 0, failed = 0;
+    let matched = 0, failed = 0, pending = 0;
     for (let i = 0; i < vods.length; i++) {
       if (canceled.has(taskId)) {
         await taskUpdate({
           where: { id: taskId },
-          data: { status: "canceled", message: `已手动中止（已处理${i}/${vods.length}）`, added: matched, updated: failed, finishedAt: new Date() },
+              data: { status: "canceled", message: `已手动中止（已处理${i}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: new Date() },
         });
         metaRunning = false;
         return;
       }
       const v = vods[i];
       try {
-        const r = await matchDouban(v.name, v.year);
-        if (r.ok && r.meta) {
+        const r = await matchDouban(v.name, v.year, { typeName: v.typeName, actor: v.actor, director: v.director });
+        if (r.status === "matched" && r.meta) {
           await prisma.vod.update({
             where: { id: v.id },
-            data: {
-              doubanId: r.meta.doubanId,
-              rating: r.meta.rating,
-              ratingCount: r.meta.ratingCount,
-              officialPic: r.meta.pic,
-              officialIntro: r.meta.intro,
-              genres: r.meta.genres.join(","),
-              metaMatched: "matched",
-              metaAt: new Date(),
-            },
+            data: matchedMetaData(r, "matched"),
           });
+          await applyDoubanAssets(v.id, r.meta);
           matched++;
+        } else if (r.status === "pending") {
+          await prisma.vod.update({
+            where: { id: v.id },
+            data: matchedMetaData(r, "pending"),
+          });
+          pending++;
         } else {
           await prisma.vod.update({
             where: { id: v.id },
-            data: { metaMatched: "failed", metaAt: new Date() },
+            data: { metaMatched: "failed", metaScore: r.score, metaReason: metaReason(r), matchedTitle: "", matchedYear: "", metaAt: new Date() },
           });
           failed++;
         }
@@ -276,7 +342,7 @@ async function runMetaTask(
       const progress = Math.round(((i + 1) / vods.length) * 100);
       await taskUpdate({
         where: { id: taskId },
-        data: { progress, pageNow: i + 1, pageTotal: vods.length, added: matched, updated: failed },
+        data: { progress, pageNow: i + 1, pageTotal: vods.length, added: matched, updated: failed + pending },
       });
       if (i < vods.length - 1) await sleep(interval);
     }
@@ -284,7 +350,7 @@ async function runMetaTask(
       where: { id: taskId },
       data: {
         status: "done", progress: 100, added: matched, updated: failed,
-        message: `匹配成功${matched} 失败${failed} / 共${vods.length}`,
+        message: `匹配成功${matched} 待确认${pending} 失败${failed} / 共${vods.length}`,
         finishedAt: new Date(),
       },
     });

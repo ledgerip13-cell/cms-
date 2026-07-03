@@ -1,5 +1,6 @@
 // 采集编排：拉取某个源 → 详情解析 → 分类映射 → 去重合并入库
 import { prisma } from "../db.js";
+import { refreshSourcePlayDomains } from "../playDomains.js";
 import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, resolveApiUrls, withFailover, type RawVod } from "./maccms.js";
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
@@ -40,25 +41,42 @@ const IMG_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
 // 图片可达性检测：能拉到且是图片/有实体内容才算 ok（带浏览器 UA + Referer 绕过部分防盗链）
 async function imageOk(url: string, timeoutMs = 8000): Promise<boolean> {
   if (!url || !/^https?:\/\//i.test(url)) return false;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    let origin = "";
-    try { origin = new URL(url).origin; } catch {}
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": IMG_UA, Referer: origin, Accept: "image/*,*/*" },
-    });
+  let origin = "";
+  try { origin = new URL(url).origin; } catch {}
+  const headers = { "User-Agent": IMG_UA, Referer: origin, Accept: "image/*,*/*" };
+  async function probe(method: "HEAD" | "GET", range = false) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method,
+        signal: ctrl.signal,
+        headers: range ? { ...headers, Range: "bytes=0-1023" } : headers,
+      });
+      return res;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  function validByHeaders(res: Response) {
     if (!res.ok) return false;
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     if (ct.startsWith("image/")) return true;
     if (ct.includes("text/html") || ct.includes("json")) return false; // 防盗链占位页
+    return null;
+  }
+  try {
+    let res = await probe("HEAD");
+    let ok = validByHeaders(res);
+    if (ok !== null) return ok;
+
+    res = await probe("GET", true);
+    ok = validByHeaders(res);
+    if (ok !== null) return ok;
     const buf = await res.arrayBuffer();
-    return buf.byteLength > 512;
+    return buf.byteLength > 128;
   } catch {
     return false;
-  } finally {
-    clearTimeout(t);
   }
 }
 
@@ -363,6 +381,7 @@ export async function collectKeywordCandidates(
     } catch (e: any) {
       perSource.push({ source: src.name, ok: false, added: sAdded, updated: sUpdated, msg: e?.message || String(e) });
     }
+    if (sAdded || sUpdated) await refreshSourcePlayDomains(sourceId).catch(() => {});
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sourceIds.length, sourceName: src.name, added, updated, merged });
   }
 
@@ -410,6 +429,7 @@ export async function syncByKeyword(
     } catch (e: any) {
       perSource.push({ source: src.name, hits: 0, added: 0, updated: 0, ok: false, msg: e?.message || String(e) });
     }
+    if (sAdded || sUpdated) await refreshSourcePlayDomains(src.id).catch(() => {});
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sources.length, sourceName: src.name, added, updated, merged, hits });
   }
 
@@ -535,6 +555,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   await prisma.syncLog.create({
     data: { sourceId, mode, added, updated, merged, ok, message, ms },
   });
+  if (added || updated) await refreshSourcePlayDomains(sourceId).catch(() => {});
 
   return { ok, added, updated, merged, ms, message };
 }

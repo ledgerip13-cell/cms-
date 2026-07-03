@@ -55,16 +55,17 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, List, Files, Film, Setting, MagicStick } from '@element-plus/icons-vue'
+import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
 const router = useRouter()
 const user = ref(JSON.parse(localStorage.getItem('user') || '{"username":"—"}'))
 const pwdDlg = ref(false); const pwd = ref({ oldPassword:'', newPassword:'' })
+let activeTimer = null
 
 const menus = [
   { path: '/dashboard', label: '概览', icon: DataLine },
@@ -72,6 +73,9 @@ const menus = [
   { path: '/tasks', label: '采集任务', icon: List },
   { path: '/categories', label: '分类映射', icon: Files },
   { path: '/vods', label: '影片库', icon: Film },
+  { path: '/hot', label: '热门推荐', icon: StarFilled },
+  { path: '/users', label: '用户管理', icon: UserFilled },
+  { path: '/access', label: '权限管理', icon: Key },
   { path: '/meta', label: '元数据', icon: MagicStick },
   { path: '/site', label: '站点设置', icon: Setting },
 ]
@@ -79,7 +83,14 @@ const currentIcon = computed(() => (menus.find(m => m.path === route.path) || me
 
 const activeTasks = ref(0)
 async function pollActive() { try { activeTasks.value = (await api.taskActiveCount()).active } catch {} }
-if (localStorage.getItem('token')) { pollActive(); setInterval(pollActive, 3000) }
+function refreshShell() {
+  user.value = JSON.parse(localStorage.getItem('user') || '{"username":"—"}')
+  if (localStorage.getItem('token') && !activeTimer) {
+    pollActive()
+    activeTimer = setInterval(pollActive, 3000)
+  }
+}
+watch(() => route.path, refreshShell, { immediate: true })
 
 function onCmd(c) {
   if (c === 'logout') {

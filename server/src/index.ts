@@ -10,12 +10,24 @@ import taskRoutes from "./routes/tasks.js";
 import metaRoutes from "./routes/meta.js";
 import siteRoutes from "./routes/site.js";
 import imgRoutes from "./routes/img.js";
+import userRoutes from "./routes/users.js";
+import hotRoutes from "./routes/hot.js";
+import accessRoutes from "./routes/access.js";
 import { seedAdmin } from "./auth.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
 
 const app = Fastify({ logger: { level: "info" } });
-await app.register(cors, { origin: true });
+const corsOrigins = (process.env.CORS_ORIGINS || "http://127.0.0.1:5151,http://localhost:5151,http://127.0.0.1:5152,http://localhost:5152")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+await app.register(cors, {
+  origin(origin, cb) {
+    if (!origin || corsOrigins.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
+});
 
 app.get("/health", async () => ({ ok: true, ts: Date.now() }));
 
@@ -28,6 +40,9 @@ await app.register(taskRoutes);
 await app.register(metaRoutes);
 await app.register(siteRoutes);
 await app.register(imgRoutes);
+await app.register(userRoutes);
+await app.register(hotRoutes);
+await app.register(accessRoutes);
 
 await seedAdmin();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）

@@ -13,6 +13,9 @@ import Categories from './views/Categories.vue'
 import Tasks from './views/Tasks.vue'
 import Site from './views/Site.vue'
 import Meta from './views/Meta.vue'
+import Users from './views/Users.vue'
+import Hot from './views/Hot.vue'
+import Access from './views/Access.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -24,6 +27,9 @@ const router = createRouter({
     { path: '/tasks', component: Tasks, meta: { title: '采集任务' } },
     { path: '/categories', component: Categories, meta: { title: '分类映射' } },
     { path: '/vods', component: Vods, meta: { title: '影片库' } },
+    { path: '/hot', component: Hot, meta: { title: '热门推荐' } },
+    { path: '/users', component: Users, meta: { title: '用户管理' } },
+    { path: '/access', component: Access, meta: { title: '权限管理' } },
     { path: '/meta', component: Meta, meta: { title: '元数据' } },
     { path: '/site', component: Site, meta: { title: '站点设置' } },
   ]
@@ -31,8 +37,12 @@ const router = createRouter({
 
 // 路由守卫：未登录跳登录页
 router.beforeEach((to) => {
-  if (to.meta.public) return true
-  if (!localStorage.getItem('token')) return '/login'
+  const hasToken = Boolean(localStorage.getItem('token'))
+  if (to.meta.public) {
+    if (hasToken && to.path === '/login') return to.query.next || '/dashboard'
+    return true
+  }
+  if (!hasToken) return { path: '/login', query: { next: to.fullPath } }
   return true
 })
 

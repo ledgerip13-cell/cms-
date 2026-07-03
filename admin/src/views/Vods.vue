@@ -1,7 +1,6 @@
 <template>
   <div class="card">
     <div class="bar">
-      <div class="sec-title">影片库 <small>去重后 {{ total }} 部</small></div>
       <div class="filters">
         <el-input v-model="q.kw" placeholder="搜索片名" clearable style="width:180px" @keyup.enter="load" :prefix-icon="Search" />
         <el-select v-model="q.type" placeholder="全部分类" clearable style="width:140px" @change="load">
@@ -10,10 +9,11 @@
         <el-button type="primary" @click="load">查询</el-button>
         <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
-          豆瓣匹配<span v-if="mstat.none" style="margin-left:2px">（{{ mstat.none }} 待匹）</span>
+          豆瓣匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
       </div>
+      <div class="vod-count">去重后 {{ total }} 部</div>
     </div>
 
     <!-- 按片名采集（两步：搜索预览 → 勾选确认） -->
@@ -74,7 +74,7 @@
       <el-table-column type="selection" width="42" @click.stop />
       <el-table-column label="封面" width="70">
         <template #default="{ row }">
-          <el-image v-if="row.officialPic || row.pic" :src="row.officialPic || row.pic" fit="cover" style="width:44px;height:60px;border-radius:4px" lazy>
+          <el-image v-if="row.officialPic || row.pic" :src="coverUrl(row)" fit="cover" style="width:44px;height:60px;border-radius:4px" lazy @error="fallbackCover(row)">
             <template #error><div class="noimg">无图</div></template>
           </el-image>
           <div v-else class="noimg">无图</div>
@@ -96,6 +96,7 @@
       <el-table-column label="豆瓣评分" width="110">
         <template #default="{ row }">
           <span v-if="row.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ row.rating }}</span>
+          <el-tag v-else-if="row.metaMatched==='pending'" size="small" type="warning">待确认 {{ row.metaScore || '' }}</el-tag>
           <el-tag v-else-if="row.metaMatched==='failed'" size="small" type="info">无收录</el-tag>
           <span v-else style="color:#c0c4cc">—</span>
         </template>
@@ -129,16 +130,18 @@
   <el-drawer v-model="drawer" :title="cur.name" size="620">
     <div v-if="cur.id">
       <div class="detail-head">
-        <el-image v-if="cur.pic" :src="cur.pic" fit="cover" style="width:110px;height:150px;border-radius:8px" />
+        <el-image v-if="cur.officialPic || cur.pic" :src="coverUrl(cur)" fit="cover" style="width:110px;height:150px;border-radius:8px" @error="fallbackCover(cur)" />
         <div class="meta">
           <p><b>年份:</b> {{ cur.year || '—' }} · <b>分类:</b> {{ cur.typeName || '—' }}</p>
           <p><b>地区:</b> {{ cur.area || '—' }} · <b>语言:</b> {{ cur.lang || '—' }}</p>
           <p><b>主演:</b> <span class="ellip">{{ cur.actor || '—' }}</span></p>
           <p><b>指纹:</b> <code>{{ cur.fingerprint }}</code></p>
           <p><b>更新:</b> {{ cur.remarks }}</p>
+          <p v-if="cur.heroPic"><b>首页图:</b> 已设置</p>
           <p>
             <b>豆瓣:</b>
             <span v-if="cur.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ cur.rating }}</span>
+            <el-tag v-else-if="cur.metaMatched==='pending'" size="small" type="warning">待确认 {{ cur.metaScore || '' }}</el-tag>
             <span v-else style="color:#9aa4b2">{{ cur.metaMatched==='failed'?'无收录':'未匹配' }}</span>
             <el-button size="small" text type="primary" @click="matchOne(cur.id)">
               {{ cur.rating ? '重新匹配' : '匹配豆瓣' }}
@@ -146,12 +149,46 @@
             <a v-if="cur.doubanId" :href="`https://movie.douban.com/subject/${cur.doubanId}/`" target="_blank"
               style="font-size:12px;color:#409eff">查看豆瓣页 ↗</a>
           </p>
+          <p v-if="cur.matchedTitle || cur.metaScore">
+            <b>置信:</b> {{ cur.metaScore || 0 }}<span v-if="cur.matchedTitle"> · {{ cur.matchedTitle }} {{ cur.matchedYear ? '(' + cur.matchedYear + ')' : '' }}</span>
+          </p>
           <p v-if="cur.genres"><b>豆瓣类型:</b> {{ cur.genres }}</p>
+        </div>
+      </div>
+      <div v-if="pendingCandidates(cur).length" class="meta-candidates">
+        <div class="cand-title">低置信候选 · 请人工确认</div>
+        <div v-for="c in pendingCandidates(cur)" :key="c.id" class="cand-item">
+          <div class="cand-main">
+            <el-image v-if="c.img" :src="imgUrl(c.img)" fit="cover" class="cand-img" />
+            <div class="cand-info">
+              <div><b>{{ c.title }}</b><span v-if="c.year" class="cand-year">({{ c.year }})</span></div>
+              <div class="cand-sub">{{ c.subTitle || c.type || '—' }}</div>
+              <div class="cand-sub">分数 {{ c.score }} · {{ (c.reasons || []).join(' / ') }}</div>
+            </div>
+          </div>
+          <div class="cand-actions">
+            <el-button size="small" type="primary" @click="confirmDouban(cur.id, c)">确认此项</el-button>
+            <a :href="`https://movie.douban.com/subject/${c.id}/`" target="_blank">打开</a>
+          </div>
         </div>
       </div>
       <p class="blurb" v-if="cur.officialIntro" style="border-left:3px solid #409eff;padding-left:10px">
         <b style="color:#409eff">豆瓣简介:</b> {{ cur.officialIntro }}
       </p>
+      <div v-if="cur.people?.length" class="asset-box">
+        <div class="asset-title">人物资产</div>
+        <el-tag v-for="p in cur.people" :key="p.id" size="small" effect="plain" style="margin:0 6px 6px 0">
+          {{ p.role === 'director' ? '导演' : '演员' }} · {{ p.person.name }}
+        </el-tag>
+      </div>
+      <div v-if="cur.images?.length" class="asset-box">
+        <div class="asset-title">图片资产</div>
+        <div class="asset-imgs">
+          <el-image v-for="img in cur.images.slice(0, 12)" :key="img.id" :src="imgUrl(img.url)" fit="cover" class="asset-img">
+            <template #error><div class="noimg">无图</div></template>
+          </el-image>
+        </div>
+      </div>
       <p class="blurb" v-if="cur.blurb">{{ cur.blurb }}</p>
 
       <div style="display:flex;gap:10px;margin:8px 0 4px">
@@ -199,7 +236,12 @@
       </div>
       <el-form-item label="封面图">
         <el-input v-model="editForm.pic" placeholder="封面 URL">
-          <template #append><el-image v-if="editForm.pic" :src="editForm.pic" style="width:28px;height:38px" fit="cover" /></template>
+          <template #append><el-image v-if="editForm.pic" :src="imgUrl(editForm.pic)" style="width:28px;height:38px" fit="cover" /></template>
+        </el-input>
+      </el-form-item>
+      <el-form-item label="首页图">
+        <el-input v-model="editForm.heroPic" placeholder="横版剧照/背景图 URL，首页 Hero 优先使用">
+          <template #append><el-image v-if="editForm.heroPic" :src="imgUrl(editForm.heroPic)" style="width:48px;height:28px" fit="cover" /></template>
         </el-input>
       </el-form-item>
       <el-form-item label="简介"><el-input v-model="editForm.blurb" type="textarea" :rows="3" /></el-form-item>
@@ -216,7 +258,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { api } from '../api'
+import { api, imgUrl } from '../api'
 const router = useRouter()
 
 const kwDlg = ref(false); const kwInput = ref('')
@@ -283,6 +325,13 @@ const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', year: '' }
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
 
+function coverUrl(row) {
+  return imgUrl(row?._coverFallback ? row.pic : (row.officialPic || row.pic || ''))
+}
+function fallbackCover(row) {
+  if (row?.officialPic && row?.pic && !row._coverFallback) row._coverFallback = true
+}
+
 async function load() {
   loading.value = true
   try { const r = await api.adminVods(q); list.value = r.list; total.value = r.total } finally { loading.value = false }
@@ -315,7 +364,7 @@ function openEdit(row) {
   editForm.value = {
     id: row.id, name: row.name, year: row.year, typeName: row.typeName,
     area: row.area, lang: row.lang, actor: row.actor, director: row.director,
-    remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, blurb: row.blurb,
+    remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, heroPic: row.heroPic, blurb: row.blurb,
   }
   editDlg.value = true
 }
@@ -356,17 +405,38 @@ async function matchOne(id) {
   ElMessage.info('正在匹配豆瓣…')
   try {
     const r = await api.metaMatch(id)
-    if (r.ok) { ElMessage.success('匹配成功'); cur.value = await api.vod(id); load(); loadMeta() }
-    else ElMessage.warning('豆瓣未收录该片')
+    if (r.status === 'matched') ElMessage.success(`匹配成功，置信 ${r.score}`)
+    else if (r.status === 'pending') ElMessage.warning(`低置信候选，已转待确认（${r.score}分）`)
+    else ElMessage.warning('豆瓣未收录或置信过低')
+    cur.value = await api.vod(id); load(); loadMeta()
   } catch (e) { ElMessage.error(e.message) }
+}
+function parseMetaReason(row) {
+  try { return JSON.parse(row?.metaReason || '{}') } catch { return {} }
+}
+function pendingCandidates(row) {
+  if (row?.metaMatched !== 'pending') return []
+  return Array.isArray(parseMetaReason(row).candidates) ? parseMetaReason(row).candidates : []
+}
+async function confirmDouban(id, c) {
+  try {
+    await ElMessageBox.confirm(`确认匹配豆瓣《${c.title}》${c.year ? '（' + c.year + '）' : ''}？`, '确认豆瓣候选', { type: 'warning' })
+    const r = await api.metaSet(id, c.id)
+    if (r.ok) {
+      ElMessage.success('已确认豆瓣匹配')
+      cur.value = await api.vod(id); load(); loadMeta()
+    } else ElMessage.error(r.error || '确认失败')
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '确认失败') }
 }
 onMounted(async () => { types.value = await api.categories(); load(); loadMeta() })
 </script>
 
 <style scoped>
-.bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .sec-title { font-size: 16px; font-weight: 600; } .sec-title small { color:#9aa4b2; font-weight:400; margin-left:6px; }
-.filters { display: flex; gap: 10px; }
+.filters { display: flex; align-items: center; gap: 10px; flex: 1 1 760px; min-width: 0; flex-wrap: wrap; }
+.filters :deep(.el-button + .el-button) { margin-left: 0; }
+.vod-count { flex: 0 0 auto; color:#9aa4b2; font-size:13px; line-height:32px; white-space: nowrap; }
 .noimg { width:44px; height:60px; background:#f0f2f5; color:#b8c0cc; font-size:12px;
   display:flex; align-items:center; justify-content:center; border-radius:4px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
@@ -395,4 +465,19 @@ onMounted(async () => { types.value = await api.categories(); load(); loadMeta()
   background: #fdf6ec; border: 1px solid #f5dab1; border-radius: 8px;
   font-size: 13px; color: #b88230;
 }
+.meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
+.cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }
+.cand-item { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px; background:#fff; border-radius:8px; margin-bottom:8px; }
+.cand-item:last-child { margin-bottom:0; }
+.cand-main { display:flex; align-items:center; gap:10px; min-width:0; }
+.cand-img { width:40px; height:56px; border-radius:4px; flex-shrink:0; }
+.cand-info { min-width:0; font-size:13px; }
+.cand-year { color:#98a1b0; margin-left:4px; }
+.cand-sub { color:#98a1b0; font-size:12px; margin-top:3px; word-break:break-all; }
+.cand-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.cand-actions a { color:#409eff; font-size:12px; text-decoration:none; }
+.asset-box { margin: 14px 0; padding: 12px; border: 1px solid #e4e7ed; border-radius: 10px; background: #fafbfc; }
+.asset-title { font-weight: 700; color: #4a5568; margin-bottom: 10px; }
+.asset-imgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.asset-img { width: 100%; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden; background: #f0f2f5; }
 </style>

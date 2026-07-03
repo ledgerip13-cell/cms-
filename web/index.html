@@ -3,7 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>次元港 · 在线影视</title>
+  <title></title>
+  <script>
+    (function () {
+      function apply(site) {
+        if (site.siteName) document.title = site.siteName
+        meta('description', site.description)
+        meta('keywords', site.keywords)
+        if (site.logo) {
+          var link = document.querySelector('link[rel~="icon"]')
+          if (!link) {
+            link = document.createElement('link')
+            link.rel = 'icon'
+            document.head.appendChild(link)
+          }
+          link.href = site.logo
+        }
+      }
+      function meta(name, content) {
+        if (!content) return
+        var tag = document.querySelector('meta[name="' + name + '"]')
+        if (!tag) {
+          tag = document.createElement('meta')
+          tag.name = name
+          document.head.appendChild(tag)
+        }
+        tag.content = content
+      }
+      try {
+        var raw = localStorage.getItem('vcms.site')
+        if (raw) apply(JSON.parse(raw))
+      } catch (e) {}
+      fetch('/api/site').then(function (r) {
+        return r.ok ? r.json() : null
+      }).then(function (site) {
+        if (!site) return
+        localStorage.setItem('vcms.site', JSON.stringify(site))
+        apply(site)
+      }).catch(function () {})
+    })()
+  </script>
 </head>
 <body>
   <div id="app"></div>

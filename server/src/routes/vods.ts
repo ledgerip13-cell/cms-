@@ -2,6 +2,90 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
+import { enabledTypeNames, isPublicType, publicTypeFilter, requestedPublicType } from "../publicVod.js";
+import { hotVodQuery } from "../hotConfig.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function shanghaiDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function recentShanghaiDates(days: number) {
+  const now = new Date();
+  const shanghaiNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date(shanghaiNow);
+    d.setDate(shanghaiNow.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+}
+
+function shanghaiDow(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00+08:00`).getDay();
+}
+
+function heroImageCandidates(vod: any) {
+  const images: Array<{ url?: string; type?: string; isHero?: boolean; width?: number; height?: number }> = Array.isArray(vod.images)
+    ? vod.images
+    : [];
+  const seen = new Set<string>();
+  const candidates: Array<{ url: string; wide: boolean; source: string }> = [];
+  function push(url: string, wide: boolean, source: string) {
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    candidates.push({ url, wide, source });
+  }
+  if (vod.heroPic) push(vod.heroPic, true, "heroPic");
+  for (const img of images) {
+    if (!img?.url) continue;
+    const hasSize = Number(img.width) > 0 && Number(img.height) > 0;
+    const wide = img.type === "poster"
+      ? true
+      : hasSize
+        ? Number(img.width) > Number(img.height)
+        : Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
+    if (img.isHero || img.type === "backdrop" || img.type === "still" || img.type === "poster") push(img.url, wide, img.type || "asset");
+  }
+  push(vod.officialPic || vod.pic || "", false, "posterFallback");
+  return candidates;
+}
+
+function pickHeroImage(vod: any) {
+  return heroImageCandidates(vod)[0] || { url: "", wide: false };
+}
+
+function withHeroImage(vod: any) {
+  const { images, ...rest } = vod;
+  const heroImages = heroImageCandidates(vod);
+  const heroImage = heroImages[0] || { url: "", wide: false };
+  return { ...rest, heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
+}
+
+function parseEpisodes(value: string | null | undefined): Array<{ name?: string; url?: string }> {
+  try {
+    const rows = JSON.parse(value || "[]");
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
+  return value.map((ep, index) => ({
+    name: String(ep?.name || `第${index + 1}集`),
+  }));
+}
 
 export default async function vodRoutes(app: FastifyInstance) {
   // 影片列表（分页 + 搜索 + 分类 + 年份 + 排序）
@@ -9,10 +93,19 @@ export default async function vodRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Number(q.size) || 20);
+    const publicTypes = await enabledTypeNames();
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
-    const where: any = { status: "online" };
-    if (q.kw) where.name = { contains: q.kw };
-    if (q.type) where.typeName = q.type;
+    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes) };
+    if (q.kw) {
+      const kw = String(q.kw);
+      where.OR = [
+        { name: { contains: kw } },
+        { actor: { contains: kw } },
+        { director: { contains: kw } },
+        { people: { some: { person: { name: { contains: kw } } } } },
+      ];
+    }
+    if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
     if (q.sub) where.subType = q.sub;
     if (q.year === "2005年以前") {
       // year 字段是自由文本，不能用字典序比较。列出 1900~2004 全部取值做 IN 查询，
@@ -43,8 +136,9 @@ export default async function vodRoutes(app: FastifyInstance) {
   // 年份索引（聚合，降序）：支持按 type/sub 联动，只返回该分类下实际存在的年份
   app.get("/api/years", async (req) => {
     const q = req.query as any;
-    const where: any = {};
-    if (q.type) where.typeName = q.type;
+    const publicTypes = await enabledTypeNames();
+    const where: any = { typeName: publicTypeFilter(publicTypes) };
+    if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
     if (q.sub) where.subType = q.sub;
     const rows = await prisma.vod.groupBy({
       by: ["year"],
@@ -75,48 +169,46 @@ export default async function vodRoutes(app: FastifyInstance) {
     return recent;
   });
 
-  // 热门推荐（搜索框点击时展示）：有评分优先，否则按线路数/更新
+  // 热门推荐：默认榜按后台算法配置；分类榜保留固定分类逻辑
   // cat: 可选榜单分类，hot(默认/热搜榜全部) | guoman(国产动漫) | anime(动漫大类全部) | shortplay(短剧)
   app.get("/api/hot", async (req) => {
     const q = req.query as any;
-    const take = Math.min(20, Number(q.limit) || 10);
     const cat = String(q.cat || "hot");
-    const catWhere: any =
-      cat === "guoman" ? { typeName: "动漫", subType: "国产动漫" } :
-      cat === "anime" ? { typeName: "动漫" } :
-      cat === "shortplay" ? { typeName: "短剧" } : {};
-    const rated = await prisma.vod.findMany({
-      where: { status: "online", rating: { not: null }, ...catWhere },
-      orderBy: [{ ratingCount: "desc" }, { rating: "desc" }],
-      take,
-      include: { _count: { select: { plays: true } } },
+    const hotQuery = await hotVodQuery(cat, Number(q.limit) || undefined);
+    const list = await prisma.vod.findMany({
+      where: hotQuery.where,
+      orderBy: hotQuery.orderBy,
+      take: hotQuery.take,
+      include: {
+        _count: { select: { plays: true } },
+        images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+      },
     });
-    if (rated.length >= take) return rated;
-    // 评分片不够，补最近更新(同榜单分类过滤)
-    const more = await prisma.vod.findMany({
-      where: { status: "online", id: { notIn: rated.map((v) => v.id) }, ...catWhere },
-      orderBy: { updatedAt: "desc" },
-      take: take - rated.length,
-      include: { _count: { select: { plays: true } } },
-    });
-    return [...rated, ...more];
+    return list.map(withHeroImage);
   });
 
-  // 每日更新：按 updatedAt 的星期分组（近7天），每天最多14部
+  // 每日更新：按最近7个自然日期分组，每天最多14部
   app.get("/api/weekly", async () => {
-    const since = new Date(Date.now() - 7 * 864e5);
+    const dates = recentShanghaiDates(7);
+    const since = new Date(Date.now() - 8 * DAY_MS);
+    const publicTypes = await enabledTypeNames();
     const rows = await prisma.vod.findMany({
-      where: { status: "online", updatedAt: { gte: since } },
+      where: { status: "online", typeName: publicTypeFilter(publicTypes), updatedAt: { gte: since } },
       orderBy: { updatedAt: "desc" },
       take: 600,
       include: { _count: { select: { plays: true } } },
     });
-    const week: Record<number, any[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    const byDate = new Map(dates.map((date) => [date, [] as any[]]));
     for (const v of rows) {
-      const d = new Date(v.updatedAt).getDay();
-      if (week[d].length < 14) week[d].push(v);
+      const date = shanghaiDateKey(v.updatedAt);
+      const bucket = byDate.get(date);
+      if (bucket && bucket.length < 14) bucket.push(v);
     }
-    return week;
+    return dates.map((date) => ({
+      date,
+      dow: shanghaiDow(date),
+      items: byDate.get(date) || [],
+    }));
   });
 
   // 相关推荐：同大类优先，其次同小类，排除自身。用于播放页右栏
@@ -126,7 +218,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const take = Math.min(24, Number(q.limit) || 12);
     const type = String(q.type || "");
     const sub = String(q.sub || "");
-    const baseWhere: any = { status: "online", id: { not: id } };
+    const publicTypes = await enabledTypeNames();
+    const baseWhere: any = { status: "online", typeName: publicTypeFilter(publicTypes), id: { not: id } };
     const picks: any[] = [];
     const seen = new Set<number>([id]);
     const pushRows = (rows: any[]) => {
@@ -143,7 +236,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     // 2) 同大类补足
     if (picks.length < take && type) {
       pushRows(await prisma.vod.findMany({
-        where: { ...baseWhere, typeName: type, id: { notIn: [...seen] } },
+        where: { ...baseWhere, typeName: requestedPublicType(publicTypes, type), id: { notIn: [...seen] } },
         orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
         take: take - picks.length, include: { _count: { select: { plays: true } } },
       }));
@@ -164,10 +257,15 @@ export default async function vodRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const vod = await prisma.vod.findUnique({
       where: { id },
-      include: { plays: { include: { source: true } } },
+      include: {
+        plays: { include: { source: true } },
+        people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
+        images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+      },
     });
     // 观众端不能看到已下架影片，同列表接口限制保持一致（admin详情页用另外的鲟权接口）
-    if (!vod || vod.status !== "online") return reply.code(404).send({ error: "not found" });
+    const publicTypes = await enabledTypeNames();
+    if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName)) return reply.code(404).send({ error: "not found" });
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
       sourceId: p.sourceId,
@@ -179,7 +277,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       score: p.score,
       checkMs: p.checkMs,
       playKind: p.playKind,
-      episodes: JSON.parse(p.episodes || "[]"),
+      episodes: parseEpisodes(p.episodes),
     }));
     // 健康优选排序：存活优先 → 评分高优先 → 源优先级
     const byHealth = (a: { alive: boolean; score: number; priority: number }, b: { alive: boolean; score: number; priority: number }) => {
@@ -207,8 +305,8 @@ export default async function vodRoutes(app: FastifyInstance) {
           alive: best.alive,
           score: best.score,
           playKind: best.playKind,
-          episodes: best.episodes,
-          channels: sorted, // 同源全部备用通道(按健康分降序)，前端需展示备用tab时用
+          episodes: publicEpisodes(best.episodes),
+          channels: sorted.map((c) => ({ ...c, episodes: publicEpisodes(c.episodes) })), // 同源全部备用通道(按健康分降序)，前端需展示备用tab时用
         };
       })
       .sort(byHealth);
@@ -219,6 +317,8 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.get("/api/subtypes", async (req) => {
     const type = String((req.query as any).type || "");
     if (!type) return [];
+    const publicTypes = await enabledTypeNames();
+    if (!isPublicType(publicTypes, type)) return [];
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
       where: { typeName: type, subType: { not: "" } },
@@ -230,8 +330,10 @@ export default async function vodRoutes(app: FastifyInstance) {
 
   // 分类聚合
   app.get("/api/types", async () => {
+    const publicTypes = await enabledTypeNames();
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
+      where: { typeName: publicTypeFilter(publicTypes) },
       _count: { _all: true },
       orderBy: { _count: { typeName: "desc" } },
     });
@@ -245,12 +347,19 @@ export default async function vodRoutes(app: FastifyInstance) {
     // 后台单片详情（含已下架），供管理页“线路详情”面板用，复用同一份组装逻辑
     secured.get("/api/admin/vods/:id", async (req, reply) => {
       const id = Number((req.params as any).id);
-      const vod = await prisma.vod.findUnique({ where: { id }, include: { plays: { include: { source: true } } } });
+      const vod = await prisma.vod.findUnique({
+        where: { id },
+        include: {
+          plays: { include: { source: true } },
+          people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
+          images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+        },
+      });
       if (!vod) return reply.code(404).send({ error: "not found" });
       const channels = vod.plays.map((p) => ({
         id: p.id, sourceId: p.sourceId, sourceName: p.source.name, priority: p.source.priority,
         flag: p.flag, epCount: p.epCount, alive: p.alive, score: p.score, checkMs: p.checkMs,
-        playKind: p.playKind, episodes: JSON.parse(p.episodes || "[]"),
+        playKind: p.playKind, episodes: parseEpisodes(p.episodes),
       }));
       const byHealth = (a: any, b: any) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.score !== a.score ? b.score - a.score : a.priority - b.priority);
       const bySource = new Map<number, typeof channels>();
@@ -266,7 +375,15 @@ export default async function vodRoutes(app: FastifyInstance) {
       const size = Math.min(200, Number(q.size) || 20);
       const where: any = {};
       if (q.status) where.status = q.status;
-      if (q.kw) where.name = { contains: q.kw };
+      if (q.kw) {
+        const kw = String(q.kw);
+        where.OR = [
+          { name: { contains: kw } },
+          { actor: { contains: kw } },
+          { director: { contains: kw } },
+          { people: { some: { person: { name: { contains: kw } } } } },
+        ];
+      }
       if (q.type) where.typeName = q.type;
       if (q.sub) where.subType = q.sub;
       if (q.year === "2005年以前") {
@@ -318,7 +435,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const b = (req.body as any) || {};
     const data: any = {};
-    const fields = ["name", "year", "typeName", "pic", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "officialPic", "genres"];
+    const fields = ["name", "year", "typeName", "pic", "heroPic", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "officialPic", "genres"];
     for (const f of fields) if (b[f] !== undefined) data[f] = b[f];
     if (b.rating !== undefined) data.rating = b.rating === null || b.rating === "" ? null : Number(b.rating);
     if (!data.name || !String(data.name).trim()) {

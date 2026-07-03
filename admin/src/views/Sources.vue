@@ -21,6 +21,11 @@
           <el-tag v-if="apiUrlCount(row)>1" size="small" type="success" style="margin-top:3px">{{ apiUrlCount(row) }}个入口(已failover)</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="播放域名" width="130">
+        <template #default="{ row }">
+          <el-button link type="primary" size="small" @click="openDomainManage(row)">管理播放域名</el-button>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="70">
         <template #default="{ row }">
           <el-tag v-if="row.status==='ok'" type="success" size="small">正常</el-tag>
@@ -36,7 +41,9 @@
       <el-table-column label="定时采集" width="110">
         <template #default="{ row }">
           <el-switch v-model="row.autoSync" @change="toggle(row)" />
-          <div v-if="row.autoSync" style="font-size:11px;color:#9aa4b2">{{ row.cronExpr }} · {{ row.syncHours }}h</div>
+          <div v-if="row.autoSync" style="font-size:11px;color:#9aa4b2">
+            {{ row.cronExpr }} · {{ row.syncHours }}h<span v-if="row.autoTypeId"> · 分类{{ row.autoTypeId }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="syncCount" label="入库" width="70" />
@@ -87,9 +94,72 @@
           </el-select>
         </el-form-item>
         <el-form-item label="增量窗口"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
+        <el-form-item label="采集分类">
+          <el-select v-model="form.autoTypeId" clearable placeholder="全部分类" style="width:240px"
+            filterable :loading="autoClassLoading" :disabled="!form.id">
+            <template v-if="autoClassTree.length">
+              <el-option-group v-for="p in autoClassTree" :key="p.typeId"
+                :label="p.children.length ? `${p.typeName}（父类·含${p.children.length}子类）` : p.typeName">
+                <el-option :label="`${p.typeName}（展开全部子类）`" :value="p.typeId" v-if="p.children.length" />
+                <el-option v-for="c in p.children" :key="c.typeId" :label="c.typeName" :value="c.typeId" />
+                <el-option v-if="!p.children.length" :label="p.typeName" :value="p.typeId" />
+              </el-option-group>
+            </template>
+            <el-option v-else v-for="t in autoSrcTypes" :key="t.typeId" :label="`${t.typeName} (${t.typeId})`" :value="t.typeId" />
+          </el-select>
+          <small style="margin-left:8px;color:#9aa4b2">留空=全部；选父类会自动展开子类。新增源需保存后再选。</small>
+        </el-form-item>
       </template>
     </el-form>
     <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+  </el-dialog>
+
+  <!-- 播放域名管理 -->
+  <el-dialog v-model="domainManageDlg" :title="`播放域名 - ${domainManageSource?.name || ''}`" width="640">
+    <div class="domain-manage-bar">
+      <el-input v-model="domainKeyword" clearable placeholder="搜索播放域名" />
+      <span class="muted">共 {{ manageDomains.length }} 个</span>
+    </div>
+    <el-table :data="filteredManageDomains" max-height="420" stripe style="width:100%">
+      <el-table-column label="播放域名" min-width="240">
+        <template #default="{ row }">
+          <div class="domain-host">{{ row.host }}</div>
+          <div class="muted">{{ row.origin }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="count" label="播放地址" width="100" sortable />
+      <el-table-column prop="playCount" label="线路" width="90" sortable />
+      <el-table-column label="操作" width="90" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="openDomainReplace(domainManageSource, row)">更改</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-dialog>
+
+  <!-- 播放域名更换 -->
+  <el-dialog v-model="domainDlg" title="更换播放域名" width="520">
+    <el-alert type="warning" :closable="false" show-icon
+      title="只替换当前采集源已入库播放地址里的域名，不会修改采集 API 地址。" />
+    <el-form :model="domainForm" label-width="100px" style="margin-top:16px">
+      <el-form-item label="采集源">
+        <el-input :model-value="domainForm.sourceName" disabled />
+      </el-form-item>
+      <el-form-item label="当前域名">
+        <el-input v-model="domainForm.oldOrigin" disabled />
+      </el-form-item>
+      <el-form-item label="新播放域名">
+        <el-input v-model="domainForm.newOrigin" placeholder="https://new-cdn.example.com" />
+        <div class="form-help">只替换域名，路径、文件名和参数都会保留。</div>
+      </el-form-item>
+      <el-form-item label="影响范围">
+        <div class="muted">约 {{ domainForm.count || 0 }} 个播放地址，{{ domainForm.playCount || 0 }} 条线路</div>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="domainDlg=false">取消</el-button>
+      <el-button type="primary" :loading="domainReplacing" @click="replaceDomain">确认更换</el-button>
+    </template>
   </el-dialog>
 
   <!-- 采集 -->
@@ -140,7 +210,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -149,6 +219,12 @@ const router = useRouter()
 
 const list = ref([]); const loading = ref(false)
 const dlg = ref(false); const form = ref({}); const formRef = ref(null)
+const domainDlg = ref(false)
+const domainManageDlg = ref(false)
+const domainManageSource = ref(null)
+const domainKeyword = ref('')
+const domainReplacing = ref(false)
+const domainForm = ref({ sourceId: 0, sourceName: '', oldOrigin: '', newOrigin: '', count: 0, playCount: 0 })
 const formRules = {
   name: [{ required: true, message: '源名称不能为空', trigger: 'blur' }],
   apiUrls: [{ validator: (_, v, cb) => {
@@ -158,10 +234,25 @@ const formRules = {
 }
 const syncDlg = ref(false); const syncing = ref(false)
 const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5 }); let syncTarget = null
+const autoSrcTypes = ref([])
+const autoClassTree = ref([])
+const autoClassLoading = ref(false)
 
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 
 async function load() { loading.value = true; try { list.value = await api.sources() } finally { loading.value = false } }
+function playDomains(row) {
+  try {
+    const rows = JSON.parse(row?.playDomains || '[]')
+    return Array.isArray(rows) ? rows.filter(d => d?.origin && d?.host) : []
+  } catch { return [] }
+}
+const manageDomains = computed(() => playDomains(domainManageSource.value))
+const filteredManageDomains = computed(() => {
+  const kw = domainKeyword.value.trim().toLowerCase()
+  if (!kw) return manageDomains.value
+  return manageDomains.value.filter(d => `${d.host} ${d.origin}`.toLowerCase().includes(kw))
+})
 const probing = ref(false)
 async function doProbe() {
   probing.value = true
@@ -176,11 +267,27 @@ function apiUrlCount(row) {
   const a = parseApiUrls(row)
   return a.length || (row.apiUrl ? 1 : 0)
 }
-function openAdd() { form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, cronExpr:'0 * * * *', syncHours:24 }; dlg.value = true }
+function openAdd() {
+  autoSrcTypes.value = []; autoClassTree.value = []
+  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, autoTypeId:'', cronExpr:'0 * * * *', syncHours:24 }
+  dlg.value = true
+}
 function openEdit(row) {
   const arr = parseApiUrls(row)
-  form.value = { ...row, apiUrls: arr.length ? arr : [row.apiUrl || ''] }
+  form.value = { ...row, autoTypeId: row.autoTypeId || '', apiUrls: arr.length ? arr : [row.apiUrl || ''] }
+  loadAutoTypes(row)
   dlg.value = true
+}
+async function loadAutoTypes(row) {
+  autoSrcTypes.value = []; autoClassTree.value = []
+  if (!row?.id) return
+  autoClassLoading.value = true
+  try {
+    const r = await api.sourceClasses(row.id)
+    autoClassTree.value = r?.ok ? r.tree : []
+  } catch { autoClassTree.value = [] }
+  finally { autoClassLoading.value = false }
+  try { autoSrcTypes.value = await api.sourceTypes(row.id) } catch { autoSrcTypes.value = [] }
 }
 async function save() {
   const valid = await formRef.value?.validate().catch(() => false)
@@ -210,6 +317,54 @@ async function ping(row) {
     }
     load()
   } finally { row._pinging = false }
+}
+function openDomainReplace(row, d) {
+  if (!row || !d) return
+  domainForm.value = {
+    sourceId: row.id,
+    sourceName: row.name,
+    oldOrigin: d.origin,
+    newOrigin: d.origin,
+    count: d.count,
+    playCount: d.playCount,
+  }
+  domainDlg.value = true
+}
+function openDomainManage(row) {
+  domainManageSource.value = row
+  domainKeyword.value = ''
+  domainManageDlg.value = true
+}
+async function replaceDomain() {
+  const f = domainForm.value
+  if (!f.sourceId || !f.oldOrigin || !String(f.newOrigin || '').trim()) {
+    ElMessage.error('请填写新播放域名')
+    return
+  }
+  if (String(f.newOrigin).trim() === f.oldOrigin) {
+    ElMessage.error('新旧播放域名不能相同')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认将「${f.sourceName}」下的播放域名从 ${f.oldOrigin} 更换为 ${String(f.newOrigin).trim()}？此操作会直接替换数据库里的播放地址，不会修改采集 API。`,
+    '确认更换播放域名',
+    { type: 'warning', confirmButtonText: '确认更换', cancelButtonText: '取消' }
+  )
+  domainReplacing.value = true
+  try {
+    const r = await api.replaceSourcePlayDomain(f.sourceId, {
+      oldOrigin: f.oldOrigin,
+      newOrigin: String(f.newOrigin).trim(),
+    })
+    ElMessage.success(`已更换：${r.affectedEpisodes} 个播放地址，${r.affectedPlays} 条线路`)
+    domainDlg.value = false
+    domainManageDlg.value = false
+    await load()
+  } catch (e) {
+    ElMessage.error('更换失败: ' + e.message)
+  } finally {
+    domainReplacing.value = false
+  }
 }
 const srcTypes = ref([])
 const classTree = ref([])
@@ -263,4 +418,9 @@ onMounted(load)
 .sec-title { font-size: 16px; font-weight: 600; }
 .sec-title small { color: #9aa4b2; font-weight: 400; margin-left: 6px; }
 :deep(.el-table) { overflow-x: auto; }
+.muted { color: #9aa4b2; font-size: 12px; }
+.domain-count { color: #9aa4b2; font-size: 12px; white-space: nowrap; }
+.domain-manage-bar { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
+.domain-host { font-weight: 600; line-height: 1.5; }
+.form-help { color: #9aa4b2; font-size: 12px; line-height: 1.6; }
 </style>

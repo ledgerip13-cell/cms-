@@ -3,7 +3,7 @@
     <!-- 左：播放器 + 选集 + 信息 -->
     <div class="player-col">
       <div class="player-box">
-        <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video"></video>
+        <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate"></video>
         <iframe v-if="mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
         <div v-if="mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
@@ -17,7 +17,10 @@
         </div>
         <div class="pv-meta">
           <h1 class="pv-title">{{ vod.name }}
-            <span v-if="vod.rating" class="db-rating">⭐ {{ vod.rating }}</span>
+            <span v-if="vod.rating" class="db-rating">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.6 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9L12 2.6z"/></svg>
+              {{ vod.rating }}
+            </span>
           </h1>
           <div class="pv-tags">
             <span class="t">{{ vod.year || '—' }}</span>
@@ -26,11 +29,40 @@
             <span class="t accent">{{ vod.lines.length }} 条线路</span>
           </div>
           <p class="pv-line" v-if="vod.remarks">更新：{{ vod.remarks }}</p>
-          <p class="pv-line" v-if="vod.actor">主演：{{ vod.actor }}</p>
-          <p class="pv-line" v-if="vod.director">导演：{{ vod.director }}</p>
+          <div class="people-line" v-if="directors.length">
+            <span class="people-label">导演</span>
+            <button v-for="p in directors" :key="'d'+p.id" class="person-chip" @click="searchPerson(p.person.name)">
+              <img v-if="p.person.avatar" :src="imgUrl(p.person.avatar)" alt="" @error="onErr" />
+              {{ p.person.name }}
+            </button>
+          </div>
+          <p class="pv-line" v-else-if="vod.director">导演：{{ vod.director }}</p>
+          <div class="people-line" v-if="actors.length">
+            <span class="people-label">主演</span>
+            <button v-for="p in actors" :key="'a'+p.id" class="person-chip" @click="searchPerson(p.person.name)">
+              <img v-if="p.person.avatar" :src="imgUrl(p.person.avatar)" alt="" @error="onErr" />
+              {{ p.person.name }}
+            </button>
+          </div>
+          <p class="pv-line" v-else-if="vod.actor">主演：{{ vod.actor }}</p>
           <div class="pv-intro" v-if="vod.officialIntro || vod.blurb">
             <p :class="{fold: !introOpen}">{{ vod.officialIntro || vod.blurb }}</p>
             <span class="intro-toggle" @click="introOpen=!introOpen">{{ introOpen ? '收起' : '展开' }}</span>
+          </div>
+          <div class="still-section" v-if="gallery.length">
+            <div class="still-head">
+              <span>剧照</span>
+              <em>{{ gallery.length }} 张</em>
+            </div>
+            <div class="still-strip">
+              <div v-for="(img, i) in gallery" :key="img.id" class="still" :class="{hero: img.isHero}" @click="openGallery(i)">
+                <img :src="imgUrl(img.url)" :alt="vod.name" loading="lazy" @error="onErr" />
+              </div>
+            </div>
+          </div>
+          <div class="pv-actions">
+            <button class="mini-btn primary" @click="toggleFollow">{{ followed ? '已追剧' : '追剧' }}</button>
+            <button class="mini-btn" v-if="user" @click="router.push('/me')">我的片单</button>
           </div>
         </div>
       </div>
@@ -85,6 +117,26 @@
       </div>
       <div v-else class="rec-empty">暂无推荐</div>
     </aside>
+
+    <div v-if="galleryOpen && activeGallery" class="gallery-viewer" @click="closeGallery">
+      <button class="gv-close" type="button" @click.stop="closeGallery" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+      <button class="gv-nav prev" type="button" @click.stop="prevGallery" aria-label="上一张">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+      </button>
+      <img :src="imgUrl(activeGallery.url)" :alt="vod.name" @click.stop />
+      <button class="gv-nav next" type="button" @click.stop="nextGallery" aria-label="下一张">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+      <div class="gv-count">{{ galleryIdx + 1 }} / {{ gallery.length }}</div>
+    </div>
   </div>
   <div v-else-if="notFound" class="page not-found">
     <div class="nf-box">
@@ -123,6 +175,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
+import { currentUser } from '../userStore'
 defineOptions({ name: 'Play' })
 
 const route = useRoute()
@@ -131,16 +184,28 @@ const vod = ref({})
 const notFound = ref(false)
 const related = ref([])
 const introOpen = ref(false)
+const galleryOpen = ref(false)
+const galleryIdx = ref(0)
 const videoEl = ref(null)
+const user = currentUser
+const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 let hls = null
+let hlsRecoverCount = 0
+let pendingSeekSec = 0
+let lastHistorySaveAt = 0
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
 function onErr(e) { e.target.style.visibility='hidden' }
 function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function goPlay(id) { router.push('/play/'+id) }
+function searchPerson(name) { if (name) router.push({ path: '/', query: { kw: name } }) }
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value])
+const actors = computed(() => (vod.value.people || []).filter(p => p.role === 'actor').slice(0, 12))
+const directors = computed(() => (vod.value.people || []).filter(p => p.role === 'director').slice(0, 6))
+const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 8))
+const activeGallery = computed(() => gallery.value[galleryIdx.value])
 // 当前选中的具体通道(flag)：有channels则取chanIdx对应项，否则回退用line本身(兼容旧数据)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
@@ -150,28 +215,106 @@ function playHls(url) {
   curUrl.value = url
   const video = videoEl.value
   if (hls) { hls.destroy(); hls = null }
+  hlsRecoverCount = 0
+  const seekToPending = () => {
+    if (!video || pendingSeekSec < 8) return
+    const duration = Number(video.duration) || 0
+    if (duration && pendingSeekSec >= duration - 6) return
+    try { video.currentTime = pendingSeekSec } catch {}
+  }
+  video?.addEventListener('loadedmetadata', seekToPending, { once: true })
   if (Hls.isSupported()) {
     hls = new Hls({ maxBufferLength: 30 })
     hls.loadSource(url)
     hls.attachMedia(video)
-    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(()=>{}))
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      seekToPending()
+      video.play().catch(()=>{})
+    })
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (!data?.fatal || !hls) return
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && hlsRecoverCount < 2) {
+        hlsRecoverCount++
+        hls.startLoad()
+        return
+      }
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hlsRecoverCount < 4) {
+        hlsRecoverCount++
+        hls.recoverMediaError()
+        return
+      }
+      tryNextPlayback()
+    })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = url; video.play().catch(()=>{})
   }
 }
 
-async function play(url) {
+function playDirectUrl(url, kind = '') {
   if (hls) { hls.destroy(); hls = null }
-  if (isDirectM3u8(url)) { playHls(url); return }
+  if (kind === 'm3u8' || isDirectM3u8(url)) { playHls(url); return }
+  mode.value = 'hls'
+  curUrl.value = url
+  const video = videoEl.value
+  if (!video) return
+  video.src = url
+  video.play().catch(()=>{})
+}
+
+async function playResolvedEp(i) {
+  const channel = curChannel.value
+  if (!channel?.id || !vod.value?.id) return
   resolving.value = true
   try {
-    const r = await api.resolve(url)
-    if (r.ok && r.kind === 'm3u8') { playHls(r.url); return }
+    const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i })
+    if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
+      playDirectUrl(r.url, r.kind)
+      return
+    }
   } catch {}
   finally { resolving.value = false }
-  mode.value = 'iframe'; curUrl.value = url
+  tryNextPlayback()
 }
-function playEp(i) { epIdx.value = i; const u = curChannel.value?.episodes?.[i]?.url; if (u) play(u) }
+
+function tryNextPlayback() {
+  const channels = curLine.value?.channels || []
+  if (channels.length && chanIdx.value < channels.length - 1) {
+    switchChannel(chanIdx.value + 1)
+    return
+  }
+  if (vod.value.lines?.length && lineIdx.value < vod.value.lines.length - 1) {
+    switchLine(lineIdx.value + 1)
+  }
+}
+
+function saveWatchHistory(i, progressOverride = null) {
+  if (!user.value || !vod.value?.id) return
+  const ep = curChannel.value?.episodes?.[i]
+  const video = videoEl.value
+  const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
+  const durationSec = Math.floor(Number(video?.duration) || 0)
+  api.saveHistory({
+    vodId: vod.value.id,
+    lineId: curChannel.value?.id,
+    epIndex: i,
+    epName: ep?.name || '',
+    progressSec,
+    durationSec,
+  }).catch(() => {})
+}
+function onVideoTimeUpdate() {
+  if (!user.value || mode.value !== 'hls') return
+  const now = Date.now()
+  if (now - lastHistorySaveAt < 15000) return
+  lastHistorySaveAt = now
+  saveWatchHistory(epIdx.value)
+}
+function playEp(i, opts = {}) {
+  epIdx.value = i
+  if (!opts.keepResume) pendingSeekSec = 0
+  playResolvedEp(i)
+  saveWatchHistory(i, pendingSeekSec || 0)
+}
 function switchLine(i) {
   lineIdx.value = i; chanIdx.value = 0
   const n = Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1)
@@ -185,7 +328,8 @@ function switchChannel(i) {
 
 async function loadVod(id) {
   introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
-  notFound.value = false; vod.value = {}
+  galleryOpen.value = false; galleryIdx.value = 0
+  notFound.value = false; vod.value = {}; followed.value = false
   try {
     vod.value = await api.vod(id)
   } catch (e) {
@@ -194,7 +338,23 @@ async function loadVod(id) {
   }
   if (!vod.value?.id) { notFound.value = true; return }
   await nextTick()
-  if (vod.value.lines?.length) playEp(0)
+  if (user.value) {
+    try {
+      const state = await api.userVodState(id)
+      followed.value = state.followed
+      const h = state.history
+      if (h?.lineId && vod.value.lines?.length) {
+        for (let li = 0; li < vod.value.lines.length; li++) {
+          const channels = vod.value.lines[li].channels || []
+          const ci = channels.findIndex(c => c.id === h.lineId)
+          if (ci >= 0) { lineIdx.value = li; chanIdx.value = ci; break }
+        }
+      }
+      epIdx.value = Math.max(0, Number(h?.epIndex) || 0)
+      pendingSeekSec = Math.max(0, Number(h?.progressSec) || 0)
+    } catch {}
+  }
+  if (vod.value.lines?.length) playEp(Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1), { keepResume: true })
   // 相关推荐
   try {
     related.value = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 12 })
@@ -202,9 +362,36 @@ async function loadVod(id) {
   window.scrollTo({ top: 0 })
 }
 
+function openGallery(i) {
+  galleryIdx.value = i
+  galleryOpen.value = true
+}
+function closeGallery() { galleryOpen.value = false }
+function prevGallery() {
+  if (!gallery.value.length) return
+  galleryIdx.value = (galleryIdx.value - 1 + gallery.value.length) % gallery.value.length
+}
+function nextGallery() {
+  if (!gallery.value.length) return
+  galleryIdx.value = (galleryIdx.value + 1) % gallery.value.length
+}
+
+async function toggleFollow() {
+  if (!vod.value?.id) return
+  if (!user.value) {
+    router.push({ path: '/auth', query: { redirect: route.fullPath } })
+    return
+  }
+  const r = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
+  followed.value = r.followed
+}
+
 onMounted(() => loadVod(route.params.id))
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
-onBeforeUnmount(() => { if (hls) hls.destroy() })
+onBeforeUnmount(() => {
+  saveWatchHistory(epIdx.value)
+  if (hls) hls.destroy()
+})
 </script>
 
 <style scoped>
@@ -226,8 +413,8 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 .nf-actions { display: flex; gap: 12px; justify-content: center; }
 .nf-btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
   border: 1px solid var(--line); background: var(--card); color: var(--text); transition: .15s; }
-.nf-btn:hover { border-color: var(--accent); color: var(--accent); }
-.nf-btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.nf-btn:hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
+.nf-btn.primary { background: var(--btn-primary-bg); border-color: transparent; color: var(--btn-primary-text); }
 .nf-btn.primary:hover { opacity: .9; color: #fff; }
 
 /* 标题信息条 */
@@ -237,16 +424,49 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 .pv-poster img { width: 100%; height: 100%; object-fit: cover; }
 .pv-meta { min-width: 0; flex: 1; }
 .pv-title { font-size: 22px; margin-bottom: 10px; }
-.db-rating { font-size: 15px; color: #ff9900; font-weight: 800; margin-left: 10px; }
+.db-rating { display: inline-flex; align-items: center; gap: 4px; font-size: 15px; color: var(--gold); font-weight: 800; margin-left: 10px; }
+.db-rating svg { width: 16px; height: 16px; flex-shrink: 0; }
 .pv-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .pv-tags .t { font-size: 12px; padding: 3px 10px; background: var(--bg2); border-radius: 6px; color: var(--muted); }
-.pv-tags .t.accent { background: var(--grad); color: #fff; }
+.pv-tags .t.accent { background: var(--play-line-active-bg); color: var(--play-line-active-text); }
 .pv-line { font-size: 13px; color: var(--muted); margin: 5px 0; line-height: 1.6;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.people-line { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 8px 0; }
+.people-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.person-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 25px; max-width: 112px; padding: 3px 8px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--bg2); color: var(--text);
+  font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-chip:hover { border-color: var(--play-link-text); color: #fff; }
+.person-chip img { width: 18px; height: 18px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .pv-intro { margin-top: 10px; }
 .pv-intro p { font-size: 13px; color: #9aa4b7; line-height: 1.75; }
 .pv-intro p.fold { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.intro-toggle { font-size: 12px; color: var(--accent2); cursor: pointer; margin-top: 4px; display: inline-block; }
+.intro-toggle { font-size: 12px; color: var(--play-link-text); cursor: pointer; margin-top: 4px; display: inline-block; }
+.still-section { margin-top: 14px; }
+.still-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; }
+.still-head span { font-size: 14px; font-weight: 800; color: var(--text); }
+.still-head em { font-style: normal; font-size: 12px; color: var(--muted); }
+.still-strip { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+  padding: 0 2px 8px; scrollbar-width: thin; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
+.still { flex: 0 0 148px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #0f1420;
+  border: 1px solid var(--line); cursor: zoom-in; scroll-snap-align: start; }
+.still.hero { border-color: var(--gallery-active-border); }
+.still img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-viewer { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.86);
+  display: flex; align-items: center; justify-content: center; padding: 54px 70px; }
+.gallery-viewer img { max-width: min(1180px, 100%); max-height: 82vh; object-fit: contain; border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,.65); }
+.gv-close, .gv-nav { position: fixed; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,.18); background: rgba(20,22,29,.72);
+  color: #fff; cursor: pointer; backdrop-filter: blur(10px); line-height: 1; padding: 0; }
+.gv-close svg, .gv-nav svg { display: block; width: 24px; height: 24px; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.gv-close { top: 24px; right: 28px; width: 42px; height: 42px; border-radius: 50%; }
+.gv-nav { top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border-radius: 12px; }
+.gv-nav svg { width: 30px; height: 30px; }
+.gv-nav.prev { left: 24px; }
+.gv-nav.next { right: 24px; }
+.gv-count { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); color: #dfe5ef;
+  font-size: 13px; background: rgba(20,22,29,.72); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 7px 14px; }
 
 .now-playing { margin: 14px 0; font-size: 14px; color: var(--muted); }
 .now-playing b { color: var(--text); }
@@ -256,16 +476,16 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
   background: rgba(255,255,255,.02); border: 1px dashed var(--line); border-radius: 10px; }
 .chan-btn { padding: 5px 12px; border-radius: 7px; background: var(--bg2); border: 1px solid var(--line);
   font-size: 12.5px; cursor: pointer; transition: .15s; }
-.chan-btn:hover { border-color: var(--accent); }
-.chan-btn.on { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+.chan-btn:hover { border-color: var(--play-channel-active-bg); }
+.chan-btn.on { background: var(--play-channel-active-bg); border-color: transparent; color: var(--play-channel-active-text); font-weight: 600; }
 .chan-btn.dead { opacity: .4; cursor: not-allowed; text-decoration: line-through; }
 .chan-btn em { font-style: normal; font-size: 11px; margin-left: 4px; opacity: .8; }
 .lbl { color: var(--muted); font-size: 14px; }
 .line-btn { padding: 6px 14px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
   font-size: 13px; cursor: pointer; transition: .2s; }
 .line-btn em { color: var(--muted); font-style: normal; font-size: 12px; }
-.line-btn:hover { border-color: var(--accent2); }
-.line-btn.on { background: var(--grad); border-color: transparent; color: #fff; }
+.line-btn:hover { border-color: var(--play-link-text); }
+.line-btn.on { background: var(--play-line-active-bg); border-color: transparent; color: var(--play-line-active-text); }
 .line-btn.on em { color: rgba(255,255,255,.8); }
 .eps-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
 .eps-head { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
@@ -275,13 +495,13 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 .ep { text-align: center; padding: 9px 4px; background: var(--bg2); border: 1px solid var(--line);
   border-radius: 7px; font-size: 13px; cursor: pointer; transition: .15s; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
-.ep:hover { border-color: var(--accent2); color: #fff; }
-.ep.on { background: var(--accent2); border-color: transparent; color: #fff; }
+.ep:hover { border-color: var(--play-episode-active-bg); color: #fff; }
+.ep.on { background: var(--play-episode-active-bg); border-color: transparent; color: var(--play-episode-active-text); }
 
 /* 相关推荐 */
 .rec-col { min-width: 0; }
 .rec-head { font-size: 16px; font-weight: 800; margin-bottom: 14px; display: flex; align-items: center; gap: 9px; }
-.rec-head::before { content: ''; width: 4px; height: 17px; border-radius: 2px; background: var(--grad); }
+.rec-head::before { content: ''; width: 4px; height: 17px; border-radius: 2px; background: var(--section-accent-bg); }
 .rec-list { display: flex; flex-direction: column; gap: 12px; }
 .rec-item { display: flex; gap: 11px; cursor: pointer; padding: 6px; border-radius: 10px; transition: .15s; }
 .rec-item:hover { background: var(--card); }
@@ -305,5 +525,13 @@ onBeforeUnmount(() => { if (hls) hls.destroy() })
 @media (max-width: 480px) {
   .pv-poster { width: 84px; }
   .pv-title { font-size: 18px; }
+  .still { flex-basis: 42vw; }
+  .gallery-viewer { padding: 62px 44px 54px; }
+  .gv-close { top: 16px; right: 16px; width: 38px; height: 38px; }
+  .gv-close svg { width: 22px; height: 22px; }
+  .gv-nav { width: 36px; height: 52px; border-radius: 10px; }
+  .gv-nav svg { width: 26px; height: 26px; }
+  .gv-nav.prev { left: 8px; }
+  .gv-nav.next { right: 8px; }
 }
 </style>

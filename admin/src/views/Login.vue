@@ -19,10 +19,11 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
+const route = useRoute()
 const router = useRouter()
 const username = ref('admin'); const password = ref(''); const loading = ref(false)
 async function submit() {
@@ -33,7 +34,10 @@ async function submit() {
     localStorage.setItem('token', r.token)
     localStorage.setItem('user', JSON.stringify(r.user))
     ElMessage.success('登录成功')
-    location.reload()
+    const next = typeof route.query.next === 'string' && route.query.next !== '/login'
+      ? route.query.next
+      : '/dashboard'
+    await router.replace(next)
   } catch (e) { ElMessage.error(e.message || '登录失败') } finally { loading.value = false }
 }
 </script>

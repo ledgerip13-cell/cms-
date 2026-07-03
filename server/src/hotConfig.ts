@@ -1,0 +1,127 @@
+import { prisma } from "./db.js";
+import { enabledTypeNames, publicTypeFilter, requestedPublicType } from "./publicVod.js";
+
+export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned"] as const;
+type HotSortMode = (typeof HOT_SORT_MODES)[number];
+
+export interface HotConfigDto {
+  id: number;
+  typeNames: string[];
+  sortMode: HotSortMode;
+  timeWindowDays: number;
+  minRating: number;
+  minRatingCount: number;
+  limit: number;
+  updatedAt?: Date;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function parseTypeNames(value: string | null | undefined): string[] {
+  try {
+    const arr = JSON.parse(value || "[]");
+    return Array.isArray(arr) ? [...new Set(arr.map((x) => String(x || "").trim()).filter(Boolean))] : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSortMode(value: unknown): HotSortMode {
+  const v = String(value || "hot");
+  return HOT_SORT_MODES.includes(v as HotSortMode) ? (v as HotSortMode) : "hot";
+}
+
+function toDto(row: any): HotConfigDto {
+  return {
+    id: row.id,
+    typeNames: parseTypeNames(row.typeNames),
+    sortMode: normalizeSortMode(row.sortMode),
+    timeWindowDays: Number(row.timeWindowDays) || 0,
+    minRating: Number(row.minRating) || 0,
+    minRatingCount: Number(row.minRatingCount) || 0,
+    limit: Number(row.limit) || 12,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function ensureHotConfig() {
+  const row = await prisma.hotConfig.upsert({
+    where: { id: 1 },
+    create: { id: 1 },
+    update: {},
+  });
+  return toDto(row);
+}
+
+export async function updateHotConfig(input: any) {
+  const publicTypes = await enabledTypeNames();
+  const typeNames = Array.isArray(input?.typeNames)
+    ? [...new Set(input.typeNames.map((x: any) => String(x || "").trim()).filter((x: string) => publicTypes.includes(x)))]
+    : [];
+  const row = await prisma.hotConfig.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      typeNames: JSON.stringify(typeNames),
+      sortMode: normalizeSortMode(input?.sortMode),
+      timeWindowDays: clamp(Number(input?.timeWindowDays) || 0, 0, 3650),
+      minRating: clamp(Number(input?.minRating) || 0, 0, 10),
+      minRatingCount: clamp(Number(input?.minRatingCount) || 0, 0, 100000000),
+      limit: clamp(Number(input?.limit) || 12, 1, 20),
+    },
+    update: {
+      typeNames: JSON.stringify(typeNames),
+      sortMode: normalizeSortMode(input?.sortMode),
+      timeWindowDays: clamp(Number(input?.timeWindowDays) || 0, 0, 3650),
+      minRating: clamp(Number(input?.minRating) || 0, 0, 10),
+      minRatingCount: clamp(Number(input?.minRatingCount) || 0, 0, 100000000),
+      limit: clamp(Number(input?.limit) || 12, 1, 20),
+    },
+  });
+  return toDto(row);
+}
+
+function orderByFor(sortMode: HotSortMode): any[] {
+  if (sortMode === "rating") return [{ rating: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }];
+  if (sortMode === "recent") return [{ updatedAt: "desc" }, { ratingCount: "desc" }, { rating: "desc" }];
+  if (sortMode === "created") return [{ createdAt: "desc" }, { ratingCount: "desc" }, { rating: "desc" }];
+  if (sortMode === "pinned") return [{ pinned: "desc" }, { ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
+  return [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
+}
+
+export async function hotVodQuery(cat = "hot", limit?: number) {
+  const publicTypes = await enabledTypeNames();
+  if (cat && cat !== "hot") {
+    const catWhere: any =
+      cat === "guoman" ? { typeName: requestedPublicType(publicTypes, "动漫"), subType: "国产动漫" } :
+      cat === "anime" ? { typeName: requestedPublicType(publicTypes, "动漫") } :
+      cat === "shortplay" ? { typeName: requestedPublicType(publicTypes, "短剧") } :
+      { typeName: publicTypeFilter(publicTypes) };
+    return {
+      config: null,
+      take: clamp(Number(limit) || 10, 1, 20),
+      where: { status: "online", rating: { not: null }, ...catWhere },
+      orderBy: orderByFor("hot"),
+    };
+  }
+
+  const config = await ensureHotConfig();
+  const selectedTypes = config.typeNames.filter((type) => publicTypes.includes(type));
+  const where: any = {
+    status: "online",
+    typeName: publicTypeFilter(selectedTypes.length ? selectedTypes : publicTypes),
+  };
+  if (config.timeWindowDays > 0) where.updatedAt = { gte: new Date(Date.now() - config.timeWindowDays * 24 * 60 * 60 * 1000) };
+  if (config.minRating > 0) where.rating = { gte: config.minRating };
+  else if (config.sortMode === "hot" || config.sortMode === "rating") where.rating = { not: null };
+  if (config.minRatingCount > 0) where.ratingCount = { gte: config.minRatingCount };
+
+  return {
+    config,
+    take: clamp(Number(config.limit || limit) || 12, 1, 20),
+    where,
+    orderBy: orderByFor(config.sortMode),
+  };
+}

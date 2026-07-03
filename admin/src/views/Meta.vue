@@ -26,7 +26,7 @@
             重刷失败/全部（{{ stat.failed || 0 }} 失败）
           </el-button>
         </div>
-        <p class="tip">任务在后台运行，进度见「采集任务」页。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部。</p>
+        <p class="tip">任务在后台运行，进度见「采集任务」页。低置信会进入待确认，不会自动写入豆瓣 ID。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部。</p>
       </div>
 
       <!-- 参数设置 -->
@@ -79,8 +79,9 @@ const saving = ref(false)
 const statCards = [
   { k:'total', label:'影片总数', color:'#1a1f2b' },
   { k:'matched', label:'已匹配', color:'#16a34a' },
+  { k:'pending', label:'待确认', color:'#e6a23c' },
   { k:'failed', label:'无收录', color:'#98a1b0' },
-  { k:'none', label:'待匹配', color:'#e6a23c' },
+  { k:'none', label:'待匹配', color:'#4f6ef7' },
 ]
 const matchRate = computed(() => stat.value.total ? Math.round((stat.value.matched / stat.value.total) * 100) : 0)
 
@@ -100,7 +101,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 20px; }
 .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
   padding: 18px 20px; box-shadow: var(--shadow-card); }
 .stat-num { font-size: 26px; font-weight: 750; }

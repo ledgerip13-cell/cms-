@@ -3,6 +3,36 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
 
+async function backfillMapToVods(mapId: number) {
+  const map = await prisma.sourceTypeMap.findUnique({
+    where: { id: mapId },
+    include: { category: true },
+  });
+  if (!map) return 0;
+  const target = map.category?.name || classifyType(map.sourceTypeName);
+  if (!target || !map.sourceTypeName) return 0;
+  return prisma.$executeRaw`
+    UPDATE "Vod" v
+    SET "typeName" = ${target}
+    WHERE v."subType" = ${map.sourceTypeName}
+      AND EXISTS (
+        SELECT 1 FROM "Play" p
+        WHERE p."vodId" = v.id
+          AND p."sourceId" = ${map.sourceId}
+      )
+  `;
+}
+
+async function backfillCategoryMaps(categoryId: number) {
+  const maps = await prisma.sourceTypeMap.findMany({
+    where: { categoryId },
+    select: { id: true },
+  });
+  let count = 0;
+  for (const m of maps) count += await backfillMapToVods(m.id);
+  return count;
+}
+
 export default async function categoryRoutes(app: FastifyInstance) {
   // 公开：前端取启用的统一分类（带影片数）——前后台均读此，保证一致
   app.get("/api/categories", async () => {
@@ -71,14 +101,21 @@ export default async function categoryRoutes(app: FastifyInstance) {
     admin.put("/api/admin/categories/:id", async (req) => {
       const id = Number((req.params as any).id);
       const b = req.body as any;
-      return prisma.category.update({
+      const before = await prisma.category.findUnique({ where: { id } });
+      const row = await prisma.category.update({
         where: { id },
         data: { name: b.name, slug: b.slug, sort: b.sort, enabled: b.enabled, parentId: b.parentId ?? null },
       });
+      const backfilled = before && b.name && b.name !== before.name ? await backfillCategoryMaps(id) : 0;
+      return { ...row, backfilled };
     });
     admin.delete("/api/admin/categories/:id", async (req) => {
-      await prisma.category.delete({ where: { id: Number((req.params as any).id) } });
-      return { ok: true };
+      const id = Number((req.params as any).id);
+      const maps = await prisma.sourceTypeMap.findMany({ where: { categoryId: id }, select: { id: true } });
+      await prisma.category.delete({ where: { id } });
+      let backfilled = 0;
+      for (const m of maps) backfilled += await backfillMapToVods(m.id);
+      return { ok: true, backfilled };
     });
 
     // 源分类映射：列出所有已发现的源type + 映射状态
@@ -95,10 +132,13 @@ export default async function categoryRoutes(app: FastifyInstance) {
     admin.post("/api/admin/typemaps/:id", async (req) => {
       const id = Number((req.params as any).id);
       const { categoryId } = req.body as any;
-      return prisma.sourceTypeMap.update({
+      const row = await prisma.sourceTypeMap.update({
         where: { id },
         data: { categoryId: categoryId ?? null },
+        include: { category: true, source: { select: { name: true } } },
       });
+      const backfilled = await backfillMapToVods(id);
+      return { ...row, backfilled };
     });
 
     // 未映射数量提醒

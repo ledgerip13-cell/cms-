@@ -36,6 +36,8 @@ export const api = {
   sourceTypes: (id) => http.get(`/sources/${id}/types`),
   sourceClasses: (id) => http.get(`/sources/${id}/classes`),
   sourceTypeCount: (id, t, hours) => http.get(`/sources/${id}/typecount`, { params: { t, hours } }),
+  sourcePlayDomains: (id) => http.get(`/sources/${id}/play-domains`),
+  replaceSourcePlayDomain: (id, d) => http.post(`/sources/${id}/play-domains/replace`, d),
   collectByKeyword: (keyword) => http.post('/collect/keyword', { keyword }),
   previewKeyword: (kw) => http.get('/collect/keyword/preview', { params: { kw } }),
   confirmKeyword: (keyword, candidates) => http.post('/collect/keyword/confirm', { keyword, candidates }),
@@ -76,7 +78,134 @@ export const api = {
   metaConfig: () => http.get('/meta/config'),
   updateMetaConfig: (d) => http.put('/meta/config', d),
   metaBatchRedo: () => http.post('/meta/batch', { redo: true }),
+  // hot recommendation
+  hotConfig: () => http.get('/admin/hot-config'),
+  updateHotConfig: (d) => http.put('/admin/hot-config', d),
+  hotPreview: () => http.get('/admin/hot-preview'),
+  // users
+  adminUsers: (params) => http.get('/admin/users', { params }),
+  adminUser: (id) => http.get(`/admin/users/${id}`),
+  updateAdminUser: (id, d) => http.patch(`/admin/users/${id}`, d),
+  resetAdminUserPassword: (id, d) => http.post(`/admin/users/${id}/password`, d),
+  invites: () => http.get('/admin/invites'),
+  createInvites: (d) => http.post('/admin/invites', d),
+  updateInvite: (id, d) => http.patch(`/admin/invites/${id}`, d),
+  memberGroups: () => http.get('/admin/member-groups'),
+  createMemberGroup: (d) => http.post('/admin/member-groups', d),
+  updateMemberGroup: (id, d) => http.patch(`/admin/member-groups/${id}`, d),
+  updateUserGroups: (id, groupIds) => http.put(`/admin/users/${id}/groups`, { groupIds }),
+  auditLogs: (limit = 100) => http.get('/admin/audit-logs', { params: { limit } }),
   // site
   site: () => http.get('/site'),
+  adminSite: () => http.get('/admin/site'),
   updateSite: (d) => http.put('/site', d),
+}
+
+export const SITE_CACHE_KEY = 'vcms.site'
+export const EMPTY_SITE = {
+  siteName: '',
+  logo: '',
+  description: '',
+  keywords: '',
+  footer: '',
+  announcement: '',
+  allowRegister: true,
+  registerInviteCode: '',
+  theme: {},
+}
+
+export const DEFAULT_THEME = {
+  global: {
+    bg: '#0a0b0f',
+    bgSoft: '#12141b',
+    card: '#14161d',
+    cardHi: '#1a1d26',
+    text: '#eceef3',
+    muted: '#79818f',
+    muted2: '#9aa2b1',
+    accent: '#ff5e6c',
+    accentLt: '#ff8a94',
+    accent2: '#7aa7ff',
+    gold: '#ffc233',
+    rose: '#e88db0',
+    accentSoftAlpha: 15,
+    roseSoftAlpha: 16,
+    btnPrimaryBg: '#ff5e6c',
+    btnPrimaryText: '#ffffff',
+    btnGhostBg: 'rgba(255,255,255,.06)',
+    btnGhostText: '#eceef3',
+    btnHoverBorder: '#ff5e6c',
+    btnHoverText: '#ff8a94',
+    navActiveBg: 'rgba(255,94,108,.15)',
+    navActiveText: '#ff5e6c',
+    searchBg: 'rgba(20,22,29,.6)',
+    searchFocusBorder: 'rgba(255,94,108,.6)',
+    searchFocusShadow: 'rgba(255,94,108,.15)',
+    searchButtonBg: '#ffffff',
+    searchButtonText: '#16181d',
+    rankFirstText: '#ff5e6c',
+    rankSecondText: '#ffc233',
+    rankThirdText: '#e88db0',
+    heroBadgeBg: 'rgba(255,94,108,.15)',
+    heroBadgeText: '#ff5e6c',
+    heroPrimaryButtonBg: '#ffffff',
+    heroPrimaryButtonText: '#16181d',
+    heroSecondaryButtonBg: 'rgba(255,255,255,.12)',
+    heroSecondaryButtonText: '#ffffff',
+    chipActiveBg: '#ff5e6c',
+    chipActiveText: '#ffffff',
+    sectionAccentBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
+    badgeScoreBg: '#ffc233',
+    badgeScoreText: '#1a1204',
+    posterOverlayBg: 'linear-gradient(0deg, rgba(8,9,13,.82) 0%, transparent 55%)',
+    playLineActiveBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
+    playLineActiveText: '#ffffff',
+    playChannelActiveBg: '#ff5e6c',
+    playChannelActiveText: '#ffffff',
+    playEpisodeActiveBg: '#7aa7ff',
+    playEpisodeActiveText: '#ffffff',
+    playLinkText: '#7aa7ff',
+    galleryActiveBorder: '#ff5e6c',
+    onboardingBg: 'linear-gradient(135deg, rgba(255,94,108,.14), rgba(32,36,52,.78))',
+  },
+  home: {},
+  play: {},
+  list: {},
+}
+
+export function normalizeTheme(theme) {
+  let raw = theme
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
+  }
+  const out = { global: {}, home: {}, play: {}, list: {} }
+  for (const scope of Object.keys(out)) out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+  return out
+}
+
+export function normalizeSite(site) {
+  const next = { ...EMPTY_SITE, ...(site || {}) }
+  next.theme = normalizeTheme(next.theme)
+  return next
+}
+
+export function readCachedSite() {
+  try {
+    return normalizeSite(JSON.parse(localStorage.getItem(SITE_CACHE_KEY) || '{}'))
+  } catch {
+    return normalizeSite()
+  }
+}
+
+export function writeCachedSite(site) {
+  const next = normalizeSite(site)
+  localStorage.setItem(SITE_CACHE_KEY, JSON.stringify(next))
+  return next
+}
+
+// 防盗链图床走服务端代理（与观众端保持一致）
+export function imgUrl(url) {
+  if (!url) return ''
+  if (/doubanio\.com|douban\.com/.test(url)) return '/api/img?u=' + encodeURIComponent(url)
+  return url
 }

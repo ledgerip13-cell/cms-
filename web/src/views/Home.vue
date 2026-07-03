@@ -26,21 +26,23 @@
       </template>
 
       <!-- Hero 全屏贯穿 -->
-      <section class="home-hero" v-if="hero.length">
-        <div class="hero-bg" :style="{ backgroundImage: `url(${heroPic(cur)})` }"></div>
+      <section class="home-hero" v-if="hero.length" @mouseenter="pauseHeroLoop" @mouseleave="resumeHeroLoop">
+        <div class="hero-bg" :class="{wide: heroImageWide(cur), fallback: !heroImageWide(cur)}" :style="{ backgroundImage: `url(${heroPic(cur)})` }"></div>
         <div class="hero-mask"></div>
         <div class="hero-in">
           <span class="hero-badge">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2s4 3 4 7a4 4 0 0 1-8 0c0-1 .5-2 .5-2S8 16 12 22c4-6 3.5-13 3.5-13S16 6 12 2z"/></svg>
+            <svg class="hero-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+            </svg>
             热门推荐
           </span>
           <h1 class="hero-title">{{ cur.name }}</h1>
           <div class="hero-meta">
             <span v-if="cur.rating" class="score">★ {{ cur.rating }}</span>
-            <span class="m">{{ cur.year || '—' }}</span>
-            <span class="m">{{ cur.typeName || '未分类' }}</span>
-            <span class="m" v-if="cur.area">{{ cur.area }}</span>
-            <span class="m" v-if="cur.remarks">{{ cur.remarks }}</span>
+            <span class="m year">{{ cur.year || '—' }}</span>
+            <span class="m type">{{ cur.typeName || '未分类' }}</span>
+            <span class="m extra" v-if="cur.area">{{ cur.area }}</span>
+            <span class="m extra" v-if="cur.remarks">{{ cur.remarks }}</span>
           </div>
           <p class="hero-desc" v-if="cur.officialIntro || cur.blurb">{{ cur.officialIntro || cur.blurb }}</p>
           <div class="hero-actions">
@@ -54,10 +56,12 @@
             </button>
           </div>
         </div>
-        <div class="hero-rail">
-          <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
-            @click="heroIdx=i" @mouseenter="heroIdx=i">
-            <img :src="heroPic(h)" :alt="h.name" @error="onErr" />
+        <div class="hero-rail" :style="heroRailStyle">
+          <div class="hero-rail-track">
+            <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
+              @click.stop="selectHero(i)" @touchstart.passive="pauseHeroLoop" @mouseenter="heroIdx=i; pauseHeroLoop()">
+              <img :src="thumbPic(h)" :alt="h.name" @error="onErr" />
+            </div>
           </div>
         </div>
       </section>
@@ -69,17 +73,13 @@
         </span>
       </div>
 
-      <!-- 每日更新 -->
-      <section class="row" v-if="weekReady">
-        <div class="row-head"><div class="row-title">每日更新</div></div>
-        <div class="week-tabs">
-          <div v-for="d in weekOrder" :key="d" class="week-tab" :class="{on: weekDay===d}" @click="weekDay=d">
-            <span class="wd">周{{ WDS[d] }}</span>
-            <span class="wt" :class="{'today-dot': d===todayDow}">{{ d===todayDow ? '• 今天' : '更新' }}</span>
-          </div>
+      <section class="row" v-if="userRecs.length">
+        <div class="row-head">
+          <div class="row-title">为你推荐</div>
+          <div class="row-more" @click="$router.push('/me')">调整偏好</div>
         </div>
-        <div class="row-scroll" v-if="weekly[weekDay] && weekly[weekDay].length">
-          <div v-for="v in weekly[weekDay]" :key="v.id" class="card2" @click="goPlay(v.id)">
+        <div class="row-scroll">
+          <div v-for="v in userRecs" :key="v.id" class="card2" @click="goPlay(v.id)">
             <div class="poster">
               <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
               <div v-else class="noimg">暂无封面</div>
@@ -93,7 +93,33 @@
             </div>
           </div>
         </div>
-        <div v-else class="row-empty">周{{ WDS[weekDay] }}暂无更新</div>
+      </section>
+
+      <!-- 每日更新 -->
+      <section class="row" v-if="weekReady">
+        <div class="row-head"><div class="row-title">每日更新</div></div>
+        <div class="week-tabs">
+          <div v-for="d in updateDays" :key="d.date" class="week-tab" :class="{on: updateDate===d.date}" @click="updateDate=d.date">
+            <span class="wd">{{ updateDateLabel(d.date) }}</span>
+            <span class="wt" :class="{'today-dot': d.date===todayDate}">{{ updateSubLabel(d) }}</span>
+          </div>
+        </div>
+        <div class="row-scroll" v-if="activeUpdateItems.length">
+          <div v-for="v in activeUpdateItems" :key="v.id" class="card2" @click="goPlay(v.id)">
+            <div class="poster">
+              <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+              <div v-else class="noimg">暂无封面</div>
+              <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
+              <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+            </div>
+            <div class="c-info">
+              <div class="c-name">{{ v.name }}</div>
+              <div class="c-sub">{{ v.typeName || '未分类' }} · {{ v.year || '—' }}</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="row-empty">{{ activeUpdateLabel }}暂无更新</div>
       </section>
 
       <!-- 内容分行 -->
@@ -125,7 +151,27 @@
 
     <!-- ============ 浏览模式（选中分类/搜索） ============ -->
     <template v-else>
-      <div class="filter-bar">
+      <div v-if="mobileFiltersOpen" class="filter-drawer-backdrop" @click="mobileFiltersOpen = false"></div>
+      <div class="filter-bar" :class="{open: mobileFiltersOpen}">
+        <div class="filter-head">
+          <div>
+            <div class="filter-title">{{ title || curType || '筛选' }}</div>
+            <div class="filter-summary">{{ filterSummary }}</div>
+          </div>
+          <button class="filter-toggle" type="button" @click="mobileFiltersOpen = true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            筛选
+          </button>
+        </div>
+      </div>
+      <div class="filter-content" :class="{open: mobileFiltersOpen}">
+        <div class="filter-sheet-head">
+          <div>
+            <div class="filter-sheet-title">筛选影片</div>
+            <div class="filter-summary">{{ filterSummary }}</div>
+          </div>
+          <button class="filter-close" type="button" @click="mobileFiltersOpen = false" aria-label="关闭筛选">×</button>
+        </div>
         <div class="filter-row" v-if="curType && subs.length">
           <span class="f-label">标签</span>
           <div class="chips">
@@ -161,7 +207,6 @@
           <div class="poster">
             <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
             <div v-else class="noimg">暂无封面</div>
-            <span class="badge lines">{{ v._count.plays }}线路</span>
             <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
             <span v-else class="badge">{{ v.remarks || v.year }}</span>
             <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
@@ -183,9 +228,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
+import { currentUser } from '../userStore'
 defineOptions({ name: 'Home' })
 const route = useRoute()
 const router = useRouter()
@@ -197,60 +243,132 @@ const discover = computed(() => !curType.value && !isSearch.value)
 function goPlay(id) { router.push('/play/'+id) }
 function onErr(e) { e.target.style.visibility='hidden' }
 function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
-function heroPic(v) { return pic(v) }
+function thumbPic(v) { return imgUrl(v.pic || v.officialPic || '') }
+function heroPic(v) { return imgUrl(v.heroImage || v.heroPic || v.officialPic || v.pic || '') }
+function heroImageWide(v) { return Boolean(v.heroImageWide) }
+function withRandomHeroImage(v) {
+  const images = Array.isArray(v.heroImages) ? v.heroImages.filter(img => img?.url) : []
+  const wideImages = images.filter(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
+  const fallbackImages = images.filter(img => !wideImages.includes(img))
+  const pool = wideImages.length ? wideImages : fallbackImages
+  if (!pool.length) return v
+  const picked = pool[Math.floor(Math.random() * pool.length)]
+  return { ...v, heroImage: picked.url, heroImageWide: wideImages.length > 0 }
+}
 
 /* ---------- 发现模式 ---------- */
 const types = ref([])
 const hero = ref([]); const heroIdx = ref(0)
 const cur = computed(() => hero.value[heroIdx.value] || {})
+const heroRailStyle = computed(() => {
+  const maxOffset = Math.max(hero.value.length - 4, 0)
+  const offset = Math.min(Math.max(heroIdx.value - 1, 0), maxOffset)
+  return {
+    '--hero-offset': offset,
+    '--hero-leading': heroIdx.value === 0 ? '46px' : '0px'
+  }
+})
 const rows = ref([]); const rowsLoading = ref(false)
+const userRecs = ref([])
 let heroTimer = null
+let heroManualTimer = null
 // 每日更新
 const WDS = ['日','一','二','三','四','五','六']
 const weekOrder = [1,2,3,4,5,6,0]
-const todayDow = new Date().getDay()
-const weekly = ref({}); const weekDay = ref(todayDow); const weekReady = ref(false)
+const todayDate = localDateKey(new Date())
+const updateDays = ref([]); const updateDate = ref(todayDate); const weekReady = ref(false)
+const activeUpdateDay = computed(() => updateDays.value.find(d => d.date === updateDate.value) || updateDays.value[0] || null)
+const activeUpdateItems = computed(() => activeUpdateDay.value?.items || [])
+const activeUpdateLabel = computed(() => activeUpdateDay.value ? updateDateLabel(activeUpdateDay.value.date) : '该日期')
+
+function localDateKey(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+function updateDateLabel(date) {
+  const parts = String(date).split('-')
+  if (parts.length === 3) return `${Number(parts[1])}月${Number(parts[2])}日`
+  const dow = Number(date)
+  return Number.isFinite(dow) ? `周${WDS[dow]}` : String(date)
+}
+function updateSubLabel(day) {
+  if (day.date === todayDate) return '• 今天'
+  if (typeof day.dow === 'number') return `周${WDS[day.dow]}`
+  return `${day.items?.length || 0}部`
+}
+function normalizeUpdateDays(data) {
+  if (Array.isArray(data)) return data.map(d => ({ ...d, items: d.items || [] }))
+  return weekOrder.map(d => ({ date: String(d), dow: d, items: data?.[d] || [] }))
+}
 
 async function loadDiscover() {
   if (hero.value.length) return
   rowsLoading.value = true
-  types.value = (await api.categories()).filter(t => t.count > 0)
-  // Hero：取热门（有封面）前 6
+  types.value = await api.categories()
+  // Hero：保留后台返回的全部有封面候选，移动端只通过可视窗口裁切
   const hot = await api.hot(12)
-  hero.value = hot.filter(v => v.officialPic || v.pic).slice(0, 6)
+  hero.value = hot.map(withRandomHeroImage).filter(v => v.heroImage || v.heroPic || v.officialPic || v.pic)
   startHeroLoop()
   // 分行：前 6 个大类各取 12 部最近更新
-  const top = types.value.slice(0, 6)
+  const top = types.value.filter(t => t.count > 0).slice(0, 6)
   const results = await Promise.all(top.map(t =>
     api.vods({ page: 1, size: 14, type: t.name, sort: 'recent' }).then(r => ({ type: t.name, list: r.list }))
   ))
   rows.value = results.filter(r => r.list.length)
+  if (currentUser.value) {
+    try { userRecs.value = (await api.userRecommendations(14)).list || [] } catch { userRecs.value = [] }
+  }
   rowsLoading.value = false
-  // 每日更新（后台按星期分组）
+  // 每日更新（后台按自然日期分组）
   try {
-    weekly.value = await api.weekly(); weekReady.value = true
+    updateDays.value = normalizeUpdateDays(await api.weekly()); weekReady.value = true
     // 今天无更新则默认选数据最多的一天
-    if (!(weekly.value[todayDow] && weekly.value[todayDow].length)) {
-      let best = todayDow, max = -1
-      for (const d of weekOrder) { const n = (weekly.value[d]||[]).length; if (n > max) { max = n; best = d } }
-      weekDay.value = best
+    const today = updateDays.value.find(d => d.date === todayDate)
+    if (today?.items?.length) updateDate.value = today.date
+    else {
+      let best = updateDays.value[0], max = -1
+      for (const d of updateDays.value) { const n = d.items?.length || 0; if (n > max) { max = n; best = d } }
+      if (best) updateDate.value = best.date
     }
   } catch {}
 }
 function startHeroLoop() {
   if (heroTimer) clearInterval(heroTimer)
+  if (!discover.value || hero.value.length <= 1) return
   heroTimer = setInterval(() => {
     if (hero.value.length) heroIdx.value = (heroIdx.value + 1) % hero.value.length
   }, 5000)
+}
+function stopHeroLoop() {
+  if (!heroTimer) return
+  clearInterval(heroTimer)
+  heroTimer = null
+}
+function pauseHeroLoop() { stopHeroLoop() }
+function resumeHeroLoop() { startHeroLoop() }
+function selectHero(i) {
+  heroIdx.value = i
+  pauseHeroLoop()
+  if (heroManualTimer) clearTimeout(heroManualTimer)
+  heroManualTimer = setTimeout(() => resumeHeroLoop(), 8000)
 }
 
 /* ---------- 浏览模式 ---------- */
 const subs = ref([]); const sub = ref('')
 const list = ref([]); const total = ref(0); const page = ref(1); const size = 30; const loading = ref(true)
 const title = ref(''); const years = ref([]); const year = ref(''); const sort = ref('recent')
+const mobileFiltersOpen = ref(false)
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
+const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
+const filterSummary = computed(() => {
+  const items = [sub.value || curType.value || '全部', currentSortLabel.value]
+  if (year.value) items.push(year.value)
+  return items.join(' · ')
+})
 
-function setSub(s) { sub.value = s; year.value = ''; page.value = 1; loadYears(); load() }
+function setSub(s) { sub.value = s; year.value = ''; page.value = 1; loadYears(); load(); mobileFiltersOpen.value = false }
 async function loadSubs() {
   sub.value = ''
   if (!curType.value) { subs.value = []; return }
@@ -268,15 +386,19 @@ async function load() {
   list.value = r.list; total.value = r.total; loading.value = false
 }
 function go(p) { page.value = p; load(); window.scrollTo({top:0,behavior:'smooth'}) }
-function setSort(v) { sort.value = v; page.value = 1; load() }
-function setYear(y) { year.value = y; page.value = 1; load() }
+function setSort(v) { sort.value = v; page.value = 1; load(); mobileFiltersOpen.value = false }
+function setYear(y) { year.value = y; page.value = 1; load(); mobileFiltersOpen.value = false }
 
 async function boot() {
-  if (discover.value) { await loadDiscover(); return }
+  if (discover.value) { await loadDiscover(); startHeroLoop(); return }
+  stopHeroLoop()
   await loadSubs()
   await loadYears()
   load()
 }
-watch(() => route.query, async () => { page.value = 1; year.value=''; sort.value='recent'; await boot() })
+watch(() => route.query, async () => { page.value = 1; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
 onMounted(boot)
+onActivated(() => { if (discover.value && hero.value.length > 1) startHeroLoop() })
+onDeactivated(stopHeroLoop)
+onBeforeUnmount(stopHeroLoop)
 </script>

@@ -2,7 +2,52 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { createMetaTask } from "../collector/taskRunner.js";
-import { matchDouban, doubanSuggest, doubanDetail } from "../collector/douban.js";
+import { matchDouban, doubanSuggest, doubanDetail, type DoubanCandidate, type DoubanMatchResult } from "../collector/douban.js";
+import { applyDoubanAssets } from "../collector/metaAssets.js";
+
+function candidateSnapshot(candidates: DoubanCandidate[]) {
+  return candidates.slice(0, 5).map((c) => ({
+    id: c.id,
+    title: c.title,
+    subTitle: c.subTitle,
+    year: c.year,
+    type: c.type,
+    img: c.img,
+    score: c.score,
+    titleSim: c.titleSim,
+    reasons: c.reasons,
+    rating: c.meta?.rating ?? null,
+    ratingCount: c.meta?.ratingCount ?? 0,
+  }));
+}
+
+function metaReason(r: DoubanMatchResult) {
+  return JSON.stringify({
+    score: r.score,
+    reasons: r.reasons,
+    candidates: candidateSnapshot(r.candidates),
+  });
+}
+
+function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
+  const best = r.candidates[0];
+  return {
+    ...(status === "matched" && r.meta ? {
+      doubanId: r.meta.doubanId,
+      rating: r.meta.rating,
+      ratingCount: r.meta.ratingCount,
+      officialPic: r.meta.pic,
+      officialIntro: r.meta.intro,
+      genres: r.meta.genres.join(","),
+    } : {}),
+    metaMatched: status,
+    metaScore: r.score,
+    metaReason: metaReason(r),
+    matchedTitle: r.meta?.title || best?.title || "",
+    matchedYear: r.meta?.year || best?.year || "",
+    metaAt: new Date(),
+  };
+}
 
 export default async function metaRoutes(app: FastifyInstance) {
   app.addHook("preHandler", authGuard);
@@ -19,18 +64,23 @@ export default async function metaRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const v = await prisma.vod.findUnique({ where: { id } });
     if (!v) return { ok: false, error: "影片不存在" };
-    const r = await matchDouban(v.name, v.year);
-    if (r.ok && r.meta) {
+    const r = await matchDouban(v.name, v.year, { typeName: v.typeName, actor: v.actor, director: v.director });
+    if (r.status === "matched" && r.meta) {
       await prisma.vod.update({
         where: { id },
-        data: {
-          doubanId: r.meta.doubanId, rating: r.meta.rating, ratingCount: r.meta.ratingCount,
-          officialPic: r.meta.pic, officialIntro: r.meta.intro,
-          genres: r.meta.genres.join(","), metaMatched: "matched", metaAt: new Date(),
-        },
+        data: matchedData(r, "matched"),
+      });
+      await applyDoubanAssets(id, r.meta);
+    } else if (r.status === "pending") {
+      await prisma.vod.update({
+        where: { id },
+        data: matchedData(r, "pending"),
       });
     } else {
-      await prisma.vod.update({ where: { id }, data: { metaMatched: "failed", metaAt: new Date() } });
+      await prisma.vod.update({
+        where: { id },
+        data: { metaMatched: "failed", metaScore: r.score, metaReason: metaReason(r), matchedTitle: "", matchedYear: "", metaAt: new Date() },
+      });
     }
     return r;
   });
@@ -54,9 +104,12 @@ export default async function metaRoutes(app: FastifyInstance) {
       data: {
         doubanId: meta.doubanId, rating: meta.rating, ratingCount: meta.ratingCount,
         officialPic: meta.pic, officialIntro: meta.intro,
-        genres: meta.genres.join(","), metaMatched: "manual", metaAt: new Date(),
+        genres: meta.genres.join(","), metaMatched: "manual", metaScore: 100,
+        metaReason: JSON.stringify({ score: 100, reasons: ["manual"], candidates: [{ id: meta.doubanId, title: meta.title, year: meta.year, score: 100, reasons: ["manual"] }] }),
+        matchedTitle: meta.title, matchedYear: meta.year, metaAt: new Date(),
       },
     });
+    await applyDoubanAssets(id, meta);
     return { ok: true, meta };
   });
 
@@ -87,12 +140,13 @@ export default async function metaRoutes(app: FastifyInstance) {
 
   // 元数据统计
   app.get("/api/meta/stats", async () => {
-    const [total, matched, failed, none] = await Promise.all([
+    const [total, matched, pending, failed, none] = await Promise.all([
       prisma.vod.count(),
       prisma.vod.count({ where: { metaMatched: { in: ["matched", "manual"] } } }),
+      prisma.vod.count({ where: { metaMatched: "pending" } }),
       prisma.vod.count({ where: { metaMatched: "failed" } }),
       prisma.vod.count({ where: { metaMatched: "none" } }),
     ]);
-    return { total, matched, failed, none };
+    return { total, matched, pending, failed, none };
   });
 }

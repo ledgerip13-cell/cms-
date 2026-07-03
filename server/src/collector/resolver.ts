@@ -1,6 +1,8 @@
 // 分享页解析器：把加密/带广告的分享页地址解析成可直链播放的真实 m3u8
 // 目前支持：lz(量子)系 share 页（var main 模式），可扩展其它源规则
 import { URL } from "node:url";
+import { lookup } from "node:dns/promises";
+import net from "node:net";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120";
 
@@ -12,17 +14,51 @@ export interface ResolveResult {
   error?: string;
 }
 
-// SSRF 兜底：只允许 http/https，拦截明显的内网地址
-function isSafeUrl(u: string): boolean {
+function isPrivateIpv4(ip: string): boolean {
+  const parts = ip.split(".").map((n) => Number(n));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, b] = parts;
+  return a === 0
+    || a === 10
+    || a === 127
+    || a === 169 && b === 254
+    || a === 172 && b >= 16 && b <= 31
+    || a === 192 && b === 168
+    || a === 100 && b >= 64 && b <= 127
+    || a >= 224;
+}
+
+function isUnsafeIp(ip: string): boolean {
+  const kind = net.isIP(ip);
+  if (kind === 4) return isPrivateIpv4(ip);
+  if (kind === 6) {
+    const h = ip.toLowerCase();
+    return h === "::1"
+      || h === "::"
+      || h.startsWith("fc")
+      || h.startsWith("fd")
+      || h.startsWith("fe80:")
+      || h.startsWith("::ffff:127.")
+      || h.startsWith("::ffff:10.")
+      || h.startsWith("::ffff:192.168.")
+      || /^::ffff:172\.(1[6-9]|2\d|3[01])\./.test(h);
+  }
+  return true;
+}
+
+// SSRF 兜底：只允许 http/https，且域名解析后不能落到内网/本机/保留地址
+async function assertSafeUrl(u: string): Promise<URL | null> {
   try {
     const x = new URL(u);
-    if (x.protocol !== "http:" && x.protocol !== "https:") return false;
-    const h = x.hostname;
-    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0") return false;
-    if (/^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return false;
-    return true;
+    if (x.protocol !== "http:" && x.protocol !== "https:") return null;
+    const h = x.hostname.toLowerCase();
+    if (h === "localhost" || h.endsWith(".localhost")) return null;
+    if (net.isIP(h)) return isUnsafeIp(h) ? null : x;
+    const records = await lookup(h, { all: true, verbatim: true });
+    if (!records.length || records.some((r) => isUnsafeIp(r.address))) return null;
+    return x;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -30,7 +66,20 @@ async function fetchText(url: string, timeoutMs = 12000): Promise<string> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": UA } });
+    let current = url;
+    let safe = await assertSafeUrl(current);
+    if (!safe) throw new Error("unsafe url");
+    let res: Response | null = null;
+    for (let i = 0; i < 4; i++) {
+      res = await fetch(current, { signal: ctrl.signal, redirect: "manual", headers: { "User-Agent": UA } });
+      if (![301, 302, 303, 307, 308].includes(res.status)) break;
+      const loc = res.headers.get("location");
+      if (!loc) break;
+      current = new URL(loc, current).toString();
+      safe = await assertSafeUrl(current);
+      if (!safe) throw new Error("unsafe redirect");
+    }
+    if (!res) throw new Error("fetch failed");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {
@@ -55,7 +104,7 @@ function ruleInlineM3u8(html: string): string | null {
 }
 
 export async function resolveShareUrl(shareUrl: string): Promise<ResolveResult> {
-  if (!isSafeUrl(shareUrl)) return { ok: false, error: "非法或不安全的地址" };
+  if (!(await assertSafeUrl(shareUrl))) return { ok: false, error: "非法或不安全的地址" };
   // 已是直链 m3u8，无需解析
   if (/\.m3u8(\?|$)/i.test(shareUrl)) return { ok: true, url: shareUrl, kind: "m3u8", rule: "direct" };
 

@@ -7,8 +7,7 @@
     <aside class="sidebar" :class="{open: drawer}">
       <div class="sb-brand" @click="goHome">
         <img v-if="site.logo" :src="site.logo" alt="logo" />
-        <span v-else class="dot"></span>
-        {{ site.siteName || '次元港' }}
+        <span v-if="site.siteName">{{ site.siteName }}</span>
       </div>
       <nav class="sb-nav">
         <div class="sb-item" :class="{on: !curType && !isSearch}" @click="pick('')">
@@ -74,6 +73,16 @@
             </div>
           </transition>
         </div>
+        <div class="top-user">
+          <button v-if="user" class="user-chip" @click="router.push('/me')" aria-label="个人中心">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            <span class="user-chip-text">{{ user.nickname || user.username }}</span>
+          </button>
+          <button v-else class="user-chip" @click="router.push({path:'/auth',query:{redirect:route.fullPath}})" aria-label="登录">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+            <span class="user-chip-text">登录</span>
+          </button>
+        </div>
       </header>
 
       <router-view v-slot="{ Component }">
@@ -82,7 +91,7 @@
         </keep-alive>
       </router-view>
 
-      <footer class="foot">{{ site.footer || '次元港 · 多源聚合' }} · 仅供技术演示</footer>
+      <footer v-if="site.footer" class="foot">{{ site.footer }}</footer>
     </div>
   </div>
 </template>
@@ -91,6 +100,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api, imgUrl } from './api'
+import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writeCachedSite } from './siteConfig'
+import { currentUser, refreshUser } from './userStore'
 
 const router = useRouter()
 const route = useRoute()
@@ -104,14 +115,18 @@ const rankTabs = [
 ]
 const rankCat = ref('hot'); const rankLoading = ref(false)
 const rankCache = new Map()
-const site = ref({ siteName:'次元港', logo:'', footer:'' })
+const site = ref(readCachedSite())
 const searchInput = ref(null)
+const user = currentUser
 
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
 
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
-watch(() => route.fullPath, () => { drawer.value = false })
+watch(() => route.fullPath, () => {
+  drawer.value = false
+  applySiteTheme(site.value, themePageFromRoute(route))
+})
 
 function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function onErr(e) { e.target.style.visibility='hidden' }
@@ -161,16 +176,17 @@ const vClickOutside = {
   unmounted(el) { document.removeEventListener('mousedown', el._handler) }
 }
 
-function applySite(s) {
-  document.title = s.siteName || '次元港'
-  if (s.logo) {
-    let link = document.querySelector("link[rel~='icon']")
-    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
-    link.href = s.logo
-  }
-}
 onMounted(async () => {
-  types.value = (await api.categories()).filter(t=>t.count>0)
-  try { site.value = await api.site(); applySite(site.value) } catch {}
+  applySiteHead(site.value)
+  applySiteTheme(site.value, themePageFromRoute(route))
+  refreshUser()
+  try {
+    site.value = writeCachedSite(await api.site())
+    applySiteHead(site.value)
+    applySiteTheme(site.value, themePageFromRoute(route))
+  } catch {}
+  try {
+    types.value = await api.categories()
+  } catch { types.value = [] }
 })
 </script>
