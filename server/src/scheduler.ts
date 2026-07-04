@@ -40,7 +40,13 @@ export async function reloadSchedules() {
     }
     const task = cron.schedule(expr, async () => {
       try {
-        await createCollectTask(s.id, { mode: "incr", hours: s.syncHours || 24, typeId: s.autoTypeId || undefined });
+        await createCollectTask(s.id, {
+          mode: "incr",
+          hours: s.syncHours || 24,
+          typeId: s.autoTypeId || undefined,
+          autoRun: true,
+          metaAfterCollect: true,
+        });
         console.log(`[scheduler] 源#${s.id} ${s.name} 已创建定时采集任务${s.autoTypeId ? ` type=${s.autoTypeId}` : ""}`);
       } catch (e: any) {
         console.error(`[scheduler] 源#${s.id} 创建任务失败:`, e?.message);

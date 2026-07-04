@@ -186,6 +186,12 @@ export default async function sourceRoutes(app: FastifyInstance) {
       maxPages: b.maxPages,
       hours: b.hours,
       typeId: b.typeId || undefined,
+      yearMode: b.yearMode || "",
+      year: b.year,
+      yearStart: b.yearStart,
+      yearEnd: b.yearEnd,
+      metaAfterCollect: b.metaAfterCollect !== false,
+      cleanAfterCollect: Boolean(b.cleanAfterCollect),
     });
     return { taskId: task.id, status: task.status, message: "采集任务已提交，请到「采集任务」查看进度" };
   });

@@ -88,6 +88,65 @@ function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
   }));
 }
 
+function parseYearInput(value: unknown) {
+  const m = String(value || "").match(/(19|20)\d{2}/);
+  return m ? Number(m[0]) : null;
+}
+
+function yearValuesFromInput(input: any) {
+  const mode = String(input?.yearMode || "");
+  if (!["eq", "gt", "gte", "lt", "lte", "range"].includes(mode)) return [];
+  const current = new Date().getFullYear() + 1;
+  let start = 1900;
+  let end = current;
+  const target = parseYearInput(input?.year);
+  const a = parseYearInput(input?.yearStart ?? input?.year);
+  const b = parseYearInput(input?.yearEnd ?? input?.year);
+  if (mode === "eq") {
+    if (!target) return [];
+    start = target;
+    end = target;
+  } else if (mode === "gt") {
+    if (!a) return [];
+    start = a + 1;
+  } else if (mode === "gte") {
+    if (!a) return [];
+    start = a;
+  } else if (mode === "lt") {
+    if (!b) return [];
+    end = b - 1;
+  } else if (mode === "lte") {
+    if (!b) return [];
+    end = b;
+  } else if (mode === "range") {
+    start = a ?? start;
+    end = b ?? end;
+  }
+  const loRaw = mode === "range" ? Math.min(start, end) : start;
+  const hiRaw = mode === "range" ? Math.max(start, end) : end;
+  const lo = Math.max(1900, loRaw);
+  const hi = Math.min(current, hiRaw);
+  if (hi < lo) return [];
+  const years: string[] = [];
+  for (let y = lo; y <= hi; y++) years.push(String(y));
+  return years;
+}
+
+function cleanupYearModeEnabled(input: any) {
+  return ["eq", "gt", "gte", "lt", "lte", "range"].includes(String(input?.yearMode || ""));
+}
+
+function cleanupYearWhere(input: any) {
+  if (!cleanupYearModeEnabled(input)) return null;
+  const years = yearValuesFromInput(input);
+  if (!years.length) return { id: { in: [] } };
+  return { OR: years.map((y) => ({ year: { contains: y } })) };
+}
+
+function andWhere(base: any, extra: any) {
+  return extra ? { AND: [base, extra] } : base;
+}
+
 const SERIES_MARKER_RE = /(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)$/i;
 
 function seriesBaseName(name: string) {
@@ -117,19 +176,26 @@ function seasonNo(name: string) {
   return cn[m[1]] || 999;
 }
 
-function cleanupRuleWhere(input: any) {
+function cleanupRuleWhere(input: any): any {
   const rule = String(input?.rule || "");
-  if (rule === "empty_plays") return { rule, where: { plays: { none: {} } } };
-  if (rule === "all_dead") return { rule, where: { plays: { some: {} }, NOT: { plays: { some: { alive: true } } } } };
-  if (rule === "disabled_source_only") return { rule, where: { plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } } };
+  const yWhere = cleanupYearWhere(input);
+  if (rule === "empty_plays") return { rule, where: andWhere({ plays: { none: {} } }, yWhere) };
+  if (rule === "all_dead") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { alive: true } } } }, yWhere) };
+  if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, yWhere) };
   if (rule === "offline_old") {
     const days = Math.max(1, Math.min(3650, Number(input?.days) || 30));
-    return { rule, where: { status: "offline", updatedAt: { lt: new Date(Date.now() - days * DAY_MS) } } };
+    return { rule, where: andWhere({ status: "offline", updatedAt: { lt: new Date(Date.now() - days * DAY_MS) } }, yWhere) };
   }
   if (rule === "source_lines") {
     const sourceId = Number(input?.sourceId);
     if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("按源清退必须选择采集源");
-    return { rule, sourceId, where: { plays: { some: { sourceId } } } };
+    return {
+      rule,
+      sourceId,
+      where: andWhere({ plays: { some: { sourceId } } }, yWhere),
+      playWhere: yWhere ? { sourceId, vod: yWhere } : { sourceId },
+      orphanWhere: andWhere({ plays: { none: {} } }, yWhere),
+    };
   }
   throw new Error("不支持的清理规则");
 }
@@ -499,11 +565,11 @@ export default async function vodRoutes(app: FastifyInstance) {
     secured.post("/api/admin/vods/cleanup/preview", async (req, reply) => {
       try {
         const b = (req.body as any) || {};
-        const { rule, sourceId, where } = cleanupRuleWhere(b);
+        const { rule, sourceId, where, playWhere } = cleanupRuleWhere(b);
         const limit = Math.max(1, Math.min(5000, Number(b.limit) || 500));
         if (rule === "source_lines") {
           const [playCount, vodCount, source, samples] = await Promise.all([
-            prisma.play.count({ where: { sourceId } }),
+            prisma.play.count({ where: playWhere || { sourceId } }),
             prisma.vod.count({ where }),
             prisma.source.findUnique({ where: { id: sourceId }, select: { id: true, name: true, enabled: true } }),
             prisma.vod.findMany({ where, take: 12, orderBy: { updatedAt: "desc" }, include: { _count: { select: { plays: true } } } }),
@@ -523,15 +589,15 @@ export default async function vodRoutes(app: FastifyInstance) {
     secured.post("/api/admin/vods/cleanup/execute", async (req, reply) => {
       try {
         const b = (req.body as any) || {};
-        const { rule, sourceId, where } = cleanupRuleWhere(b);
+        const { rule, sourceId, where, playWhere, orphanWhere } = cleanupRuleWhere(b);
         const limit = Math.max(1, Math.min(5000, Number(b.limit) || 500));
         if (rule === "source_lines") {
-          const playIds = await prisma.play.findMany({ where: { sourceId }, select: { id: true }, take: limit, orderBy: { id: "asc" } });
+          const playIds = await prisma.play.findMany({ where: playWhere || { sourceId }, select: { id: true }, take: limit, orderBy: { id: "asc" } });
           const playIdList = playIds.map((p) => p.id);
           const deleted = playIdList.length ? await prisma.play.deleteMany({ where: { id: { in: playIdList } } }) : { count: 0 };
           let orphanDeleted = { count: 0 };
           if (b.deleteOrphans) {
-            const orphans = await prisma.vod.findMany({ where: { plays: { none: {} } }, select: { id: true }, take: limit });
+            const orphans = await prisma.vod.findMany({ where: orphanWhere || { plays: { none: {} } }, select: { id: true }, take: limit });
             orphanDeleted = orphans.length ? await prisma.vod.deleteMany({ where: { id: { in: orphans.map((v) => v.id) } } }) : { count: 0 };
           }
           return { ok: true, rule, deletedLines: deleted.count, deletedOrphans: orphanDeleted.count };

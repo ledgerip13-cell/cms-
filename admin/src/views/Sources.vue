@@ -163,7 +163,7 @@
   </el-dialog>
 
   <!-- 采集 -->
-  <el-dialog v-model="syncDlg" title="执行采集" width="480">
+  <el-dialog v-model="syncDlg" title="执行采集" width="560">
     <el-form :model="syncForm" label-width="90px">
       <el-form-item label="采集模式">
         <el-radio-group v-model="syncForm.mode">
@@ -195,9 +195,38 @@
           <span v-if="estText" style="color:#67c23a">{{ estText }}</span>
         </div>
       </el-form-item>
+      <el-form-item label="年份筛选">
+        <div class="year-filter">
+          <el-select v-model="syncForm.yearMode" placeholder="不限" style="width:120px">
+            <el-option label="不限" value="" />
+            <el-option label="等于" value="eq" />
+            <el-option label="大于" value="gt" />
+            <el-option label="大于等于" value="gte" />
+            <el-option label="小于" value="lt" />
+            <el-option label="小于等于" value="lte" />
+            <el-option label="区间" value="range" />
+          </el-select>
+          <template v-if="syncForm.yearMode && syncForm.yearMode !== 'range'">
+            <el-input-number v-model="syncForm.year" :min="1900" :max="2100" controls-position="right" />
+          </template>
+          <template v-else-if="syncForm.yearMode === 'range'">
+            <el-input-number v-model="syncForm.yearStart" :min="1900" :max="2100" controls-position="right" />
+            <span class="muted">至</span>
+            <el-input-number v-model="syncForm.yearEnd" :min="1900" :max="2100" controls-position="right" />
+          </template>
+          <span v-else class="muted">不过滤年份</span>
+        </div>
+      </el-form-item>
       <el-form-item label="最大页数">
         <el-input-number v-model="syncForm.maxPages" :min="1" :max="2000" />
         <small style="margin-left:8px;color:#9aa4b2">{{ syncForm.mode==='full' ? '全量建议调大' : '安全上限' }}</small>
+      </el-form-item>
+      <el-form-item label="后置动作">
+        <div class="post-actions">
+          <el-checkbox v-model="syncForm.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
+          <el-checkbox v-model="syncForm.cleanAfterCollect">采集后HLS清洗</el-checkbox>
+          <div class="form-help">HLS 清洗只在这里勾选时提交；全局自动清洗仅用于定时自动更新采集。</div>
+        </div>
       </el-form-item>
     </el-form>
     <el-alert type="info" :closable="false"
@@ -234,6 +263,7 @@ const formRules = {
 }
 const syncDlg = ref(false); const syncing = ref(false)
 const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5 }); let syncTarget = null
+const currentYear = new Date().getFullYear()
 const autoSrcTypes = ref([])
 const autoClassTree = ref([])
 const autoClassLoading = ref(false)
@@ -374,7 +404,18 @@ const estText = ref('')
 async function openSync(row) {
   syncTarget = row
   // 首次建库默认全量 + 大页数，避免增量窗口把全量过滤成个位数
-  syncForm.value = { mode:'full', hours:24, maxPages:100, typeId:'' }
+  syncForm.value = {
+    mode:'full',
+    hours:24,
+    maxPages:100,
+    typeId:'',
+    yearMode:'',
+    year: currentYear,
+    yearStart: currentYear,
+    yearEnd: currentYear,
+    metaAfterCollect: true,
+    cleanAfterCollect: false,
+  }
   estText.value = ''
   classTree.value = []
   syncDlg.value = true
@@ -423,4 +464,6 @@ onMounted(load)
 .domain-manage-bar { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
 .domain-host { font-weight: 600; line-height: 1.5; }
 .form-help { color: #9aa4b2; font-size: 12px; line-height: 1.6; }
+.year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.post-actions { display: flex; flex-direction: column; gap: 4px; }
 </style>

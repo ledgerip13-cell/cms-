@@ -10,6 +10,13 @@ export interface SyncOptions {
   maxPages?: number;
   hours?: number;
   typeId?: string | number; // 按分类采集(源内 type_id)
+  yearMode?: "" | "eq" | "gt" | "gte" | "lt" | "lte" | "range";
+  year?: string | number;
+  yearStart?: string | number;
+  yearEnd?: string | number;
+  autoRun?: boolean;
+  metaAfterCollect?: boolean;
+  cleanAfterCollect?: boolean;
   resume?: ResumeCursor;    // 断点续采游标
 }
 
@@ -35,6 +42,40 @@ export type ProgressCb = (p: {
 
 function isDirectM3u8(url: string) {
   return /\.m3u8(\?|$)/i.test(url);
+}
+
+function parseYear(value: unknown) {
+  const m = String(value || "").match(/(19|20)\d{2}/);
+  return m ? Number(m[0]) : null;
+}
+
+function yearFilterEnabled(opts: SyncOptions) {
+  return ["eq", "gt", "gte", "lt", "lte", "range"].includes(String(opts.yearMode || ""));
+}
+
+function matchYearFilter(year: unknown, opts: SyncOptions) {
+  if (!yearFilterEnabled(opts)) return true;
+  const y = parseYear(year);
+  if (!y) return false;
+  const mode = String(opts.yearMode || "");
+  const target = parseYear(opts.year);
+  const start = parseYear(opts.yearStart ?? opts.year);
+  const end = parseYear(opts.yearEnd ?? opts.year);
+  if (mode === "eq") return target ? y === target : false;
+  if (mode === "gt") return start ? y > start : false;
+  if (mode === "gte") return start ? y >= start : false;
+  if (mode === "lt") return end ? y < end : false;
+  if (mode === "lte") return end ? y <= end : false;
+  if (mode === "range") {
+    const lo = start ?? 1900;
+    const hi = end ?? new Date().getFullYear() + 1;
+    return y >= Math.min(lo, hi) && y <= Math.max(lo, hi);
+  }
+  return true;
+}
+
+function filterByYear<T extends RawVod>(rows: T[], opts: SyncOptions) {
+  return yearFilterEnabled(opts) ? rows.filter((r) => matchYearFilter(r.vod_year, opts)) : rows;
 }
 
 const IMG_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
@@ -342,6 +383,7 @@ export async function previewByKeyword(keyword: string): Promise<{ ok: boolean; 
 // 按确认结果采集：仅对用户勾选的 fingerprint 对应的 (sourceId, vodId) 拉详情入库，不再全量扫所有命中结果
 export async function collectKeywordCandidates(
   candidates: { sourceId: number; vodIds: (string | number)[] }[],
+  opts: SyncOptions = {},
   onProgress?: (p: { sourceNow: number; sourceTotal: number; sourceName: string; added: number; updated: number; merged: number }) => void | Promise<void>
 ) {
   // 按 sourceId 合并去重 vodIds
@@ -369,7 +411,7 @@ export async function collectKeywordCandidates(
     try {
       for (let j = 0; j < ids.length; j += 20) {
         const batch = ids.slice(j, j + 20);
-        const details = await fetchDetail(src.apiUrl, batch);
+        const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
         for (const raw of details) {
           try {
             const r = await upsertVod(sourceId, raw, catCache);
@@ -393,6 +435,7 @@ export async function collectKeywordCandidates(
 // 按片名采集（旧版一步到位，仍保留给向后兼容/其他调用地方）：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
 export async function syncByKeyword(
   keyword: string,
+  opts: SyncOptions = {},
   onProgress?: (p: { sourceNow: number; sourceTotal: number; sourceName: string; added: number; updated: number; merged: number; hits: number }) => void | Promise<void>
 ) {
   const kw = keyword.trim();
@@ -418,7 +461,7 @@ export async function syncByKeyword(
         const ids = hitList.map((v) => v.vod_id);
         for (let j = 0; j < ids.length; j += 20) {
           const batch = ids.slice(j, j + 20);
-          const details = await fetchDetail(src.apiUrl, batch);
+          const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
           for (const raw of details) {
             try {
               const r = await upsertVod(src.id, raw, catCache);
@@ -519,7 +562,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
           const batch = ids.slice(j, j + 20);
           let details: RawVod[] = [];
           try {
-            details = await withApi((u) => fetchDetail(u, batch));
+            details = filterByYear(await withApi((u) => fetchDetail(u, batch)), opts);
           } catch (e: any) {
             message += ` [detail err t${tid} p${pg}: ${e?.message}]`;
             continue;

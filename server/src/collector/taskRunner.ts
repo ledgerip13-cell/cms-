@@ -59,6 +59,10 @@ function uniqueVodIds(vodIds: unknown[] | undefined) {
     .filter((id) => Number.isInteger(id) && id > 0))];
 }
 
+function boolOpt(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 async function queueAutoMetaMatch(vodIds: unknown[] | undefined) {
   const ids = uniqueVodIds(vodIds);
   if (!ids.length) return 0;
@@ -72,6 +76,21 @@ async function queueAutoMetaMatch(vodIds: unknown[] | undefined) {
     await createMetaTask({ vodIds: chunk, limit: chunk.length, priority: 60 });
   }
   return pendingIds.length;
+}
+
+async function queueHlsCleanForVods(vodIds: unknown[] | undefined, opts: { priority?: number } = {}) {
+  const ids = uniqueVodIds(vodIds);
+  if (!ids.length) return 0;
+  const plays = await prisma.play.findMany({
+    where: { vodId: { in: ids } },
+    select: { id: true },
+    take: 500,
+    orderBy: { id: "asc" },
+  });
+  const playIds = plays.map((p) => p.id);
+  if (!playIds.length) return 0;
+  await createHlsCleanTask({ playIds, episodeMode: "first", limit: playIds.length, priority: opts.priority ?? 80 });
+  return playIds.length;
 }
 
 function isPauseSignal(e: any) {
@@ -485,16 +504,24 @@ async function runSubtypeTask(taskId: number) {
 
 // ============ 按确认候选精准采集（两步式：先预览选择，再提交） ============
 let keywordConfirmRunning = false;
-export async function createKeywordConfirmTask(keyword: string, candidates: { sourceId: number; vodIds: (string|number)[] }[]) {
+export async function createKeywordConfirmTask(
+  keyword: string,
+  candidates: { sourceId: number; vodIds: (string|number)[] }[],
+  opts: SyncOptions & { metaAfterCollect?: boolean; cleanAfterCollect?: boolean } = {}
+) {
   const totalHits = candidates.reduce((s, c) => s + c.vodIds.length, 0);
   const task = await prisma.task.create({
-    data: { type: "keyword", sourceName: `片名「${keyword}」(精选${totalHits}条)`, mode: "full", status: "pending", params: JSON.stringify({ keyword, candidates }) },
+    data: { type: "keyword", sourceName: `片名「${keyword}」(精选${totalHits}条)`, mode: "full", status: "pending", params: JSON.stringify({ keyword, candidates, ...opts }) },
   });
   emitTaskChange();
-  void runKeywordConfirmTask(task.id, candidates);
+  void runKeywordConfirmTask(task.id, candidates, opts);
   return task;
 }
-async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: number; vodIds: (string|number)[] }[]) {
+async function runKeywordConfirmTask(
+  taskId: number,
+  candidates: { sourceId: number; vodIds: (string|number)[] }[],
+  opts: SyncOptions & { metaAfterCollect?: boolean; cleanAfterCollect?: boolean } = {}
+) {
   if (keywordConfirmRunning) {
     await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "已有按片名采集任务进行中，请稍后重试", finishedAt: new Date() } });
     return;
@@ -502,7 +529,7 @@ async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: num
   keywordConfirmRunning = true;
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date() } });
   try {
-    const r = await collectKeywordCandidates(candidates, async (p) => {
+    const r = await collectKeywordCandidates(candidates, opts, async (p) => {
       const progress = p.sourceTotal ? Math.round((p.sourceNow / p.sourceTotal) * 100) : 0;
       await taskUpdate({
         where: { id: taskId },
@@ -510,7 +537,8 @@ async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: num
       });
     });
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `入库${s.added}` : "失败"}`).join(" | ");
-    const metaQueued = await queueAutoMetaMatch(r.vodIds);
+    const metaQueued = boolOpt(opts.metaAfterCollect, true) ? await queueAutoMetaMatch(r.vodIds) : 0;
+    const hlsQueued = boolOpt(opts.cleanAfterCollect, false) ? await queueHlsCleanForVods(r.vodIds) : 0;
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -519,7 +547,7 @@ async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: num
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
+        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -532,15 +560,15 @@ async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: num
 
 // ============ 按片名单独采集（旧版一步到位，仍保留） ============
 let keywordRunning = false;
-export async function createKeywordTask(keyword: string) {
+export async function createKeywordTask(keyword: string, opts: SyncOptions & { metaAfterCollect?: boolean; cleanAfterCollect?: boolean } = {}) {
   const task = await prisma.task.create({
-    data: { type: "keyword", sourceName: `片名「${keyword}」`, mode: "full", status: "pending", params: JSON.stringify({ keyword }) },
+    data: { type: "keyword", sourceName: `片名「${keyword}」`, mode: "full", status: "pending", params: JSON.stringify({ keyword, ...opts }) },
   });
   emitTaskChange();
-  void runKeywordTask(task.id, keyword);
+  void runKeywordTask(task.id, keyword, opts);
   return task;
 }
-async function runKeywordTask(taskId: number, keyword: string) {
+async function runKeywordTask(taskId: number, keyword: string, opts: SyncOptions & { metaAfterCollect?: boolean; cleanAfterCollect?: boolean } = {}) {
   if (keywordRunning) {
     await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "已有按片名采集任务进行中，请稍后重试", finishedAt: new Date() } });
     return;
@@ -548,7 +576,7 @@ async function runKeywordTask(taskId: number, keyword: string) {
   keywordRunning = true;
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date() } });
   try {
-    const r = await syncByKeyword(keyword, async (p) => {
+    const r = await syncByKeyword(keyword, opts, async (p) => {
       const progress = p.sourceTotal ? Math.round((p.sourceNow / p.sourceTotal) * 100) : 0;
       await taskUpdate({
         where: { id: taskId },
@@ -556,12 +584,13 @@ async function runKeywordTask(taskId: number, keyword: string) {
       });
     });
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `命中${s.hits}/入库${s.added}` : "失败"}`).join(" | ");
-    const metaQueued = await queueAutoMetaMatch(r.vodIds);
+    const metaQueued = boolOpt(opts.metaAfterCollect, true) ? await queueAutoMetaMatch(r.vodIds) : 0;
+    const hlsQueued = boolOpt(opts.cleanAfterCollect, false) ? await queueHlsCleanForVods(r.vodIds) : 0;
     await taskUpdate({
       where: { id: taskId },
       data: {
         status: "done", progress: 100, added: r.added, updated: r.updated, merged: r.merged,
-        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
+        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -830,7 +859,23 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
     // 中止信号会被 syncSource 内部 catch 吞掉（返回 ok=false 且 message 含 __CANCELED__），这里补判
     const wasCanceled = canceled.has(taskId) || String(r.message).includes("__CANCELED__");
     const wasPaused = paused.has(taskId) || String(r.message).includes("__PAUSED__");
-    const metaQueued = !wasCanceled && !wasPaused && r.ok ? await queueAutoMetaMatch(r.vodIds) : 0;
+    const metaQueued = !wasCanceled && !wasPaused && r.ok && boolOpt((opts as any).metaAfterCollect, false)
+      ? await queueAutoMetaMatch(r.vodIds)
+      : 0;
+    let hlsQueued = 0;
+    if (!wasCanceled && !wasPaused && r.ok) {
+      try {
+        const cfg = await ensureHlsCleanConfig();
+        const cleanByManual = boolOpt((opts as any).cleanAfterCollect, false);
+        const cleanByAutoUpdate = boolOpt((opts as any).autoRun, false) && cfg.enabled && cfg.autoOnCollect;
+        if (cleanByManual || cleanByAutoUpdate) {
+          const hlsTask = await createHlsCleanTask({ sourceId, episodeMode: "first", limit: 500, priority: cleanByAutoUpdate ? 90 : 80 });
+          hlsQueued = hlsTask.id;
+        }
+      } catch {
+        // 后置清洗排队失败不反向影响采集任务
+      }
+    }
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -839,21 +884,11 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
+        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗任务#${hlsQueued}` : ""}`,
         cursor: wasPaused ? undefined : null, // 暂停保留断点，完成/取消 清空断点
         finishedAt: wasPaused ? null : new Date(),
       },
     });
-    if (!wasCanceled && !wasPaused && r.ok) {
-      try {
-        const cfg = await ensureHlsCleanConfig();
-        if (cfg.enabled && cfg.autoOnCollect) {
-          await createHlsCleanTask({ sourceId, episodeMode: "first", limit: 500 });
-        }
-      } catch {
-        // 采集任务已完成，自动清洗排队失败不反向影响采集结果
-      }
-    }
   } catch (e: any) {
     const isCancel = canceled.has(taskId) || String(e?.message).includes("__CANCELED__");
     const isPause = paused.has(taskId) || isPauseSignal(e);

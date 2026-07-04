@@ -38,9 +38,9 @@ export const api = {
   sourceTypeCount: (id, t, hours) => http.get(`/sources/${id}/typecount`, { params: { t, hours } }),
   sourcePlayDomains: (id) => http.get(`/sources/${id}/play-domains`),
   replaceSourcePlayDomain: (id, d) => http.post(`/sources/${id}/play-domains/replace`, d),
-  collectByKeyword: (keyword) => http.post('/collect/keyword', { keyword }),
+  collectByKeyword: (keyword, options = {}) => http.post('/collect/keyword', { keyword, ...options }),
   previewKeyword: (kw) => http.get('/collect/keyword/preview', { params: { kw } }),
-  confirmKeyword: (keyword, candidates) => http.post('/collect/keyword/confirm', { keyword, candidates }),
+  confirmKeyword: (keyword, candidates, options = {}) => http.post('/collect/keyword/confirm', { keyword, candidates, ...options }),
   probe: (d) => http.post('/probe', d),
   // vods
   vods: (params) => http.get('/vods', { params }),

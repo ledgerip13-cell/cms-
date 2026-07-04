@@ -16,8 +16,9 @@
         <el-form-item label="总开关">
           <el-switch v-model="cfg.enabled" active-text="开启清洗返回" inactive-text="关闭返回原始源" />
         </el-form-item>
-        <el-form-item label="采集后自动清洗">
+        <el-form-item label="自动更新后清洗">
           <el-switch v-model="cfg.autoOnCollect" active-text="开启" inactive-text="关闭" />
+          <span class="unit">仅定时自动更新采集触发，手动采集请在采集弹窗勾选</span>
         </el-form-item>
         <el-form-item label="播放缺失时排队">
           <el-switch v-model="cfg.autoQueueOnMiss" active-text="开启" inactive-text="关闭" />

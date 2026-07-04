@@ -149,11 +149,11 @@ export default async function taskRoutes(app: FastifyInstance) {
       return { ok: true, taskId: nt.id };
     }
     if (t.type === "keyword" && Array.isArray(opts.candidates) && opts.candidates.length) {
-      const nt = await createKeywordConfirmTask(opts.keyword || "", opts.candidates);
+      const nt = await createKeywordConfirmTask(opts.keyword || "", opts.candidates, opts);
       return { ok: true, taskId: nt.id };
     }
     if (t.type === "keyword" && opts.keyword) {
-      const nt = await createKeywordTask(opts.keyword);
+      const nt = await createKeywordTask(opts.keyword, opts);
       return { ok: true, taskId: nt.id };
     }
     if (t.type === "hls_clean") {
@@ -165,11 +165,15 @@ export default async function taskRoutes(app: FastifyInstance) {
 
   // 按片名单独采集（旧版一步到位，仍保留兼容）：遍历所有启用源搜索关键词入库
   secured.post("/api/collect/keyword", async (req) => {
-    const kw = String((req.body as any)?.keyword || "").trim();
+    const b = (req.body as any) || {};
+    const kw = String(b.keyword || "").trim();
     if (!kw) return { ok: false, error: "片名不能为空" };
     if (kw.length > 40) return { ok: false, error: "片名过长" };
     try {
-      const t = await createKeywordTask(kw);
+      const t = await createKeywordTask(kw, {
+        metaAfterCollect: b.metaAfterCollect !== false,
+        cleanAfterCollect: Boolean(b.cleanAfterCollect),
+      });
       return { ok: true, taskId: t.id };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };
@@ -195,7 +199,10 @@ export default async function taskRoutes(app: FastifyInstance) {
     const candidates = Array.isArray(b.candidates) ? b.candidates : [];
     if (!candidates.length) return { ok: false, error: "未选择任何候选" };
     try {
-      const t = await createKeywordConfirmTask(keyword, candidates);
+      const t = await createKeywordConfirmTask(keyword, candidates, {
+        metaAfterCollect: b.metaAfterCollect !== false,
+        cleanAfterCollect: Boolean(b.cleanAfterCollect),
+      });
       return { ok: true, taskId: t.id };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };

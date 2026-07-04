@@ -62,6 +62,12 @@
       <el-alert v-else type="info" :closable="false"
         title="输入片名先搜索预览，按片名+年份分组展示命中源数，选中后再采集，不会误采不相关的同名片。" />
 
+      <el-divider content-position="left">采集后动作</el-divider>
+      <div class="kw-post-actions">
+        <el-checkbox v-model="kwOptions.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
+        <el-checkbox v-model="kwOptions.cleanAfterCollect">采集后HLS清洗</el-checkbox>
+      </div>
+
       <template #footer>
         <el-button @click="kwDlg=false">取消</el-button>
         <el-button type="primary" :disabled="!kwChecked.length" :loading="kwSubmitting" @click="confirmKeyword">
@@ -280,6 +286,28 @@
       <el-form-item v-if="cleanupForm.rule === 'offline_old'" label="下架天数">
         <el-input-number v-model="cleanupForm.days" :min="1" :max="3650" />
       </el-form-item>
+      <el-form-item label="年份筛选">
+        <div class="year-filter">
+          <el-select v-model="cleanupForm.yearMode" placeholder="不限" style="width:120px" @change="cleanupPreview=null">
+            <el-option label="不限" value="" />
+            <el-option label="等于" value="eq" />
+            <el-option label="大于" value="gt" />
+            <el-option label="大于等于" value="gte" />
+            <el-option label="小于" value="lt" />
+            <el-option label="小于等于" value="lte" />
+            <el-option label="区间" value="range" />
+          </el-select>
+          <template v-if="cleanupForm.yearMode && cleanupForm.yearMode !== 'range'">
+            <el-input-number v-model="cleanupForm.year" :min="1900" :max="2100" controls-position="right" @change="cleanupPreview=null" />
+          </template>
+          <template v-else-if="cleanupForm.yearMode === 'range'">
+            <el-input-number v-model="cleanupForm.yearStart" :min="1900" :max="2100" controls-position="right" @change="cleanupPreview=null" />
+            <span class="muted">至</span>
+            <el-input-number v-model="cleanupForm.yearEnd" :min="1900" :max="2100" controls-position="right" @change="cleanupPreview=null" />
+          </template>
+          <span v-else class="muted">不过滤年份</span>
+        </div>
+      </el-form-item>
       <el-form-item label="执行上限">
         <el-input-number v-model="cleanupForm.limit" :min="1" :max="5000" />
       </el-form-item>
@@ -298,6 +326,7 @@
     <el-table v-if="cleanupPreview?.samples?.length" :data="cleanupPreview.samples" size="small" style="margin-top:12px" max-height="260">
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="片名" min-width="180" />
+      <el-table-column prop="year" label="年份" width="80" />
       <el-table-column prop="typeName" label="分类" width="100" />
       <el-table-column label="线路" width="80">
         <template #default="{ row }">{{ row._count?.plays || 0 }}</template>
@@ -320,10 +349,12 @@ const router = useRouter()
 const kwDlg = ref(false); const kwInput = ref('')
 const kwSearching = ref(false); const kwSearched = ref(false)
 const kwCandidates = ref([]); const kwChecked = ref([]); const kwSubmitting = ref(false)
+const kwOptions = ref({ metaAfterCollect: true, cleanAfterCollect: false })
 
 function resetKwDlg() {
   kwInput.value = ''; kwSearching.value = false; kwSearched.value = false
   kwCandidates.value = []; kwChecked.value = []
+  kwOptions.value = { metaAfterCollect: true, cleanAfterCollect: false }
 }
 async function searchKeyword() {
   const kw = kwInput.value.trim()
@@ -347,7 +378,7 @@ async function confirmKeyword() {
     // 展平为 { sourceId, vodIds } 列表传给后端
     const candidates = []
     for (const c of picked) for (const s of c.sources) candidates.push({ sourceId: s.sourceId, vodIds: s.vodIds })
-    const r = await api.confirmKeyword(kwInput.value.trim(), candidates)
+    const r = await api.confirmKeyword(kwInput.value.trim(), candidates, kwOptions.value)
     if (r.ok) {
       ElMessage.success('已提交，去「采集任务」页看进度')
       kwDlg.value = false
@@ -383,7 +414,18 @@ const selected = ref([]); const tableRef = ref(null)
 const cleanupDlg = ref(false)
 const cleanupLoading = ref(false)
 const cleanupPreview = ref(null)
-const cleanupForm = ref({ rule: 'disabled_source_only', sourceId: '', days: 30, limit: 500, deleteOrphans: true })
+const currentYear = new Date().getFullYear()
+const cleanupForm = ref({
+  rule: 'disabled_source_only',
+  sourceId: '',
+  days: 30,
+  limit: 500,
+  deleteOrphans: true,
+  yearMode: '',
+  year: currentYear,
+  yearStart: currentYear,
+  yearEnd: currentYear,
+})
 
 function coverUrl(row) {
   return imgUrl(row?._coverFallback ? row.pic : (row.officialPic || row.pic || ''))
@@ -599,6 +641,10 @@ onMounted(async () => {
   font-size: 13px; color: #b88230;
 }
 .cleanup-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 6px 0 12px; }
+.kw-post-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.kw-post-actions :deep(.el-checkbox) { margin-right: 0; }
+.year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.muted { color: #9aa4b2; font-size: 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }
 .cand-item { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px; background:#fff; border-radius:8px; margin-bottom:8px; }
