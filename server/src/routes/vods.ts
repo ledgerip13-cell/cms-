@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
-import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType } from "../publicVod.js";
+import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -147,6 +147,17 @@ function andWhere(base: any, extra: any) {
   return extra ? { AND: [base, extra] } : base;
 }
 
+function mergeWhere(...items: any[]) {
+  const list = items.filter(Boolean);
+  if (!list.length) return null;
+  return list.length === 1 ? list[0] : { AND: list };
+}
+
+function cleanupCategoryWhere(input: any) {
+  const categoryName = String(input?.categoryName || "").trim();
+  return categoryName ? { typeName: categoryName } : null;
+}
+
 const SERIES_MARKER_RE = /(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)$/i;
 
 function seriesBaseName(name: string) {
@@ -189,12 +200,13 @@ function cleanupRuleWhere(input: any): any {
   if (rule === "source_lines") {
     const sourceId = Number(input?.sourceId);
     if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("按源清退必须选择采集源");
+    const vodWhere = mergeWhere(yWhere, cleanupCategoryWhere(input));
     return {
       rule,
       sourceId,
-      where: andWhere({ plays: { some: { sourceId } } }, yWhere),
-      playWhere: yWhere ? { sourceId, vod: yWhere } : { sourceId },
-      orphanWhere: andWhere({ plays: { none: {} } }, yWhere),
+      where: andWhere({ plays: { some: { sourceId } } }, vodWhere),
+      playWhere: vodWhere ? { sourceId, vod: vodWhere } : { sourceId },
+      orphanWhere: andWhere({ plays: { none: {} } }, vodWhere),
     };
   }
   throw new Error("不支持的清理规则");
@@ -206,7 +218,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Number(q.size) || 20);
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
     const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() };
     if (q.kw) {
@@ -249,7 +262,8 @@ export default async function vodRoutes(app: FastifyInstance) {
   // 年份索引（聚合，降序）：支持按 type/sub 联动，只返回该分类下实际存在的年份
   app.get("/api/years", async (req) => {
     const q = req.query as any;
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     const where: any = { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() };
     if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
     if (q.sub) where.subType = q.sub;
@@ -287,7 +301,8 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.get("/api/hot", async (req) => {
     const q = req.query as any;
     const cat = String(q.cat || "hot");
-    const hotQuery = await hotVodQuery(cat, Number(q.limit) || undefined);
+    const viewer = await viewerFromRequest(req);
+    const hotQuery = await hotVodQuery(cat, Number(q.limit) || undefined, viewer);
     const list = await prisma.vod.findMany({
       where: hotQuery.where,
       orderBy: hotQuery.orderBy,
@@ -301,10 +316,11 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 每日更新：按最近7个自然日期分组，每天最多14部
-  app.get("/api/weekly", async () => {
+  app.get("/api/weekly", async (req) => {
     const dates = recentShanghaiDates(7);
     const since = new Date(Date.now() - 8 * DAY_MS);
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     const rows = await prisma.vod.findMany({
       where: { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), updatedAt: { gte: since } },
       orderBy: { updatedAt: "desc" },
@@ -331,7 +347,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const take = Math.min(24, Number(q.limit) || 12);
     const type = String(q.type || "");
     const sub = String(q.sub || "");
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     const baseWhere: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), id: { not: id } };
     const current = id ? await prisma.vod.findUnique({ where: { id }, select: { name: true } }) : null;
     const baseName = seriesBaseName(current?.name || "");
@@ -393,7 +410,8 @@ export default async function vodRoutes(app: FastifyInstance) {
       },
     });
     // 观众端不能看到已下架影片，同列表接口限制保持一致（admin详情页用另外的鲟权接口）
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName) || !vod.plays.length) return reply.code(404).send({ error: "not found" });
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
@@ -446,7 +464,8 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.get("/api/subtypes", async (req) => {
     const type = String((req.query as any).type || "");
     if (!type) return [];
-    const publicTypes = await enabledTypeNames();
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     if (!isPublicType(publicTypes, type)) return [];
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
@@ -458,8 +477,9 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 分类聚合
-  app.get("/api/types", async () => {
-    const publicTypes = await enabledTypeNames();
+  app.get("/api/types", async (req) => {
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
       where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() },

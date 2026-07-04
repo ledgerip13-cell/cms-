@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { enabledTypeNames, publicPlayableFilter, publicTypeFilter, requestedPublicType } from "./publicVod.js";
+import { enabledTypeNames, publicPlayableFilter, publicTypeFilter, requestedPublicType, type AccessViewer } from "./publicVod.js";
 
 export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned"] as const;
 type HotSortMode = (typeof HOT_SORT_MODES)[number];
@@ -91,8 +91,8 @@ function orderByFor(sortMode: HotSortMode): any[] {
   return [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
 }
 
-export async function hotVodQuery(cat = "hot", limit?: number) {
-  const publicTypes = await enabledTypeNames();
+export async function hotVodQuery(cat = "hot", limit?: number, viewer: AccessViewer = null) {
+  const publicTypes = await enabledTypeNames(viewer);
   if (cat && cat !== "hot") {
     const catWhere: any =
       cat === "guoman" ? { typeName: requestedPublicType(publicTypes, "动漫"), subType: "国产动漫" } :

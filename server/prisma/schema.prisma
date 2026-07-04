@@ -37,14 +37,18 @@ model Source {
 
 // 统一分类体系（本站标准分类）
 model Category {
-  id        Int             @id @default(autoincrement())
-  name      String          @unique // 统一分类名，如 "日韩动漫"
-  slug      String          @default("") // 英文标识
-  sort      Int             @default(100) // 展示排序
-  parentId  Int? // 支持二级分类
-  enabled   Boolean         @default(true)
-  maps      SourceTypeMap[]
-  createdAt DateTime        @default(now())
+  id              Int             @id @default(autoincrement())
+  name            String          @unique // 统一分类名，如 "日韩动漫"
+  slug            String          @default("") // 英文标识
+  sort            Int             @default(100) // 展示排序
+  parentId        Int? // 支持二级分类
+  enabled         Boolean         @default(true)
+  displayMode     String          @default("public") // public / login / vip / group / hidden
+  displayGroupIds String          @default("[]") // JSON数组：可展示的会员分组ID
+  watchMode       String          @default("public") // public / login / vip / group
+  watchGroupIds   String          @default("[]") // JSON数组：可观看的会员分组ID
+  maps            SourceTypeMap[]
+  createdAt       DateTime        @default(now())
 }
 
 // 源分类映射：各源 type_id → 本站统一 Category

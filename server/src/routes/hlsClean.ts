@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
-import { authGuard } from "../auth.js";
+import { authGuard, verifyPlaybackToken } from "../auth.js";
 import {
   ensureHlsCleanConfig,
   HLS_STRATEGIES,
@@ -18,6 +18,13 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
   // 公开 clean m3u8，下发文本；TS 行已经是源站绝对地址，视频流量不走 Node
   app.get("/api/hls-clean/:id/index.m3u8", async (req, reply) => {
     const id = Number((req.params as any).id);
+    const token = String((req.query as any)?.t || "");
+    try {
+      const data = verifyPlaybackToken(token);
+      if (Number(data.cleanId) !== id) throw new Error("clean id mismatch");
+    } catch {
+      return reply.code(403).send("clean m3u8 access denied");
+    }
     const cfg = await ensureHlsCleanConfig();
     if (!cfg.enabled) return reply.code(404).send("hls clean disabled");
     const row = await prisma.hlsCleanResult.findUnique({ where: { id } });

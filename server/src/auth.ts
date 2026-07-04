@@ -18,6 +18,16 @@ export function verifyToken(token: string): any {
   return jwt.verify(token, SECRET);
 }
 
+export function signPlaybackToken(payload: { cleanId?: number; playId?: number; vodId?: number }) {
+  return jwt.sign({ ...payload, kind: "playback" }, SECRET, { expiresIn: "30m" });
+}
+
+export function verifyPlaybackToken(token: string): any {
+  const data = verifyToken(token);
+  if (data?.kind !== "playback") throw new Error("bad playback token");
+  return data;
+}
+
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
 }

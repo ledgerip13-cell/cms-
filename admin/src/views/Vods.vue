@@ -283,6 +283,11 @@
           <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="分类">
+        <el-select v-model="cleanupForm.categoryName" clearable filterable placeholder="全部分类" style="width:260px" @change="cleanupPreview=null">
+          <el-option v-for="t in types" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
+        </el-select>
+      </el-form-item>
       <el-form-item v-if="cleanupForm.rule === 'offline_old'" label="下架天数">
         <el-input-number v-model="cleanupForm.days" :min="1" :max="3650" />
       </el-form-item>
@@ -418,6 +423,7 @@ const currentYear = new Date().getFullYear()
 const cleanupForm = ref({
   rule: 'disabled_source_only',
   sourceId: '',
+  categoryName: '',
   days: 30,
   limit: 500,
   deleteOrphans: true,
@@ -598,7 +604,7 @@ async function confirmDouban(id, c) {
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '确认失败') }
 }
 onMounted(async () => {
-  const [catRows, sourceRows] = await Promise.all([api.categories(), api.sources()])
+  const [catRows, sourceRows] = await Promise.all([api.adminCategories(), api.sources()])
   types.value = catRows
   sourceOptions.value = sourceRows
   load()

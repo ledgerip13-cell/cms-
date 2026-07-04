@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
+import { categoryAllowed, normalizeAccessGroupIds, normalizeAccessMode, viewerFromRequest } from "../publicVod.js";
 
 async function backfillMapToVods(mapId: number) {
   const map = await prisma.sourceTypeMap.findUnique({
@@ -33,9 +34,25 @@ async function backfillCategoryMaps(categoryId: number) {
   return count;
 }
 
+function categoryWriteData(input: any, creating = false) {
+  const b = input || {};
+  const data: any = {};
+  if (creating || "name" in b) data.name = String(b.name || "").trim();
+  if (creating || "slug" in b) data.slug = String(b.slug || "").trim();
+  if (creating || "sort" in b) data.sort = Number.isFinite(Number(b.sort)) ? Number(b.sort) : 100;
+  if ("parentId" in b) data.parentId = b.parentId ?? null;
+  if (creating || "enabled" in b) data.enabled = creating ? b.enabled !== false : Boolean(b.enabled);
+  if (creating || "displayMode" in b) data.displayMode = normalizeAccessMode(b.displayMode, "public");
+  if (creating || "displayGroupIds" in b) data.displayGroupIds = JSON.stringify(normalizeAccessGroupIds(b.displayGroupIds));
+  if (creating || "watchMode" in b) data.watchMode = normalizeAccessMode(b.watchMode, "public");
+  if (creating || "watchGroupIds" in b) data.watchGroupIds = JSON.stringify(normalizeAccessGroupIds(b.watchGroupIds));
+  return data;
+}
+
 export default async function categoryRoutes(app: FastifyInstance) {
   // 公开：前端取启用的统一分类（带影片数）——前后台均读此，保证一致
-  app.get("/api/categories", async () => {
+  app.get("/api/categories", async (req) => {
+    const viewer = await viewerFromRequest(req);
     const cats = await prisma.category.findMany({
       where: { enabled: true },
       orderBy: { sort: "asc" },
@@ -43,7 +60,9 @@ export default async function categoryRoutes(app: FastifyInstance) {
     // 回填后 Vod.typeName == 大类名，直接按 typeName 聚合计数
     const counts = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
     const cmap = new Map(counts.map((c) => [c.typeName, c._count._all]));
-    return cats.map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
+    return cats
+      .filter((c: any) => categoryAllowed(c, "display", viewer).allowed)
+      .map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
   });
 
   // 后台管理：列出全部大类(含已禁用的)，用于后台开关管理页面（新增/编辑/删除 CRUD 复用下方已有的 admin 作用域，不重复定义）
@@ -95,16 +114,17 @@ export default async function categoryRoutes(app: FastifyInstance) {
     admin.post("/api/admin/categories", async (req) => {
       const b = req.body as any;
       return prisma.category.create({
-        data: { name: b.name, slug: b.slug || "", sort: b.sort ?? 100, parentId: b.parentId ?? null },
+        data: categoryWriteData(b, true),
       });
     });
     admin.put("/api/admin/categories/:id", async (req) => {
       const id = Number((req.params as any).id);
       const b = req.body as any;
       const before = await prisma.category.findUnique({ where: { id } });
+      const data = categoryWriteData(b);
       const row = await prisma.category.update({
         where: { id },
-        data: { name: b.name, slug: b.slug, sort: b.sort, enabled: b.enabled, parentId: b.parentId ?? null },
+        data,
       });
       const backfilled = before && b.name && b.name !== before.name ? await backfillCategoryMaps(id) : 0;
       return { ...row, backfilled };

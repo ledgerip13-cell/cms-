@@ -320,6 +320,11 @@ async function playResolvedEp(i) {
       playDirectUrl(r.url, r.kind)
       return
     }
+    if (['login_required', 'vip_required', 'group_required'].includes(r.code)) {
+      cleanFallbackUrl.value = ''
+      showPlayNotice(r.error || '当前内容无观看权限')
+      return
+    }
   } catch {}
   finally { resolving.value = false }
   cleanFallbackUrl.value = ''

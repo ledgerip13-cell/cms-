@@ -1,7 +1,7 @@
 <template>
   <el-row :gutter="16">
     <!-- 统一分类 -->
-    <el-col :span="9">
+    <el-col :span="11">
       <div class="card">
         <div class="bar">
           <div class="sec-title">统一分类体系</div>
@@ -9,8 +9,18 @@
         </div>
         <el-table :data="cats" size="small">
           <el-table-column prop="sort" label="排序" width="60" />
-          <el-table-column prop="name" label="分类名" />
+          <el-table-column prop="name" label="分类名" min-width="100" />
           <el-table-column prop="count" label="影片数" width="70" />
+          <el-table-column label="展示" width="92">
+            <template #default="{ row }">
+              <el-tag size="small" :type="accessTagType(row.displayMode)">{{ accessLabel(row.displayMode, 'display') }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="观看" width="92">
+            <template #default="{ row }">
+              <el-tag size="small" :type="accessTagType(row.watchMode)">{{ accessLabel(row.watchMode, 'watch') }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="前台显示" width="80">
             <template #default="{ row }">
               <el-switch v-model="row.enabled" @change="v => toggleEnabled(row, v)" />
@@ -27,7 +37,7 @@
     </el-col>
 
     <!-- 源分类映射 -->
-    <el-col :span="15">
+    <el-col :span="13">
       <div class="card">
         <div class="bar">
           <div class="sec-title">源分类映射
@@ -53,11 +63,34 @@
     </el-col>
   </el-row>
 
-  <el-dialog v-model="dlg" :title="form.id ? '编辑分类' : '新增分类'" width="420">
-    <el-form :model="form" label-width="70px">
+  <el-dialog v-model="dlg" :title="form.id ? '编辑分类' : '新增分类'" width="560">
+    <el-form :model="form" label-width="90px">
       <el-form-item label="分类名"><el-input v-model="form.name" /></el-form-item>
       <el-form-item label="标识"><el-input v-model="form.slug" placeholder="英文，可选" /></el-form-item>
       <el-form-item label="排序"><el-input-number v-model="form.sort" :min="1" :max="999" /></el-form-item>
+      <el-form-item label="前台显示"><el-switch v-model="form.enabled" /></el-form-item>
+      <el-form-item label="展示权限">
+        <el-select v-model="form.displayMode" style="width:220px">
+          <el-option v-for="m in displayModes" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+        <span class="hint">控制首页、列表、搜索、推荐是否出现</span>
+      </el-form-item>
+      <el-form-item v-if="form.displayMode === 'group'" label="展示分组">
+        <el-select v-model="form.displayGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
+          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="观看权限">
+        <el-select v-model="form.watchMode" style="width:220px">
+          <el-option v-for="m in watchModes" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+        <span class="hint">控制播放解析和 clean m3u8 访问</span>
+      </el-form-item>
+      <el-form-item v-if="form.watchMode === 'group'" label="观看分组">
+        <el-select v-model="form.watchGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
+          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
+      </el-form-item>
     </el-form>
     <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" @click="saveCat">保存</el-button></template>
   </el-dialog>
@@ -69,11 +102,45 @@ import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
-const cats = ref([]); const sources = ref([]); const maps = ref([])
+const cats = ref([]); const sources = ref([]); const maps = ref([]); const groups = ref([])
 const curSource = ref(null); const unmapped = ref(0)
 const dlg = ref(false); const form = ref({})
+const displayModes = [
+  { value: 'public', label: '游客可见' },
+  { value: 'login', label: '登录可见' },
+  { value: 'vip', label: '会员可见' },
+  { value: 'group', label: '指定分组可见' },
+  { value: 'hidden', label: '隐藏' },
+]
+const watchModes = [
+  { value: 'public', label: '游客可观看' },
+  { value: 'login', label: '登录可观看' },
+  { value: 'vip', label: '会员可观看' },
+  { value: 'group', label: '指定分组可观看' },
+]
 
-async function loadCats() { cats.value = await api.adminCategories() }
+function parseIds(value) {
+  try {
+    const arr = Array.isArray(value) ? value : JSON.parse(value || '[]')
+    return Array.isArray(arr) ? arr.map(Number).filter(Boolean) : []
+  } catch { return [] }
+}
+function normalizeCat(row) {
+  return {
+    ...row,
+    enabled: row.enabled !== false,
+    displayMode: row.displayMode || 'public',
+    displayGroupIds: parseIds(row.displayGroupIds),
+    watchMode: row.watchMode || 'public',
+    watchGroupIds: parseIds(row.watchGroupIds),
+  }
+}
+async function loadCats() { cats.value = (await api.adminCategories()).map(normalizeCat) }
+const accessLabel = (mode, kind) => {
+  const rows = kind === 'display' ? displayModes : watchModes
+  return rows.find(m => m.value === mode)?.label.replace('游客', '游客') || '游客'
+}
+const accessTagType = (mode) => ({ public: 'success', login: 'primary', vip: 'warning', group: 'danger', hidden: 'info' }[mode] || 'success')
 async function toggleEnabled(row, v) {
   try {
     await api.updateCategory(row.id, { enabled: v })
@@ -83,8 +150,8 @@ async function toggleEnabled(row, v) {
 async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
 
-function openAdd() { form.value = { name:'', slug:'', sort:100 }; dlg.value = true }
-function openEdit(row) { form.value = { ...row }; dlg.value = true }
+function openAdd() { form.value = { name:'', slug:'', sort:100, enabled:true, displayMode:'public', displayGroupIds:[], watchMode:'public', watchGroupIds:[] }; dlg.value = true }
+function openEdit(row) { form.value = normalizeCat(row); dlg.value = true }
 async function saveCat() {
   try {
     const r = form.value.id ? await api.updateCategory(form.value.id, form.value) : await api.addCategory(form.value)
@@ -104,7 +171,9 @@ async function save(row, v) {
 }
 onMounted(async () => {
   await loadCats()
-  sources.value = await api.sources()
+  const [sourceRows, groupRows] = await Promise.all([api.sources(), api.memberGroups()])
+  sources.value = sourceRows
+  groups.value = groupRows.filter(g => g.enabled !== false)
   if (sources.value.length) { curSource.value = sources.value[0].id; loadMaps() }
   loadUnmapped()
 })
@@ -113,4 +182,5 @@ onMounted(async () => {
 <style scoped>
 .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.hint { margin-left: 10px; color: #9aa4b2; font-size: 12px; }
 </style>
