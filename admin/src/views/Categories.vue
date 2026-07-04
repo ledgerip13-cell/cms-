@@ -75,18 +75,18 @@
         </el-select>
         <span class="hint">控制首页、列表、搜索、推荐是否出现</span>
       </el-form-item>
-      <el-form-item v-if="form.displayMode === 'group'" label="展示分组">
+      <el-form-item v-if="needsGroupMode(form.displayMode)" label="展示分组">
         <el-select v-model="form.displayGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
           <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="观看权限">
-        <el-select v-model="form.watchMode" style="width:220px">
+        <el-select v-model="form.watchMode" :disabled="displayClosed(form)" style="width:220px">
           <el-option v-for="m in watchModes" :key="m.value" :label="m.label" :value="m.value" />
         </el-select>
-        <span class="hint">控制播放解析和 clean m3u8 访问</span>
+        <span class="hint">{{ displayClosed(form) ? '隐藏或关闭时不可观看' : '只会在展示权限基础上继续收紧' }}</span>
       </el-form-item>
-      <el-form-item v-if="form.watchMode === 'group'" label="观看分组">
+      <el-form-item v-if="!displayClosed(form) && needsGroupMode(form.watchMode)" label="观看分组">
         <el-select v-model="form.watchGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
           <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
         </el-select>
@@ -108,15 +108,17 @@ const dlg = ref(false); const form = ref({})
 const displayModes = [
   { value: 'public', label: '游客可见' },
   { value: 'login', label: '登录可见' },
-  { value: 'vip', label: '会员可见' },
+  { value: 'vip', label: 'VIP权益可见' },
   { value: 'group', label: '指定分组可见' },
+  { value: 'vip_or_group', label: 'VIP或指定分组可见' },
   { value: 'hidden', label: '隐藏' },
 ]
 const watchModes = [
-  { value: 'public', label: '游客可观看' },
+  { value: 'inherit', label: '跟随展示权限' },
   { value: 'login', label: '登录可观看' },
-  { value: 'vip', label: '会员可观看' },
+  { value: 'vip', label: 'VIP权益可观看' },
   { value: 'group', label: '指定分组可观看' },
+  { value: 'vip_or_group', label: 'VIP或指定分组可观看' },
 ]
 
 function parseIds(value) {
@@ -131,16 +133,19 @@ function normalizeCat(row) {
     enabled: row.enabled !== false,
     displayMode: row.displayMode || 'public',
     displayGroupIds: parseIds(row.displayGroupIds),
-    watchMode: row.watchMode || 'public',
+    watchMode: row.watchMode === 'public' ? 'inherit' : (row.watchMode || 'inherit'),
     watchGroupIds: parseIds(row.watchGroupIds),
   }
 }
 async function loadCats() { cats.value = (await api.adminCategories()).map(normalizeCat) }
 const accessLabel = (mode, kind) => {
   const rows = kind === 'display' ? displayModes : watchModes
-  return rows.find(m => m.value === mode)?.label.replace('游客', '游客') || '游客'
+  const normalized = kind === 'watch' && mode === 'public' ? 'inherit' : mode
+  return rows.find(m => m.value === normalized)?.label || '游客'
 }
-const accessTagType = (mode) => ({ public: 'success', login: 'primary', vip: 'warning', group: 'danger', hidden: 'info' }[mode] || 'success')
+const accessTagType = (mode) => ({ inherit: 'success', public: 'success', login: 'primary', vip: 'warning', group: 'danger', vip_or_group: 'warning', hidden: 'info' }[mode] || 'success')
+function needsGroupMode(mode) { return ['group', 'vip_or_group'].includes(mode) }
+function displayClosed(row) { return row?.enabled === false || row?.displayMode === 'hidden' }
 async function toggleEnabled(row, v) {
   try {
     await api.updateCategory(row.id, { enabled: v })
@@ -150,10 +155,14 @@ async function toggleEnabled(row, v) {
 async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
 
-function openAdd() { form.value = { name:'', slug:'', sort:100, enabled:true, displayMode:'public', displayGroupIds:[], watchMode:'public', watchGroupIds:[] }; dlg.value = true }
+function openAdd() { form.value = { name:'', slug:'', sort:100, enabled:true, displayMode:'public', displayGroupIds:[], watchMode:'inherit', watchGroupIds:[] }; dlg.value = true }
 function openEdit(row) { form.value = normalizeCat(row); dlg.value = true }
 async function saveCat() {
   try {
+    if (displayClosed(form.value)) {
+      form.value.watchMode = 'inherit'
+      form.value.watchGroupIds = []
+    }
     const r = form.value.id ? await api.updateCategory(form.value.id, form.value) : await api.addCategory(form.value)
     ElMessage.success(r?.backfilled ? `已保存，已回刷 ${r.backfilled} 部影片` : '已保存')
     dlg.value = false; loadCats()

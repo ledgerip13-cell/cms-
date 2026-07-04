@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, checkPassword, hashPassword, signWebToken, webUserGuard } from "../auth.js";
-import { enabledTypeNames, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId } from "../publicVod.js";
+import { enabledTypeNames, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
 
 function parseJsonArray(value: string | null | undefined): string[] {
   try {
@@ -82,9 +82,9 @@ async function ensureSite() {
 
 async function pickRecommendationTypes(userId: number, favoriteTypes: string[]) {
   const viewer = await viewerFromUserId(userId);
-  const publicTypes = await enabledTypeNames(viewer);
-  const visibleFavorites = favoriteTypes.filter((type) => publicTypes.includes(type));
-  if (visibleFavorites.length) return { source: "favoriteTypes", types: visibleFavorites, publicTypes };
+  const publicTypes = await watchableTypeNames(viewer);
+  const watchableFavorites = favoriteTypes.filter((type) => publicTypes.includes(type));
+  if (watchableFavorites.length) return { source: "favoriteTypes", types: watchableFavorites, publicTypes };
   const rows = await prisma.watchHistory.findMany({
     where: { userId, vod: { status: "online", typeName: publicTypeFilter(publicTypes) } },
     orderBy: { updatedAt: "desc" },
@@ -313,7 +313,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const take = Math.min(100, Number(q.limit) || 50);
     const viewer = await viewerFromUserId(mid);
-    const publicTypes = await enabledTypeNames(viewer);
+    const publicTypes = await watchableTypeNames(viewer);
     return prisma.watchHistory.findMany({
       where: { userId: mid, vod: { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() } },
       orderBy: { updatedAt: "desc" },
@@ -327,7 +327,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const b = (req.body as any) || {};
     const vodId = Number(b.vodId);
     const viewer = await viewerFromUserId(mid);
-    const publicTypes = await enabledTypeNames(viewer);
+    const publicTypes = await watchableTypeNames(viewer);
     const vod = await prisma.vod.findFirst({ where: { id: vodId, status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() }, select: { id: true } });
     if (!vod) return reply.code(404).send({ error: "影片不存在或已下架" });
     const epIndex = Math.max(0, Number(b.epIndex) || 0);

@@ -29,6 +29,12 @@
             <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '正常' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="权益等级" width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.isVip ? 'warning' : 'info'" effect="plain">{{ row.isVip ? 'VIP' : '普通' }}</el-tag>
+            <div v-if="row.isVip && row.vipExpireAt" class="muted">至 {{ fmtDate(row.vipExpireAt) }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="偏好类型" min-width="170">
           <template #default="{ row }">
             <div class="tags">
@@ -82,6 +88,8 @@
         </div>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="偏好类型">{{ detail.favoriteTypes.join('、') || '未设置' }}</el-descriptions-item>
+          <el-descriptions-item label="权益等级">{{ detail.isVip ? `VIP${detail.vipExpireAt ? ' 至 ' + fmt(detail.vipExpireAt) : ''}` : '普通用户' }}</el-descriptions-item>
+          <el-descriptions-item label="用户分组">{{ detail.groups?.map(g => g.name).join('、') || '未分组' }}</el-descriptions-item>
           <el-descriptions-item label="追剧数量">{{ detail.followCount }}</el-descriptions-item>
           <el-descriptions-item label="历史数量">{{ detail.historyCount }}</el-descriptions-item>
           <el-descriptions-item label="最近登录">{{ fmt(detail.lastLogin) }}</el-descriptions-item>
@@ -108,6 +116,12 @@
         <el-form-item label="账号"><el-input v-model="edit.username" disabled /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="edit.nickname" maxlength="32" /></el-form-item>
         <el-form-item label="状态"><el-switch v-model="edit.enabled" active-text="正常" inactive-text="禁用" /></el-form-item>
+        <el-form-item label="VIP权益">
+          <el-switch v-model="edit.isVip" active-text="VIP" inactive-text="普通" />
+        </el-form-item>
+        <el-form-item v-if="edit.isVip" label="VIP到期">
+          <el-date-picker v-model="edit.vipExpireAt" type="datetime" clearable value-format="YYYY-MM-DD HH:mm:ss" placeholder="不填=长期有效" style="width:100%" />
+        </el-form-item>
         <el-form-item label="偏好类型">
           <el-select v-model="edit.favoriteTypes" multiple filterable allow-create default-first-option placeholder="输入后回车添加" style="width:100%">
             <el-option v-for="t in typeOptions" :key="t" :label="t" :value="t" />
@@ -153,7 +167,7 @@ const detailOpen = ref(false)
 const editOpen = ref(false)
 const pwdOpen = ref(false)
 const detail = ref(null)
-const edit = ref({ id: 0, username: '', nickname: '', enabled: true, favoriteTypes: [], groupIds: [] })
+const edit = ref({ id: 0, username: '', nickname: '', enabled: true, isVip: false, vipExpireAt: '', favoriteTypes: [], groupIds: [] })
 const pwd = ref({ id: 0, username: '', password: '' })
 const typeOptions = ref([])
 const groupOptions = ref([])
@@ -161,6 +175,10 @@ const groupOptions = ref([])
 function fmt(v) {
   if (!v) return '—'
   return new Date(v).toLocaleString('zh-CN', { hour12: false })
+}
+function fmtDate(v) {
+  if (!v) return ''
+  return new Date(v).toLocaleDateString('zh-CN')
 }
 
 async function load() {
@@ -189,7 +207,13 @@ async function openDetail(row) {
 }
 
 function openEdit(row) {
-  edit.value = { ...row, favoriteTypes: [...(row.favoriteTypes || [])], groupIds: (row.groups || []).map(g => g.id) }
+  edit.value = {
+    ...row,
+    isVip: Boolean(row.isVip),
+    vipExpireAt: row.vipExpireAt ? fmt(row.vipExpireAt) : '',
+    favoriteTypes: [...(row.favoriteTypes || [])],
+    groupIds: (row.groups || []).map(g => g.id),
+  }
   editOpen.value = true
 }
 
@@ -204,6 +228,8 @@ async function saveEdit() {
     await api.updateAdminUser(edit.value.id, {
       nickname: edit.value.nickname,
       enabled: edit.value.enabled,
+      isVip: edit.value.isVip,
+      vipExpireAt: edit.value.isVip ? (edit.value.vipExpireAt || null) : null,
       favoriteTypes: edit.value.favoriteTypes,
     })
     await api.updateUserGroups(edit.value.id, edit.value.groupIds || [])

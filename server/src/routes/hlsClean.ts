@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyPlaybackToken } from "../auth.js";
+import { accessForType, viewerFromUserId } from "../publicVod.js";
 import {
   ensureHlsCleanConfig,
   HLS_STRATEGIES,
@@ -19,9 +20,10 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
   app.get("/api/hls-clean/:id/index.m3u8", async (req, reply) => {
     const id = Number((req.params as any).id);
     const token = String((req.query as any)?.t || "");
+    let tokenData: any = null;
     try {
-      const data = verifyPlaybackToken(token);
-      if (Number(data.cleanId) !== id) throw new Error("clean id mismatch");
+      tokenData = verifyPlaybackToken(token);
+      if (Number(tokenData.cleanId) !== id) throw new Error("clean id mismatch");
     } catch {
       return reply.code(403).send("clean m3u8 access denied");
     }
@@ -29,6 +31,10 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
     if (!cfg.enabled) return reply.code(404).send("hls clean disabled");
     const row = await prisma.hlsCleanResult.findUnique({ where: { id } });
     if (!row || row.status !== "clean" || !row.cleanM3u8) return reply.code(404).send("clean m3u8 not found");
+    const vod = await prisma.vod.findUnique({ where: { id: row.vodId }, select: { typeName: true, status: true } });
+    const viewer = tokenData?.mid ? await viewerFromUserId(Number(tokenData.mid)) : null;
+    const watchAccess = vod?.status === "online" ? await accessForType(vod.typeName, "watch", viewer) : { allowed: false };
+    if (!watchAccess.allowed) return reply.code(403).send("clean m3u8 access denied");
     reply.header("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
     reply.header("Cache-Control", "public, max-age=300");
     return reply.send(row.cleanM3u8);

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
-import { categoryAllowed, normalizeAccessGroupIds, normalizeAccessMode, viewerFromRequest } from "../publicVod.js";
+import { categoryAllowed, normalizeAccessGroupIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
 
 async function backfillMapToVods(mapId: number) {
   const map = await prisma.sourceTypeMap.findUnique({
@@ -34,7 +34,7 @@ async function backfillCategoryMaps(categoryId: number) {
   return count;
 }
 
-function categoryWriteData(input: any, creating = false) {
+function categoryWriteData(input: any, creating = false, current: any = null) {
   const b = input || {};
   const data: any = {};
   if (creating || "name" in b) data.name = String(b.name || "").trim();
@@ -42,10 +42,18 @@ function categoryWriteData(input: any, creating = false) {
   if (creating || "sort" in b) data.sort = Number.isFinite(Number(b.sort)) ? Number(b.sort) : 100;
   if ("parentId" in b) data.parentId = b.parentId ?? null;
   if (creating || "enabled" in b) data.enabled = creating ? b.enabled !== false : Boolean(b.enabled);
-  if (creating || "displayMode" in b) data.displayMode = normalizeAccessMode(b.displayMode, "public");
+  const displayMode = normalizeDisplayAccessMode(b.displayMode ?? current?.displayMode, "public");
+  if (creating || "displayMode" in b) data.displayMode = displayMode;
   if (creating || "displayGroupIds" in b) data.displayGroupIds = JSON.stringify(normalizeAccessGroupIds(b.displayGroupIds));
-  if (creating || "watchMode" in b) data.watchMode = normalizeAccessMode(b.watchMode, "public");
-  if (creating || "watchGroupIds" in b) data.watchGroupIds = JSON.stringify(normalizeAccessGroupIds(b.watchGroupIds));
+  const enabled = "enabled" in data ? data.enabled !== false : current?.enabled !== false;
+  const hiddenOrDisabled = !enabled || displayMode === "hidden";
+  if (hiddenOrDisabled) {
+    data.watchMode = "inherit";
+    data.watchGroupIds = "[]";
+  } else {
+    if (creating || "watchMode" in b) data.watchMode = normalizeWatchAccessMode(b.watchMode, "inherit");
+    if (creating || "watchGroupIds" in b) data.watchGroupIds = JSON.stringify(normalizeAccessGroupIds(b.watchGroupIds));
+  }
   return data;
 }
 
@@ -121,7 +129,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       const id = Number((req.params as any).id);
       const b = req.body as any;
       const before = await prisma.category.findUnique({ where: { id } });
-      const data = categoryWriteData(b);
+      const data = categoryWriteData(b, false, before);
       const row = await prisma.category.update({
         where: { id },
         data,

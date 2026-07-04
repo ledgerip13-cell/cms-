@@ -48,7 +48,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
       if (!cfg.enabled) return result;
       const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);
       if (clean) {
-        const token = signPlaybackToken({ cleanId: clean.id, playId: play.id, vodId: play.vodId });
+        const token = signPlaybackToken({ cleanId: clean.id, playId: play.id, vodId: play.vodId, mid: viewer?.id });
         return {
           ...result,
           url: `/api/hls-clean/${clean.id}/index.m3u8?t=${encodeURIComponent(token)}`,

@@ -34,10 +34,10 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="会员分组" name="groups">
+      <el-tab-pane label="用户分组" name="groups">
         <div class="card">
           <div class="toolbar">
-            <div class="sec-title">会员分组</div>
+            <div class="sec-title">用户分组</div>
             <div class="actions">
               <el-input v-model="groupForm.name" placeholder="分组名称" size="small" style="width:160px" />
               <el-input v-model="groupForm.remark" placeholder="备注" size="small" style="width:220px" />

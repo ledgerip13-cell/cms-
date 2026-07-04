@@ -43,9 +43,9 @@ model Category {
   sort            Int             @default(100) // 展示排序
   parentId        Int? // 支持二级分类
   enabled         Boolean         @default(true)
-  displayMode     String          @default("public") // public / login / vip / group / hidden
+  displayMode     String          @default("public") // public / login / vip / group / vip_or_group / hidden
   displayGroupIds String          @default("[]") // JSON数组：可展示的会员分组ID
-  watchMode       String          @default("public") // public / login / vip / group
+  watchMode       String          @default("inherit") // inherit / login / vip / group / vip_or_group
   watchGroupIds   String          @default("[]") // JSON数组：可观看的会员分组ID
   maps            SourceTypeMap[]
   createdAt       DateTime        @default(now())

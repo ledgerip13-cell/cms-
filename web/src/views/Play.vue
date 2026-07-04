@@ -318,9 +318,10 @@ async function playResolvedEp(i) {
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       playDirectUrl(r.url, r.kind)
+      saveWatchHistory(i, pendingSeekSec || 0)
       return
     }
-    if (['login_required', 'vip_required', 'group_required'].includes(r.code)) {
+    if (['login_required', 'vip_required', 'group_required', 'vip_or_group_required'].includes(r.code)) {
       cleanFallbackUrl.value = ''
       showPlayNotice(r.error || '当前内容无观看权限')
       return
@@ -355,7 +356,7 @@ function tryNextPlayback() {
 }
 
 function saveWatchHistory(i, progressOverride = null) {
-  if (!user.value || !vod.value?.id) return
+  if (!user.value || !vod.value?.id || !curUrl.value) return
   const ep = curChannel.value?.episodes?.[i]
   const video = videoEl.value
   const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
@@ -381,7 +382,6 @@ function playEp(i, opts = {}) {
   cleanFallbackUrl.value = ''
   if (!opts.keepResume) pendingSeekSec = 0
   playResolvedEp(i)
-  saveWatchHistory(i, pendingSeekSec || 0)
 }
 function switchLine(i) {
   lineIdx.value = i; chanIdx.value = 0
@@ -457,7 +457,7 @@ async function toggleFollow() {
 onMounted(() => loadVod(route.params.id))
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 onBeforeUnmount(() => {
-  saveWatchHistory(epIdx.value)
+  if (curUrl.value) saveWatchHistory(epIdx.value)
   if (hls) hls.destroy()
   clearPlayWatchdog()
 })

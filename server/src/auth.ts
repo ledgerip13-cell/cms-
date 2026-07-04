@@ -18,7 +18,7 @@ export function verifyToken(token: string): any {
   return jwt.verify(token, SECRET);
 }
 
-export function signPlaybackToken(payload: { cleanId?: number; playId?: number; vodId?: number }) {
+export function signPlaybackToken(payload: { cleanId?: number; playId?: number; vodId?: number; mid?: number }) {
   return jwt.sign({ ...payload, kind: "playback" }, SECRET, { expiresIn: "30m" });
 }
 
