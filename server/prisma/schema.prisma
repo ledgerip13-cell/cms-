@@ -161,6 +161,7 @@ model HlsCleanResult {
   @@index([sourceId])
   @@index([status])
   @@index([strategyId])
+  @@index([playId, sourceUrlHash, status, checkedAt])
 }
 
 // 后台用户

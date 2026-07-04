@@ -59,16 +59,16 @@ function matchYearFilter(year: unknown, opts: SyncOptions) {
   if (!y) return false;
   const mode = String(opts.yearMode || "");
   const target = parseYear(opts.year);
-  const start = parseYear(opts.yearStart ?? opts.year);
-  const end = parseYear(opts.yearEnd ?? opts.year);
+  const rangeStart = parseYear(opts.yearStart);
+  const rangeEnd = parseYear(opts.yearEnd);
   if (mode === "eq") return target ? y === target : false;
-  if (mode === "gt") return start ? y > start : false;
-  if (mode === "gte") return start ? y >= start : false;
-  if (mode === "lt") return end ? y < end : false;
-  if (mode === "lte") return end ? y <= end : false;
+  if (mode === "gt") return target ? y > target : false;
+  if (mode === "gte") return target ? y >= target : false;
+  if (mode === "lt") return target ? y < target : false;
+  if (mode === "lte") return target ? y <= target : false;
   if (mode === "range") {
-    const lo = start ?? 1900;
-    const hi = end ?? new Date().getFullYear() + 1;
+    const lo = rangeStart ?? 1900;
+    const hi = rangeEnd ?? new Date().getFullYear() + 1;
     return y >= Math.min(lo, hi) && y <= Math.max(lo, hi);
   }
   return true;

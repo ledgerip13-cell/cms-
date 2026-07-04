@@ -100,27 +100,27 @@ function yearValuesFromInput(input: any) {
   let start = 1900;
   let end = current;
   const target = parseYearInput(input?.year);
-  const a = parseYearInput(input?.yearStart ?? input?.year);
-  const b = parseYearInput(input?.yearEnd ?? input?.year);
+  const rangeStart = parseYearInput(input?.yearStart);
+  const rangeEnd = parseYearInput(input?.yearEnd);
   if (mode === "eq") {
     if (!target) return [];
     start = target;
     end = target;
   } else if (mode === "gt") {
-    if (!a) return [];
-    start = a + 1;
+    if (!target) return [];
+    start = target + 1;
   } else if (mode === "gte") {
-    if (!a) return [];
-    start = a;
+    if (!target) return [];
+    start = target;
   } else if (mode === "lt") {
-    if (!b) return [];
-    end = b - 1;
+    if (!target) return [];
+    end = target - 1;
   } else if (mode === "lte") {
-    if (!b) return [];
-    end = b;
+    if (!target) return [];
+    end = target;
   } else if (mode === "range") {
-    start = a ?? start;
-    end = b ?? end;
+    start = rangeStart ?? start;
+    end = rangeEnd ?? end;
   }
   const loRaw = mode === "range" ? Math.min(start, end) : start;
   const hiRaw = mode === "range" ? Math.max(start, end) : end;
