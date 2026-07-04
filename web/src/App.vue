@@ -18,7 +18,7 @@
         <div class="sb-label">分类</div>
         <div v-for="t in types" :key="t.name" class="sb-item"
           :class="{on: curType===t.name}" @click="pick(t.name)">
-          <span v-html="iconFor(t.name)"></span>
+          <span v-html="categoryIconSvg(t.icon, t.name)"></span>
           <span>{{ t.name || '未分类' }}</span>
         </div>
       </nav>
@@ -87,6 +87,7 @@
             <button v-if="user" class="user-chip" @click="router.push('/me')" aria-label="个人中心">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
               <span class="user-chip-text">{{ user.nickname || user.username }}</span>
+              <span v-if="user.vipLevel" class="user-level-label" :style="levelTagStyle(user.vipLevel)">{{ user.vipLevel.name }}</span>
             </button>
             <button v-else class="user-chip" @click="router.push({path:'/auth',query:{redirect:route.fullPath}})" aria-label="登录">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
@@ -113,6 +114,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { api, imgUrl } from './api'
 import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writeCachedSite } from './siteConfig'
 import { currentUser, refreshUser } from './userStore'
+import { levelTagStyle } from './levelTag'
+import { categoryIconSvg } from './categoryIcons'
 
 const router = useRouter()
 const route = useRoute()
@@ -164,23 +167,6 @@ async function openSearch() {
   if (!hot.value.length) await loadRank(rankCat.value)
 }
 function closeSearch() { searchOpen.value = false }
-
-// 分类图标映射
-const ICONS = {
-  '电影': '<path d="M4 4h16v16H4z"/><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/>',
-  '电视剧': '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M12 3v3"/>',
-  '综艺': '<path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8z"/>',
-  '动漫': '<circle cx="9" cy="12" r="6"/><path d="M15 8a5 5 0 0 1 0 8"/><circle cx="9" cy="11" r="1.2" fill="currentColor"/>',
-  '漫剧': '<path d="M4 5h16v11H8l-4 4z"/>',
-  '短剧': '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/>',
-  '解说': '<path d="M12 3a4 4 0 0 1 4 4v4a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
-  '体育': '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/>',
-  '纪录片': '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
-}
-function iconFor(name) {
-  const inner = ICONS[name] || '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/>'
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
-}
 
 // 用 mousedown 而非延迟绑定的 click：避免与当次点击事件时序冲突导致“点一下消失”
 const vClickOutside = {

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, checkPassword, hashPassword, signWebToken, webUserGuard } from "../auth.js";
 import { enabledTypeNames, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
+import { ensureDefaultVipLevel, isVipLevelActive, publicVipLevel } from "../vipLevels.js";
 
 function parseJsonArray(value: string | null | undefined): string[] {
   try {
@@ -17,15 +18,15 @@ function normalizeTypes(value: unknown): string[] {
   return [...new Set(value.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 12);
 }
 
-function publicUser(u: { id: number; username: string; nickname: string; favoriteTypes: string; isVip?: boolean; vipExpireAt?: Date | null; groups?: any[] }) {
+function publicUser(u: { id: number; username: string; nickname: string; favoriteTypes: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
   return {
     id: u.id,
     username: u.username,
     nickname: u.nickname,
     favoriteTypes: parseJsonArray(u.favoriteTypes),
-    isVip: Boolean(u.isVip && (!u.vipExpireAt || u.vipExpireAt > new Date())),
+    isVip: isVipLevelActive(u),
     vipExpireAt: u.vipExpireAt || null,
-    groups: Array.isArray(u.groups) ? u.groups.map((g) => ({ id: g.group.id, name: g.group.name })) : [],
+    vipLevel: publicVipLevel(u.vipLevel),
   };
 }
 
@@ -34,24 +35,23 @@ function adminUser(u: {
   username: string;
   nickname: string;
   enabled: boolean;
-  isVip: boolean;
   vipExpireAt: Date | null;
+  vipLevel?: any | null;
   favoriteTypes: string;
   lastLogin: Date | null;
   createdAt: Date;
   updatedAt: Date;
   _count?: { follows: number; histories: number };
-  groups?: any[];
 }) {
   return {
     id: u.id,
     username: u.username,
     nickname: u.nickname,
     enabled: u.enabled,
-    isVip: Boolean(u.isVip && (!u.vipExpireAt || u.vipExpireAt > new Date())),
+    isVip: isVipLevelActive(u),
     vipExpireAt: u.vipExpireAt,
+    vipLevel: publicVipLevel(u.vipLevel),
     favoriteTypes: parseJsonArray(u.favoriteTypes),
-    groups: Array.isArray(u.groups) ? u.groups.map((g) => ({ id: g.group.id, name: g.group.name })) : [],
     lastLogin: u.lastLogin,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
@@ -126,7 +126,7 @@ export default async function userRoutes(app: FastifyInstance) {
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { _count: { select: { follows: true, histories: true } }, groups: { include: { group: true } } },
+        include: { _count: { select: { follows: true, histories: true } }, vipLevel: true },
       }),
     ]);
     return { total, page, pageSize, list: list.map(adminUser) };
@@ -138,7 +138,7 @@ export default async function userRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         _count: { select: { follows: true, histories: true } },
-        groups: { include: { group: true } },
+        vipLevel: true,
         follows: {
           orderBy: { createdAt: "desc" },
           take: 20,
@@ -166,7 +166,14 @@ export default async function userRoutes(app: FastifyInstance) {
     const data: any = {};
     if ("enabled" in b) data.enabled = Boolean(b.enabled);
     if ("nickname" in b) data.nickname = String(b.nickname || "").trim().slice(0, 32);
-    if ("isVip" in b) data.isVip = Boolean(b.isVip);
+    if ("vipLevelId" in b) {
+      const vipLevelId = Number(b.vipLevelId);
+      const level = Number.isInteger(vipLevelId) && vipLevelId > 0
+        ? await prisma.vipLevel.findUnique({ where: { id: vipLevelId } })
+        : null;
+      if (!level) return reply.code(400).send({ error: "VIP等级不存在" });
+      data.vipLevelId = level.id;
+    }
     if ("vipExpireAt" in b) data.vipExpireAt = b.vipExpireAt ? new Date(String(b.vipExpireAt)) : null;
     if ("favoriteTypes" in b) data.favoriteTypes = JSON.stringify(normalizeTypes(b.favoriteTypes));
     if (!Object.keys(data).length) return reply.code(400).send({ error: "没有可更新字段" });
@@ -174,7 +181,7 @@ export default async function userRoutes(app: FastifyInstance) {
       const u = await prisma.webUser.update({
         where: { id },
         data,
-        include: { _count: { select: { follows: true, histories: true } }, groups: { include: { group: true } } },
+        include: { _count: { select: { follows: true, histories: true } }, vipLevel: true },
       });
       return adminUser(u);
     } catch {
@@ -219,8 +226,10 @@ export default async function userRoutes(app: FastifyInstance) {
     if (invitePoolCount > 0 && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
     const exists = await prisma.webUser.findUnique({ where: { username } });
     if (exists) return reply.code(409).send({ error: "账号已存在" });
+    const defaultLevel = await ensureDefaultVipLevel();
     const u = await prisma.webUser.create({
-      data: { username, nickname, password: await hashPassword(password) },
+      data: { username, nickname, password: await hashPassword(password), vipLevelId: defaultLevel.id },
+      include: { vipLevel: true },
     });
     if (invitePoolCount > 0 && !(await consumeInviteCode(inviteCode, u.id))) {
       await prisma.webUser.delete({ where: { id: u.id } });
@@ -234,7 +243,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const b = (req.body as any) || {};
     const username = String(b.username || "").trim();
     const password = String(b.password || "");
-    const u = await prisma.webUser.findUnique({ where: { username }, include: { groups: { include: { group: true } } } });
+    const u = await prisma.webUser.findUnique({ where: { username }, include: { vipLevel: true } });
     if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
     if (!(await checkPassword(password, u.password))) return reply.code(401).send({ error: "密码错误" });
     await prisma.webUser.update({ where: { id: u.id }, data: { lastLogin: new Date() } });
@@ -244,7 +253,7 @@ export default async function userRoutes(app: FastifyInstance) {
 
   app.get("/api/user/me", { preHandler: webUserGuard }, async (req, reply) => {
     const mid = (req as any).webUser.mid;
-    const u = await prisma.webUser.findUnique({ where: { id: mid }, include: { groups: { include: { group: true } } } });
+    const u = await prisma.webUser.findUnique({ where: { id: mid }, include: { vipLevel: true } });
     if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
     return publicUser(u);
   });
@@ -257,7 +266,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const u = await prisma.webUser.update({
       where: { id: mid },
       data: { nickname, favoriteTypes: JSON.stringify(favoriteTypes) },
-      include: { groups: { include: { group: true } } },
+      include: { vipLevel: true },
     });
     return publicUser(u);
   });

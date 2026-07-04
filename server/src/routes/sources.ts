@@ -8,13 +8,15 @@ import { reloadSchedules } from "../scheduler.js";
 import { authGuard } from "../auth.js";
 import { normalizeOrigin, readPlayDomains, refreshSourcePlayDomains } from "../playDomains.js";
 import { writeAudit } from "./access.js";
+import { parseAutoTypeIds, serializeAutoTypeIds } from "../sourceAutoTypes.js";
 
 export default async function sourceRoutes(app: FastifyInstance) {
   // 采集源管理全部需要登录（含列表，避免泄露源站）
   app.addHook("preHandler", authGuard);
   // 列表
   app.get("/api/sources", async () => {
-    return prisma.source.findMany({ orderBy: { priority: "asc" } });
+    const rows = await prisma.source.findMany({ orderBy: { priority: "asc" } });
+    return rows.map((row) => ({ ...row, autoTypeIds: parseAutoTypeIds(row.autoTypeId) }));
   });
 
   // 新建
@@ -34,7 +36,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         priority: b.priority ?? 100,
         enabled: b.enabled ?? true,
         autoSync: b.autoSync ?? false,
-        autoTypeId: String(b.autoTypeId || "").trim(),
+        autoTypeId: serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId),
         syncHours: b.syncHours ?? 24,
         cronExpr: b.cronExpr || "0 * * * *",
       },
@@ -54,7 +56,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       priority: b.priority,
       enabled: b.enabled,
       autoSync: b.autoSync,
-      autoTypeId: b.autoTypeId !== undefined ? String(b.autoTypeId || "").trim() : undefined,
+      autoTypeId: b.autoTypeIds !== undefined || b.autoTypeId !== undefined ? serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId) : undefined,
       syncHours: b.syncHours,
       cronExpr: b.cronExpr,
     };

@@ -9,7 +9,14 @@
         </div>
         <el-table :data="cats" size="small">
           <el-table-column prop="sort" label="排序" width="60" />
-          <el-table-column prop="name" label="分类名" min-width="100" />
+          <el-table-column label="分类" min-width="130">
+            <template #default="{ row }">
+              <div class="cat-cell">
+                <span class="cat-icon" v-html="categoryIconSvg(row.icon, row.name)"></span>
+                <span>{{ row.name }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="count" label="影片数" width="70" />
           <el-table-column label="展示" width="92">
             <template #default="{ row }">
@@ -67,6 +74,19 @@
     <el-form :model="form" label-width="90px">
       <el-form-item label="分类名"><el-input v-model="form.name" /></el-form-item>
       <el-form-item label="标识"><el-input v-model="form.slug" placeholder="英文，可选" /></el-form-item>
+      <el-form-item label="图标">
+        <div class="icon-field">
+          <el-select v-model="form.icon" clearable filterable placeholder="自动匹配" style="width:240px">
+            <el-option v-for="icon in categoryIconOptions" :key="icon.value" :label="icon.label" :value="icon.value">
+              <span class="icon-option">
+                <span class="cat-icon" v-html="categoryIconSvg(icon.value)"></span>
+                <span>{{ icon.label }}</span>
+              </span>
+            </el-option>
+          </el-select>
+          <span class="icon-preview" v-html="categoryIconSvg(form.icon, form.name)"></span>
+        </div>
+      </el-form-item>
       <el-form-item label="排序"><el-input-number v-model="form.sort" :min="1" :max="999" /></el-form-item>
       <el-form-item label="前台显示"><el-switch v-model="form.enabled" /></el-form-item>
       <el-form-item label="展示权限">
@@ -75,9 +95,9 @@
         </el-select>
         <span class="hint">控制首页、列表、搜索、推荐是否出现</span>
       </el-form-item>
-      <el-form-item v-if="needsGroupMode(form.displayMode)" label="展示分组">
-        <el-select v-model="form.displayGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
-          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+      <el-form-item v-if="needsLevelMode(form.displayMode)" label="展示等级">
+        <el-select v-model="form.displayLevelIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
+          <el-option v-for="level in levels" :key="level.id" :label="level.name" :value="level.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="观看权限">
@@ -86,9 +106,9 @@
         </el-select>
         <span class="hint">{{ displayClosed(form) ? '隐藏或关闭时不可观看' : '只会在展示权限基础上继续收紧' }}</span>
       </el-form-item>
-      <el-form-item v-if="!displayClosed(form) && needsGroupMode(form.watchMode)" label="观看分组">
-        <el-select v-model="form.watchGroupIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
-          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+      <el-form-item v-if="!displayClosed(form) && needsLevelMode(form.watchMode)" label="观看等级">
+        <el-select v-model="form.watchLevelIds" multiple filterable collapse-tags collapse-tags-tooltip style="width:360px">
+          <el-option v-for="level in levels" :key="level.id" :label="level.name" :value="level.id" />
         </el-select>
       </el-form-item>
     </el-form>
@@ -101,24 +121,23 @@ import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
+import { categoryIconOptions, categoryIconSvg, normalizeCategoryIcon } from '../categoryIcons'
 
-const cats = ref([]); const sources = ref([]); const maps = ref([]); const groups = ref([])
+const cats = ref([]); const sources = ref([]); const maps = ref([]); const levels = ref([])
 const curSource = ref(null); const unmapped = ref(0)
 const dlg = ref(false); const form = ref({})
 const displayModes = [
   { value: 'public', label: '游客可见' },
   { value: 'login', label: '登录可见' },
-  { value: 'vip', label: 'VIP权益可见' },
-  { value: 'group', label: '指定分组可见' },
-  { value: 'vip_or_group', label: 'VIP或指定分组可见' },
+  { value: 'vip', label: '任意VIP等级可见' },
+  { value: 'level', label: '指定会员等级可见' },
   { value: 'hidden', label: '隐藏' },
 ]
 const watchModes = [
   { value: 'inherit', label: '跟随展示权限' },
   { value: 'login', label: '登录可观看' },
-  { value: 'vip', label: 'VIP权益可观看' },
-  { value: 'group', label: '指定分组可观看' },
-  { value: 'vip_or_group', label: 'VIP或指定分组可观看' },
+  { value: 'vip', label: '任意VIP等级可观看' },
+  { value: 'level', label: '指定会员等级可观看' },
 ]
 
 function parseIds(value) {
@@ -128,23 +147,37 @@ function parseIds(value) {
   } catch { return [] }
 }
 function normalizeCat(row) {
+  const displayMode = row.displayMode === 'group' ? 'level' : (row.displayMode === 'vip_or_group' ? 'vip_or_level' : row.displayMode)
+  const watchMode = row.watchMode === 'group' ? 'level' : (row.watchMode === 'vip_or_group' ? 'vip_or_level' : row.watchMode)
+  const displayLevelIds = normalizeLevelSelection(displayMode, parseIds(row.displayLevelIds ?? row.displayGroupIds))
+  const watchLevelIds = normalizeLevelSelection(watchMode, parseIds(row.watchLevelIds ?? row.watchGroupIds))
   return {
     ...row,
+    icon: normalizeCategoryIcon(row.icon, row.name),
     enabled: row.enabled !== false,
-    displayMode: row.displayMode || 'public',
-    displayGroupIds: parseIds(row.displayGroupIds),
-    watchMode: row.watchMode === 'public' ? 'inherit' : (row.watchMode || 'inherit'),
-    watchGroupIds: parseIds(row.watchGroupIds),
+    displayMode: normalizeAdminAccessMode(displayMode, 'public'),
+    displayLevelIds,
+    watchMode: watchMode === 'public' ? 'inherit' : normalizeAdminAccessMode(watchMode, 'inherit'),
+    watchLevelIds,
   }
 }
 async function loadCats() { cats.value = (await api.adminCategories()).map(normalizeCat) }
 const accessLabel = (mode, kind) => {
   const rows = kind === 'display' ? displayModes : watchModes
-  const normalized = kind === 'watch' && mode === 'public' ? 'inherit' : mode
+  const normalized = kind === 'watch' && mode === 'public' ? 'inherit' : normalizeAdminAccessMode(mode, kind === 'display' ? 'public' : 'inherit')
   return rows.find(m => m.value === normalized)?.label || '游客'
 }
-const accessTagType = (mode) => ({ inherit: 'success', public: 'success', login: 'primary', vip: 'warning', group: 'danger', vip_or_group: 'warning', hidden: 'info' }[mode] || 'success')
-function needsGroupMode(mode) { return ['group', 'vip_or_group'].includes(mode) }
+const accessTagType = (mode) => ({ inherit: 'success', public: 'success', login: 'primary', vip: 'warning', level: 'danger', vip_or_level: 'danger', hidden: 'info' }[normalizeAdminAccessMode(mode, mode)] || 'success')
+function normalizeAdminAccessMode(mode, fallback) {
+  if (mode === 'group' || mode === 'vip_or_group' || mode === 'vip_or_level') return 'level'
+  return ['inherit', 'public', 'login', 'vip', 'level', 'hidden'].includes(mode) ? mode : fallback
+}
+function normalizeLevelSelection(mode, ids) {
+  if (mode !== 'vip_or_level' && mode !== 'vip_or_group') return ids
+  const vipIds = levels.value.filter(level => level.enabled !== false && level.isVip).map(level => level.id)
+  return [...new Set([...ids, ...vipIds])]
+}
+function needsLevelMode(mode) { return normalizeAdminAccessMode(mode, mode) === 'level' }
 function displayClosed(row) { return row?.enabled === false || row?.displayMode === 'hidden' }
 async function toggleEnabled(row, v) {
   try {
@@ -155,15 +188,18 @@ async function toggleEnabled(row, v) {
 async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
 
-function openAdd() { form.value = { name:'', slug:'', sort:100, enabled:true, displayMode:'public', displayGroupIds:[], watchMode:'inherit', watchGroupIds:[] }; dlg.value = true }
+function openAdd() { form.value = { name:'', slug:'', icon:'', sort:100, enabled:true, displayMode:'public', displayLevelIds:[], watchMode:'inherit', watchLevelIds:[] }; dlg.value = true }
 function openEdit(row) { form.value = normalizeCat(row); dlg.value = true }
 async function saveCat() {
   try {
-    if (displayClosed(form.value)) {
-      form.value.watchMode = 'inherit'
-      form.value.watchGroupIds = []
+    const payload = { ...form.value }
+    if (!needsLevelMode(payload.displayMode)) payload.displayLevelIds = []
+    if (!needsLevelMode(payload.watchMode)) payload.watchLevelIds = []
+    if (displayClosed(payload)) {
+      payload.watchMode = 'inherit'
+      payload.watchLevelIds = []
     }
-    const r = form.value.id ? await api.updateCategory(form.value.id, form.value) : await api.addCategory(form.value)
+    const r = payload.id ? await api.updateCategory(payload.id, payload) : await api.addCategory(payload)
     ElMessage.success(r?.backfilled ? `已保存，已回刷 ${r.backfilled} 部影片` : '已保存')
     dlg.value = false; loadCats()
   } catch (e) { ElMessage.error(e.message) }
@@ -179,10 +215,10 @@ async function save(row, v) {
   loadCats()
 }
 onMounted(async () => {
-  await loadCats()
-  const [sourceRows, groupRows] = await Promise.all([api.sources(), api.memberGroups()])
+  const [sourceRows, levelRows] = await Promise.all([api.sources(), api.vipLevels()])
   sources.value = sourceRows
-  groups.value = groupRows.filter(g => g.enabled !== false)
+  levels.value = levelRows.filter(level => level.enabled !== false)
+  await loadCats()
   if (sources.value.length) { curSource.value = sources.value[0].id; loadMaps() }
   loadUnmapped()
 })
@@ -192,4 +228,8 @@ onMounted(async () => {
 .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .hint { margin-left: 10px; color: #9aa4b2; font-size: 12px; }
+.cat-cell, .icon-option, .icon-field { display: flex; align-items: center; gap: 8px; }
+.cat-icon, .icon-preview { display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
+.cat-icon :deep(svg), .icon-preview :deep(svg) { width: 18px; height: 18px; display: block; }
+.icon-preview { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-1); }
 </style>

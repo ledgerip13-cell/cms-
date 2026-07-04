@@ -3,7 +3,10 @@
     <section class="profile-head">
       <div>
         <div class="profile-title">{{ user?.nickname || user?.username }}</div>
-        <div class="profile-sub">{{ isNewUser ? '选择喜欢的类型，推荐会马上跟着变化' : '追剧、历史记录和个性化推荐' }}</div>
+        <div class="profile-sub">
+          <span>{{ isNewUser ? '选择喜欢的类型，推荐会马上跟着变化' : '追剧、历史记录和个性化推荐' }}</span>
+          <span v-if="user?.vipLevel" class="member-level-label" :style="levelTagStyle(user.vipLevel)">{{ user.vipLevel.name }}</span>
+        </div>
       </div>
       <button class="profile-logout" @click="logout">退出登录</button>
     </section>
@@ -63,6 +66,7 @@
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
+import { levelTagStyle } from '../levelTag'
 import { clearSession, currentUser, refreshUser } from '../userStore'
 
 const router = useRouter()

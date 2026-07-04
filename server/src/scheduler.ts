@@ -3,6 +3,7 @@ import cron from "node-cron";
 import { prisma } from "./db.js";
 import { createCollectTask, createMetaTask } from "./collector/taskRunner.js";
 import { probeBatch } from "./collector/probe.js";
+import { parseAutoTypeIds } from "./sourceAutoTypes.js";
 
 const tasks = new Map<number, ReturnType<typeof cron.schedule>>();
 let metaTask: ReturnType<typeof cron.schedule> | null = null;
@@ -40,14 +41,18 @@ export async function reloadSchedules() {
     }
     const task = cron.schedule(expr, async () => {
       try {
-        await createCollectTask(s.id, {
-          mode: "incr",
-          hours: s.syncHours || 24,
-          typeId: s.autoTypeId || undefined,
-          autoRun: true,
-          metaAfterCollect: true,
-        });
-        console.log(`[scheduler] 源#${s.id} ${s.name} 已创建定时采集任务${s.autoTypeId ? ` type=${s.autoTypeId}` : ""}`);
+        const typeIds = parseAutoTypeIds(s.autoTypeId);
+        const targets = typeIds.length ? typeIds : [undefined];
+        for (const typeId of targets) {
+          await createCollectTask(s.id, {
+            mode: "incr",
+            hours: s.syncHours || 24,
+            typeId,
+            autoRun: true,
+            metaAfterCollect: true,
+          });
+        }
+        console.log(`[scheduler] 源#${s.id} ${s.name} 已创建定时采集任务${typeIds.length ? ` types=${typeIds.join(",")}` : " type=全部"}`);
       } catch (e: any) {
         console.error(`[scheduler] 源#${s.id} 创建任务失败:`, e?.message);
       }

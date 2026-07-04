@@ -12,6 +12,5 @@
 - Hidden/disabled display must always imply not watchable, including direct `/api/resolve` requests.
 - Watch access must be evaluated as `display allowed AND watch allowed`, or be configured as "follow display / stricter than display" in admin UI.
 - Admin UI must not allow contradictory settings such as hidden display plus public watch.
-- Clarify membership semantics: current `vip` only checks `WebUser.isVip`, while "超级会员" is only a member group. Either mark groups as VIP-equivalent tiers or require group-based watch rules for those users.
 - Add a shared server-side helper for display filters and watchable filters instead of reusing display-based `enabledTypeNames()` in user history/follows/recommendations.
 - Delay client watch-history writes until playback resolve succeeds, so denied playback does not create history records.

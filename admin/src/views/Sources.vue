@@ -42,7 +42,7 @@
         <template #default="{ row }">
           <el-switch v-model="row.autoSync" @change="toggle(row)" />
           <div v-if="row.autoSync" style="font-size:11px;color:#9aa4b2">
-            {{ row.cronExpr }} · {{ row.syncHours }}h<span v-if="row.autoTypeId"> · 分类{{ row.autoTypeId }}</span>
+            {{ row.cronExpr }} · {{ row.syncHours }}h · {{ autoTypeSummary(row) }}
           </div>
         </template>
       </el-table-column>
@@ -95,7 +95,7 @@
         </el-form-item>
         <el-form-item label="增量窗口"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
         <el-form-item label="采集分类">
-          <el-select v-model="form.autoTypeId" clearable placeholder="全部分类" style="width:240px"
+          <el-select v-model="form.autoTypeIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="全部分类" style="width:360px"
             filterable :loading="autoClassLoading" :disabled="!form.id">
             <template v-if="autoClassTree.length">
               <el-option-group v-for="p in autoClassTree" :key="p.typeId"
@@ -107,7 +107,7 @@
             </template>
             <el-option v-else v-for="t in autoSrcTypes" :key="t.typeId" :label="`${t.typeName} (${t.typeId})`" :value="t.typeId" />
           </el-select>
-          <small style="margin-left:8px;color:#9aa4b2">留空=全部；选父类会自动展开子类。新增源需保存后再选。</small>
+          <small style="margin-left:8px;color:#9aa4b2">不选=全部；可多选；选父类会自动展开子类。新增源需保存后再选。</small>
         </el-form-item>
       </template>
     </el-form>
@@ -297,14 +297,35 @@ function apiUrlCount(row) {
   const a = parseApiUrls(row)
   return a.length || (row.apiUrl ? 1 : 0)
 }
+function parseAutoTypeIds(value) {
+  if (Array.isArray(value)) return [...new Set(value.map(v => String(v || '').trim()).filter(Boolean))]
+  const raw = String(value || '').trim()
+  if (!raw) return []
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parseAutoTypeIds(parsed) : []
+    } catch { return [] }
+  }
+  return [raw]
+}
+function autoTypeIds(row) {
+  return parseAutoTypeIds(row?.autoTypeIds?.length ? row.autoTypeIds : row?.autoTypeId)
+}
+function autoTypeSummary(row) {
+  const ids = autoTypeIds(row)
+  if (!ids.length) return '全部分类'
+  if (ids.length === 1) return `分类${ids[0]}`
+  return `${ids.length}个分类`
+}
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, autoTypeId:'', cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {
   const arr = parseApiUrls(row)
-  form.value = { ...row, autoTypeId: row.autoTypeId || '', apiUrls: arr.length ? arr : [row.apiUrl || ''] }
+  form.value = { ...row, autoTypeIds: autoTypeIds(row), apiUrls: arr.length ? arr : [row.apiUrl || ''] }
   loadAutoTypes(row)
   dlg.value = true
 }
@@ -324,13 +345,19 @@ async function save() {
   if (!valid) return
   try {
     const payload = { ...form.value, apiUrls: (form.value.apiUrls || []).map(s => (s||'').trim()).filter(Boolean) }
+    payload.autoTypeIds = parseAutoTypeIds(payload.autoTypeIds)
+    payload.autoTypeId = payload.autoTypeIds.length ? JSON.stringify(payload.autoTypeIds) : ''
     if (!payload.apiUrl) payload.apiUrl = payload.apiUrls[0] || ''
     if (form.value.id) await api.updateSource(form.value.id, payload)
     else await api.addSource(payload)
     ElMessage.success('已保存'); dlg.value = false; load()
   } catch (e) { ElMessage.error('保存失败: ' + (e?.response?.data?.error || e.message)) }
 }
-async function toggle(row) { await api.updateSource(row.id, row); ElMessage.success(row.enabled?'已启用':'已禁用') }
+async function toggle(row) {
+  const payload = { ...row, autoTypeIds: autoTypeIds(row) }
+  await api.updateSource(row.id, payload)
+  ElMessage.success(row.enabled?'已启用':'已禁用')
+}
 async function del(row) {
   await ElMessageBox.confirm(`删除采集源「${row.name}」? 其线路数据一并移除`, '确认', { type: 'warning' })
   await api.delSource(row.id); ElMessage.success('已删除'); load()

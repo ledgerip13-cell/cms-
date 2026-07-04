@@ -25,7 +25,7 @@ model Source {
   syncCount    Int             @default(0) // 累计入库线路数
   // 定时采集
   autoSync     Boolean         @default(false) // 是否纳入定时采集
-  autoTypeId   String          @default("") // 自动采集限定的源内 type_id(空=全部；父类由采集器展开子类)
+  autoTypeId   String          @default("") // 自动采集限定的源内 type_id JSON数组(空=全部；父类由采集器展开子类)
   syncHours    Int             @default(24) // 增量小时窗口
   cronExpr     String          @default("0 * * * *") // 采集频率(默认每小时)
   cursor       String? // 增量游标(最近成功采集时间点)
@@ -40,13 +40,14 @@ model Category {
   id              Int             @id @default(autoincrement())
   name            String          @unique // 统一分类名，如 "日韩动漫"
   slug            String          @default("") // 英文标识
+  icon            String          @default("") // 分类图标key，前端按白名单渲染
   sort            Int             @default(100) // 展示排序
   parentId        Int? // 支持二级分类
   enabled         Boolean         @default(true)
-  displayMode     String          @default("public") // public / login / vip / group / vip_or_group / hidden
-  displayGroupIds String          @default("[]") // JSON数组：可展示的会员分组ID
-  watchMode       String          @default("inherit") // inherit / login / vip / group / vip_or_group
-  watchGroupIds   String          @default("[]") // JSON数组：可观看的会员分组ID
+  displayMode     String          @default("public") // public / login / vip / level / hidden（vip_or_level 仅旧数据兼容）
+  displayLevelIds String          @default("[]") @map("displayGroupIds") // JSON数组：可展示的VIP等级ID
+  watchMode       String          @default("inherit") // inherit / login / vip / level（vip_or_level 仅旧数据兼容）
+  watchLevelIds   String          @default("[]") @map("watchGroupIds") // JSON数组：可观看的VIP等级ID
   maps            SourceTypeMap[]
   createdAt       DateTime        @default(now())
 }
@@ -182,38 +183,64 @@ model WebUser {
   nickname      String         @default("")
   password      String
   enabled       Boolean        @default(true)
-  isVip         Boolean        @default(false)
+  isVip         Boolean        @default(false) // legacy：旧VIP开关，仅用于迁移，不再作为权限来源
   vipExpireAt   DateTime?
+  vipLevel      VipLevel?      @relation(fields: [vipLevelId], references: [id], onDelete: SetNull)
+  vipLevelId    Int?
   favoriteTypes String         @default("[]") // JSON: ["动漫","电影"]
   lastLogin     DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   follows       UserFollow[]
   histories     WatchHistory[]
-  groups        WebUserGroup[]
+  legacyGroups  LegacyWebUserGroup[] // 旧用户分组，仅用于迁移兼容
   usedInvites   InviteCode[]
+
+  @@index([vipLevelId])
 }
 
-model MemberGroup {
+model VipLevel {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  name        String    @unique
+  tagColor    String    @default("#ffc233")
+  legacyBadge String    @default("member") @map("badge") // legacy：旧徽章标识，仅保留数据库兼容
+  sort        Int       @default(100)
+  isDefault   Boolean   @default(false)
+  isVip       Boolean   @default(false)
+  remark      String    @default("")
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  users       WebUser[]
+
+  @@index([enabled])
+  @@index([sort])
+}
+
+model LegacyMemberGroup {
   id        Int            @id @default(autoincrement())
   name      String         @unique
   remark    String         @default("")
   enabled   Boolean        @default(true)
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
-  members   WebUserGroup[]
+  members   LegacyWebUserGroup[]
+
+  @@map("MemberGroup")
 }
 
-model WebUserGroup {
-  id        Int         @id @default(autoincrement())
-  user      WebUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model LegacyWebUserGroup {
+  id        Int               @id @default(autoincrement())
+  user      WebUser           @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    Int
-  group     MemberGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group     LegacyMemberGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   groupId   Int
-  createdAt DateTime    @default(now())
+  createdAt DateTime          @default(now())
 
   @@unique([userId, groupId])
   @@index([groupId])
+  @@map("WebUserGroup")
 }
 
 model InviteCode {

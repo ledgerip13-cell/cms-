@@ -15,6 +15,7 @@ import hotRoutes from "./routes/hot.js";
 import accessRoutes from "./routes/access.js";
 import hlsCleanRoutes from "./routes/hlsClean.js";
 import { seedAdmin } from "./auth.js";
+import { seedVipLevels } from "./vipLevels.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
 
@@ -47,6 +48,7 @@ await app.register(accessRoutes);
 await app.register(hlsCleanRoutes);
 
 await seedAdmin();
+await seedVipLevels();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）
 const orphans = await recoverOrphanTasks();
 if (orphans.resumed || orphans.failed || orphans.canceled)

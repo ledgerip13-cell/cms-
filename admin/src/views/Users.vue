@@ -31,7 +31,9 @@
         </el-table-column>
         <el-table-column label="权益等级" width="140">
           <template #default="{ row }">
-            <el-tag :type="row.isVip ? 'warning' : 'info'" effect="plain">{{ row.isVip ? 'VIP' : '普通' }}</el-tag>
+            <div class="level-cell">
+              <el-tag class="level-preview-tag" :style="levelTagStyle(row.vipLevel)" effect="plain">{{ row.vipLevel?.name || '普通会员' }}</el-tag>
+            </div>
             <div v-if="row.isVip && row.vipExpireAt" class="muted">至 {{ fmtDate(row.vipExpireAt) }}</div>
           </template>
         </el-table-column>
@@ -40,14 +42,6 @@
             <div class="tags">
               <el-tag v-for="t in row.favoriteTypes" :key="t" size="small" effect="plain">{{ t }}</el-tag>
               <span v-if="!row.favoriteTypes.length" class="muted">未设置</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="用户分组" min-width="150">
-          <template #default="{ row }">
-            <div class="tags">
-              <el-tag v-for="g in row.groups" :key="g.id" size="small" type="success" effect="plain">{{ g.name }}</el-tag>
-              <span v-if="!row.groups?.length" class="muted">未分组</span>
             </div>
           </template>
         </el-table-column>
@@ -88,8 +82,10 @@
         </div>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="偏好类型">{{ detail.favoriteTypes.join('、') || '未设置' }}</el-descriptions-item>
-          <el-descriptions-item label="权益等级">{{ detail.isVip ? `VIP${detail.vipExpireAt ? ' 至 ' + fmt(detail.vipExpireAt) : ''}` : '普通用户' }}</el-descriptions-item>
-          <el-descriptions-item label="用户分组">{{ detail.groups?.map(g => g.name).join('、') || '未分组' }}</el-descriptions-item>
+          <el-descriptions-item label="VIP等级">
+            <el-tag class="level-preview-tag" size="small" :style="levelTagStyle(detail.vipLevel)" effect="plain">{{ detail.vipLevel?.name || '普通会员' }}</el-tag>
+            <span v-if="detail.isVip && detail.vipExpireAt" class="level-expire">至 {{ fmt(detail.vipExpireAt) }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="追剧数量">{{ detail.followCount }}</el-descriptions-item>
           <el-descriptions-item label="历史数量">{{ detail.historyCount }}</el-descriptions-item>
           <el-descriptions-item label="最近登录">{{ fmt(detail.lastLogin) }}</el-descriptions-item>
@@ -116,20 +112,22 @@
         <el-form-item label="账号"><el-input v-model="edit.username" disabled /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="edit.nickname" maxlength="32" /></el-form-item>
         <el-form-item label="状态"><el-switch v-model="edit.enabled" active-text="正常" inactive-text="禁用" /></el-form-item>
-        <el-form-item label="VIP权益">
-          <el-switch v-model="edit.isVip" active-text="VIP" inactive-text="普通" />
+        <el-form-item label="VIP等级">
+          <el-select v-model="edit.vipLevelId" filterable style="width:100%">
+            <el-option v-for="level in levelOptions" :key="level.id" :label="level.name" :value="level.id">
+              <span class="level-option">
+                <el-tag class="level-preview-tag" size="small" :style="levelTagStyle(level)" effect="plain">{{ level.name }}</el-tag>
+                <span>{{ level.isVip ? 'VIP权益' : '普通权益' }}</span>
+              </span>
+            </el-option>
+          </el-select>
         </el-form-item>
-        <el-form-item v-if="edit.isVip" label="VIP到期">
+        <el-form-item v-if="selectedEditLevel?.isVip" label="权益到期">
           <el-date-picker v-model="edit.vipExpireAt" type="datetime" clearable value-format="YYYY-MM-DD HH:mm:ss" placeholder="不填=长期有效" style="width:100%" />
         </el-form-item>
         <el-form-item label="偏好类型">
           <el-select v-model="edit.favoriteTypes" multiple filterable allow-create default-first-option placeholder="输入后回车添加" style="width:100%">
             <el-option v-for="t in typeOptions" :key="t" :label="t" :value="t" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="用户分组">
-          <el-select v-model="edit.groupIds" multiple filterable placeholder="选择分组" style="width:100%">
-            <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -153,10 +151,11 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
+import { levelTagStyle } from '../levelTag'
 
 const q = ref({ kw: '', status: '', page: 1, pageSize: 20 })
 const rows = ref([])
@@ -167,10 +166,11 @@ const detailOpen = ref(false)
 const editOpen = ref(false)
 const pwdOpen = ref(false)
 const detail = ref(null)
-const edit = ref({ id: 0, username: '', nickname: '', enabled: true, isVip: false, vipExpireAt: '', favoriteTypes: [], groupIds: [] })
+const edit = ref({ id: 0, username: '', nickname: '', enabled: true, vipLevelId: null, vipExpireAt: '', favoriteTypes: [] })
 const pwd = ref({ id: 0, username: '', password: '' })
 const typeOptions = ref([])
-const groupOptions = ref([])
+const levelOptions = ref([])
+const selectedEditLevel = computed(() => levelOptions.value.find(level => level.id === edit.value.vipLevelId))
 
 function fmt(v) {
   if (!v) return '—'
@@ -197,8 +197,8 @@ async function loadTypes() {
   } catch {}
 }
 
-async function loadGroups() {
-  try { groupOptions.value = (await api.memberGroups()).filter(g => g.enabled) } catch {}
+async function loadLevels() {
+  try { levelOptions.value = (await api.vipLevels()).filter(level => level.enabled) } catch {}
 }
 
 async function openDetail(row) {
@@ -209,10 +209,9 @@ async function openDetail(row) {
 function openEdit(row) {
   edit.value = {
     ...row,
-    isVip: Boolean(row.isVip),
+    vipLevelId: row.vipLevel?.id || levelOptions.value.find(level => level.isDefault)?.id || null,
     vipExpireAt: row.vipExpireAt ? fmt(row.vipExpireAt) : '',
     favoriteTypes: [...(row.favoriteTypes || [])],
-    groupIds: (row.groups || []).map(g => g.id),
   }
   editOpen.value = true
 }
@@ -228,11 +227,10 @@ async function saveEdit() {
     await api.updateAdminUser(edit.value.id, {
       nickname: edit.value.nickname,
       enabled: edit.value.enabled,
-      isVip: edit.value.isVip,
-      vipExpireAt: edit.value.isVip ? (edit.value.vipExpireAt || null) : null,
+      vipLevelId: edit.value.vipLevelId,
+      vipExpireAt: selectedEditLevel.value?.isVip ? (edit.value.vipExpireAt || null) : null,
       favoriteTypes: edit.value.favoriteTypes,
     })
-    await api.updateUserGroups(edit.value.id, edit.value.groupIds || [])
     ElMessage.success('用户已更新')
     editOpen.value = false
     await load()
@@ -262,7 +260,7 @@ async function savePwd() {
   } catch (e) { ElMessage.error(e.message || '重置失败') } finally { saving.value = false }
 }
 
-onMounted(() => { load(); loadTypes(); loadGroups() })
+onMounted(() => { load(); loadTypes(); loadLevels() })
 </script>
 
 <style scoped>
@@ -271,6 +269,11 @@ onMounted(() => { load(); loadTypes(); loadGroups() })
 .ops { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .user-cell { display: flex; flex-direction: column; gap: 3px; }
 .user-cell span, .muted { color: var(--text-3); font-size: 12px; }
+.level-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.level-cell span { color: var(--text-2); font-size: 12px; font-weight: 700; }
+.level-option { display: inline-flex; align-items: center; gap: 8px; }
+.level-preview-tag { border-radius: 7px; font-weight: 800; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.level-expire { margin-left: 8px; color: var(--text-3); font-size: 12px; }
 .tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }

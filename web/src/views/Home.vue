@@ -75,7 +75,10 @@
 
       <section class="row" v-if="userRecs.length">
         <div class="row-head">
-          <div class="row-title">为你推荐</div>
+          <div class="row-title">
+            <span class="row-title-icon" v-html="sectionIconSvg('recommend')"></span>
+            <span>为你推荐</span>
+          </div>
           <div class="row-more" @click="$router.push('/me')">调整偏好</div>
         </div>
         <div class="row-scroll">
@@ -97,7 +100,12 @@
 
       <!-- 每日更新 -->
       <section class="row" v-if="weekReady">
-        <div class="row-head"><div class="row-title">每日更新</div></div>
+        <div class="row-head">
+          <div class="row-title">
+            <span class="row-title-icon" v-html="sectionIconSvg('calendar')"></span>
+            <span>每日更新</span>
+          </div>
+        </div>
         <div class="week-tabs">
           <div v-for="d in updateDays" :key="d.date" class="week-tab" :class="{on: updateDate===d.date}" @click="updateDate=d.date">
             <span class="wd">{{ updateDateLabel(d.date) }}</span>
@@ -125,7 +133,10 @@
       <!-- 内容分行 -->
       <section v-for="row in rows" :key="row.type" class="row">
         <div class="row-head">
-          <div class="row-title">{{ row.type || '推荐' }}</div>
+          <div class="row-title">
+            <span class="row-title-icon" v-html="categoryIconSvg(row.icon, row.type)"></span>
+            <span>{{ row.type || '推荐' }}</span>
+          </div>
           <div class="row-more" @click="$router.push({path:'/',query:{type:row.type}})">
             查看全部
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
@@ -196,7 +207,11 @@
         </div>
       </div>
 
-      <div class="section-title">{{ title }} <span class="cnt">共 {{ total }} 部</span></div>
+      <div class="section-title">
+        <span class="section-title-icon" v-html="browseTitleIcon"></span>
+        <span>{{ title }}</span>
+        <span class="cnt">共 {{ total }} 部</span>
+      </div>
 
       <div v-if="loading" class="grid">
         <div v-for="i in 18" :key="i" class="sk-card"><div class="sk sk-poster"></div><div class="sk sk-line"></div><div class="sk sk-line s"></div></div>
@@ -231,6 +246,7 @@
 import { ref, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
+import { categoryIconSvg, sectionIconSvg } from '../categoryIcons'
 import { currentUser } from '../userStore'
 defineOptions({ name: 'Home' })
 const route = useRoute()
@@ -281,6 +297,11 @@ const activeUpdateDay = computed(() => updateDays.value.find(d => d.date === upd
 const activeUpdateItems = computed(() => activeUpdateDay.value?.items || [])
 const activeUpdateLabel = computed(() => activeUpdateDay.value ? updateDateLabel(activeUpdateDay.value.date) : '该日期')
 
+async function ensureTypes() {
+  if (types.value.length) return
+  try { types.value = await api.categories() } catch { types.value = [] }
+}
+
 function localDateKey(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -306,7 +327,7 @@ function normalizeUpdateDays(data) {
 async function loadDiscover() {
   if (hero.value.length) return
   rowsLoading.value = true
-  types.value = await api.categories()
+  await ensureTypes()
   // Hero：保留后台返回的全部有封面候选，移动端只通过可视窗口裁切
   const hot = await api.hot(12)
   hero.value = hot.map(withRandomHeroImage).filter(v => v.heroImage || v.heroPic || v.officialPic || v.pic)
@@ -314,7 +335,7 @@ async function loadDiscover() {
   // 分行：前 6 个大类各取 12 部最近更新
   const top = types.value.filter(t => t.count > 0).slice(0, 6)
   const results = await Promise.all(top.map(t =>
-    api.vods({ page: 1, size: 14, type: t.name, sort: 'recent' }).then(r => ({ type: t.name, list: r.list }))
+    api.vods({ page: 1, size: 14, type: t.name, sort: 'recent' }).then(r => ({ type: t.name, icon: t.icon, list: r.list }))
   ))
   rows.value = results.filter(r => r.list.length)
   if (currentUser.value) {
@@ -367,6 +388,12 @@ const filterSummary = computed(() => {
   if (year.value) items.push(year.value)
   return items.join(' · ')
 })
+const browseTitleIcon = computed(() => {
+  if (isSearch.value) return sectionIconSvg('search')
+  if (!curType.value) return sectionIconSvg('grid')
+  const cat = types.value.find(t => t.name === curType.value)
+  return categoryIconSvg(cat?.icon, curType.value)
+})
 
 function setSub(s) { sub.value = s; year.value = ''; page.value = 1; loadYears(); load(); mobileFiltersOpen.value = false }
 async function loadSubs() {
@@ -390,6 +417,7 @@ function setSort(v) { sort.value = v; page.value = 1; load(); mobileFiltersOpen.
 function setYear(y) { year.value = y; page.value = 1; load(); mobileFiltersOpen.value = false }
 
 async function boot() {
+  await ensureTypes()
   if (discover.value) { await loadDiscover(); startHeroLoop(); return }
   stopHeroLoop()
   await loadSubs()

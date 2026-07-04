@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
-import { categoryAllowed, normalizeAccessGroupIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
+import { inferCategoryIcon, normalizeCategoryIcon } from "../categoryIcons.js";
+import { categoryAllowed, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
 
 async function backfillMapToVods(mapId: number) {
   const map = await prisma.sourceTypeMap.findUnique({
@@ -39,20 +40,27 @@ function categoryWriteData(input: any, creating = false, current: any = null) {
   const data: any = {};
   if (creating || "name" in b) data.name = String(b.name || "").trim();
   if (creating || "slug" in b) data.slug = String(b.slug || "").trim();
+  const nextName = data.name ?? current?.name ?? "";
+  if (creating || "icon" in b) data.icon = normalizeCategoryIcon(b.icon, inferCategoryIcon(nextName));
+  else if (!current?.icon && nextName) data.icon = inferCategoryIcon(nextName);
   if (creating || "sort" in b) data.sort = Number.isFinite(Number(b.sort)) ? Number(b.sort) : 100;
   if ("parentId" in b) data.parentId = b.parentId ?? null;
   if (creating || "enabled" in b) data.enabled = creating ? b.enabled !== false : Boolean(b.enabled);
   const displayMode = normalizeDisplayAccessMode(b.displayMode ?? current?.displayMode, "public");
   if (creating || "displayMode" in b) data.displayMode = displayMode;
-  if (creating || "displayGroupIds" in b) data.displayGroupIds = JSON.stringify(normalizeAccessGroupIds(b.displayGroupIds));
+  if (creating || "displayLevelIds" in b || "displayGroupIds" in b) {
+    data.displayLevelIds = JSON.stringify(normalizeAccessLevelIds(b.displayLevelIds ?? b.displayGroupIds));
+  }
   const enabled = "enabled" in data ? data.enabled !== false : current?.enabled !== false;
   const hiddenOrDisabled = !enabled || displayMode === "hidden";
   if (hiddenOrDisabled) {
     data.watchMode = "inherit";
-    data.watchGroupIds = "[]";
+    data.watchLevelIds = "[]";
   } else {
     if (creating || "watchMode" in b) data.watchMode = normalizeWatchAccessMode(b.watchMode, "inherit");
-    if (creating || "watchGroupIds" in b) data.watchGroupIds = JSON.stringify(normalizeAccessGroupIds(b.watchGroupIds));
+    if (creating || "watchLevelIds" in b || "watchGroupIds" in b) {
+      data.watchLevelIds = JSON.stringify(normalizeAccessLevelIds(b.watchLevelIds ?? b.watchGroupIds));
+    }
   }
   return data;
 }
@@ -86,8 +94,8 @@ export default async function categoryRoutes(app: FastifyInstance) {
     // 1) upsert 大类
     for (const c of CATEGORIES) {
       const exist = await prisma.category.findFirst({ where: { name: c.name } });
-      if (exist) await prisma.category.update({ where: { id: exist.id }, data: { slug: c.slug, sort: c.sort, enabled: true } });
-      else await prisma.category.create({ data: { name: c.name, slug: c.slug, sort: c.sort } });
+      if (exist) await prisma.category.update({ where: { id: exist.id }, data: { slug: c.slug, icon: exist.icon || inferCategoryIcon(c.name), sort: c.sort, enabled: true } });
+      else await prisma.category.create({ data: { name: c.name, slug: c.slug, icon: inferCategoryIcon(c.name), sort: c.sort } });
     }
     const cats = await prisma.category.findMany();
     const byName = new Map(cats.map((c) => [c.name, c.id]));

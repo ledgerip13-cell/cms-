@@ -321,7 +321,7 @@ async function playResolvedEp(i) {
       saveWatchHistory(i, pendingSeekSec || 0)
       return
     }
-    if (['login_required', 'vip_required', 'group_required', 'vip_or_group_required'].includes(r.code)) {
+    if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(r.code)) {
       cleanFallbackUrl.value = ''
       showPlayNotice(r.error || '当前内容无观看权限')
       return

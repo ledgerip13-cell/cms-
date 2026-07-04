@@ -1,19 +1,24 @@
 import type { FastifyRequest } from "fastify";
 import { prisma } from "./db.js";
 import { verifyToken } from "./auth.js";
+import { isVipLevelActive } from "./vipLevels.js";
 
 const NO_PUBLIC_TYPE = "__NO_PUBLIC_TYPE__";
-const DISPLAY_ACCESS_MODES = new Set(["public", "login", "vip", "group", "vip_or_group", "hidden"]);
-const WATCH_ACCESS_MODES = new Set(["inherit", "public", "login", "vip", "group", "vip_or_group"]);
+const DISPLAY_ACCESS_MODES = new Set(["public", "login", "vip", "level", "vip_or_level", "hidden"]);
+const WATCH_ACCESS_MODES = new Set(["inherit", "public", "login", "vip", "level", "vip_or_level"]);
+const LEGACY_ACCESS_MODE_MAP: Record<string, string> = {
+  group: "level",
+  vip_or_group: "vip_or_level",
+};
 
 export type AccessAction = "display" | "watch";
 export type AccessViewer = {
   id: number;
   isVip: boolean;
-  groupIds: number[];
+  levelId: number | null;
 } | null;
 
-function parseGroupIds(value: unknown) {
+function parseLevelIds(value: unknown) {
   try {
     const arr = Array.isArray(value) ? value : JSON.parse(String(value || "[]"));
     return Array.isArray(arr)
@@ -25,40 +30,34 @@ function parseGroupIds(value: unknown) {
 }
 
 export function normalizeAccessMode(value: unknown, fallback = "public") {
-  const mode = String(value || "").trim();
+  const raw = String(value || "").trim();
+  const mode = LEGACY_ACCESS_MODE_MAP[raw] || raw;
   return DISPLAY_ACCESS_MODES.has(mode) || WATCH_ACCESS_MODES.has(mode) ? mode : fallback;
 }
 
 export function normalizeDisplayAccessMode(value: unknown, fallback = "public") {
-  const mode = String(value || "").trim();
+  const raw = String(value || "").trim();
+  const mode = LEGACY_ACCESS_MODE_MAP[raw] || raw;
   return DISPLAY_ACCESS_MODES.has(mode) ? mode : fallback;
 }
 
 export function normalizeWatchAccessMode(value: unknown, fallback = "inherit") {
-  const mode = String(value || "").trim();
+  const raw = String(value || "").trim();
+  const mode = LEGACY_ACCESS_MODE_MAP[raw] || raw;
   if (mode === "public") return "inherit";
   return WATCH_ACCESS_MODES.has(mode) ? mode : fallback;
 }
 
-export function normalizeAccessGroupIds(value: unknown) {
-  return parseGroupIds(value).slice(0, 100);
-}
-
-function isVipActive(user: { isVip?: boolean; vipExpireAt?: Date | null }) {
-  return Boolean(user.isVip && (!user.vipExpireAt || user.vipExpireAt > new Date()));
+export function normalizeAccessLevelIds(value: unknown) {
+  return parseLevelIds(value).slice(0, 100);
 }
 
 function toViewer(user: any): AccessViewer {
   if (!user || !user.enabled) return null;
   return {
     id: user.id,
-    isVip: isVipActive(user),
-    groupIds: Array.isArray(user.groups)
-      ? user.groups
-        .filter((g: any) => g?.group?.enabled !== false)
-        .map((g: any) => Number(g.groupId || g.group?.id))
-        .filter((n: number) => Number.isInteger(n) && n > 0)
-      : [],
+    isVip: isVipLevelActive(user),
+    levelId: user.vipLevel?.enabled !== false && Number.isInteger(Number(user.vipLevelId)) ? Number(user.vipLevelId) : null,
   };
 }
 
@@ -66,7 +65,7 @@ export async function viewerFromUserId(userId: number): Promise<AccessViewer> {
   if (!Number.isInteger(userId) || userId <= 0) return null;
   const user = await prisma.webUser.findUnique({
     where: { id: userId },
-    include: { groups: { include: { group: true } } },
+    include: { vipLevel: true },
   });
   return toViewer(user);
 }
@@ -84,7 +83,7 @@ export async function viewerFromRequest(req: FastifyRequest): Promise<AccessView
   }
 }
 
-function accessRuleAllowed(mode: string, groupIds: number[], viewer: AccessViewer, hiddenMessage: string) {
+function accessRuleAllowed(mode: string, levelIds: number[], viewer: AccessViewer, hiddenMessage: string) {
   if (mode === "hidden") return { allowed: false, code: "hidden", message: "内容不可见" };
   if (mode === "public") return { allowed: true, code: "ok", message: "" };
   if (mode === "inherit") return { allowed: true, code: "ok", message: "" };
@@ -95,18 +94,16 @@ function accessRuleAllowed(mode: string, groupIds: number[], viewer: AccessViewe
     if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
     return viewer.isVip ? { allowed: true, code: "ok", message: "" } : { allowed: false, code: "vip_required", message: "当前分类需要会员权限" };
   }
-  if (mode === "group") {
+  if (mode === "level") {
     if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
-    const groups = new Set(viewer.groupIds);
-    return groupIds.some((id) => groups.has(id))
+    return viewer.levelId && levelIds.includes(viewer.levelId)
       ? { allowed: true, code: "ok", message: "" }
-      : { allowed: false, code: "group_required", message: "当前分类需要指定分组权限" };
+      : { allowed: false, code: "level_required", message: "当前分类需要指定会员等级权限" };
   }
-  if (mode === "vip_or_group") {
+  if (mode === "vip_or_level") {
     if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
-    const groups = new Set(viewer.groupIds);
-    if (viewer.isVip || groupIds.some((id) => groups.has(id))) return { allowed: true, code: "ok", message: "" };
-    return { allowed: false, code: "vip_or_group_required", message: "当前分类需要会员权益或指定分组权限" };
+    if (viewer.isVip || (viewer.levelId && levelIds.includes(viewer.levelId))) return { allowed: true, code: "ok", message: "" };
+    return { allowed: false, code: "vip_or_level_required", message: "当前分类需要指定会员等级权限" };
   }
   return { allowed: false, code: "hidden", message: hiddenMessage };
 }
@@ -114,13 +111,13 @@ function accessRuleAllowed(mode: string, groupIds: number[], viewer: AccessViewe
 export function categoryAllowed(category: any, action: AccessAction, viewer: AccessViewer) {
   if (!category?.enabled) return { allowed: false, code: "category_disabled", message: "分类已关闭" };
   const displayMode = normalizeDisplayAccessMode(category.displayMode, "public");
-  const displayGroupIds = normalizeAccessGroupIds(category.displayGroupIds);
-  const displayAccess = accessRuleAllowed(displayMode, displayGroupIds, viewer, "内容不可见");
+  const displayLevelIds = normalizeAccessLevelIds(category.displayLevelIds ?? category.displayGroupIds);
+  const displayAccess = accessRuleAllowed(displayMode, displayLevelIds, viewer, "内容不可见");
   if (action === "display") return displayAccess;
   if (!displayAccess.allowed) return { ...displayAccess, message: displayAccess.message || "内容不可见" };
   const watchMode = normalizeWatchAccessMode(category.watchMode, "inherit");
-  const watchGroupIds = normalizeAccessGroupIds(category.watchGroupIds);
-  return accessRuleAllowed(watchMode, watchGroupIds, viewer, "无观看权限");
+  const watchLevelIds = normalizeAccessLevelIds(category.watchLevelIds ?? category.watchGroupIds);
+  return accessRuleAllowed(watchMode, watchLevelIds, viewer, "无观看权限");
 }
 
 async function typeNamesForAction(action: AccessAction, viewer: AccessViewer) {
