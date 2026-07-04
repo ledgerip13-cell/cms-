@@ -192,6 +192,7 @@ const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const playNotice = ref('')
+const cleanFallbackUrl = ref('')
 let hls = null
 let hlsRecoverCount = 0
 let pendingSeekSec = 0
@@ -219,6 +220,7 @@ function schedulePlayWatchdog(url) {
     const video = videoEl.value
     if (curUrl.value !== url || mode.value !== 'hls' || Number(video?.readyState || 0) > 0) return
     showPlayNotice('连接超时或被当前网络拦截，已尝试切换线路')
+    if (tryCleanFallback(url)) return
     tryNextPlayback()
   }, 9000)
 }
@@ -232,6 +234,14 @@ function describePlaybackError(data) {
 function onVideoError() {
   if (!curUrl.value) return
   showPlayNotice('播放失败，请切换线路或稍后重试')
+}
+function tryCleanFallback(failedUrl) {
+  if (!cleanFallbackUrl.value || failedUrl !== curUrl.value) return false
+  const raw = cleanFallbackUrl.value
+  cleanFallbackUrl.value = ''
+  showPlayNotice('清洗线路播放失败，已回退原始线路')
+  playDirectUrl(raw, 'm3u8')
+  return true
 }
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value])
@@ -280,6 +290,7 @@ function playHls(url) {
       }
       clearPlayWatchdog()
       showPlayNotice(describePlaybackError(data))
+      if (tryCleanFallback(url)) return
       tryNextPlayback()
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -305,11 +316,13 @@ async function playResolvedEp(i) {
   try {
     const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i })
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
+      cleanFallbackUrl.value = r.fallbackUrl || ''
       playDirectUrl(r.url, r.kind)
       return
     }
   } catch {}
   finally { resolving.value = false }
+  cleanFallbackUrl.value = ''
   tryNextPlayback()
 }
 
@@ -360,6 +373,7 @@ function onVideoTimeUpdate() {
 }
 function playEp(i, opts = {}) {
   epIdx.value = i
+  cleanFallbackUrl.value = ''
   if (!opts.keepResume) pendingSeekSec = 0
   playResolvedEp(i)
   saveWatchHistory(i, pendingSeekSec || 0)

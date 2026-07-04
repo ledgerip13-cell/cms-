@@ -82,6 +82,14 @@ export const api = {
   hotConfig: () => http.get('/admin/hot-config'),
   updateHotConfig: (d) => http.put('/admin/hot-config', d),
   hotPreview: () => http.get('/admin/hot-preview'),
+  // HLS cleaning
+  hlsCleanOverview: () => http.get('/admin/hls-clean/overview'),
+  hlsCleanConfig: () => http.get('/admin/hls-clean/config'),
+  updateHlsCleanConfig: (d) => http.put('/admin/hls-clean/config', d),
+  updateHlsCleanPolicy: (d) => http.put('/admin/hls-clean/policy', d),
+  deleteHlsCleanPolicy: (id) => http.delete(`/admin/hls-clean/policy/${id}`),
+  createHlsCleanTask: (d) => http.post('/admin/hls-clean/tasks', d),
+  hlsCleanResults: (params) => http.get('/admin/hls-clean/results', { params }),
   // users
   adminUsers: (params) => http.get('/admin/users', { params }),
   adminUser: (id) => http.get(`/admin/users/${id}`),

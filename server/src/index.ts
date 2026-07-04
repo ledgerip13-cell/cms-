@@ -13,6 +13,7 @@ import imgRoutes from "./routes/img.js";
 import userRoutes from "./routes/users.js";
 import hotRoutes from "./routes/hot.js";
 import accessRoutes from "./routes/access.js";
+import hlsCleanRoutes from "./routes/hlsClean.js";
 import { seedAdmin } from "./auth.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
@@ -43,6 +44,7 @@ await app.register(imgRoutes);
 await app.register(userRoutes);
 await app.register(hotRoutes);
 await app.register(accessRoutes);
+await app.register(hlsCleanRoutes);
 
 await seedAdmin();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）

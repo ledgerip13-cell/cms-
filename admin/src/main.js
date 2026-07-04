@@ -16,6 +16,7 @@ import Meta from './views/Meta.vue'
 import Users from './views/Users.vue'
 import Hot from './views/Hot.vue'
 import Access from './views/Access.vue'
+import HlsClean from './views/HlsClean.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/categories', component: Categories, meta: { title: '分类映射' } },
     { path: '/vods', component: Vods, meta: { title: '影片库' } },
     { path: '/hot', component: Hot, meta: { title: '热门推荐' } },
+    { path: '/hls-clean', component: HlsClean, meta: { title: 'HLS清洗' } },
     { path: '/users', component: Users, meta: { title: '用户管理' } },
     { path: '/access', component: Access, meta: { title: '权限管理' } },
     { path: '/meta', component: Meta, meta: { title: '元数据' } },

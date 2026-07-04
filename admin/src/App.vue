@@ -58,7 +58,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key } from '@element-plus/icons-vue'
+import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
@@ -74,6 +74,7 @@ const menus = [
   { path: '/categories', label: '分类映射', icon: Files },
   { path: '/vods', label: '影片库', icon: Film },
   { path: '/hot', label: '热门推荐', icon: StarFilled },
+  { path: '/hls-clean', label: 'HLS清洗', icon: VideoPlay },
   { path: '/users', label: '用户管理', icon: UserFilled },
   { path: '/access', label: '权限管理', icon: Key },
   { path: '/meta', label: '元数据', icon: MagicStick },

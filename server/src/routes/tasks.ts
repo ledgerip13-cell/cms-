@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyToken } from "../auth.js";
-import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 import { previewByKeyword } from "../collector/sync.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
@@ -110,6 +110,10 @@ export default async function taskRoutes(app: FastifyInstance) {
     }
     if (t.type === "keyword" && opts.keyword) {
       const nt = await createKeywordTask(opts.keyword);
+      return { ok: true, taskId: nt.id };
+    }
+    if (t.type === "hls_clean") {
+      const nt = await createHlsCleanTask(opts);
       return { ok: true, taskId: nt.id };
     }
     return { ok: false, error: "该类型不支持重试" };

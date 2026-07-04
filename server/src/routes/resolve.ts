@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { resolveShareUrl } from "../collector/resolver.js";
 import { enabledTypeNames, isPublicType } from "../publicVod.js";
+import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
+import { createHlsCleanTask } from "../collector/taskRunner.js";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
 const cache = new Map<string, { at: number; result: any }>();
@@ -35,7 +37,25 @@ export default async function resolveRoutes(app: FastifyInstance) {
       try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
       const url = episodes[epIndex]?.url || "";
       if (!url) return { ok: false, error: "播放集数不存在" };
-      return resolveWithCache(`play:${playId}:${epIndex}`, url);
+      const result = await resolveWithCache(`play:${playId}:${epIndex}`, url);
+      if (!result?.ok || !result.url || !/\.m3u8(\?|$)/i.test(result.url)) return result;
+      const cfg = await ensureHlsCleanConfig();
+      if (!cfg.enabled) return result;
+      const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);
+      if (clean) {
+        return {
+          ...result,
+          url: `/api/hls-clean/${clean.id}/index.m3u8`,
+          kind: "m3u8",
+          rule: "hls_clean",
+          cleanId: clean.id,
+          fallbackUrl: result.url,
+        };
+      }
+      if (cfg.autoQueueOnMiss) {
+        void createHlsCleanTask({ playId: play.id, epIndex, episodeMode: "first", limit: 1 }).catch(() => {});
+      }
+      return result;
     }
 
     return { ok: false, error: "缺少播放参数" };

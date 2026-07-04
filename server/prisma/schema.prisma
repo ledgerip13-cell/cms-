@@ -98,6 +98,63 @@ model HotConfig {
   updatedAt      DateTime @updatedAt
 }
 
+// HLS 广告清洗全局配置（单例 id=1）
+model HlsCleanConfig {
+  id              Int      @id @default(1)
+  enabled         Boolean  @default(false) // 总开关：关闭时播放永远返回原始源
+  autoOnCollect   Boolean  @default(false) // 采集完成后自动排队清洗该源
+  autoQueueOnMiss Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
+  minConfidence   Int      @default(80) // 低于该置信度不用于播放
+  defaultStrategy String   @default("discontinuity_profile_v1") // 默认清洗策略
+  updatedAt       DateTime @updatedAt
+}
+
+// HLS 清洗策略覆盖：支持按源、分类、单线路覆盖开关/策略
+model HlsCleanPolicy {
+  id         Int      @id @default(autoincrement())
+  targetKey  String   @unique // source:1 / category:动漫 / play:123
+  scope      String // source / category / play
+  targetId   String
+  targetName String   @default("")
+  mode       String   @default("inherit") // inherit / enabled / disabled / dry_run
+  strategyId String   @default("") // 留空继承全局策略
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([scope])
+  @@index([mode])
+}
+
+// HLS 清洗结果：一条播放线路的某一集，对应一个原始 m3u8 hash 和策略
+model HlsCleanResult {
+  id            Int      @id @default(autoincrement())
+  vodId         Int
+  playId        Int
+  sourceId      Int
+  epIndex       Int      @default(0)
+  epName        String   @default("")
+  originUrl     String   @default("") // 入库/分享页原地址
+  resolvedUrl   String   @default("") // 解析后的 m3u8
+  sourceUrlHash String
+  m3u8Hash      String
+  strategyId    String
+  status        String   @default("pending") // clean / no_ads / uncertain / failed / dry_run / disabled
+  confidence    Int      @default(0)
+  adRanges      String   @default("[]") // JSON: [{start,end,segments,confidence,reason}]
+  evidence      String   @default("{}") // JSON: groups/profile/signals
+  cleanM3u8     String   @default("")
+  error         String   @default("")
+  checkedAt     DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([playId, epIndex, sourceUrlHash, strategyId])
+  @@index([vodId])
+  @@index([sourceId])
+  @@index([status])
+  @@index([strategyId])
+}
+
 // 后台用户
 model User {
   id        Int       @id @default(autoincrement())

@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
 import { matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
 import { applyDoubanAssets } from "./metaAssets.js";
+import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 
 import { EventEmitter } from "node:events";
 
@@ -23,6 +24,7 @@ async function taskUpdate(args: Parameters<typeof prisma.task.update>[0]) {
 const running = new Set<number>(); // 正在跑的 sourceId，防重复
 let collectPumpRunning = false; // 采集任务队列泵：全局串行，避免多任务抢资源
 let metaRunning = false; // 元数据任务全局串行(限速防封)
+let hlsCleanRunning = false; // HLS 清洗任务全局串行，避免集中探测拖垮源站
 const canceled = new Set<number>(); // 请求中止的 taskId
 
 // 请求中止某任务（运行中的执行器会在下一页/下一条检查并停止）
@@ -50,6 +52,13 @@ export async function recoverOrphanTasks() {
         data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
       });
       void pumpCollectQueue();
+      resumed++;
+    } else if (t.type === "hls_clean" && t.resumeCount < MAX_RESUME) {
+      await taskUpdate({
+        where: { id: t.id },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
+      });
+      void pumpHlsCleanQueue();
       resumed++;
     } else {
       await taskUpdate({
@@ -82,6 +91,178 @@ export async function createCollectTask(sourceId: number, opts: SyncOptions = {}
   emitTaskChange();
   void pumpCollectQueue();
   return task;
+}
+
+export async function createHlsCleanTask(opts: {
+  sourceId?: number;
+  categoryName?: string;
+  vodId?: number;
+  playId?: number;
+  playIds?: number[];
+  epIndex?: number;
+  episodeMode?: "first" | "all";
+  limit?: number;
+  strategyId?: string;
+  dryRun?: boolean;
+} = {}) {
+  const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
+  const [source, vod] = await Promise.all([
+    opts.sourceId ? prisma.source.findUnique({ where: { id: opts.sourceId }, select: { name: true } }) : null,
+    opts.vodId ? prisma.vod.findUnique({ where: { id: opts.vodId }, select: { name: true } }) : null,
+  ]);
+  const sourceName = playIds.length
+    ? opts.vodId
+      ? `影片「${vod?.name || opts.vodId}」· ${playIds.length}条线路`
+      : `指定线路 ${playIds.length} 条`
+    : opts.playId
+    ? `线路#${opts.playId}`
+    : opts.vodId
+      ? `影片「${vod?.name || opts.vodId}」`
+      : opts.sourceId && opts.categoryName
+        ? `${source?.name || `源#${opts.sourceId}`} / ${opts.categoryName}`
+        : opts.sourceId
+          ? `${source?.name || `源#${opts.sourceId}`}`
+          : opts.categoryName
+            ? opts.categoryName
+            : "全部范围";
+  const task = await prisma.task.create({
+    data: {
+      type: "hls_clean",
+      sourceId: opts.sourceId || null,
+      sourceName,
+      mode: opts.dryRun ? "dry" : "full",
+      status: "pending",
+      params: JSON.stringify(opts),
+    },
+  });
+  emitTaskChange();
+  void pumpHlsCleanQueue();
+  return task;
+}
+
+async function pumpHlsCleanQueue() {
+  if (hlsCleanRunning) return;
+  hlsCleanRunning = true;
+  try {
+    while (true) {
+      const task = await prisma.task.findFirst({
+        where: { type: "hls_clean", status: "pending" },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!task) return;
+      let opts: any = {};
+      try { opts = task.params ? JSON.parse(task.params) : {}; } catch {}
+      await runHlsCleanTask(task.id, opts);
+    }
+  } finally {
+    hlsCleanRunning = false;
+  }
+}
+
+async function runHlsCleanTask(taskId: number, opts: {
+  sourceId?: number;
+  categoryName?: string;
+  vodId?: number;
+  playId?: number;
+  playIds?: number[];
+  epIndex?: number;
+  episodeMode?: "first" | "all";
+  limit?: number;
+  strategyId?: string;
+  dryRun?: boolean;
+}) {
+  canceled.delete(taskId);
+  await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), message: "正在准备清洗范围" } });
+  try {
+    const limit = Math.max(1, Math.min(2000, Number(opts.limit) || 100));
+    const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
+    const where: any = {};
+    if (playIds.length) where.id = { in: playIds };
+    else if (opts.playId) where.id = Number(opts.playId);
+    if (opts.sourceId) where.sourceId = Number(opts.sourceId);
+    if (!playIds.length && opts.vodId) where.vodId = Number(opts.vodId);
+    if (opts.categoryName) where.vod = { typeName: String(opts.categoryName) };
+    const plays = await prisma.play.findMany({
+      where,
+      include: { vod: { select: { id: true, name: true, typeName: true } }, source: { select: { id: true, name: true } } },
+      orderBy: { id: "asc" },
+      take: limit,
+    });
+    const units: Array<{ playId: number; epIndex: number; title: string }> = [];
+    for (const p of plays) {
+      let eps: Array<{ name?: string; url?: string }> = [];
+      try { eps = JSON.parse(p.episodes || "[]"); } catch {}
+      if (typeof opts.epIndex === "number" && Number.isFinite(opts.epIndex)) {
+        if (eps[opts.epIndex]?.url) units.push({ playId: p.id, epIndex: opts.epIndex, title: `${p.vod.name} ${eps[opts.epIndex]?.name || ""}` });
+      } else if (opts.episodeMode === "all") {
+        eps.forEach((ep, i) => { if (ep?.url) units.push({ playId: p.id, epIndex: i, title: `${p.vod.name} ${ep.name || `第${i + 1}集`}` }); });
+      } else if (eps[0]?.url) {
+        units.push({ playId: p.id, epIndex: 0, title: `${p.vod.name} ${eps[0]?.name || "第1集"}` });
+      }
+    }
+    if (!units.length) {
+      await taskUpdate({ where: { id: taskId }, data: { status: "done", progress: 100, message: "没有可清洗的 HLS 集数", finishedAt: new Date() } });
+      return;
+    }
+
+    let clean = 0, noAds = 0, uncertain = 0, failed = 0;
+    await taskUpdate({ where: { id: taskId }, data: { pageTotal: units.length, message: `待清洗 ${units.length} 集` } });
+    const cfg = await ensureHlsCleanConfig();
+    for (let i = 0; i < units.length; i++) {
+      if (canceled.has(taskId)) {
+        await taskUpdate({
+          where: { id: taskId },
+          data: { status: "canceled", message: `已手动中止（已处理${i}/${units.length}）`, finishedAt: new Date() },
+        });
+        return;
+      }
+      const u = units[i];
+      try {
+        const r = await runHlsCleanForEpisode({
+          playId: u.playId,
+          epIndex: u.epIndex,
+          strategyId: opts.strategyId || cfg.defaultStrategy,
+          dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
+          minConfidence: cfg.minConfidence,
+        });
+        if (r.status === "clean") clean++;
+        else if (r.status === "no_ads") noAds++;
+        else if (r.status === "dry_run" || r.status === "uncertain") uncertain++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+      const progress = Math.round(((i + 1) / units.length) * 100);
+      await taskUpdate({
+        where: { id: taskId },
+        data: {
+          progress,
+          pageNow: i + 1,
+          pageTotal: units.length,
+          added: clean,
+          updated: failed,
+          merged: noAds,
+          message: `正在清洗：${u.title} · clean ${clean} / no_ads ${noAds} / failed ${failed}`,
+        },
+      });
+    }
+    await taskUpdate({
+      where: { id: taskId },
+      data: {
+        status: "done",
+        progress: 100,
+        added: clean,
+        updated: failed,
+        merged: noAds,
+        message: `清洗完成：可用${clean} 无广告${noAds} 低置信/演练${uncertain} 失败${failed}`,
+        finishedAt: new Date(),
+      },
+    });
+  } catch (e: any) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+  } finally {
+    canceled.delete(taskId);
+  }
 }
 
 async function pumpCollectQueue() {
@@ -414,6 +595,16 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
         finishedAt: new Date(),
       },
     });
+    if (!wasCanceled && r.ok) {
+      try {
+        const cfg = await ensureHlsCleanConfig();
+        if (cfg.enabled && cfg.autoOnCollect) {
+          await createHlsCleanTask({ sourceId, episodeMode: "first", limit: 500 });
+        }
+      } catch {
+        // 采集任务已完成，自动清洗排队失败不反向影响采集结果
+      }
+    }
   } catch (e: any) {
     const isCancel = canceled.has(taskId) || String(e?.message).includes("__CANCELED__");
     await taskUpdate({
