@@ -1,7 +1,7 @@
 // 异步采集任务执行器：前端点击后立即返回 taskId，任务在后台跑并更新进度
 import { prisma } from "../db.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
-import { matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
+import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
 import { applyDoubanAssets } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 
@@ -632,7 +632,7 @@ async function pumpMetaQueue() {
 
 async function runMetaTask(
   taskId: number,
-  opts: { limit?: number; intervalMs?: number; redo?: boolean; status?: string; sourceId?: number; categoryName?: string; vodIds?: number[] }
+  opts: { limit?: number; intervalMs?: number; redo?: boolean; status?: string; sourceId?: number; categoryName?: string; vodIds?: number[]; autoMatchScore?: number; pendingMatchScore?: number }
 ) {
   if (metaRunning) {
     await taskUpdate({
@@ -645,6 +645,13 @@ async function runMetaTask(
   canceled.delete(taskId);
   const limit = Math.min(opts.limit || 50, 500);
   const interval = Math.max(opts.intervalMs || 2500, 1000); // 默认2.5s/条，防封
+  const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
+  const autoMatchScore = Number.isFinite(Number(opts.autoMatchScore))
+    ? Number(opts.autoMatchScore)
+    : (cfg?.autoMatchScore ?? AUTO_MATCH_SCORE);
+  const pendingMatchScore = Number.isFinite(Number(opts.pendingMatchScore))
+    ? Number(opts.pendingMatchScore)
+    : (cfg?.pendingMatchScore ?? PENDING_MATCH_SCORE);
   await taskUpdate({
     where: { id: taskId },
     data: { status: "running", startedAt: new Date() },
@@ -685,7 +692,13 @@ async function runMetaTask(
       }
       const v = vods[i];
       try {
-        const r = await matchDouban(v.name, v.year, { typeName: v.typeName, actor: v.actor, director: v.director });
+        const r = await matchDouban(v.name, v.year, {
+          typeName: v.typeName,
+          actor: v.actor,
+          director: v.director,
+          autoMatchScore,
+          pendingMatchScore,
+        });
         if (r.status === "matched" && r.meta) {
           await prisma.vod.update({
             where: { id: v.id },

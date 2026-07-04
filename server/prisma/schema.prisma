@@ -77,13 +77,15 @@ model SiteConfig {
 
 // 元数据(豆瓣)采集配置（单例 id=1）
 model MetaConfig {
-  id         Int      @id @default(1)
-  intervalMs Int      @default(2500) // 限速间隔(毫秒/条)
-  batchLimit Int      @default(50) // 每批处理数
-  autoMatch  Boolean  @default(false) // 定时自动匹配
-  cronExpr   String   @default("0 4 * * *") // 频率(默认每天凌晨4点)
-  redoFailed Boolean  @default(false) // 定时时是否一并重试失败的
-  updatedAt  DateTime @updatedAt
+  id                Int      @id @default(1)
+  intervalMs        Int      @default(2500) // 限速间隔(毫秒/条)
+  batchLimit        Int      @default(50) // 每批处理数
+  autoMatchScore    Int      @default(80) // 达到该分数且满足强证据时自动写入
+  pendingMatchScore Int      @default(60) // 达到该分数但不够自动写入时进入待确认
+  autoMatch         Boolean  @default(false) // 定时自动匹配
+  cronExpr          String   @default("0 4 * * *") // 频率(默认每天凌晨4点)
+  redoFailed        Boolean  @default(false) // 定时时是否一并重试失败的
+  updatedAt         DateTime @updatedAt
 }
 
 // 首页热门推荐算法配置（单例 id=1）

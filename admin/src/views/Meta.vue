@@ -26,7 +26,7 @@
             重刷失败/全部（{{ stat.failed || 0 }} 失败）
           </el-button>
         </div>
-        <p class="tip">任务在后台运行，进度见「采集任务」页。低置信会进入待确认，不会自动写入豆瓣 ID。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部。</p>
+        <p class="tip">任务在后台运行，进度见「采集任务」页。低置信会进入待确认，不会自动写入豆瓣 ID。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部，自动通过 {{ cfg.autoMatchScore }} 分，待确认 {{ cfg.pendingMatchScore }} 分。</p>
       </div>
 
       <!-- 参数设置 -->
@@ -43,6 +43,15 @@
           <el-form-item label="每批数量">
             <el-input-number v-model="cfg.batchLimit" :min="10" :max="500" :step="10" />
             <span class="unit">部/次</span>
+          </el-form-item>
+          <el-divider>置信分设置</el-divider>
+          <el-form-item label="自动通过分">
+            <el-input-number v-model="cfg.autoMatchScore" :min="0" :max="100" :step="1" />
+            <span class="unit">达到该分且满足标题/年份等强证据时自动写入</span>
+          </el-form-item>
+          <el-form-item label="待确认分">
+            <el-input-number v-model="cfg.pendingMatchScore" :min="0" :max="cfg.autoMatchScore || 100" :step="1" />
+            <span class="unit">低于自动通过但达到该分进入待确认</span>
           </el-form-item>
           <el-divider>定时自动匹配</el-divider>
           <el-form-item label="自动匹配">
@@ -99,6 +108,9 @@
           <template #default="{ row }">{{ row.matchedTitle || '—' }} {{ row.matchedYear ? '(' + row.matchedYear + ')' : '' }}</template>
         </el-table-column>
         <el-table-column prop="metaScore" label="置信" width="80" />
+        <el-table-column label="原因" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ metaReasonText(row) }}</template>
+        </el-table-column>
         <el-table-column label="时间" width="170">
           <template #default="{ row }">{{ fmt(row.metaAt) }}</template>
         </el-table-column>
@@ -125,7 +137,7 @@
         </el-table-column>
         <el-table-column prop="score" label="分数" width="80" />
         <el-table-column label="原因" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">{{ (row.reasons || []).join(' / ') }}</template>
+          <template #default="{ row }">{{ reasonText(row.reasons) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="110">
           <template #default="{ row }"><el-button size="small" type="primary" @click="confirmCandidate(row)">确认</el-button></template>
@@ -141,7 +153,7 @@ import { Check, MagicStick, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
-const stat = ref({}); const cfg = ref({ intervalMs:2500, batchLimit:50, autoMatch:false, cronExpr:'0 4 * * *', redoFailed:false })
+const stat = ref({}); const cfg = ref({ intervalMs:2500, batchLimit:50, autoMatchScore:80, pendingMatchScore:60, autoMatch:false, cronExpr:'0 4 * * *', redoFailed:false })
 const saving = ref(false)
 const sources = ref([])
 const categories = ref([])
@@ -164,11 +176,39 @@ const matchRate = computed(() => stat.value.total ? Math.round((stat.value.match
 const fmt = (v) => v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '—'
 const metaLabel = (s) => ({ none:'待匹配', matched:'已匹配', manual:'人工确认', pending:'待确认', failed:'失败/无收录', skip:'跳过' }[s] || s)
 const metaType = (s) => ({ matched:'success', manual:'success', pending:'warning', failed:'info', none:'primary' }[s] || 'info')
+const reasonMap = {
+  manual: '人工确认',
+  no_suggest: '豆瓣无候选',
+  detail_failed: '豆瓣详情获取失败',
+  title_exact: '标题完全一致',
+  title_contains: '标题互相包含',
+  title_similar: '标题相似',
+  title_weak: '标题弱相关',
+  year_match: '年份一致',
+  year_near: '年份接近',
+  year_mismatch: '年份不一致',
+  season_match: '季数一致',
+  season_mismatch: '季数不一致',
+  special_match: '特别篇标记一致',
+  special_missing: '候选缺少特别篇标记',
+  type_match: '分类匹配',
+  type_mismatch: '分类不一致',
+  director_match: '导演匹配',
+  director_mismatch: '导演不一致',
+  actors_match: '多名演员匹配',
+  actor_match: '演员匹配',
+  actors_mismatch: '演员不一致',
+}
+const reasonText = (reasons) => {
+  const list = Array.isArray(reasons) ? reasons : []
+  return list.length ? list.map(r => reasonMap[r] || '其他匹配信号').join(' / ') : '—'
+}
+const metaReasonText = (row) => reasonText(parseReason(row).reasons)
 
 async function load() {
   const [st, conf, ss, cs] = await Promise.all([api.metaStats(), api.metaConfig(), api.sources(), api.categories()])
   stat.value = st
-  cfg.value = conf
+  cfg.value = { ...cfg.value, ...conf }
   sources.value = ss
   categories.value = cs
   await loadRows()
@@ -233,7 +273,15 @@ async function matchOne(row) {
 }
 async function save() {
   saving.value = true
-  try { await api.updateMetaConfig(cfg.value); ElMessage.success('设置已保存' + (cfg.value.autoMatch ? '，定时匹配已启用' : '')) }
+  try {
+    const payload = {
+      ...cfg.value,
+      pendingMatchScore: Math.min(Number(cfg.value.pendingMatchScore) || 0, Number(cfg.value.autoMatchScore) || 0),
+    }
+    await api.updateMetaConfig(payload)
+    cfg.value = { ...cfg.value, ...payload }
+    ElMessage.success('设置已保存' + (cfg.value.autoMatch ? '，定时匹配已启用' : ''))
+  }
   catch (e) { ElMessage.error(e.message) } finally { saving.value = false }
 }
 onMounted(load)

@@ -2,7 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { createMetaTask } from "../collector/taskRunner.js";
-import { matchDouban, doubanSuggest, doubanDetail, type DoubanCandidate, type DoubanMatchResult } from "../collector/douban.js";
+import {
+  AUTO_MATCH_SCORE,
+  PENDING_MATCH_SCORE,
+  matchDouban,
+  doubanSuggest,
+  doubanDetail,
+  type DoubanCandidate,
+  type DoubanMatchResult,
+} from "../collector/douban.js";
 import { applyDoubanAssets } from "../collector/metaAssets.js";
 
 function candidateSnapshot(candidates: DoubanCandidate[]) {
@@ -47,6 +55,18 @@ function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
     matchedYear: r.meta?.year || best?.year || "",
     metaAt: new Date(),
   };
+}
+
+function clampScore(value: unknown, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
 }
 
 export default async function metaRoutes(app: FastifyInstance) {
@@ -100,7 +120,14 @@ export default async function metaRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const v = await prisma.vod.findUnique({ where: { id } });
     if (!v) return { ok: false, error: "影片不存在" };
-    const r = await matchDouban(v.name, v.year, { typeName: v.typeName, actor: v.actor, director: v.director });
+    const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
+    const r = await matchDouban(v.name, v.year, {
+      typeName: v.typeName,
+      actor: v.actor,
+      director: v.director,
+      autoMatchScore: cfg?.autoMatchScore ?? AUTO_MATCH_SCORE,
+      pendingMatchScore: cfg?.pendingMatchScore ?? PENDING_MATCH_SCORE,
+    });
     if (r.status === "matched" && r.meta) {
       await prisma.vod.update({
         where: { id },
@@ -158,16 +185,25 @@ export default async function metaRoutes(app: FastifyInstance) {
   // 元数据配置：更新
   app.put("/api/meta/config", async (req) => {
     const b = (req.body as any) || {};
+    const current = await prisma.metaConfig.findUnique({ where: { id: 1 } });
+    const autoMatchScore = clampScore(b.autoMatchScore ?? current?.autoMatchScore, AUTO_MATCH_SCORE);
+    const pendingMatchScore = Math.min(
+      autoMatchScore,
+      clampScore(b.pendingMatchScore ?? current?.pendingMatchScore, PENDING_MATCH_SCORE)
+    );
+    const data = {
+      intervalMs: clampInt(b.intervalMs ?? current?.intervalMs, 2500, 1000, 10000),
+      batchLimit: clampInt(b.batchLimit ?? current?.batchLimit, 50, 1, 500),
+      autoMatchScore,
+      pendingMatchScore,
+      autoMatch: Boolean(b.autoMatch ?? current?.autoMatch ?? false),
+      cronExpr: String(b.cronExpr || current?.cronExpr || "0 4 * * *"),
+      redoFailed: Boolean(b.redoFailed ?? current?.redoFailed ?? false),
+    };
     await prisma.metaConfig.upsert({
       where: { id: 1 },
-      create: { id: 1, ...b },
-      update: {
-        intervalMs: b.intervalMs,
-        batchLimit: b.batchLimit,
-        autoMatch: b.autoMatch,
-        cronExpr: b.cronExpr,
-        redoFailed: b.redoFailed,
-      },
+      create: { id: 1, ...data },
+      update: data,
     });
     const { reloadMetaSchedule } = await import("../scheduler.js");
     await reloadMetaSchedule();

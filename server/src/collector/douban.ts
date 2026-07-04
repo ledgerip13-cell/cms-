@@ -171,6 +171,8 @@ export interface DoubanMatchContext {
   typeName?: string;
   actor?: string;
   director?: string;
+  autoMatchScore?: number;
+  pendingMatchScore?: number;
 }
 
 export interface DoubanMatchResult {
@@ -186,6 +188,12 @@ export interface DoubanMatchResult {
 export const AUTO_MATCH_SCORE = 80;
 export const PENDING_MATCH_SCORE = 60;
 const detailCache = new Map<string, Promise<DoubanMeta | null>>();
+
+function matchScore(value: unknown, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
 
 async function getJson(url: string, ua: string, referer: string, timeoutMs = 12000): Promise<any> {
   const ctrl = new AbortController();
@@ -596,6 +604,8 @@ export async function matchDouban(
   year?: string,
   ctx: DoubanMatchContext = {}
 ): Promise<DoubanMatchResult> {
+  const autoMatchScore = matchScore(ctx.autoMatchScore, AUTO_MATCH_SCORE);
+  const pendingMatchScore = Math.min(autoMatchScore, matchScore(ctx.pendingMatchScore, PENDING_MATCH_SCORE));
   const suggestMap = new Map<string, DoubanSuggest>();
   for (const kw of queryBag(name)) {
     for (const s of await doubanSuggest(kw)) suggestMap.set(s.id, s);
@@ -628,10 +638,10 @@ export async function matchDouban(
       candidates,
     };
   }
-  if (best.score >= AUTO_MATCH_SCORE && autoEligible(best)) {
+  if (best.score >= autoMatchScore && autoEligible(best)) {
     return { ok: true, status: "matched", meta: best.meta, suggest, score: best.score, reasons: best.reasons, candidates };
   }
-  if (best.score >= PENDING_MATCH_SCORE) {
+  if (best.score >= pendingMatchScore) {
     return { ok: false, status: "pending", meta: best.meta, suggest, score: best.score, reasons: best.reasons, candidates };
   }
   return { ok: false, status: "failed", meta: best.meta, suggest, score: best.score, reasons: best.reasons, candidates };

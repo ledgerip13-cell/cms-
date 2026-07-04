@@ -172,7 +172,7 @@
             <div class="cand-info">
               <div><b>{{ c.title }}</b><span v-if="c.year" class="cand-year">({{ c.year }})</span></div>
               <div class="cand-sub">{{ c.subTitle || c.type || '—' }}</div>
-              <div class="cand-sub">分数 {{ c.score }} · {{ (c.reasons || []).join(' / ') }}</div>
+              <div class="cand-sub">分数 {{ c.score }} · {{ reasonText(c.reasons) }}</div>
             </div>
           </div>
           <div class="cand-actions">
@@ -513,6 +513,33 @@ async function matchOne(id) {
 }
 function parseMetaReason(row) {
   try { return JSON.parse(row?.metaReason || '{}') } catch { return {} }
+}
+const reasonMap = {
+  manual: '人工确认',
+  no_suggest: '豆瓣无候选',
+  detail_failed: '豆瓣详情获取失败',
+  title_exact: '标题完全一致',
+  title_contains: '标题互相包含',
+  title_similar: '标题相似',
+  title_weak: '标题弱相关',
+  year_match: '年份一致',
+  year_near: '年份接近',
+  year_mismatch: '年份不一致',
+  season_match: '季数一致',
+  season_mismatch: '季数不一致',
+  special_match: '特别篇标记一致',
+  special_missing: '候选缺少特别篇标记',
+  type_match: '分类匹配',
+  type_mismatch: '分类不一致',
+  director_match: '导演匹配',
+  director_mismatch: '导演不一致',
+  actors_match: '多名演员匹配',
+  actor_match: '演员匹配',
+  actors_mismatch: '演员不一致',
+}
+const reasonText = (reasons) => {
+  const list = Array.isArray(reasons) ? reasons : []
+  return list.length ? list.map(r => reasonMap[r] || '其他匹配信号').join(' / ') : '—'
 }
 function pendingCandidates(row) {
   if (row?.metaMatched !== 'pending') return []
