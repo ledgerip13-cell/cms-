@@ -29,7 +29,15 @@
           </el-select>
         </el-form-item>
         <el-form-item label="最低置信度">
-          <el-input-number v-model="cfg.minConfidence" :min="0" :max="100" />
+          <div class="confidence-field">
+            <el-input-number v-model="cfg.minConfidence" :min="0" :max="100" />
+            <el-tag size="small" :type="confidenceAdvice.type">{{ confidenceAdvice.label }}</el-tag>
+          </div>
+          <div class="confidence-note">
+            <b>作用：</b>清洗策略会给疑似广告段打 0-100 分，只有达到这个分数的广告段才会被删除并生成可用于播放的 clean 结果。低于门槛会保留原片，不会替换播放源。
+            <br />
+            <b>建议：</b>默认 80。误删正片就调高到 90；广告漏清就调低到 70-75；低于 70 风险较高，建议先用“只检测不用于播放”观察结果。
+          </div>
         </el-form-item>
         <el-form-item label="清洗 worker">
           <el-input-number v-model="cfg.workerConcurrency" :min="1" :max="12" />
@@ -298,6 +306,13 @@ const categoryRows = computed(() => categories.value.map(c => {
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 const statusType = (s) => ({ clean: 'success', failed: 'danger', dry_run: 'warning', no_ads: 'info' }[s] || 'info')
 const vodLabel = (v) => `${v.name} #${v.id}${v.year ? ' · ' + v.year : ''}`
+const confidenceAdvice = computed(() => {
+  const n = Number(cfg.value.minConfidence) || 0
+  if (n >= 90) return { label: '保守：少误删，可能漏广告', type: 'info' }
+  if (n >= 80) return { label: '推荐：稳妥默认值', type: 'success' }
+  if (n >= 70) return { label: '偏激进：更容易清掉广告', type: 'warning' }
+  return { label: '高风险：建议只检测验证', type: 'danger' }
+})
 
 function normalizeStrategyIds(value, fallback = DEFAULT_STRATEGIES) {
   const raw = Array.isArray(value) ? value : String(value || '').split(',')
@@ -496,6 +511,9 @@ onMounted(load)
 .cfg-form, .job-form, .manual-form { max-width: 1080px; }
 .job-form { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 0 20px; }
 .unit { margin-left: 10px; font-size: 12px; color: var(--text-3); }
+.confidence-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.confidence-note { width: min(760px, 100%); margin-top: 8px; color: var(--text-3); font-size: 12px; line-height: 1.75; }
+.confidence-note b { color: var(--text-1); }
 .stat-line { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .muted { color: var(--text-3); }
 .vod-option { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
