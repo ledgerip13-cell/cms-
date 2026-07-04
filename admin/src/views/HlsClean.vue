@@ -31,6 +31,14 @@
         <el-form-item label="最低置信度">
           <el-input-number v-model="cfg.minConfidence" :min="0" :max="100" />
         </el-form-item>
+        <el-form-item label="清洗 worker">
+          <el-input-number v-model="cfg.workerConcurrency" :min="1" :max="12" />
+          <span class="unit">单个清洗任务内并发处理集数</span>
+        </el-form-item>
+        <el-form-item label="同源并发">
+          <el-input-number v-model="cfg.sourceConcurrency" :min="1" :max="4" />
+          <span class="unit">同一采集源同时探测上限</span>
+        </el-form-item>
       </el-form>
     </div>
 
@@ -251,7 +259,7 @@ const loading = ref(false)
 const saving = ref(false)
 const starting = ref(false)
 const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
-const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, defaultStrategies: [...DEFAULT_STRATEGIES] })
+const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
 const strategies = ref([])
 const sources = ref([])
 const categories = ref([])

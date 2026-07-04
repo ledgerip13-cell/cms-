@@ -35,19 +35,52 @@ async function taskUpdate(args: Parameters<typeof prisma.task.update>[0]) {
 }
 
 const running = new Set<number>(); // 正在跑的 sourceId，防重复
-let collectPumpRunning = false; // 采集任务队列泵：全局串行，避免多任务抢资源
+let collectPumpRunning = false; // 采集任务队列泵：按源并发，避免多任务抢同源资源
+let collectActive = 0;
 let metaRunning = false; // 元数据任务全局串行(限速防封)
+let metaPumpRunning = false;
 let hlsCleanRunning = false; // HLS 清洗任务全局串行，避免集中探测拖垮源站
 const canceled = new Set<number>(); // 请求中止的 taskId
+const paused = new Set<number>(); // 请求暂停的 taskId
+
+function clampPriority(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(1, Math.min(999, Math.floor(n))) : 100;
+}
+
+function collectConcurrency() {
+  const n = Number(process.env.COLLECT_WORKERS || process.env.COLLECT_CONCURRENCY || 3);
+  return Number.isFinite(n) ? Math.max(1, Math.min(8, Math.floor(n))) : 3;
+}
+
+function isPauseSignal(e: any) {
+  return String(e?.message || e || "").includes("__PAUSED__");
+}
 
 // 请求中止某任务（运行中的执行器会在下一页/下一条检查并停止）
 export function requestCancel(taskId: number) {
   canceled.add(taskId);
 }
 
+export function requestPause(taskId: number) {
+  paused.add(taskId);
+}
+
+export function clearPause(taskId: number) {
+  paused.delete(taskId);
+}
+
 export function wakeTaskQueues() {
   void pumpCollectQueue();
   void pumpHlsCleanQueue();
+  void pumpMetaQueue();
+}
+
+async function pauseIfRequested(taskId: number, message = "已暂停") {
+  if (!paused.has(taskId)) return false;
+  await taskUpdate({ where: { id: taskId }, data: { status: "paused", message, finishedAt: null } });
+  paused.delete(taskId);
+  return true;
 }
 
 // 服务重启回收：将遗留的 running/pending 僵尸任务自动从断点续跑（采集）或标失败
@@ -86,6 +119,13 @@ export async function recoverOrphanTasks() {
       });
       void pumpHlsCleanQueue();
       resumed++;
+    } else if (t.type === "meta" && t.resumeCount < MAX_RESUME) {
+      await taskUpdate({
+        where: { id: t.id },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
+      });
+      void pumpMetaQueue();
+      resumed++;
     } else {
       await taskUpdate({
         where: { id: t.id },
@@ -98,7 +138,7 @@ export async function recoverOrphanTasks() {
 }
 
 // 创建采集任务并异步执行，立即返回 task 记录
-export async function createCollectTask(sourceId: number, opts: SyncOptions = {}) {
+export async function createCollectTask(sourceId: number, opts: SyncOptions & { priority?: number } = {}) {
   const source = await prisma.source.findUnique({ where: { id: sourceId } });
   if (!source) throw new Error("source not found");
 
@@ -109,6 +149,7 @@ export async function createCollectTask(sourceId: number, opts: SyncOptions = {}
       sourceName: source.name,
       mode: opts.mode || "incr",
       status: "pending",
+      priority: clampPriority((opts as any).priority),
       params: JSON.stringify(opts),
     },
   });
@@ -131,6 +172,7 @@ export async function createHlsCleanTask(opts: {
   strategyId?: string;
   strategyIds?: string[];
   dryRun?: boolean;
+  priority?: number;
 } = {}) {
   const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
   const [source, vod] = await Promise.all([
@@ -159,6 +201,7 @@ export async function createHlsCleanTask(opts: {
       sourceName,
       mode: opts.dryRun ? "dry" : "full",
       status: "pending",
+      priority: clampPriority(opts.priority),
       params: JSON.stringify(opts),
     },
   });
@@ -174,7 +217,7 @@ async function pumpHlsCleanQueue() {
     while (true) {
       const task = await prisma.task.findFirst({
         where: { type: "hls_clean", status: "pending" },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
       });
       if (!task) return;
       let opts: any = {};
@@ -219,6 +262,7 @@ async function runHlsCleanTask(taskId: number, opts: {
     return;
   }
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), message: "正在准备清洗范围" } });
+  let clean = 0, noAds = 0, uncertain = 0, failed = 0, processed = 0, totalUnits = 0;
   try {
     const limit = Math.max(1, Math.min(2000, Number(opts.limit) || 100));
     const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
@@ -234,16 +278,16 @@ async function runHlsCleanTask(taskId: number, opts: {
       orderBy: { id: "asc" },
       take: limit,
     });
-    const units: Array<{ playId: number; epIndex: number; title: string }> = [];
+    const units: Array<{ playId: number; sourceId: number; epIndex: number; title: string }> = [];
     for (const p of plays) {
       let eps: Array<{ name?: string; url?: string }> = [];
       try { eps = JSON.parse(p.episodes || "[]"); } catch {}
       if (typeof opts.epIndex === "number" && Number.isFinite(opts.epIndex)) {
-        if (eps[opts.epIndex]?.url) units.push({ playId: p.id, epIndex: opts.epIndex, title: `${p.vod.name} ${eps[opts.epIndex]?.name || ""}` });
+        if (eps[opts.epIndex]?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: opts.epIndex, title: `${p.vod.name} ${eps[opts.epIndex]?.name || ""}` });
       } else if (opts.episodeMode === "all") {
-        eps.forEach((ep, i) => { if (ep?.url) units.push({ playId: p.id, epIndex: i, title: `${p.vod.name} ${ep.name || `第${i + 1}集`}` }); });
+        eps.forEach((ep, i) => { if (ep?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: i, title: `${p.vod.name} ${ep.name || `第${i + 1}集`}` }); });
       } else if (eps[0]?.url) {
-        units.push({ playId: p.id, epIndex: 0, title: `${p.vod.name} ${eps[0]?.name || "第1集"}` });
+        units.push({ playId: p.id, sourceId: p.sourceId, epIndex: 0, title: `${p.vod.name} ${eps[0]?.name || "第1集"}` });
       }
     }
     if (!units.length) {
@@ -251,55 +295,76 @@ async function runHlsCleanTask(taskId: number, opts: {
       return;
     }
 
-    let clean = 0, noAds = 0, uncertain = 0, failed = 0;
+    totalUnits = units.length;
     await taskUpdate({ where: { id: taskId }, data: { pageTotal: units.length, message: `待清洗 ${units.length} 集` } });
     const cfg = await ensureHlsCleanConfig();
-    for (let i = 0; i < units.length; i++) {
-      if (canceled.has(taskId)) {
+    const workerCount = Math.max(1, Math.min(12, Number((cfg as any).workerConcurrency) || 3));
+    const sourceLimit = Math.max(1, Math.min(4, Number((cfg as any).sourceConcurrency) || 1));
+    const sourceActive = new Map<number, number>();
+    let nextIndex = 0;
+    async function withSourceLimit<T>(sourceId: number, fn: () => Promise<T>): Promise<T> {
+      while ((sourceActive.get(sourceId) || 0) >= sourceLimit) {
+        if (canceled.has(taskId) || paused.has(taskId)) throw new Error(canceled.has(taskId) ? "__CANCELED__" : "__PAUSED__");
+        await sleep(150);
+      }
+      sourceActive.set(sourceId, (sourceActive.get(sourceId) || 0) + 1);
+      try {
+        return await fn();
+      } finally {
+        sourceActive.set(sourceId, Math.max(0, (sourceActive.get(sourceId) || 1) - 1));
+      }
+    }
+    async function worker() {
+      while (true) {
+        if (canceled.has(taskId)) throw new Error("__CANCELED__");
+        if (paused.has(taskId)) throw new Error("__PAUSED__");
+        const i = nextIndex++;
+        if (i >= units.length) return;
+        const u = units[i];
+        let status = "failed";
+        try {
+          const r = await withSourceLimit(u.sourceId, () => runHlsCleanForEpisode({
+            playId: u.playId,
+            epIndex: u.epIndex,
+            strategyIds: opts.strategyIds,
+            strategyId: opts.strategyId || cfg.defaultStrategy,
+            dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
+            minConfidence: cfg.minConfidence,
+          }));
+          status = r.status;
+        } catch (e: any) {
+          if (String(e?.message || "").includes("__CANCELED__") || String(e?.message || "").includes("__PAUSED__")) throw e;
+          status = "failed";
+        }
+        processed++;
+        if (status === "clean") clean++;
+        else if (status === "no_ads") noAds++;
+        else if (status === "dry_run" || status === "uncertain") uncertain++;
+        else failed++;
+        const progress = Math.round((processed / units.length) * 100);
         await taskUpdate({
           where: { id: taskId },
-          data: { status: "canceled", message: `已手动中止（已处理${i}/${units.length}）`, finishedAt: new Date() },
+          data: {
+            progress,
+            pageNow: processed,
+            pageTotal: units.length,
+            added: clean,
+            updated: failed,
+            merged: noAds,
+            message: `并发清洗 ${Math.min(workerCount, units.length)} worker：${u.title} · clean ${clean} / no_ads ${noAds} / failed ${failed}`,
+          },
         });
-        return;
       }
-      const u = units[i];
-      try {
-        const r = await runHlsCleanForEpisode({
-          playId: u.playId,
-          epIndex: u.epIndex,
-          strategyIds: opts.strategyIds,
-          strategyId: opts.strategyId || cfg.defaultStrategy,
-          dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
-          minConfidence: cfg.minConfidence,
-        });
-        if (r.status === "clean") clean++;
-        else if (r.status === "no_ads") noAds++;
-        else if (r.status === "dry_run" || r.status === "uncertain") uncertain++;
-        else failed++;
-      } catch {
-        failed++;
-      }
-      const progress = Math.round(((i + 1) / units.length) * 100);
-      await taskUpdate({
-        where: { id: taskId },
-        data: {
-          progress,
-          pageNow: i + 1,
-          pageTotal: units.length,
-          added: clean,
-          updated: failed,
-          merged: noAds,
-          message: `正在清洗：${u.title} · clean ${clean} / no_ads ${noAds} / failed ${failed}`,
-        },
-      });
     }
+    await Promise.all(Array.from({ length: Math.min(workerCount, units.length) }, () => worker()));
     if (canceled.has(taskId)) {
       await taskUpdate({
         where: { id: taskId },
-        data: { status: "canceled", message: `已手动中止（已处理${units.length}/${units.length}）`, finishedAt: new Date() },
+        data: { status: "canceled", message: `已手动中止（已处理${processed}/${totalUnits}）`, finishedAt: new Date() },
       });
       return;
     }
+    if (await pauseIfRequested(taskId, `已暂停（已处理${processed}/${totalUnits}）`)) return;
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -314,9 +379,18 @@ async function runHlsCleanTask(taskId: number, opts: {
     });
   } catch (e: any) {
     const isCancel = canceled.has(taskId) || String(e?.message).includes("__CANCELED__");
-    await taskUpdate({ where: { id: taskId }, data: { status: isCancel ? "canceled" : "failed", message: isCancel ? "已手动中止" : (e?.message || String(e)), finishedAt: new Date() } });
+    const isPause = paused.has(taskId) || isPauseSignal(e);
+    await taskUpdate({
+      where: { id: taskId },
+      data: {
+        status: isCancel ? "canceled" : isPause ? "paused" : "failed",
+        message: isCancel ? `已手动中止（已处理${processed}/${totalUnits}）` : isPause ? `已暂停（已处理${processed}/${totalUnits}）` : (e?.message || String(e)),
+        finishedAt: isPause ? null : new Date(),
+      },
+    });
   } finally {
     canceled.delete(taskId);
+    paused.delete(taskId);
   }
 }
 
@@ -324,10 +398,15 @@ async function pumpCollectQueue() {
   if (collectPumpRunning) return;
   collectPumpRunning = true;
   try {
-    while (true) {
+    while (collectActive < collectConcurrency()) {
+      const busySources = [...running];
       const task = await prisma.task.findFirst({
-        where: { type: "collect", status: "pending", sourceId: { not: null } },
-        orderBy: { createdAt: "asc" },
+        where: {
+          type: "collect",
+          status: "pending",
+          sourceId: busySources.length ? { not: null, notIn: busySources } : { not: null },
+        },
+        orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
       });
       if (!task?.sourceId) return;
       let opts: SyncOptions = {};
@@ -335,13 +414,18 @@ async function pumpCollectQueue() {
       let cur: any = null;
       try { cur = task.cursor ? JSON.parse(task.cursor) : null; } catch {}
       if (cur) opts.resume = cur;
-      try {
-        await runTask(task.id, task.sourceId, opts);
-      } catch (e: any) {
-        if (!isMissingTaskError(e)) {
-          await taskUpdate({ where: { id: task.id }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
-        }
-      }
+      running.add(task.sourceId);
+      collectActive++;
+      void runTask(task.id, task.sourceId, opts, true)
+        .catch(async (e: any) => {
+          if (!isMissingTaskError(e)) {
+            await taskUpdate({ where: { id: task.id }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+          }
+        })
+        .finally(() => {
+          collectActive = Math.max(0, collectActive - 1);
+          void pumpCollectQueue();
+        });
     }
   } finally {
     collectPumpRunning = false;
@@ -502,24 +586,53 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
   };
 }
 
-export async function createMetaTask(opts: { limit?: number; intervalMs?: number; redo?: boolean } = {}) {
+export async function createMetaTask(opts: {
+  limit?: number;
+  intervalMs?: number;
+  redo?: boolean;
+  status?: string;
+  sourceId?: number;
+  categoryName?: string;
+  vodIds?: number[];
+  priority?: number;
+} = {}) {
   const task = await prisma.task.create({
     data: {
       type: "meta",
       sourceName: "豆瓣元数据",
       mode: opts.redo ? "full" : "incr",
       status: "pending",
+      priority: clampPriority(opts.priority),
       params: JSON.stringify(opts),
     },
   });
   emitTaskChange();
-  void runMetaTask(task.id, opts);
+  void pumpMetaQueue();
   return task;
+}
+
+async function pumpMetaQueue() {
+  if (metaPumpRunning || metaRunning) return;
+  metaPumpRunning = true;
+  try {
+    while (true) {
+      const task = await prisma.task.findFirst({
+        where: { type: "meta", status: "pending" },
+        orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+      });
+      if (!task) return;
+      let opts: any = {};
+      try { opts = task.params ? JSON.parse(task.params) : {}; } catch {}
+      await runMetaTask(task.id, opts);
+    }
+  } finally {
+    metaPumpRunning = false;
+  }
 }
 
 async function runMetaTask(
   taskId: number,
-  opts: { limit?: number; intervalMs?: number; redo?: boolean }
+  opts: { limit?: number; intervalMs?: number; redo?: boolean; status?: string; sourceId?: number; categoryName?: string; vodIds?: number[] }
 ) {
   if (metaRunning) {
     await taskUpdate({
@@ -538,8 +651,15 @@ async function runMetaTask(
   });
 
   try {
-    // 待处理：未匹配过的（redo=true 则取最久的重刷）
-    const where = opts.redo ? {} : { metaMatched: "none" };
+    // 待处理：默认只扫未匹配；也支持按状态/源/分类/精确影片重刷。
+    const where: any = {};
+    const vodIds = Array.isArray(opts.vodIds) ? opts.vodIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+    if (vodIds.length) where.id = { in: vodIds };
+    if (opts.categoryName) where.typeName = String(opts.categoryName);
+    if (opts.sourceId) where.plays = { some: { sourceId: Number(opts.sourceId) } };
+    const status = String(opts.status || "").trim();
+    if (status && status !== "all") where.metaMatched = status;
+    else if (!opts.redo && !vodIds.length) where.metaMatched = "none";
     const vods = await prisma.vod.findMany({
       where,
       orderBy: opts.redo ? { metaAt: "asc" } : { id: "asc" },
@@ -551,6 +671,14 @@ async function runMetaTask(
         await taskUpdate({
           where: { id: taskId },
               data: { status: "canceled", message: `已手动中止（已处理${i}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: new Date() },
+        });
+        metaRunning = false;
+        return;
+      }
+      if (paused.has(taskId)) {
+        await taskUpdate({
+          where: { id: taskId },
+          data: { status: "paused", message: `已暂停（已处理${i}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: null },
         });
         metaRunning = false;
         return;
@@ -604,10 +732,11 @@ async function runMetaTask(
   } finally {
     metaRunning = false;
     canceled.delete(taskId);
+    paused.delete(taskId);
   }
 }
 
-async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
+async function runTask(taskId: number, sourceId: number, opts: SyncOptions, reserved = false) {
   if (canceled.has(taskId)) {
     await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
     canceled.delete(taskId);
@@ -622,14 +751,14 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
     return;
   }
   // 同源已有任务在跑则标记排队失败（简单串行保护）
-  if (running.has(sourceId)) {
+  if (!reserved && running.has(sourceId)) {
     await taskUpdate({
       where: { id: taskId },
       data: { status: "failed", message: "该源已有采集任务进行中", finishedAt: new Date() },
     });
     return;
   }
-  running.add(sourceId);
+  if (!reserved) running.add(sourceId);
   await taskUpdate({
     where: { id: taskId },
     data: { status: "running", startedAt: new Date() },
@@ -638,6 +767,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
   try {
     const r = await syncSource(sourceId, opts, async (p) => {
       if (canceled.has(taskId)) throw new Error("__CANCELED__");
+      if (paused.has(taskId)) throw new Error("__PAUSED__");
       const progress = p.pageTotal ? Math.round((p.pageNow / p.pageTotal) * 100) : 0;
       await taskUpdate({
         where: { id: taskId },
@@ -655,20 +785,21 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
     });
     // 中止信号会被 syncSource 内部 catch 吞掉（返回 ok=false 且 message 含 __CANCELED__），这里补判
     const wasCanceled = canceled.has(taskId) || String(r.message).includes("__CANCELED__");
+    const wasPaused = paused.has(taskId) || String(r.message).includes("__PAUSED__");
     await taskUpdate({
       where: { id: taskId },
       data: {
-        status: wasCanceled ? "canceled" : r.ok ? "done" : "failed",
+        status: wasCanceled ? "canceled" : wasPaused ? "paused" : r.ok ? "done" : "failed",
         progress: 100,
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: wasCanceled ? "已手动中止" : r.message,
-        cursor: null, // 完成/取消 清空断点
-        finishedAt: new Date(),
+        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : r.message,
+        cursor: wasPaused ? undefined : null, // 暂停保留断点，完成/取消 清空断点
+        finishedAt: wasPaused ? null : new Date(),
       },
     });
-    if (!wasCanceled && r.ok) {
+    if (!wasCanceled && !wasPaused && r.ok) {
       try {
         const cfg = await ensureHlsCleanConfig();
         if (cfg.enabled && cfg.autoOnCollect) {
@@ -680,16 +811,18 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
     }
   } catch (e: any) {
     const isCancel = canceled.has(taskId) || String(e?.message).includes("__CANCELED__");
+    const isPause = paused.has(taskId) || isPauseSignal(e);
     await taskUpdate({
       where: { id: taskId },
       data: {
-        status: isCancel ? "canceled" : "failed",
-        message: isCancel ? "已手动中止" : (e?.message || String(e)),
-        finishedAt: new Date(),
+        status: isCancel ? "canceled" : isPause ? "paused" : "failed",
+        message: isCancel ? "已手动中止" : isPause ? "已暂停" : (e?.message || String(e)),
+        finishedAt: isPause ? null : new Date(),
       },
     });
   } finally {
     running.delete(sourceId);
     canceled.delete(taskId);
+    paused.delete(taskId);
   }
 }

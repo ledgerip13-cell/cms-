@@ -66,6 +66,20 @@ export default async function accessRoutes(app: FastifyInstance) {
     return row;
   });
 
+  app.delete("/api/admin/invites/:id", async (req, reply) => {
+    const id = Number((req.params as any).id);
+    const row = await prisma.inviteCode.findUnique({ where: { id } });
+    if (!row) return reply.code(404).send({ error: "邀请码不存在" });
+    if (row.usedCount > 0) {
+      await prisma.inviteCode.update({ where: { id }, data: { enabled: false } });
+      await writeAudit(req, "invite.disable_used", `InviteCode:${id}`, { code: row.code, usedCount: row.usedCount });
+      return { ok: true, disabled: true };
+    }
+    await prisma.inviteCode.delete({ where: { id } });
+    await writeAudit(req, "invite.delete", `InviteCode:${id}`, { code: row.code });
+    return { ok: true, deleted: true };
+  });
+
   app.get("/api/admin/member-groups", async () => {
     return prisma.memberGroup.findMany({ orderBy: { id: "desc" }, include: { _count: { select: { members: true } } } });
   });

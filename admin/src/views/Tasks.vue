@@ -41,6 +41,13 @@
           <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="优先级" width="108">
+        <template #default="{ row }">
+          <el-input-number v-if="['pending','paused'].includes(row.status)" v-model="row.priority" :min="1" :max="999" size="small" controls-position="right"
+            style="width:88px" @change="v => setPriority(row, v)" @click.stop />
+          <span v-else>{{ row.priority || 100 }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="耗时" width="90">
         <template #default="{ row }">{{ duration(row) }}</template>
       </el-table-column>
@@ -50,9 +57,13 @@
       <el-table-column label="信息" min-width="180" show-overflow-tooltip>
         <template #default="{ row }"><span style="font-size:12px;color:#8a94a7">{{ row.message }}</span></template>
       </el-table-column>
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column label="操作" width="190" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="['running','pending'].includes(row.status)" size="small" type="warning"
+          <el-button v-if="['running','pending'].includes(row.status)" size="small" plain
+            :loading="row._acting" @click="pauseTask(row)">暂停</el-button>
+          <el-button v-if="row.status==='paused'" size="small" type="success" plain
+            :loading="row._acting" @click="resumeTask(row)">恢复</el-button>
+          <el-button v-if="['running','pending','paused'].includes(row.status)" size="small" type="warning"
             :loading="row._acting" @click="cancelTask(row)">中止</el-button>
           <el-button v-if="['failed','canceled','done'].includes(row.status)" size="small" type="primary" plain
             :loading="row._acting" @click="retryTask(row)">重试</el-button>
@@ -77,8 +88,8 @@ const loading = ref(false); const active = ref(0); const connected = ref(false)
 let es = null
 
 const typeLabel = (t) => ({ collect:'采集', probe:'探活', meta:'元数据', keyword:'按片名', subtype:'补小类', hls_clean:'HLS清洗' }[t] || t)
-const statusLabel = (s) => ({ pending:'排队', running:'进行中', canceling:'中止中', done:'完成', failed:'失败', canceled:'取消' }[s] || s)
-const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', canceling:'warning', pending:'info' }[s] || 'info')
+const statusLabel = (s) => ({ pending:'排队', running:'进行中', paused:'已暂停', canceling:'中止中', done:'完成', failed:'失败', canceled:'取消' }[s] || s)
+const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', canceling:'warning', paused:'info', pending:'info' }[s] || 'info')
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 function duration(r) {
   if (!r.startedAt) return '—'
@@ -137,6 +148,26 @@ async function cancelTask(row) {
     const r = await api.cancelTask(row.id)
     r?.ok ? ElMessage.success('已中止') : ElMessage.error(r?.error || '中止失败')
   } catch (e) { ElMessage.error('中止失败: ' + e.message) } finally { row._acting = false }
+}
+async function pauseTask(row) {
+  row._acting = true
+  try {
+    const r = await api.pauseTask(row.id)
+    r?.ok ? ElMessage.success('已暂停') : ElMessage.error(r?.error || '暂停失败')
+  } catch (e) { ElMessage.error('暂停失败: ' + e.message) } finally { row._acting = false }
+}
+async function resumeTask(row) {
+  row._acting = true
+  try {
+    const r = await api.resumeTask(row.id)
+    r?.ok ? ElMessage.success('已恢复排队') : ElMessage.error(r?.error || '恢复失败')
+  } catch (e) { ElMessage.error('恢复失败: ' + e.message) } finally { row._acting = false }
+}
+async function setPriority(row, value) {
+  try {
+    const r = await api.updateTaskPriority(row.id, value)
+    r?.ok ? ElMessage.success('优先级已更新') : ElMessage.error(r?.error || '更新失败')
+  } catch (e) { ElMessage.error(e.message || '更新失败') }
 }
 async function retryTask(row) {
   row._acting = true

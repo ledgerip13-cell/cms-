@@ -19,6 +19,7 @@
           豆瓣匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
+        <el-button type="danger" plain @click="cleanupDlg=true">影片清理</el-button>
       </div>
       <div class="vod-count">去重后 {{ total }} 部</div>
     </div>
@@ -71,6 +72,7 @@
 
     <div v-if="selected.length" class="batch-bar">
       <span>已选 {{ selected.length }} 项</span>
+      <el-button size="small" type="primary" plain @click="batchMetaMatch">批量匹配豆瓣</el-button>
       <el-button size="small" type="warning" @click="batchAction('offline')">批量下架</el-button>
       <el-button size="small" type="success" @click="batchAction('online')">批量上架</el-button>
       <el-button size="small" type="danger" @click="batchAction('delete')">批量删除</el-button>
@@ -258,6 +260,53 @@
       <el-button type="primary" :loading="saving" @click="saveEdit">保存</el-button>
     </template>
   </el-dialog>
+
+  <el-dialog v-model="cleanupDlg" title="影片清理" width="760">
+    <el-form :model="cleanupForm" label-width="100px">
+      <el-form-item label="清理规则">
+        <el-select v-model="cleanupForm.rule" style="width:260px" @change="cleanupPreview=null">
+          <el-option label="没有任何播放线路" value="empty_plays" />
+          <el-option label="全部线路失效" value="all_dead" />
+          <el-option label="只剩禁用源线路" value="disabled_source_only" />
+          <el-option label="下架超过 N 天" value="offline_old" />
+          <el-option label="按源清退线路" value="source_lines" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="采集源">
+        <el-select v-model="cleanupForm.sourceId" filterable style="width:260px">
+          <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="cleanupForm.rule === 'offline_old'" label="下架天数">
+        <el-input-number v-model="cleanupForm.days" :min="1" :max="3650" />
+      </el-form-item>
+      <el-form-item label="执行上限">
+        <el-input-number v-model="cleanupForm.limit" :min="1" :max="5000" />
+      </el-form-item>
+      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="孤片处理">
+        <el-checkbox v-model="cleanupForm.deleteOrphans">清退线路后，顺手删除无线路影片</el-checkbox>
+      </el-form-item>
+    </el-form>
+    <div class="cleanup-actions">
+      <el-button type="primary" plain :loading="cleanupLoading" @click="previewCleanup">预检</el-button>
+      <el-button type="danger" :disabled="!cleanupPreview?.total && !cleanupPreview?.playCount" :loading="cleanupLoading" @click="executeCleanup">确认执行</el-button>
+    </div>
+    <el-alert v-if="cleanupPreview" type="warning" :closable="false" show-icon
+      :title="cleanupPreview.mode === 'delete_lines'
+        ? `将删除 ${cleanupPreview.playCount || 0} 条线路，涉及 ${cleanupPreview.total || 0} 部影片`
+        : `将删除 ${cleanupPreview.total || 0} 部影片`" />
+    <el-table v-if="cleanupPreview?.samples?.length" :data="cleanupPreview.samples" size="small" style="margin-top:12px" max-height="260">
+      <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column prop="name" label="片名" min-width="180" />
+      <el-table-column prop="typeName" label="分类" width="100" />
+      <el-table-column label="线路" width="80">
+        <template #default="{ row }">{{ row._count?.plays || 0 }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="80">
+        <template #default="{ row }">{{ row.status === 'online' ? '在线' : '下架' }}</template>
+      </el-table-column>
+    </el-table>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -331,6 +380,10 @@ async function metaBatch() {
 const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', sourceId: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
+const cleanupDlg = ref(false)
+const cleanupLoading = ref(false)
+const cleanupPreview = ref(null)
+const cleanupForm = ref({ rule: 'disabled_source_only', sourceId: '', days: 30, limit: 500, deleteOrphans: true })
 
 function coverUrl(row) {
   return imgUrl(row?._coverFallback ? row.pic : (row.officialPic || row.pic || ''))
@@ -357,6 +410,42 @@ async function batchAction(action) {
     if (r.ok) { ElMessage.success(`已${label} ${r.count} 部`); tableRef.value?.clearSelection(); load() }
     else ElMessage.error(r.error || '操作失败')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '操作失败') }
+}
+async function batchMetaMatch() {
+  if (!selected.value.length) return
+  const ok = await ElMessageBox.confirm(`确认提交 ${selected.value.length} 部影片进行豆瓣匹配？`, '批量豆瓣匹配', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  try {
+    const r = await api.metaBatch({ vodIds: selected.value.map(r => r.id), limit: selected.value.length, intervalMs: 2500, priority: 50, redo: true })
+    ElMessage.success(r.message || `已提交任务 #${r.taskId}`)
+    tableRef.value?.clearSelection()
+  } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+async function previewCleanup() {
+  cleanupLoading.value = true
+  try {
+    const r = await api.previewVodCleanup(cleanupForm.value)
+    if (!r.ok) return ElMessage.error(r.error || '预检失败')
+    cleanupPreview.value = r
+  } catch (e) { ElMessage.error(e.message || '预检失败') } finally { cleanupLoading.value = false }
+}
+async function executeCleanup() {
+  if (!cleanupPreview.value) return
+  const msg = cleanupPreview.value.mode === 'delete_lines'
+    ? `确认删除 ${cleanupPreview.value.playCount || 0} 条线路？`
+    : `确认删除 ${cleanupPreview.value.total || 0} 部影片？`
+  const ok = await ElMessageBox.confirm(msg, '确认清理', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!ok) return
+  cleanupLoading.value = true
+  try {
+    const r = await api.executeVodCleanup(cleanupForm.value)
+    if (!r.ok) return ElMessage.error(r.error || '清理失败')
+    ElMessage.success(`清理完成：影片 ${r.deletedVods || r.deletedOrphans || 0}，线路 ${r.deletedLines || 0}`)
+    cleanupPreview.value = null
+    cleanupDlg.value = false
+    load()
+  } catch (e) { ElMessage.error(e.message || '清理失败') } finally { cleanupLoading.value = false }
 }
 async function openDetail(row) {
   cur.value = await api.vod(row.id)
@@ -482,6 +571,7 @@ onMounted(async () => {
   background: #fdf6ec; border: 1px solid #f5dab1; border-radius: 8px;
   font-size: 13px; color: #b88230;
 }
+.cleanup-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 6px 0 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }
 .cand-item { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px; background:#fff; border-radius:8px; margin-bottom:8px; }

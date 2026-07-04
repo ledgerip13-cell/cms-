@@ -198,7 +198,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
     return {
       allowRegister: site.allowRegister,
-      inviteRequired: Boolean(site.registerInviteCode) || invitePoolCount > 0,
+      inviteRequired: invitePoolCount > 0,
     };
   });
 
@@ -216,7 +216,6 @@ export default async function userRoutes(app: FastifyInstance) {
     if (password.length < 6) return reply.code(400).send({ error: "密码至少6位" });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
     if (invitePoolCount > 0 && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
-    if (site.registerInviteCode && invitePoolCount === 0 && inviteCode !== site.registerInviteCode) return reply.code(400).send({ error: "邀请码不正确" });
     const exists = await prisma.webUser.findUnique({ where: { username } });
     if (exists) return reply.code(409).send({ error: "账号已存在" });
     const u = await prisma.webUser.create({

@@ -54,9 +54,7 @@
               <div class="hint inline">关闭后，新用户无法注册，已有用户仍可登录。</div>
             </el-form-item>
 
-            <el-form-item label="注册邀请码">
-              <el-input v-model="form.registerInviteCode" placeholder="留空则不需要邀请码" clearable show-password style="max-width:360px" />
-            </el-form-item>
+            <el-alert type="info" :closable="false" title="邀请码已迁移到「权限访问 / 邀请码池」统一管理。" style="max-width:520px" />
           </el-form>
         </el-tab-pane>
 
@@ -163,7 +161,7 @@
         </div>
         <p class="pv-desc">{{ form.description || '（网站描述）' }}</p>
         <p class="pv-foot">{{ form.footer || '（页脚文字）' }}</p>
-        <p class="pv-foot">注册：{{ form.allowRegister ? (form.registerInviteCode ? '开放 · 需邀请码' : '开放') : '关闭' }}</p>
+        <p class="pv-foot">注册：{{ form.allowRegister ? (form.inviteRequired ? '开放 · 需邀请码池' : '开放') : '关闭' }}</p>
       </template>
 
       <template v-else>

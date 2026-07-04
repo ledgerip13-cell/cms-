@@ -37,6 +37,14 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="用户分组" min-width="150">
+          <template #default="{ row }">
+            <div class="tags">
+              <el-tag v-for="g in row.groups" :key="g.id" size="small" type="success" effect="plain">{{ g.name }}</el-tag>
+              <span v-if="!row.groups?.length" class="muted">未分组</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="followCount" label="追剧" width="90" />
         <el-table-column prop="historyCount" label="历史" width="90" />
         <el-table-column label="最近登录" width="180">
@@ -105,6 +113,11 @@
             <el-option v-for="t in typeOptions" :key="t" :label="t" :value="t" />
           </el-select>
         </el-form-item>
+        <el-form-item label="用户分组">
+          <el-select v-model="edit.groupIds" multiple filterable placeholder="选择分组" style="width:100%">
+            <el-option v-for="g in groupOptions" :key="g.id" :label="g.name" :value="g.id" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editOpen=false">取消</el-button>
@@ -140,9 +153,10 @@ const detailOpen = ref(false)
 const editOpen = ref(false)
 const pwdOpen = ref(false)
 const detail = ref(null)
-const edit = ref({ id: 0, username: '', nickname: '', enabled: true, favoriteTypes: [] })
+const edit = ref({ id: 0, username: '', nickname: '', enabled: true, favoriteTypes: [], groupIds: [] })
 const pwd = ref({ id: 0, username: '', password: '' })
 const typeOptions = ref([])
+const groupOptions = ref([])
 
 function fmt(v) {
   if (!v) return '—'
@@ -165,13 +179,17 @@ async function loadTypes() {
   } catch {}
 }
 
+async function loadGroups() {
+  try { groupOptions.value = (await api.memberGroups()).filter(g => g.enabled) } catch {}
+}
+
 async function openDetail(row) {
   detailOpen.value = true
   detail.value = await api.adminUser(row.id)
 }
 
 function openEdit(row) {
-  edit.value = { ...row, favoriteTypes: [...(row.favoriteTypes || [])] }
+  edit.value = { ...row, favoriteTypes: [...(row.favoriteTypes || [])], groupIds: (row.groups || []).map(g => g.id) }
   editOpen.value = true
 }
 
@@ -188,6 +206,7 @@ async function saveEdit() {
       enabled: edit.value.enabled,
       favoriteTypes: edit.value.favoriteTypes,
     })
+    await api.updateUserGroups(edit.value.id, edit.value.groupIds || [])
     ElMessage.success('用户已更新')
     editOpen.value = false
     await load()
@@ -217,7 +236,7 @@ async function savePwd() {
   } catch (e) { ElMessage.error(e.message || '重置失败') } finally { saving.value = false }
 }
 
-onMounted(() => { load(); loadTypes() })
+onMounted(() => { load(); loadTypes(); loadGroups() })
 </script>
 
 <style scoped>

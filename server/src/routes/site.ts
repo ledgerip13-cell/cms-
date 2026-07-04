@@ -28,30 +28,38 @@ function normalizeJsonField(value: any) {
   }
 }
 
-function publicSite(s: Awaited<ReturnType<typeof ensureSite>>) {
+function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = false) {
   const { registerInviteCode, ...rest } = s;
   return {
     ...rest,
-    inviteRequired: Boolean(registerInviteCode),
+    inviteRequired,
   };
 }
 
 export default async function siteRoutes(app: FastifyInstance) {
   // 公开：前端读取站点信息
   app.get("/api/site", async () => {
-    return publicSite(await ensureSite());
+    const [site, invitePoolCount] = await Promise.all([
+      ensureSite(),
+      prisma.inviteCode.count({ where: { enabled: true } }),
+    ]);
+    return publicSite(site, invitePoolCount > 0);
   });
 
-  // 后台读取完整站点信息（含注册邀请码）
+  // 后台读取完整站点信息（邀请码已迁移到邀请码池）
   app.get("/api/admin/site", { preHandler: authGuard }, async () => {
-    return ensureSite();
+    const [site, invitePoolCount] = await Promise.all([
+      ensureSite(),
+      prisma.inviteCode.count({ where: { enabled: true } }),
+    ]);
+    return publicSite(site, invitePoolCount > 0);
   });
 
   // 后台更新（鉴权）
   app.put("/api/site", { preHandler: authGuard }, async (req) => {
     const b = (req.body as any) || {};
     await ensureSite();
-    return prisma.siteConfig.update({
+    const updated = await prisma.siteConfig.update({
       where: { id: 1 },
       data: {
         siteName: b.siteName,
@@ -62,8 +70,9 @@ export default async function siteRoutes(app: FastifyInstance) {
         announcement: b.announcement,
         theme: normalizeJsonField(b.theme),
         allowRegister: Boolean(b.allowRegister),
-        registerInviteCode: String(b.registerInviteCode || "").trim(),
       },
     });
+    const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
+    return publicSite(updated, invitePoolCount > 0);
   });
 }

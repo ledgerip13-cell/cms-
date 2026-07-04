@@ -103,6 +103,12 @@ export function hlsStrategyChainKey(value: any, fallback: string[] = DEFAULT_STR
   return normalizeHlsStrategyIds(value, fallback).join(",");
 }
 
+function clampInt(value: unknown, fallback: number, min: number, max: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
 export function hashText(s: string) {
   return crypto.createHash("sha1").update(s).digest("hex");
 }
@@ -491,6 +497,8 @@ export async function updateHlsCleanConfig(body: any) {
       autoQueueOnMiss: Boolean(body.autoQueueOnMiss),
       minConfidence: Math.max(0, Math.min(100, Number(body.minConfidence) || 80)),
       defaultStrategy: strategy,
+      workerConcurrency: clampInt(body.workerConcurrency, 3, 1, 12),
+      sourceConcurrency: clampInt(body.sourceConcurrency, 1, 1, 4),
     },
   });
 }

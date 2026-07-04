@@ -106,6 +106,8 @@ model HlsCleanConfig {
   autoQueueOnMiss Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
   minConfidence   Int      @default(80) // 低于该置信度不用于播放
   defaultStrategy String   @default("discontinuity_profile_v1") // 默认清洗策略
+  workerConcurrency Int    @default(3) // 单个清洗任务内并发 worker 数
+  sourceConcurrency Int    @default(1) // 同一采集源并发探测上限，防止打爆源站
   updatedAt       DateTime @updatedAt
 }
 
@@ -410,7 +412,8 @@ model Task {
   sourceId    Int? // 关联源（采集任务）
   sourceName  String    @default("")
   mode        String    @default("incr") // incr / full
-  status      String    @default("pending") // pending / running / canceling / done / failed / canceled
+  status      String    @default("pending") // pending / running / paused / canceling / done / failed / canceled
+  priority    Int       @default(100) // 数字越小越优先
   progress    Int       @default(0) // 0-100
   pageNow     Int       @default(0)
   pageTotal   Int       @default(0)
@@ -427,6 +430,7 @@ model Task {
 
   @@index([status])
   @@index([type])
+  @@index([priority])
 }
 
 // 采集任务日志

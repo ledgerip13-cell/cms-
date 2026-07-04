@@ -24,9 +24,10 @@
             <el-table-column label="使用者" width="140">
               <template #default="{row}">{{ row.usedBy?.username || '-' }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="180">
               <template #default="{row}">
                 <el-button size="small" @click="toggleInvite(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
+                <el-button size="small" type="danger" plain @click="deleteInvite(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -82,7 +83,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
 const tab = ref('invites')
@@ -106,6 +107,14 @@ async function createInvites() {
 }
 async function toggleInvite(row) {
   await api.updateInvite(row.id, { enabled: !row.enabled })
+  load()
+}
+async function deleteInvite(row) {
+  const ok = await ElMessageBox.confirm(`确认删除邀请码「${row.code}」？已使用的邀请码会自动改为停用。`, '删除邀请码', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  await api.deleteInvite(row.id)
+  ElMessage.success('已处理')
   load()
 }
 async function createGroup() {

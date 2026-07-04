@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyToken } from "../auth.js";
-import { requestCancel, wakeTaskQueues, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { requestCancel, requestPause, clearPause, wakeTaskQueues, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 import { previewByKeyword } from "../collector/sync.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
@@ -22,7 +22,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const push = async () => {
       try {
         const list = await prisma.task.findMany({ orderBy: { createdAt: "desc" }, take: 30 });
-        const active = list.filter((t) => ["pending", "running", "canceling"].includes(t.status)).length;
+        const active = list.filter((t) => ["pending", "running", "paused", "canceling"].includes(t.status)).length;
         const hash = JSON.stringify(list.map((t) => [t.id, t.status, t.progress, t.pageNow, t.added, t.updated, t.merged, t.message]));
         if (hash === lastHash) return;
         lastHash = hash;
@@ -70,7 +70,7 @@ export default async function taskRoutes(app: FastifyInstance) {
 
   // 运行中任务数（前端角标）
   secured.get("/api/tasks/active/count", async () => {
-    const n = await prisma.task.count({ where: { status: { in: ["pending", "running", "canceling"] } } });
+    const n = await prisma.task.count({ where: { status: { in: ["pending", "running", "paused", "canceling"] } } });
     return { active: n };
   });
 
@@ -80,17 +80,57 @@ export default async function taskRoutes(app: FastifyInstance) {
     const t = await prisma.task.findUnique({ where: { id } });
     if (!t) return { ok: false, error: "任务不存在" };
     if (t.status === "canceling") return { ok: true };
-    if (!["running", "pending"].includes(t.status)) return { ok: false, error: "任务非运行中，无需中止" };
+    if (!["running", "pending", "paused"].includes(t.status)) return { ok: false, error: "任务非运行中，无需中止" };
     requestCancel(id); // 信号活执行器
     await prisma.task.update({
       where: { id },
-      data: t.status === "pending"
+      data: t.status === "pending" || t.status === "paused"
         ? { status: "canceled", message: "已手动中止", finishedAt: new Date() }
         : { status: "canceling", message: "正在中止，当前步骤完成后停止", finishedAt: null },
     });
     emitTaskChange();
     wakeTaskQueues();
     return { ok: true };
+  });
+
+  secured.post("/api/tasks/:id/pause", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    if (!t) return { ok: false, error: "任务不存在" };
+    if (t.status === "paused") return { ok: true };
+    if (!["pending", "running"].includes(t.status)) return { ok: false, error: "只有排队或运行中的任务可暂停" };
+    requestPause(id);
+    if (t.status === "pending") {
+      await prisma.task.update({ where: { id }, data: { status: "paused", message: "已暂停", finishedAt: null } });
+    } else {
+      await prisma.task.update({ where: { id }, data: { message: "正在暂停，当前步骤完成后停止" } });
+    }
+    emitTaskChange();
+    return { ok: true };
+  });
+
+  secured.post("/api/tasks/:id/resume", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    if (!t) return { ok: false, error: "任务不存在" };
+    if (t.status !== "paused") return { ok: false, error: "只有已暂停任务可恢复" };
+    clearPause(id);
+    await prisma.task.update({ where: { id }, data: { status: "pending", message: "已恢复排队", finishedAt: null } });
+    emitTaskChange();
+    wakeTaskQueues();
+    return { ok: true };
+  });
+
+  secured.patch("/api/tasks/:id/priority", async (req) => {
+    const id = Number((req.params as any).id);
+    const priority = Math.max(1, Math.min(999, Math.floor(Number((req.body as any)?.priority) || 100)));
+    const t = await prisma.task.findUnique({ where: { id } });
+    if (!t) return { ok: false, error: "任务不存在" };
+    if (!["pending", "paused"].includes(t.status)) return { ok: false, error: "只有排队或暂停任务可调整优先级" };
+    await prisma.task.update({ where: { id }, data: { priority } });
+    emitTaskChange();
+    wakeTaskQueues();
+    return { ok: true, priority };
   });
 
   // 重试任务（按原参数新建一个任务）

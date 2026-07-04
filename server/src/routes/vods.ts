@@ -87,6 +87,23 @@ function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
   }));
 }
 
+function cleanupRuleWhere(input: any) {
+  const rule = String(input?.rule || "");
+  if (rule === "empty_plays") return { rule, where: { plays: { none: {} } } };
+  if (rule === "all_dead") return { rule, where: { plays: { some: {} }, NOT: { plays: { some: { alive: true } } } } };
+  if (rule === "disabled_source_only") return { rule, where: { plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } } };
+  if (rule === "offline_old") {
+    const days = Math.max(1, Math.min(3650, Number(input?.days) || 30));
+    return { rule, where: { status: "offline", updatedAt: { lt: new Date(Date.now() - days * DAY_MS) } } };
+  }
+  if (rule === "source_lines") {
+    const sourceId = Number(input?.sourceId);
+    if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("按源清退必须选择采集源");
+    return { rule, sourceId, where: { plays: { some: { sourceId } } } };
+  }
+  throw new Error("不支持的清理规则");
+}
+
 export default async function vodRoutes(app: FastifyInstance) {
   // 影片列表（分页 + 搜索 + 分类 + 年份 + 排序）
   app.get("/api/vods", async (req) => {
@@ -431,6 +448,55 @@ export default async function vodRoutes(app: FastifyInstance) {
         return { ok: true, count: r.count };
       }
       return { ok: false, error: "不支持的操作类型" };
+    });
+
+    secured.post("/api/admin/vods/cleanup/preview", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const { rule, sourceId, where } = cleanupRuleWhere(b);
+        const limit = Math.max(1, Math.min(5000, Number(b.limit) || 500));
+        if (rule === "source_lines") {
+          const [playCount, vodCount, source, samples] = await Promise.all([
+            prisma.play.count({ where: { sourceId } }),
+            prisma.vod.count({ where }),
+            prisma.source.findUnique({ where: { id: sourceId }, select: { id: true, name: true, enabled: true } }),
+            prisma.vod.findMany({ where, take: 12, orderBy: { updatedAt: "desc" }, include: { _count: { select: { plays: true } } } }),
+          ]);
+          return { ok: true, rule, mode: "delete_lines", source, playCount, total: vodCount, limit, samples };
+        }
+        const [total, samples] = await Promise.all([
+          prisma.vod.count({ where }),
+          prisma.vod.findMany({ where, take: 12, orderBy: { updatedAt: "desc" }, include: { _count: { select: { plays: true } } } }),
+        ]);
+        return { ok: true, rule, mode: "delete_vods", total, limit, samples };
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
+    secured.post("/api/admin/vods/cleanup/execute", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const { rule, sourceId, where } = cleanupRuleWhere(b);
+        const limit = Math.max(1, Math.min(5000, Number(b.limit) || 500));
+        if (rule === "source_lines") {
+          const playIds = await prisma.play.findMany({ where: { sourceId }, select: { id: true }, take: limit, orderBy: { id: "asc" } });
+          const playIdList = playIds.map((p) => p.id);
+          const deleted = playIdList.length ? await prisma.play.deleteMany({ where: { id: { in: playIdList } } }) : { count: 0 };
+          let orphanDeleted = { count: 0 };
+          if (b.deleteOrphans) {
+            const orphans = await prisma.vod.findMany({ where: { plays: { none: {} } }, select: { id: true }, take: limit });
+            orphanDeleted = orphans.length ? await prisma.vod.deleteMany({ where: { id: { in: orphans.map((v) => v.id) } } }) : { count: 0 };
+          }
+          return { ok: true, rule, deletedLines: deleted.count, deletedOrphans: orphanDeleted.count };
+        }
+        const rows = await prisma.vod.findMany({ where, select: { id: true }, take: limit, orderBy: { id: "asc" } });
+        const ids = rows.map((v) => v.id);
+        const r = ids.length ? await prisma.vod.deleteMany({ where: { id: { in: ids } } }) : { count: 0 };
+        return { ok: true, rule, deletedVods: r.count };
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
     });
   });
 

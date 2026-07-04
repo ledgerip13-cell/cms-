@@ -55,8 +55,44 @@ export default async function metaRoutes(app: FastifyInstance) {
   // 批量元数据匹配（异步任务）
   app.post("/api/meta/batch", async (req) => {
     const b = (req.body as any) || {};
-    const task = await createMetaTask({ limit: b.limit, intervalMs: b.intervalMs, redo: b.redo });
+    const vodIds = Array.isArray(b.vodIds) ? b.vodIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0) : undefined;
+    const task = await createMetaTask({
+      limit: b.limit,
+      intervalMs: b.intervalMs,
+      redo: b.redo,
+      status: b.status,
+      sourceId: b.sourceId ? Number(b.sourceId) : undefined,
+      categoryName: b.categoryName ? String(b.categoryName) : undefined,
+      vodIds,
+      priority: b.priority,
+    });
     return { taskId: task.id, message: "元数据匹配任务已提交，去「采集任务」看进度" };
+  });
+
+  app.get("/api/meta/vods", async (req) => {
+    const q = (req.query as any) || {};
+    const page = Math.max(1, Number(q.page) || 1);
+    const size = Math.min(100, Math.max(10, Number(q.size) || 20));
+    const where: any = {};
+    const status = String(q.status || "").trim();
+    if (status && status !== "all") where.metaMatched = status;
+    if (q.sourceId) where.plays = { some: { sourceId: Number(q.sourceId) } };
+    if (q.categoryName) where.typeName = String(q.categoryName);
+    if (q.kw) {
+      const kw = String(q.kw);
+      where.OR = [{ name: { contains: kw } }, { matchedTitle: { contains: kw } }];
+    }
+    const [total, list] = await Promise.all([
+      prisma.vod.count({ where }),
+      prisma.vod.findMany({
+        where,
+        orderBy: [{ metaAt: "desc" }, { updatedAt: "desc" }],
+        skip: (page - 1) * size,
+        take: size,
+        include: { _count: { select: { plays: true } } },
+      }),
+    ]);
+    return { total, page, size, list };
   });
 
   // 单片即时匹配（后台手动，用于预览/确认）

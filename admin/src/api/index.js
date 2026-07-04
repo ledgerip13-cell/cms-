@@ -46,6 +46,8 @@ export const api = {
   vods: (params) => http.get('/vods', { params }),
   adminVods: (params) => http.get('/admin/vods', { params }),
   batchVods: (ids, action) => http.post('/admin/vods/batch', { ids, action }),
+  previewVodCleanup: (d) => http.post('/admin/vods/cleanup/preview', d),
+  executeVodCleanup: (d) => http.post('/admin/vods/cleanup/execute', d),
   vod: (id) => http.get(`/admin/vods/${id}`),
   patchVod: (id, d) => http.patch(`/vods/${id}`, d),
   editVod: (id, d) => http.put(`/vods/${id}`, d),
@@ -68,6 +70,9 @@ export const api = {
   taskActiveCount: () => http.get('/tasks/active/count'),
   cleanupTasks: () => http.delete('/tasks/cleanup'),
   cancelTask: (id) => http.post(`/tasks/${id}/cancel`),
+  pauseTask: (id) => http.post(`/tasks/${id}/pause`),
+  resumeTask: (id) => http.post(`/tasks/${id}/resume`),
+  updateTaskPriority: (id, priority) => http.patch(`/tasks/${id}/priority`, { priority }),
   retryTask: (id) => http.post(`/tasks/${id}/retry`),
   // metadata
   metaBatch: (d) => http.post('/meta/batch', d),
@@ -75,6 +80,7 @@ export const api = {
   metaSuggest: (kw) => http.get('/meta/suggest', { params: { kw } }),
   metaSet: (id, doubanId) => http.post(`/meta/set/${id}`, { doubanId }),
   metaStats: () => http.get('/meta/stats'),
+  metaVods: (params) => http.get('/meta/vods', { params }),
   metaConfig: () => http.get('/meta/config'),
   updateMetaConfig: (d) => http.put('/meta/config', d),
   metaBatchRedo: () => http.post('/meta/batch', { redo: true }),
@@ -98,6 +104,7 @@ export const api = {
   invites: () => http.get('/admin/invites'),
   createInvites: (d) => http.post('/admin/invites', d),
   updateInvite: (id, d) => http.patch(`/admin/invites/${id}`, d),
+  deleteInvite: (id) => http.delete(`/admin/invites/${id}`),
   memberGroups: () => http.get('/admin/member-groups'),
   createMemberGroup: (d) => http.post('/admin/member-groups', d),
   updateMemberGroup: (id, d) => http.patch(`/admin/member-groups/${id}`, d),
@@ -118,7 +125,6 @@ export const EMPTY_SITE = {
   footer: '',
   announcement: '',
   allowRegister: true,
-  registerInviteCode: '',
   theme: {},
 }
 

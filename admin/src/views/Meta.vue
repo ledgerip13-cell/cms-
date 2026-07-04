@@ -65,17 +65,93 @@
         </el-form>
       </div>
     </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="sec-title">匹配记录</div>
+        <div class="ops">
+          <el-input v-model="q.kw" clearable placeholder="片名 / 命中标题" style="width:180px" @keyup.enter="loadRows" />
+          <el-select v-model="q.status" style="width:130px" @change="applyRows">
+            <el-option label="待确认" value="pending" />
+            <el-option label="待匹配" value="none" />
+            <el-option label="失败/无收录" value="failed" />
+            <el-option label="已匹配" value="matched" />
+            <el-option label="全部" value="all" />
+          </el-select>
+          <el-select v-model="q.sourceId" clearable filterable placeholder="全部源" style="width:160px" @change="applyRows">
+            <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+          <el-select v-model="q.categoryName" clearable filterable placeholder="全部分类" style="width:150px" @change="applyRows">
+            <el-option v-for="c in categories" :key="c.name" :label="c.name" :value="c.name" />
+          </el-select>
+          <el-button type="primary" @click="loadRows">查询</el-button>
+          <el-button type="success" plain @click="runFiltered">按筛选提交匹配</el-button>
+        </div>
+      </div>
+      <el-table :data="rows" v-loading="rowLoading" stripe>
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="name" label="片名" min-width="180" />
+        <el-table-column prop="typeName" label="分类" width="110" />
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }"><el-tag size="small" :type="metaType(row.metaMatched)">{{ metaLabel(row.metaMatched) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="命中" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.matchedTitle || '—' }} {{ row.matchedYear ? '(' + row.matchedYear + ')' : '' }}</template>
+        </el-table-column>
+        <el-table-column prop="metaScore" label="置信" width="80" />
+        <el-table-column label="时间" width="170">
+          <template #default="{ row }">{{ fmt(row.metaAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.metaMatched==='pending'" size="small" @click="openCandidates(row)">候选</el-button>
+            <el-button size="small" type="primary" plain @click="matchOne(row)">重匹配</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination class="pager" background layout="total, prev, pager, next"
+        :total="rowTotal" :page-size="q.size" :current-page="q.page"
+        @current-change="p=>{q.page=p;loadRows()}" />
+    </div>
+
+    <el-dialog v-model="candOpen" title="待确认候选" width="760">
+      <div v-if="candRow" class="cand-title">{{ candRow.name }} · 当前置信 {{ candRow.metaScore || 0 }}</div>
+      <el-table :data="candidates" stripe>
+        <el-table-column label="候选" min-width="220">
+          <template #default="{ row }">
+            <b>{{ row.title }}</b><span v-if="row.year" class="muted">（{{ row.year }}）</span>
+            <div class="muted">{{ row.subTitle || row.type || '—' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="score" label="分数" width="80" />
+        <el-table-column label="原因" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ (row.reasons || []).join(' / ') }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="{ row }"><el-button size="small" type="primary" @click="confirmCandidate(row)">确认</el-button></template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Check, MagicStick, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
 const stat = ref({}); const cfg = ref({ intervalMs:2500, batchLimit:50, autoMatch:false, cronExpr:'0 4 * * *', redoFailed:false })
 const saving = ref(false)
+const sources = ref([])
+const categories = ref([])
+const rows = ref([])
+const rowTotal = ref(0)
+const rowLoading = ref(false)
+const q = ref({ page: 1, size: 20, status: 'pending', sourceId: '', categoryName: '', kw: '' })
+const candOpen = ref(false)
+const candRow = ref(null)
+const candidates = ref([])
 const statCards = [
   { k:'total', label:'影片总数', color:'#1a1f2b' },
   { k:'matched', label:'已匹配', color:'#16a34a' },
@@ -85,12 +161,75 @@ const statCards = [
 ]
 const matchRate = computed(() => stat.value.total ? Math.round((stat.value.matched / stat.value.total) * 100) : 0)
 
-async function load() { stat.value = await api.metaStats(); cfg.value = await api.metaConfig() }
+const fmt = (v) => v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '—'
+const metaLabel = (s) => ({ none:'待匹配', matched:'已匹配', manual:'人工确认', pending:'待确认', failed:'失败/无收录', skip:'跳过' }[s] || s)
+const metaType = (s) => ({ matched:'success', manual:'success', pending:'warning', failed:'info', none:'primary' }[s] || 'info')
+
+async function load() {
+  const [st, conf, ss, cs] = await Promise.all([api.metaStats(), api.metaConfig(), api.sources(), api.categories()])
+  stat.value = st
+  cfg.value = conf
+  sources.value = ss
+  categories.value = cs
+  await loadRows()
+}
 async function run(redo) {
   try {
     const r = redo ? await api.metaBatchRedo() : await api.metaBatch({ limit: cfg.value.batchLimit, intervalMs: cfg.value.intervalMs })
     ElMessage.success(r.message || '任务已提交，去「采集任务」看进度')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+function applyRows() {
+  q.value.page = 1
+  loadRows()
+}
+async function loadRows() {
+  rowLoading.value = true
+  try {
+    const r = await api.metaVods(q.value)
+    rows.value = r.list || []
+    rowTotal.value = r.total || 0
+  } catch (e) { ElMessage.error(e.message || '加载失败') } finally { rowLoading.value = false }
+}
+async function runFiltered() {
+  const ok = await ElMessageBox.confirm('按当前筛选条件提交豆瓣匹配任务？', '豆瓣匹配', { type: 'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  try {
+    const r = await api.metaBatch({
+      limit: cfg.value.batchLimit,
+      intervalMs: cfg.value.intervalMs,
+      status: q.value.status,
+      sourceId: q.value.sourceId || undefined,
+      categoryName: q.value.categoryName || undefined,
+      redo: q.value.status === 'all',
+    })
+    ElMessage.success(r.message || '任务已提交')
+  } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+function parseReason(row) {
+  try { return JSON.parse(row?.metaReason || '{}') } catch { return {} }
+}
+function openCandidates(row) {
+  candRow.value = row
+  candidates.value = Array.isArray(parseReason(row).candidates) ? parseReason(row).candidates : []
+  candOpen.value = true
+}
+async function confirmCandidate(c) {
+  if (!candRow.value) return
+  try {
+    await api.metaSet(candRow.value.id, c.id)
+    ElMessage.success('已确认匹配')
+    candOpen.value = false
+    await Promise.all([loadRows(), load()])
+  } catch (e) { ElMessage.error(e.message || '确认失败') }
+}
+async function matchOne(row) {
+  try {
+    await api.metaMatch(row.id)
+    ElMessage.success('已重新匹配')
+    await Promise.all([loadRows(), load()])
+  } catch (e) { ElMessage.error(e.message || '匹配失败') }
 }
 async function save() {
   saving.value = true
@@ -110,5 +249,8 @@ onMounted(load)
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
 .tip { font-size: 12px; color: var(--text-3); margin-top: 14px; }
 .unit { margin-left: 10px; font-size: 12px; color: var(--text-3); }
+.pager { margin-top: 14px; justify-content: flex-end; }
+.muted { color: var(--text-3); font-size: 12px; }
+.cand-title { font-weight: 700; margin-bottom: 12px; color: var(--text-1); }
 @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .stat-row { grid-template-columns: repeat(2,1fr); } }
 </style>
