@@ -23,8 +23,8 @@
           <el-switch v-model="cfg.autoQueueOnMiss" active-text="开启" inactive-text="关闭" />
           <span class="unit">缺少 clean 结果时仍先回退原始源</span>
         </el-form-item>
-        <el-form-item label="默认策略">
-          <el-select v-model="cfg.defaultStrategy" style="width:300px">
+        <el-form-item label="默认策略链">
+          <el-select v-model="cfg.defaultStrategies" multiple collapse-tags collapse-tags-tooltip style="width:360px">
             <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
           </el-select>
         </el-form-item>
@@ -128,13 +128,16 @@
           <el-form-item v-if="job.episodeMode === 'one'" label="集数">
             <el-input v-model="job.epIndex" clearable placeholder="0=第一集" style="width:160px" />
           </el-form-item>
-          <el-form-item label="策略">
-            <el-select v-model="job.strategyId" style="width:300px">
+          <el-form-item label="策略链">
+            <el-select v-model="job.strategyIds" multiple collapse-tags collapse-tags-tooltip style="width:360px">
               <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="只检测">
-            <el-switch v-model="job.dryRun" active-text="不用于播放" inactive-text="生成 clean" />
+          <el-form-item label="输出模式">
+            <el-radio-group v-model="job.runMode">
+              <el-radio-button value="clean">生成 clean</el-radio-button>
+              <el-radio-button value="dry_run">只检测不用于播放</el-radio-button>
+            </el-radio-group>
           </el-form-item>
         </div>
       </el-form>
@@ -154,9 +157,9 @@
             <el-table-column label="模式" width="170">
               <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('source', row)" /></template>
             </el-table-column>
-            <el-table-column label="策略" width="280">
+            <el-table-column label="策略链" width="360">
               <template #default="{ row }">
-                <el-select v-model="row.strategyId" clearable placeholder="继承全局" @change="savePolicy('source', row)">
+                <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('source', row)">
                   <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
                 </el-select>
               </template>
@@ -169,9 +172,9 @@
             <el-table-column label="模式" width="170">
               <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('category', row)" /></template>
             </el-table-column>
-            <el-table-column label="策略" width="280">
+            <el-table-column label="策略链" width="360">
               <template #default="{ row }">
-                <el-select v-model="row.strategyId" clearable placeholder="继承全局" @change="savePolicy('category', row)">
+                <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('category', row)">
                   <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
                 </el-select>
               </template>
@@ -198,7 +201,9 @@
         <el-table-column prop="id" label="#" width="70" />
         <el-table-column prop="playId" label="线路" width="80" />
         <el-table-column prop="epName" label="集数" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="strategyId" label="策略" width="190" show-overflow-tooltip />
+        <el-table-column label="策略" width="230" show-overflow-tooltip>
+          <template #default="{ row }">{{ strategyChainLabel(row.strategyId) }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag></template>
         </el-table-column>
@@ -245,7 +250,8 @@ const PolicyMode = defineComponent({
 const loading = ref(false)
 const saving = ref(false)
 const starting = ref(false)
-const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, defaultStrategy: 'discontinuity_profile_v1' })
+const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
+const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, defaultStrategies: [...DEFAULT_STRATEGIES] })
 const strategies = ref([])
 const sources = ref([])
 const categories = ref([])
@@ -267,36 +273,56 @@ const job = ref({
   epIndex: '',
   episodeMode: 'first',
   limit: 100,
-  strategyId: 'discontinuity_profile_v1',
-  dryRun: false,
+  strategyIds: [...DEFAULT_STRATEGIES],
+  runMode: 'clean',
 })
 
 const policyMap = computed(() => new Map(policies.value.map(p => [p.targetKey, p])))
 const sourceRows = computed(() => sources.value.map(s => {
   const p = policyMap.value.get(`source:${s.id}`)
-  return { ...s, mode: p?.mode || 'inherit', strategyId: p?.strategyId || '', policyId: p?.id }
+  return { ...s, mode: p?.mode || 'inherit', strategyIds: normalizeStrategyIds(p?.strategyIds || p?.strategyId, []), policyId: p?.id }
 }))
 const categoryRows = computed(() => categories.value.map(c => {
   const p = policyMap.value.get(`category:${c.name}`)
-  return { ...c, mode: p?.mode || 'inherit', strategyId: p?.strategyId || '', policyId: p?.id }
+  return { ...c, mode: p?.mode || 'inherit', strategyIds: normalizeStrategyIds(p?.strategyIds || p?.strategyId, []), policyId: p?.id }
 }))
 
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 const statusType = (s) => ({ clean: 'success', failed: 'danger', dry_run: 'warning', no_ads: 'info' }[s] || 'info')
 const vodLabel = (v) => `${v.name} #${v.id}${v.year ? ' · ' + v.year : ''}`
 
+function normalizeStrategyIds(value, fallback = DEFAULT_STRATEGIES) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(',')
+  const valid = new Set(strategies.value.map(s => s.id))
+  const ids = raw.map(x => String(x || '').trim()).filter(x => x && (!valid.size || valid.has(x)))
+  return [...new Set(ids)].length ? [...new Set(ids)] : [...fallback]
+}
+
+function normalizeConfig(config) {
+  return {
+    ...config,
+    defaultStrategies: normalizeStrategyIds(config?.defaultStrategies || config?.defaultStrategy),
+  }
+}
+
+function strategyChainLabel(value) {
+  const map = new Map(strategies.value.map(s => [s.id, s.label]))
+  const ids = normalizeStrategyIds(value, [])
+  return ids.length ? ids.map(id => map.get(id) || id).join(' → ') : '继承全局'
+}
+
 async function load() {
   loading.value = true
   try {
     const o = await api.hlsCleanOverview()
-    cfg.value = { ...cfg.value, ...o.config }
     strategies.value = o.strategies || []
+    cfg.value = normalizeConfig({ ...cfg.value, ...o.config })
     sources.value = o.sources || []
     categories.value = o.categories || []
     policies.value = o.policies || []
     stats.value = o.stats || {}
     recent.value = o.recent || []
-    if (!job.value.strategyId && strategies.value[0]) job.value.strategyId = strategies.value[0].id
+    if (!job.value.strategyIds?.length && strategies.value[0]) job.value.strategyIds = [strategies.value[0].id]
   } catch (e) { ElMessage.error(e.message || '加载失败') }
   finally { loading.value = false }
 }
@@ -304,7 +330,7 @@ async function load() {
 async function saveConfig() {
   saving.value = true
   try {
-    cfg.value = await api.updateHlsCleanConfig(cfg.value)
+    cfg.value = normalizeConfig(await api.updateHlsCleanConfig(cfg.value))
     ElMessage.success('清洗配置已保存')
   } catch (e) { ElMessage.error(e.message || '保存失败') }
   finally { saving.value = false }
@@ -313,7 +339,7 @@ async function saveConfig() {
 async function savePolicy(scope, row) {
   try {
     const targetId = scope === 'source' ? String(row.id) : row.name
-    await api.updateHlsCleanPolicy({ scope, targetId, targetName: row.name, mode: row.mode, strategyId: row.strategyId || '' })
+    await api.updateHlsCleanPolicy({ scope, targetId, targetName: row.name, mode: row.mode, strategyIds: row.strategyIds || [] })
     ElMessage.success('策略已保存')
     load()
   } catch (e) { ElMessage.error(e.message || '保存失败') }
@@ -402,8 +428,8 @@ async function startTask() {
   try {
     const common = {
       rangeMode: job.value.rangeMode,
-      strategyId: job.value.strategyId,
-      dryRun: job.value.dryRun,
+      strategyIds: job.value.strategyIds,
+      dryRun: job.value.runMode === 'dry_run',
     }
     let payload = {}
     if (job.value.rangeMode === 'vod') {

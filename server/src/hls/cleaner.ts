@@ -19,6 +19,7 @@ export interface HlsPolicyDecision {
   enabled: boolean;
   dryRun: boolean;
   strategyId: string;
+  strategyIds: string[];
   reason: string;
   minConfidence: number;
 }
@@ -27,6 +28,7 @@ export interface HlsCleanRunOptions {
   playId: number;
   epIndex: number;
   strategyId?: string;
+  strategyIds?: string[];
   dryRun?: boolean;
   minConfidence?: number;
 }
@@ -64,6 +66,8 @@ interface GroupInfo {
   segments: Segment[];
   profile: SegmentProfile | null;
   profileKey: string;
+  pathKey: string;
+  fingerprint: string;
 }
 
 export const HLS_STRATEGIES: HlsStrategy[] = [
@@ -72,7 +76,32 @@ export const HLS_STRATEGIES: HlsStrategy[] = [
     label: "DISCONTINUITY + 编码画像",
     description: "按 discontinuity 分组，结合分辨率/帧率/PTS 突变识别拼接广告段",
   },
+  {
+    id: "foreign_ad_block_fingerprint_v1",
+    label: "异源广告块指纹",
+    description: "识别短时长、异源路径、PTS 重置的广告块，同一广告块出现在中插或尾部都会清洗",
+  },
 ];
+
+const DEFAULT_STRATEGY_IDS = ["discontinuity_profile_v1"];
+const STRATEGY_ID_SET = new Set(HLS_STRATEGIES.map((s) => s.id));
+
+export function normalizeHlsStrategyIds(value: any, fallback: string[] = DEFAULT_STRATEGY_IDS) {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const ids = raw
+    .map((x) => String(x || "").trim())
+    .filter((x) => STRATEGY_ID_SET.has(x));
+  const unique = [...new Set(ids)];
+  return unique.length ? unique : [...fallback];
+}
+
+export function hlsStrategyChainKey(value: any, fallback: string[] = DEFAULT_STRATEGY_IDS) {
+  return normalizeHlsStrategyIds(value, fallback).join(",");
+}
 
 export function hashText(s: string) {
   return crypto.createHash("sha1").update(s).digest("hex");
@@ -262,21 +291,62 @@ async function resolveMediaManifest(url: string, text: string, referer?: string)
   throw new Error("master playlist 嵌套过深");
 }
 
+function segmentPathKey(seg: Segment) {
+  try {
+    const p = new URL(seg.absUri).pathname;
+    const at = p.lastIndexOf("/");
+    return at > 0 ? p.slice(0, at) : p;
+  } catch {
+    const p = seg.uri.split("?")[0];
+    const at = p.lastIndexOf("/");
+    return at > 0 ? p.slice(0, at) : p;
+  }
+}
+
+function segmentFileName(seg: Segment) {
+  try {
+    const p = new URL(seg.absUri).pathname;
+    return p.split("/").pop() || p;
+  } catch {
+    return seg.uri.split("?")[0].split("/").pop() || seg.uri;
+  }
+}
+
+function pickWeightedPath(segments: Segment[]) {
+  const scores = new Map<string, number>();
+  for (const s of segments) {
+    const key = segmentPathKey(s);
+    scores.set(key, (scores.get(key) || 0) + Math.max(0.001, s.duration));
+  }
+  return [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+function groupFingerprint(segments: Segment[], pathKey: string) {
+  const durations = segments.map((s) => Number(s.duration.toFixed(3)).toFixed(3)).join(",");
+  const files = segments.map(segmentFileName).join("|");
+  return hashText(`${pathKey}:${durations}:${files}`);
+}
+
 function groupsFromSegments(segments: Segment[]): GroupInfo[] {
   const by = new Map<number, Segment[]>();
   for (const s of segments) {
     if (!by.has(s.group)) by.set(s.group, []);
     by.get(s.group)!.push(s);
   }
-  return [...by.entries()].map(([id, list]) => ({
-    id,
-    segments: list,
-    start: list[0]?.start || 0,
-    end: list[list.length - 1]?.end || 0,
-    duration: list.reduce((sum, s) => sum + s.duration, 0),
-    profile: null,
-    profileKey: "",
-  }));
+  return [...by.entries()].map(([id, list]) => {
+    const pathKey = pickWeightedPath(list);
+    return {
+      id,
+      segments: list,
+      start: list[0]?.start || 0,
+      end: list[list.length - 1]?.end || 0,
+      duration: list.reduce((sum, s) => sum + s.duration, 0),
+      profile: null,
+      profileKey: "",
+      pathKey,
+      fingerprint: groupFingerprint(list, pathKey),
+    };
+  });
 }
 
 function profileKey(p: SegmentProfile | null) {
@@ -309,7 +379,16 @@ function pickMainProfile(groups: GroupInfo[]) {
   return [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
-function detectAdGroups(groups: GroupInfo[], mainKey: string) {
+function pickMainPath(groups: GroupInfo[]) {
+  const scores = new Map<string, number>();
+  for (const g of groups) {
+    if (!g.pathKey) continue;
+    scores.set(g.pathKey, (scores.get(g.pathKey) || 0) + Math.max(1, g.duration));
+  }
+  return [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+function detectProfileAdGroups(groups: GroupInfo[], mainKey: string) {
   const ads: Array<{ group: GroupInfo; confidence: number; reasons: string[] }> = [];
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
@@ -330,6 +409,40 @@ function detectAdGroups(groups: GroupInfo[], mainKey: string) {
     }
     if (typeof nPts === "number" && typeof gPts === "number" && nPts > gPts + g.duration + 100) {
       score += 10; reasons.push("广告后 PTS 回到正片时间线");
+    }
+    ads.push({ group: g, confidence: Math.min(100, score), reasons });
+  }
+  return ads;
+}
+
+function detectForeignAdBlockGroups(groups: GroupInfo[], mainPath: string) {
+  const ads: Array<{ group: GroupInfo; confidence: number; reasons: string[] }> = [];
+  const fingerprintCount = new Map<string, number>();
+  for (const g of groups) fingerprintCount.set(g.fingerprint, (fingerprintCount.get(g.fingerprint) || 0) + 1);
+
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    const prev = groups[i - 1];
+    const next = groups[i + 1];
+    const reasons: string[] = [];
+    let score = 0;
+    if (!mainPath || !g.pathKey || g.pathKey === mainPath) continue;
+    if (g.duration < 5 || g.duration > 45) continue;
+    if (g.segments.length < 2 || g.segments.length > 20) continue;
+
+    score += 20; reasons.push("短时长广告块");
+    score += 35; reasons.push("TS 路径不同于主片多数路径");
+    score += 10; reasons.push("分片数量符合广告块");
+
+    const pts = g.profile?.pts;
+    if (typeof pts === "number" && pts < 30) {
+      score += 25; reasons.push("PTS 从片头时间线重新开始");
+    }
+    if (prev?.pathKey === mainPath || next?.pathKey === mainPath) {
+      score += 15; reasons.push("前后回到主片路径");
+    }
+    if ((fingerprintCount.get(g.fingerprint) || 0) > 1) {
+      score += 10; reasons.push("同广告块在 m3u8 内重复出现");
     }
     ads.push({ group: g, confidence: Math.min(100, score), reasons });
   }
@@ -369,7 +482,7 @@ export async function ensureHlsCleanConfig() {
 
 export async function updateHlsCleanConfig(body: any) {
   await ensureHlsCleanConfig();
-  const strategy = HLS_STRATEGIES.some((s) => s.id === body.defaultStrategy) ? body.defaultStrategy : "discontinuity_profile_v1";
+  const strategy = hlsStrategyChainKey(body.defaultStrategies ?? body.defaultStrategy);
   return prisma.hlsCleanConfig.update({
     where: { id: 1 },
     data: {
@@ -388,7 +501,7 @@ export async function upsertHlsCleanPolicy(body: any) {
   const targetId = String(body.targetId || "").trim();
   if (!targetId) throw new Error("缺少目标");
   const mode = ["inherit", "enabled", "disabled", "dry_run"].includes(String(body.mode)) ? String(body.mode) : "inherit";
-  const strategyId = HLS_STRATEGIES.some((s) => s.id === body.strategyId) ? body.strategyId : "";
+  const strategyId = hlsStrategyChainKey(body.strategyIds ?? body.strategyId, []);
   const targetKey = `${scope}:${targetId}`;
   return prisma.hlsCleanPolicy.upsert({
     where: { targetKey },
@@ -399,33 +512,74 @@ export async function upsertHlsCleanPolicy(body: any) {
 
 export async function decideHlsClean(play: { id: number; sourceId: number; vod: { typeName: string } }): Promise<HlsPolicyDecision> {
   const cfg = await ensureHlsCleanConfig();
-  if (!cfg.enabled) return { enabled: false, dryRun: false, strategyId: cfg.defaultStrategy, reason: "global_disabled", minConfidence: cfg.minConfidence };
+  const defaultStrategyIds = normalizeHlsStrategyIds(cfg.defaultStrategy);
+  if (!cfg.enabled) {
+    return {
+      enabled: false,
+      dryRun: false,
+      strategyId: defaultStrategyIds.join(","),
+      strategyIds: defaultStrategyIds,
+      reason: "global_disabled",
+      minConfidence: cfg.minConfidence,
+    };
+  }
   const keys = [`play:${play.id}`, `source:${play.sourceId}`, `category:${play.vod.typeName}`];
   const policies = await prisma.hlsCleanPolicy.findMany({ where: { targetKey: { in: keys } } });
   const byKey = new Map(policies.map((p) => [p.targetKey, p]));
   let enabled = true;
   let dryRun = false;
-  let strategyId = cfg.defaultStrategy;
+  let strategyIds = defaultStrategyIds;
   let reason = "global_enabled";
   for (const key of keys) {
     const p = byKey.get(key);
     if (!p) continue;
-    if (p.strategyId) strategyId = p.strategyId;
+    if (p.strategyId) strategyIds = normalizeHlsStrategyIds(p.strategyId);
     if (p.mode === "disabled") { enabled = false; reason = `${p.scope}_disabled`; break; }
     if (p.mode === "dry_run") { dryRun = true; reason = `${p.scope}_dry_run`; }
     if (p.mode === "enabled") { enabled = true; reason = `${p.scope}_enabled`; }
   }
-  return { enabled, dryRun, strategyId, reason, minConfidence: cfg.minConfidence };
+  return { enabled, dryRun, strategyId: strategyIds.join(","), strategyIds, reason, minConfidence: cfg.minConfidence };
 }
 
-async function analyzeManifest(manifestUrl: string, manifestText: string, minConfidence: number, masterChain: any[] = []) {
+async function analyzeManifest(
+  manifestUrl: string,
+  manifestText: string,
+  minConfidence: number,
+  strategyIds: string[],
+  masterChain: any[] = [],
+) {
   const parsed = parsePlaylist(manifestText, manifestUrl);
   if (parsed.isMaster) throw new Error("暂不清洗 master playlist，请清洗具体码率 media playlist");
   if (!parsed.segments.length) throw new Error("m3u8 未发现分片");
   const groups = groupsFromSegments(parsed.segments);
   await probeGroups(groups, manifestUrl);
   const mainKey = pickMainProfile(groups);
-  const detected = detectAdGroups(groups, mainKey).filter((x) => x.confidence >= minConfidence);
+  const mainPath = pickMainPath(groups);
+  const attempts: Array<{ strategyId: string; matched: number; maxConfidence: number }> = [];
+  let matchedStrategyId = "";
+  let detected: Array<{ group: GroupInfo; confidence: number; reasons: string[] }> = [];
+  for (const strategyId of strategyIds) {
+    const raw = strategyId === "foreign_ad_block_fingerprint_v1"
+      ? detectForeignAdBlockGroups(groups, mainPath)
+      : detectProfileAdGroups(groups, mainKey);
+    const qualified = raw.filter((x) => x.confidence >= minConfidence);
+    attempts.push({
+      strategyId,
+      matched: qualified.length,
+      maxConfidence: raw.reduce((m, r) => Math.max(m, r.confidence), 0),
+    });
+    if (qualified.length) {
+      matchedStrategyId = strategyId;
+      detected = qualified;
+      break;
+    }
+  }
+  const byGroup = new Map<number, { group: GroupInfo; confidence: number; reasons: string[] }>();
+  for (const item of detected) {
+    const old = byGroup.get(item.group.id);
+    if (!old || item.confidence > old.confidence) byGroup.set(item.group.id, item);
+  }
+  detected = [...byGroup.values()].sort((a, b) => a.group.start - b.group.start);
   const removeGroups = new Set(detected.map((x) => x.group.id));
   const cleanM3u8 = removeGroups.size ? cleanPlaylist(parsed, removeGroups, manifestUrl) : rewriteWholePlaylist(parsed, manifestUrl);
   const adRanges = detected.map((x) => ({
@@ -439,7 +593,11 @@ async function analyzeManifest(manifestUrl: string, manifestText: string, minCon
   const evidence = {
     mediaUrl: manifestUrl,
     masterChain,
+    strategyChain: strategyIds,
+    matchedStrategy: matchedStrategyId,
+    attempts,
     mainProfile: mainKey,
+    mainPath,
     totalSegments: parsed.segments.length,
     totalGroups: groups.length,
     groups: groups.map((g) => ({
@@ -450,6 +608,8 @@ async function analyzeManifest(manifestUrl: string, manifestText: string, minCon
       segments: g.segments.length,
       profile: g.profile,
       profileKey: g.profileKey,
+      pathKey: g.pathKey,
+      fingerprint: g.fingerprint,
       removed: removeGroups.has(g.id),
     })),
   };
@@ -478,7 +638,8 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
   });
   if (!play) throw new Error("播放线路不存在");
   const decision = await decideHlsClean({ id: play.id, sourceId: play.sourceId, vod: play.vod });
-  const strategyId = opts.strategyId || decision.strategyId;
+  const strategyIds = normalizeHlsStrategyIds(opts.strategyIds ?? opts.strategyId ?? decision.strategyIds);
+  const strategyId = strategyIds.join(",");
   const dryRun = typeof opts.dryRun === "boolean" ? opts.dryRun : decision.dryRun;
   const minConfidence = opts.minConfidence ?? decision.minConfidence;
 
@@ -510,7 +671,7 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
     const rootManifestText = await fetchTextSafe(resolved.url, ep.url);
     const media = await resolveMediaManifest(resolved.url, rootManifestText, ep.url);
     const m3u8Hash = hashText(`${resolved.url}\n${rootManifestText}\n${media.manifestUrl}\n${media.manifestText}`);
-    const analysis = await analyzeManifest(media.manifestUrl, media.manifestText, minConfidence, media.chain);
+    const analysis = await analyzeManifest(media.manifestUrl, media.manifestText, minConfidence, strategyIds, media.chain);
     const hasAds = analysis.adRanges.length > 0;
     const status = dryRun ? "dry_run" : hasAds ? "clean" : "no_ads";
     return prisma.hlsCleanResult.upsert({
@@ -551,7 +712,7 @@ export async function findCleanResultForPlayback(play: { id: number; sourceId: n
     where: {
       playId: play.id,
       sourceUrlHash: hashText(resolvedUrl),
-      strategyId: decision.strategyId,
+      strategyId: decision.strategyIds.join(","),
       status: "clean",
       confidence: { gte: decision.minConfidence },
     },

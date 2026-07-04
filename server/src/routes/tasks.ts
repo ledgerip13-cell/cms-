@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, verifyToken } from "../auth.js";
-import { requestCancel, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
+import { requestCancel, wakeTaskQueues, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 import { previewByKeyword } from "../collector/sync.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
@@ -22,7 +22,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const push = async () => {
       try {
         const list = await prisma.task.findMany({ orderBy: { createdAt: "desc" }, take: 30 });
-        const active = list.filter((t) => ["pending", "running"].includes(t.status)).length;
+        const active = list.filter((t) => ["pending", "running", "canceling"].includes(t.status)).length;
         const hash = JSON.stringify(list.map((t) => [t.id, t.status, t.progress, t.pageNow, t.added, t.updated, t.merged, t.message]));
         if (hash === lastHash) return;
         lastHash = hash;
@@ -70,22 +70,26 @@ export default async function taskRoutes(app: FastifyInstance) {
 
   // 运行中任务数（前端角标）
   secured.get("/api/tasks/active/count", async () => {
-    const n = await prisma.task.count({ where: { status: { in: ["pending", "running"] } } });
+    const n = await prisma.task.count({ where: { status: { in: ["pending", "running", "canceling"] } } });
     return { active: n };
   });
 
-  // 中止任务（运行中的标记取消，活执行器下一页停止；僵尸任务直接落库取消）
+  // 中止任务：排队任务直接取消；运行中任务先置为中止中，等执行器收尾后落为取消。
   secured.post("/api/tasks/:id/cancel", async (req) => {
     const id = Number((req.params as any).id);
     const t = await prisma.task.findUnique({ where: { id } });
     if (!t) return { ok: false, error: "任务不存在" };
+    if (t.status === "canceling") return { ok: true };
     if (!["running", "pending"].includes(t.status)) return { ok: false, error: "任务非运行中，无需中止" };
     requestCancel(id); // 信号活执行器
     await prisma.task.update({
       where: { id },
-      data: { status: "canceled", message: "已手动中止", finishedAt: new Date() },
+      data: t.status === "pending"
+        ? { status: "canceled", message: "已手动中止", finishedAt: new Date() }
+        : { status: "canceling", message: "正在中止，当前步骤完成后停止", finishedAt: null },
     });
     emitTaskChange();
+    wakeTaskQueues();
     return { ok: true };
   });
 

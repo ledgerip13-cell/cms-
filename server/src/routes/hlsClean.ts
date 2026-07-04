@@ -4,6 +4,7 @@ import { authGuard } from "../auth.js";
 import {
   ensureHlsCleanConfig,
   HLS_STRATEGIES,
+  normalizeHlsStrategyIds,
   updateHlsCleanConfig,
   upsertHlsCleanPolicy,
 } from "../hls/cleaner.js";
@@ -34,7 +35,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
     admin.put("/api/admin/hls-clean/config", async (req) => updateHlsCleanConfig(req.body));
 
     admin.get("/api/admin/hls-clean/overview", async () => {
-      const [config, policies, sources, categories, statsRows, recent] = await Promise.all([
+      const [rawConfig, rawPolicies, sources, categories, statsRows, recent] = await Promise.all([
         ensureHlsCleanConfig(),
         prisma.hlsCleanPolicy.findMany({ orderBy: [{ scope: "asc" }, { targetName: "asc" }] }),
         prisma.source.findMany({ select: { id: true, name: true, enabled: true }, orderBy: { priority: "asc" } }),
@@ -50,6 +51,8 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
         }),
       ]);
       const stats = Object.fromEntries(statsRows.map((r) => [r.status, r._count._all]));
+      const config = { ...rawConfig, defaultStrategies: normalizeHlsStrategyIds(rawConfig.defaultStrategy) };
+      const policies = rawPolicies.map((p) => ({ ...p, strategyIds: normalizeHlsStrategyIds(p.strategyId, []) }));
       return {
         config,
         strategies: HLS_STRATEGIES,
@@ -87,6 +90,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
       if (rangeMode === "batch" && !b.sourceId && !b.categoryName) {
         return reply.code(400).send({ error: "批量清洗请至少选择采集源或分类" });
       }
+      const strategyIds = normalizeHlsStrategyIds(b.strategyIds ?? b.strategyId, []);
       const task = await createHlsCleanTask({
         sourceId: b.sourceId ? Number(b.sourceId) : undefined,
         categoryName: b.categoryName ? String(b.categoryName) : undefined,
@@ -96,7 +100,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
         epIndex: b.epIndex === "" || b.epIndex === null || typeof b.epIndex === "undefined" ? undefined : Number(b.epIndex),
         episodeMode: b.episodeMode === "all" ? "all" : "first",
         limit: Math.max(1, Math.min(2000, Number(b.limit) || 100)),
-        strategyId: HLS_STRATEGIES.some((s) => s.id === b.strategyId) ? b.strategyId : undefined,
+        strategyIds: strategyIds.length ? strategyIds : undefined,
         dryRun: typeof b.dryRun === "boolean" ? b.dryRun : undefined,
       });
       return { ok: true, taskId: task.id };

@@ -14,11 +14,24 @@ export function emitTaskChange() {
   taskEvents.emit("changed");
 }
 
+function isMissingTaskError(e: any) {
+  return e?.code === "P2025";
+}
+
 // 包一层：更新任务即推送事件
 async function taskUpdate(args: Parameters<typeof prisma.task.update>[0]) {
-  const r = await prisma.task.update(args);
-  emitTaskChange();
-  return r;
+  try {
+    const r = await prisma.task.update(args);
+    emitTaskChange();
+    return r;
+  } catch (e: any) {
+    // 任务可能已被清理；不能让单条任务把整个队列泵打断。
+    if (isMissingTaskError(e)) {
+      emitTaskChange();
+      return null;
+    }
+    throw e;
+  }
 }
 
 const running = new Set<number>(); // 正在跑的 sourceId，防重复
@@ -32,14 +45,27 @@ export function requestCancel(taskId: number) {
   canceled.add(taskId);
 }
 
+export function wakeTaskQueues() {
+  void pumpCollectQueue();
+  void pumpHlsCleanQueue();
+}
+
 // 服务重启回收：将遗留的 running/pending 僵尸任务自动从断点续跑（采集）或标失败
 const MAX_RESUME = 5; // 自动续跑上限，防死循环
 export async function recoverOrphanTasks() {
   const orphans = await prisma.task.findMany({
-    where: { status: { in: ["running", "pending"] } },
+    where: { status: { in: ["running", "pending", "canceling"] } },
   });
-  let resumed = 0, failed = 0;
+  let resumed = 0, failed = 0, canceledCount = 0;
   for (const t of orphans) {
+    if (t.status === "canceling") {
+      await taskUpdate({
+        where: { id: t.id },
+        data: { status: "canceled", message: (t.message || "已手动中止") + " [服务重启已确认]", finishedAt: new Date() },
+      });
+      canceledCount++;
+      continue;
+    }
     // 采集任务 + 有源 + 未超续跑上限 → 从断点续跑
     if (t.type === "collect" && t.sourceId && t.resumeCount < MAX_RESUME) {
       let opts: SyncOptions = {};
@@ -68,7 +94,7 @@ export async function recoverOrphanTasks() {
       failed++;
     }
   }
-  return { resumed, failed };
+  return { resumed, failed, canceled: canceledCount };
 }
 
 // 创建采集任务并异步执行，立即返回 task 记录
@@ -103,6 +129,7 @@ export async function createHlsCleanTask(opts: {
   episodeMode?: "first" | "all";
   limit?: number;
   strategyId?: string;
+  strategyIds?: string[];
   dryRun?: boolean;
 } = {}) {
   const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
@@ -152,7 +179,13 @@ async function pumpHlsCleanQueue() {
       if (!task) return;
       let opts: any = {};
       try { opts = task.params ? JSON.parse(task.params) : {}; } catch {}
-      await runHlsCleanTask(task.id, opts);
+      try {
+        await runHlsCleanTask(task.id, opts);
+      } catch (e: any) {
+        if (!isMissingTaskError(e)) {
+          await taskUpdate({ where: { id: task.id }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+        }
+      }
     }
   } finally {
     hlsCleanRunning = false;
@@ -169,9 +202,22 @@ async function runHlsCleanTask(taskId: number, opts: {
   episodeMode?: "first" | "all";
   limit?: number;
   strategyId?: string;
+  strategyIds?: string[];
   dryRun?: boolean;
 }) {
-  canceled.delete(taskId);
+  if (canceled.has(taskId)) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
+    canceled.delete(taskId);
+    return;
+  }
+  const startState = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+  if (!startState || ["canceled", "canceling"].includes(startState.status)) {
+    if (startState?.status === "canceling") {
+      await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
+    }
+    canceled.delete(taskId);
+    return;
+  }
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), message: "正在准备清洗范围" } });
   try {
     const limit = Math.max(1, Math.min(2000, Number(opts.limit) || 100));
@@ -221,6 +267,7 @@ async function runHlsCleanTask(taskId: number, opts: {
         const r = await runHlsCleanForEpisode({
           playId: u.playId,
           epIndex: u.epIndex,
+          strategyIds: opts.strategyIds,
           strategyId: opts.strategyId || cfg.defaultStrategy,
           dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
           minConfidence: cfg.minConfidence,
@@ -246,6 +293,13 @@ async function runHlsCleanTask(taskId: number, opts: {
         },
       });
     }
+    if (canceled.has(taskId)) {
+      await taskUpdate({
+        where: { id: taskId },
+        data: { status: "canceled", message: `已手动中止（已处理${units.length}/${units.length}）`, finishedAt: new Date() },
+      });
+      return;
+    }
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -259,7 +313,8 @@ async function runHlsCleanTask(taskId: number, opts: {
       },
     });
   } catch (e: any) {
-    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+    const isCancel = canceled.has(taskId) || String(e?.message).includes("__CANCELED__");
+    await taskUpdate({ where: { id: taskId }, data: { status: isCancel ? "canceled" : "failed", message: isCancel ? "已手动中止" : (e?.message || String(e)), finishedAt: new Date() } });
   } finally {
     canceled.delete(taskId);
   }
@@ -280,7 +335,13 @@ async function pumpCollectQueue() {
       let cur: any = null;
       try { cur = task.cursor ? JSON.parse(task.cursor) : null; } catch {}
       if (cur) opts.resume = cur;
-      await runTask(task.id, task.sourceId, opts);
+      try {
+        await runTask(task.id, task.sourceId, opts);
+      } catch (e: any) {
+        if (!isMissingTaskError(e)) {
+          await taskUpdate({ where: { id: task.id }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+        }
+      }
     }
   } finally {
     collectPumpRunning = false;
@@ -547,6 +608,19 @@ async function runMetaTask(
 }
 
 async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
+  if (canceled.has(taskId)) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
+    canceled.delete(taskId);
+    return;
+  }
+  const startState = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+  if (!startState || ["canceled", "canceling"].includes(startState.status)) {
+    if (startState?.status === "canceling") {
+      await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
+    }
+    canceled.delete(taskId);
+    return;
+  }
   // 同源已有任务在跑则标记排队失败（简单串行保护）
   if (running.has(sourceId)) {
     await taskUpdate({
@@ -556,7 +630,6 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions) {
     return;
   }
   running.add(sourceId);
-  canceled.delete(taskId);
   await taskUpdate({
     where: { id: taskId },
     data: { status: "running", startedAt: new Date() },

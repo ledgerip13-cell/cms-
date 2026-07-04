@@ -49,8 +49,8 @@ await app.register(hlsCleanRoutes);
 await seedAdmin();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）
 const orphans = await recoverOrphanTasks();
-if (orphans.resumed || orphans.failed)
-  app.log.info(`orphan tasks: resumed ${orphans.resumed}, failed ${orphans.failed}`);
+if (orphans.resumed || orphans.failed || orphans.canceled)
+  app.log.info(`orphan tasks: resumed ${orphans.resumed}, failed ${orphans.failed}, canceled ${orphans.canceled}`);
 startScheduler();
 
 const PORT = Number(process.env.PORT) || 5150;

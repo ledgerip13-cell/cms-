@@ -410,7 +410,7 @@ model Task {
   sourceId    Int? // 关联源（采集任务）
   sourceName  String    @default("")
   mode        String    @default("incr") // incr / full
-  status      String    @default("pending") // pending / running / done / failed / canceled
+  status      String    @default("pending") // pending / running / canceling / done / failed / canceled
   progress    Int       @default(0) // 0-100
   pageNow     Int       @default(0)
   pageTotal   Int       @default(0)

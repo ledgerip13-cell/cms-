@@ -77,8 +77,8 @@ const loading = ref(false); const active = ref(0); const connected = ref(false)
 let es = null
 
 const typeLabel = (t) => ({ collect:'采集', probe:'探活', meta:'元数据', keyword:'按片名', subtype:'补小类', hls_clean:'HLS清洗' }[t] || t)
-const statusLabel = (s) => ({ pending:'排队', running:'进行中', done:'完成', failed:'失败', canceled:'取消' }[s] || s)
-const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', pending:'info' }[s] || 'info')
+const statusLabel = (s) => ({ pending:'排队', running:'进行中', canceling:'中止中', done:'完成', failed:'失败', canceled:'取消' }[s] || s)
+const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', canceling:'warning', pending:'info' }[s] || 'info')
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 function duration(r) {
   if (!r.startedAt) return '—'

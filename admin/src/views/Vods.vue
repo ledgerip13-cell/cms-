@@ -2,11 +2,18 @@
   <div class="card">
     <div class="bar">
       <div class="filters">
-        <el-input v-model="q.kw" placeholder="搜索片名" clearable style="width:180px" @keyup.enter="load" :prefix-icon="Search" />
-        <el-select v-model="q.type" placeholder="全部分类" clearable style="width:140px" @change="load">
+        <el-input v-model="q.kw" placeholder="搜索片名" clearable style="width:180px" @keyup.enter="applyFilters" :prefix-icon="Search" />
+        <el-select v-model="q.type" placeholder="全部分类" clearable style="width:140px" @change="applyFilters">
           <el-option v-for="t in types" :key="t.name" :label="`${t.name||'未分类'}(${t.count})`" :value="t.name" />
         </el-select>
-        <el-button type="primary" @click="load">查询</el-button>
+        <el-select v-model="q.status" placeholder="全部状态" clearable style="width:120px" @change="applyFilters">
+          <el-option label="在线" value="online" />
+          <el-option label="下架" value="offline" />
+        </el-select>
+        <el-select v-model="q.sourceId" placeholder="全部源" clearable filterable style="width:160px" @change="applyFilters">
+          <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
+        </el-select>
+        <el-button type="primary" @click="applyFilters">查询</el-button>
         <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
           豆瓣匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
@@ -304,7 +311,7 @@ async function confirmKeyword() {
   } catch (e) { ElMessage.error('提交失败: ' + e.message) } finally { kwSubmitting.value = false }
 }
 
-const list = ref([]); const total = ref(0); const loading = ref(false); const types = ref([])
+const list = ref([]); const total = ref(0); const loading = ref(false); const types = ref([]); const sourceOptions = ref([])
 const mstat = ref({})
 async function loadMeta() { try { mstat.value = await api.metaStats() } catch {} }
 async function backfillSubs() {
@@ -321,7 +328,7 @@ async function metaBatch() {
     ElMessage.success(r.message || '已提交')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '提交失败') }
 }
-const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', year: '' })
+const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', sourceId: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
 
@@ -335,6 +342,10 @@ function fallbackCover(row) {
 async function load() {
   loading.value = true
   try { const r = await api.adminVods(q); list.value = r.list; total.value = r.total } finally { loading.value = false }
+}
+function applyFilters() {
+  q.page = 1
+  load()
 }
 async function batchAction(action) {
   if (!selected.value.length) return
@@ -428,7 +439,13 @@ async function confirmDouban(id, c) {
     } else ElMessage.error(r.error || '确认失败')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '确认失败') }
 }
-onMounted(async () => { types.value = await api.categories(); load(); loadMeta() })
+onMounted(async () => {
+  const [catRows, sourceRows] = await Promise.all([api.categories(), api.sources()])
+  types.value = catRows
+  sourceOptions.value = sourceRows
+  load()
+  loadMeta()
+})
 </script>
 
 <style scoped>

@@ -18,6 +18,14 @@ export function publicTypeFilter(types: string[]) {
   return { in: publicTypeList(types) };
 }
 
+export function publicPlayableFilter() {
+  return { plays: { some: { source: { enabled: true } } } };
+}
+
+export function publicPlayCountSelect() {
+  return { plays: { where: { source: { enabled: true } } } };
+}
+
 export function requestedPublicType(types: string[], type: string) {
   return types.includes(type) ? type : NO_PUBLIC_TYPE;
 }

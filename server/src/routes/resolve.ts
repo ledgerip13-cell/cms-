@@ -27,10 +27,10 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (playId && vodId) {
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true },
+        include: { vod: true, source: { select: { enabled: true } } },
       });
       const publicTypes = await enabledTypeNames();
-      if (!play || play.vodId !== vodId || play.vod.status !== "online" || !isPublicType(publicTypes, play.vod.typeName)) {
+      if (!play || !play.source.enabled || play.vodId !== vodId || play.vod.status !== "online" || !isPublicType(publicTypes, play.vod.typeName)) {
         return { ok: false, error: "播放资源不存在或不可用" };
       }
       let episodes: Array<{ name?: string; url?: string }> = [];

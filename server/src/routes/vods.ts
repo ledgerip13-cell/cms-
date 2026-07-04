@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
-import { enabledTypeNames, isPublicType, publicTypeFilter, requestedPublicType } from "../publicVod.js";
+import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -95,7 +95,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const size = Math.min(100, Number(q.size) || 20);
     const publicTypes = await enabledTypeNames();
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
-    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes) };
+    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() };
     if (q.kw) {
       const kw = String(q.kw);
       where.OR = [
@@ -127,7 +127,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         orderBy,
         skip: (page - 1) * size,
         take: size,
-        include: { _count: { select: { plays: true } } },
+        include: { _count: { select: publicPlayCountSelect() } },
       }),
     ]);
     return { total, page, size, list };
@@ -137,7 +137,7 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.get("/api/years", async (req) => {
     const q = req.query as any;
     const publicTypes = await enabledTypeNames();
-    const where: any = { typeName: publicTypeFilter(publicTypes) };
+    const where: any = { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() };
     if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
     if (q.sub) where.subType = q.sub;
     const rows = await prisma.vod.groupBy({
@@ -180,7 +180,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: hotQuery.orderBy,
       take: hotQuery.take,
       include: {
-        _count: { select: { plays: true } },
+        _count: { select: publicPlayCountSelect() },
         images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
       },
     });
@@ -193,10 +193,10 @@ export default async function vodRoutes(app: FastifyInstance) {
     const since = new Date(Date.now() - 8 * DAY_MS);
     const publicTypes = await enabledTypeNames();
     const rows = await prisma.vod.findMany({
-      where: { status: "online", typeName: publicTypeFilter(publicTypes), updatedAt: { gte: since } },
+      where: { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), updatedAt: { gte: since } },
       orderBy: { updatedAt: "desc" },
       take: 600,
-      include: { _count: { select: { plays: true } } },
+      include: { _count: { select: publicPlayCountSelect() } },
     });
     const byDate = new Map(dates.map((date) => [date, [] as any[]]));
     for (const v of rows) {
@@ -219,7 +219,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const type = String(q.type || "");
     const sub = String(q.sub || "");
     const publicTypes = await enabledTypeNames();
-    const baseWhere: any = { status: "online", typeName: publicTypeFilter(publicTypes), id: { not: id } };
+    const baseWhere: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), id: { not: id } };
     const picks: any[] = [];
     const seen = new Set<number>([id]);
     const pushRows = (rows: any[]) => {
@@ -230,7 +230,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, subType: sub },
         orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
-        take, include: { _count: { select: { plays: true } } },
+        take, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
     // 2) 同大类补足
@@ -238,7 +238,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, typeName: requestedPublicType(publicTypes, type), id: { notIn: [...seen] } },
         orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
-        take: take - picks.length, include: { _count: { select: { plays: true } } },
+        take: take - picks.length, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
     // 3) 仍不足用热门补
@@ -246,7 +246,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, id: { notIn: [...seen] } },
         orderBy: { updatedAt: "desc" },
-        take: take - picks.length, include: { _count: { select: { plays: true } } },
+        take: take - picks.length, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
     return picks.slice(0, take);
@@ -258,14 +258,14 @@ export default async function vodRoutes(app: FastifyInstance) {
     const vod = await prisma.vod.findUnique({
       where: { id },
       include: {
-        plays: { include: { source: true } },
+        plays: { where: { source: { enabled: true } }, include: { source: true } },
         people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
         images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
       },
     });
     // 观众端不能看到已下架影片，同列表接口限制保持一致（admin详情页用另外的鲟权接口）
     const publicTypes = await enabledTypeNames();
-    if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName)) return reply.code(404).send({ error: "not found" });
+    if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName) || !vod.plays.length) return reply.code(404).send({ error: "not found" });
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
       sourceId: p.sourceId,
@@ -321,7 +321,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (!isPublicType(publicTypes, type)) return [];
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
-      where: { typeName: type, subType: { not: "" } },
+      where: { typeName: type, subType: { not: "" }, ...publicPlayableFilter() },
       _count: { _all: true },
       orderBy: { _count: { subType: "desc" } },
     });
@@ -333,7 +333,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const publicTypes = await enabledTypeNames();
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
-      where: { typeName: publicTypeFilter(publicTypes) },
+      where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() },
       _count: { _all: true },
       orderBy: { _count: { typeName: "desc" } },
     });
@@ -386,6 +386,10 @@ export default async function vodRoutes(app: FastifyInstance) {
       }
       if (q.type) where.typeName = q.type;
       if (q.sub) where.subType = q.sub;
+      if (q.sourceId) {
+        const sourceId = Number(q.sourceId);
+        if (Number.isInteger(sourceId) && sourceId > 0) where.plays = { some: { sourceId } };
+      }
       if (q.year === "2005年以前") {
         const years: string[] = [];
         for (let y = 1900; y < 2005; y++) years.push(String(y));

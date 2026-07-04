@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { enabledTypeNames, publicTypeFilter, requestedPublicType } from "./publicVod.js";
+import { enabledTypeNames, publicPlayableFilter, publicTypeFilter, requestedPublicType } from "./publicVod.js";
 
 export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned"] as const;
 type HotSortMode = (typeof HOT_SORT_MODES)[number];
@@ -102,7 +102,7 @@ export async function hotVodQuery(cat = "hot", limit?: number) {
     return {
       config: null,
       take: clamp(Number(limit) || 10, 1, 20),
-      where: { status: "online", ...catWhere },
+      where: { status: "online", ...publicPlayableFilter(), ...catWhere },
       orderBy: orderByFor("hot"),
     };
   }
@@ -111,6 +111,7 @@ export async function hotVodQuery(cat = "hot", limit?: number) {
   const selectedTypes = config.typeNames.filter((type) => publicTypes.includes(type));
   const where: any = {
     status: "online",
+    ...publicPlayableFilter(),
     typeName: publicTypeFilter(selectedTypes.length ? selectedTypes : publicTypes),
   };
   if (config.timeWindowDays > 0) where.updatedAt = { gte: new Date(Date.now() - config.timeWindowDays * 24 * 60 * 60 * 1000) };
