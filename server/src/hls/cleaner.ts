@@ -716,15 +716,47 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
 export async function findCleanResultForPlayback(play: { id: number; sourceId: number; vod: { typeName: string } }, resolvedUrl: string) {
   const decision = await decideHlsClean(play);
   if (!decision.enabled || decision.dryRun) return null;
-  const result = await prisma.hlsCleanResult.findFirst({
+  const sourceUrlHash = hashText(resolvedUrl);
+  const strategyId = decision.strategyIds.join(",");
+  const exact = await prisma.hlsCleanResult.findFirst({
     where: {
       playId: play.id,
-      sourceUrlHash: hashText(resolvedUrl),
-      strategyId: decision.strategyIds.join(","),
+      sourceUrlHash,
+      strategyId,
       status: "clean",
       confidence: { gte: decision.minConfidence },
     },
     orderBy: { checkedAt: "desc" },
   });
-  return result?.cleanM3u8 ? result : null;
+  if (exact?.cleanM3u8) return exact;
+
+  // 策略从“链”收窄成单策略时，历史 clean 结果仍可能有效：
+  // 例如结果由 discontinuity_profile_v1 命中，但保存的 strategyId 是完整策略链。
+  const candidates = await prisma.hlsCleanResult.findMany({
+    where: {
+      playId: play.id,
+      sourceUrlHash,
+      status: "clean",
+      confidence: { gte: decision.minConfidence },
+    },
+    orderBy: { checkedAt: "desc" },
+    take: 10,
+  });
+  const allowed = new Set(decision.strategyIds);
+  for (const row of candidates) {
+    if (!row.cleanM3u8) continue;
+    try {
+      const evidence = JSON.parse(row.evidence || "{}");
+      const matched = String(evidence?.matchedStrategy || "");
+      if (matched) {
+        if (allowed.has(matched)) return row;
+        continue;
+      }
+    } catch {
+      // 老结果没有 evidence 时，再按 strategyId 列表做保守兼容。
+    }
+    const stored = normalizeHlsStrategyIds(row.strategyId, []);
+    if (decision.strategyIds.every((id) => stored.includes(id))) return row;
+  }
+  return null;
 }
