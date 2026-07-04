@@ -221,7 +221,7 @@ async function upsertVod(
   catCache: Map<string, string>
 ) {
   const lines = parsePlay(raw);
-  if (!lines.length) return { added: 0, updated: 0, merged: 0 };
+  if (!lines.length) return { vodId: 0, added: 0, updated: 0, merged: 0 };
 
   const fp = makeFingerprint(raw.vod_name, raw.vod_year);
   const typeName = await resolveCategory(
@@ -286,7 +286,7 @@ async function upsertVod(
     if (before) updated++; else added++;
   }
 
-  return { added, updated, merged: existing ? mergedFlag : 0 };
+  return { vodId: vod.id, added, updated, merged: existing ? mergedFlag : 0 };
 }
 
 // 按片名预览：遍历所有启用源搜索关键词，仅搜索不拉详情不入库。按(标准化片名+年份)指纹分组，
@@ -356,6 +356,7 @@ export async function collectKeywordCandidates(
   const srcById = new Map(sources.map((s) => [s.id, s]));
 
   let added = 0, updated = 0, merged = 0;
+  const vodIds = new Set<number>();
   const catCache = new Map<string, string>();
   const perSource: { source: string; ok: boolean; added: number; updated: number; msg?: string }[] = [];
 
@@ -373,6 +374,7 @@ export async function collectKeywordCandidates(
           try {
             const r = await upsertVod(sourceId, raw, catCache);
             added += r.added; updated += r.updated; merged += r.merged;
+            if (r.vodId) vodIds.add(r.vodId);
             sAdded += r.added; sUpdated += r.updated;
           } catch {}
         }
@@ -385,7 +387,7 @@ export async function collectKeywordCandidates(
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sourceIds.length, sourceName: src.name, added, updated, merged });
   }
 
-  return { ok: true, added, updated, merged, perSource };
+  return { ok: true, added, updated, merged, vodIds: [...vodIds], perSource };
 }
 
 // 按片名采集（旧版一步到位，仍保留给向后兼容/其他调用地方）：遍历所有启用源搜索关键词 → 拉详情 → 入库（复用 upsertVod，不影响现有分页/断点流程）
@@ -399,6 +401,7 @@ export async function syncByKeyword(
   if (!sources.length) throw new Error("没有已启用的采集源");
 
   let added = 0, updated = 0, merged = 0, hits = 0;
+  const vodIds = new Set<number>();
   const perSource: { source: string; hits: number; added: number; updated: number; ok: boolean; msg?: string }[] = [];
   const catCache = new Map<string, string>();
 
@@ -420,6 +423,7 @@ export async function syncByKeyword(
             try {
               const r = await upsertVod(src.id, raw, catCache);
               added += r.added; updated += r.updated; merged += r.merged;
+              if (r.vodId) vodIds.add(r.vodId);
               sAdded += r.added; sUpdated += r.updated;
             } catch {}
           }
@@ -433,7 +437,7 @@ export async function syncByKeyword(
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sources.length, sourceName: src.name, added, updated, merged, hits });
   }
 
-  return { ok: true, keyword: kw, hits, added, updated, merged, perSource };
+  return { ok: true, keyword: kw, hits, added, updated, merged, vodIds: [...vodIds], perSource };
 }
 
 export async function syncSource(sourceId: number, opts: SyncOptions = {}, onProgress?: ProgressCb) {
@@ -446,6 +450,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   const start = Date.now();
   const resume = opts.resume;
   let added = resume?.added || 0, updated = resume?.updated || 0, merged = resume?.merged || 0;
+  const vodIds = new Set<number>();
   let ok = true, message = "";
   const catCache = new Map<string, string>();
 
@@ -523,6 +528,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
             try {
               const r = await upsertVod(sourceId, raw, catCache);
               added += r.added; updated += r.updated; merged += r.merged;
+              if (r.vodId) vodIds.add(r.vodId);
             } catch {}
           }
         }
@@ -557,5 +563,5 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   });
   if (added || updated) await refreshSourcePlayDomains(sourceId).catch(() => {});
 
-  return { ok, added, updated, merged, ms, message };
+  return { ok, added, updated, merged, vodIds: [...vodIds], ms, message };
 }

@@ -53,6 +53,27 @@ function collectConcurrency() {
   return Number.isFinite(n) ? Math.max(1, Math.min(8, Math.floor(n))) : 3;
 }
 
+function uniqueVodIds(vodIds: unknown[] | undefined) {
+  return [...new Set((Array.isArray(vodIds) ? vodIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+async function queueAutoMetaMatch(vodIds: unknown[] | undefined) {
+  const ids = uniqueVodIds(vodIds);
+  if (!ids.length) return 0;
+  const rows = await prisma.vod.findMany({
+    where: { id: { in: ids }, metaMatched: "none" },
+    select: { id: true },
+  });
+  const pendingIds = rows.map((r) => r.id);
+  for (let i = 0; i < pendingIds.length; i += 500) {
+    const chunk = pendingIds.slice(i, i + 500);
+    await createMetaTask({ vodIds: chunk, limit: chunk.length, priority: 60 });
+  }
+  return pendingIds.length;
+}
+
 function isPauseSignal(e: any) {
   return String(e?.message || e || "").includes("__PAUSED__");
 }
@@ -489,9 +510,18 @@ async function runKeywordConfirmTask(taskId: number, candidates: { sourceId: num
       });
     });
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `入库${s.added}` : "失败"}`).join(" | ");
+    const metaQueued = await queueAutoMetaMatch(r.vodIds);
     await taskUpdate({
       where: { id: taskId },
-      data: { status: "done", progress: 100, added: r.added, updated: r.updated, merged: r.merged, message: `新增${r.added} 更新${r.updated} | ${detail}`, finishedAt: new Date() },
+      data: {
+        status: "done",
+        progress: 100,
+        added: r.added,
+        updated: r.updated,
+        merged: r.merged,
+        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
+        finishedAt: new Date(),
+      },
     });
   } catch (e: any) {
     await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
@@ -526,11 +556,12 @@ async function runKeywordTask(taskId: number, keyword: string) {
       });
     });
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `命中${s.hits}/入库${s.added}` : "失败"}`).join(" | ");
+    const metaQueued = await queueAutoMetaMatch(r.vodIds);
     await taskUpdate({
       where: { id: taskId },
       data: {
         status: "done", progress: 100, added: r.added, updated: r.updated, merged: r.merged,
-        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}`,
+        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -666,7 +697,7 @@ async function runMetaTask(
     if (opts.sourceId) where.plays = { some: { sourceId: Number(opts.sourceId) } };
     const status = String(opts.status || "").trim();
     if (status && status !== "all") where.metaMatched = status;
-    else if (!opts.redo && !vodIds.length) where.metaMatched = "none";
+    else if (!opts.redo) where.metaMatched = "none";
     const vods = await prisma.vod.findMany({
       where,
       orderBy: opts.redo ? { metaAt: "asc" } : { id: "asc" },
@@ -799,6 +830,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
     // 中止信号会被 syncSource 内部 catch 吞掉（返回 ok=false 且 message 含 __CANCELED__），这里补判
     const wasCanceled = canceled.has(taskId) || String(r.message).includes("__CANCELED__");
     const wasPaused = paused.has(taskId) || String(r.message).includes("__PAUSED__");
+    const metaQueued = !wasCanceled && !wasPaused && r.ok ? await queueAutoMetaMatch(r.vodIds) : 0;
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -807,7 +839,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : r.message,
+        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已自动提交豆瓣匹配${metaQueued}部` : ""}`,
         cursor: wasPaused ? undefined : null, // 暂停保留断点，完成/取消 清空断点
         finishedAt: wasPaused ? null : new Date(),
       },

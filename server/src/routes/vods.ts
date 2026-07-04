@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
+import { normalizeName } from "../collector/dedupe.js";
 import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 
@@ -85,6 +86,35 @@ function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
   return value.map((ep, index) => ({
     name: String(ep?.name || `第${index + 1}集`),
   }));
+}
+
+const SERIES_MARKER_RE = /(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)$/i;
+
+function seriesBaseName(name: string) {
+  const compact = String(name || "").replace(/[\s\u3000]+/g, "").replace(/[：:·・.\-_/|]+/g, "");
+  const stripped = compact.replace(SERIES_MARKER_RE, "");
+  return stripped.length >= 3 && stripped.length < compact.length ? stripped : "";
+}
+
+function seriesKey(name: string) {
+  const base = seriesBaseName(name);
+  return normalizeName(base || name).replace(SERIES_MARKER_RE, "");
+}
+
+function seasonNo(name: string) {
+  const raw = normalizeName(name);
+  const cn: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  const m = raw.match(/第?([一二三四五六七八九十0-9]+)季/i) || raw.match(/(?:season|s)([0-9]+)/i);
+  if (!m) return 999;
+  if (/^\d+$/.test(m[1])) return Number(m[1]);
+  if (m[1] === "十") return 10;
+  const ten = m[1].startsWith("十");
+  if (ten) return 10 + (cn[m[1].slice(1)] || 0);
+  if (m[1].includes("十")) {
+    const [a, b] = m[1].split("十");
+    return (cn[a] || 1) * 10 + (cn[b] || 0);
+  }
+  return cn[m[1]] || 999;
 }
 
 function cleanupRuleWhere(input: any) {
@@ -228,7 +258,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     }));
   });
 
-  // 相关推荐：同大类优先，其次同小类，排除自身。用于播放页右栏
+  // 相关推荐：同系列 > 同小类 > 同大类 > 热门补足，排除自身。用于播放页右栏
   app.get("/api/related", async (req) => {
     const q = req.query as any;
     const id = Number(q.id) || 0;
@@ -237,12 +267,28 @@ export default async function vodRoutes(app: FastifyInstance) {
     const sub = String(q.sub || "");
     const publicTypes = await enabledTypeNames();
     const baseWhere: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), id: { not: id } };
+    const current = id ? await prisma.vod.findUnique({ where: { id }, select: { name: true } }) : null;
+    const baseName = seriesBaseName(current?.name || "");
+    const currentSeriesKey = current?.name ? seriesKey(current.name) : "";
     const picks: any[] = [];
     const seen = new Set<number>([id]);
     const pushRows = (rows: any[]) => {
       for (const r of rows) { if (!seen.has(r.id)) { seen.add(r.id); picks.push(r); } }
     };
-    // 1) 同小类
+    // 1) 同系列：例如 师兄啊师兄第一季/第二季，先于普通同类热门。
+    if (baseName && currentSeriesKey) {
+      const seriesRows = await prisma.vod.findMany({
+        where: { ...baseWhere, ...(type ? { typeName: requestedPublicType(publicTypes, type) } : {}), name: { contains: baseName } },
+        orderBy: [{ updatedAt: "desc" }],
+        take: Math.max(take * 3, 24),
+        include: { _count: { select: publicPlayCountSelect() } },
+      });
+      pushRows(seriesRows
+        .filter((r) => seriesKey(r.name) === currentSeriesKey)
+        .sort((a, b) => seasonNo(a.name) - seasonNo(b.name) || String(a.year || "").localeCompare(String(b.year || "")) || b.ratingCount - a.ratingCount)
+      );
+    }
+    // 2) 同小类
     if (sub) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, subType: sub },
@@ -250,7 +296,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         take, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
-    // 2) 同大类补足
+    // 3) 同大类补足
     if (picks.length < take && type) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, typeName: requestedPublicType(publicTypes, type), id: { notIn: [...seen] } },
@@ -258,7 +304,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         take: take - picks.length, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
-    // 3) 仍不足用热门补
+    // 4) 仍不足用热门补
     if (picks.length < take) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, id: { notIn: [...seen] } },
