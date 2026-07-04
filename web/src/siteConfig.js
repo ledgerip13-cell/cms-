@@ -129,13 +129,44 @@ export function applySiteHead(site) {
   }
 }
 
+function clampAlpha(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 1
+  return Math.max(0, Math.min(1, n))
+}
+
+function parseCssColor(value) {
+  const raw = String(value || '').trim()
+  const hex = raw.match(/^#?([0-9a-f]{6})([0-9a-f]{2})?$/i)
+  if (hex) {
+    const body = hex[1]
+    return {
+      r: parseInt(body.slice(0, 2), 16),
+      g: parseInt(body.slice(2, 4), 16),
+      b: parseInt(body.slice(4, 6), 16),
+      a: hex[2] ? parseInt(hex[2], 16) / 255 : 1,
+    }
+  }
+  const rgb = raw.match(/^rgba?\((.+)\)$/i)
+  if (rgb) {
+    const parts = rgb[1].split(',').map(x => x.trim())
+    if (parts.length >= 3) {
+      const [r, g, b] = parts.map(Number)
+      if ([r, g, b].every(Number.isFinite)) {
+        return { r, g, b, a: parts.length >= 4 ? clampAlpha(parts[3]) : 1 }
+      }
+    }
+  }
+  return null
+}
+
 function hexToRgb(hex) {
-  const clean = String(hex || '').replace('#', '').trim()
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return null
+  const color = parseCssColor(hex)
+  if (!color) return null
   return {
-    r: parseInt(clean.slice(0, 2), 16),
-    g: parseInt(clean.slice(2, 4), 16),
-    b: parseInt(clean.slice(4, 6), 16),
+    r: color.r,
+    g: color.g,
+    b: color.b,
   }
 }
 
