@@ -14,6 +14,7 @@ export const api = {
   subtypes: (type) => http.get('/subtypes', { params: { type } }),
   years: (params) => http.get('/years', { params }),
   hot: (limit, cat) => http.get('/hot', { params: { limit, cat } }),
+  shortFeed: (params) => http.get('/short-feed', { params }),
   related: (params) => http.get('/related', { params }),
   weekly: () => http.get('/weekly'),
   resolvePlay: (d) => http.get('/resolve', { params: d }),

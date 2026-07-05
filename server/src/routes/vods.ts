@@ -5,6 +5,7 @@ import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
+import { normalizeShortsConfig } from "./site.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -73,6 +74,11 @@ function withHeroImage(vod: any) {
   return { ...rest, heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
 }
 
+function publicVodCard(vod: any) {
+  const { plays, images, people, ...rest } = vod;
+  return withHeroImage({ ...rest, images });
+}
+
 function parseEpisodes(value: string | null | undefined): Array<{ name?: string; url?: string }> {
   try {
     const rows = JSON.parse(value || "[]");
@@ -86,6 +92,50 @@ function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
   return value.map((ep, index) => ({
     name: String(ep?.name || `第${index + 1}集`),
   }));
+}
+
+function parseIdList(value: unknown, limit = 500) {
+  const raw = Array.isArray(value) ? value.join(",") : String(value || "");
+  return [...new Set(raw.split(",").map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0))].slice(0, limit);
+}
+
+function shortsOrderBy(sortMode: string) {
+  if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { ratingCount: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "rating") return [{ rating: "desc" as const }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+}
+
+async function siteShortsConfig() {
+  const site = await prisma.siteConfig.findUnique({ where: { id: 1 } });
+  return normalizeShortsConfig((site as any)?.shortsConfig);
+}
+
+function bestPublicPlay(vod: any) {
+  const rows = (vod?.plays || [])
+    .map((p: any) => {
+      const episodes = parseEpisodes(p.episodes);
+      return {
+        id: p.id,
+        sourceId: p.sourceId,
+        sourceName: p.source?.name || "",
+        priority: Number(p.source?.priority ?? p.priority ?? 100),
+        flag: p.flag,
+        epCount: Number(p.epCount) || episodes.length,
+        alive: p.alive !== false,
+        score: Number(p.score) || 0,
+        checkMs: Number(p.checkMs) || 0,
+        playKind: p.playKind,
+        episodes,
+      };
+    })
+    .filter((p: any) => p.id && p.episodes.length);
+  rows.sort((a: any, b: any) => {
+    if (a.alive !== b.alive) return a.alive ? -1 : 1;
+    if (b.score !== a.score) return b.score - a.score;
+    return a.priority - b.priority;
+  });
+  return rows[0] || null;
 }
 
 function parseYearInput(value: unknown) {
@@ -313,6 +363,117 @@ export default async function vodRoutes(app: FastifyInstance) {
       },
     });
     return list.map(withHeroImage);
+  });
+
+  // 短剧漫游流：每条只代表一部不同短剧，前端向下刷时不会连续刷同一部剧的多集。
+  app.get("/api/short-feed", async (req) => {
+    const q = req.query as any;
+    const cfg = await siteShortsConfig();
+    if (!cfg.enabled) return { list: [], nextCursor: 0, hasMore: false, disabled: true };
+    const viewer = await viewerFromRequest(req);
+    const publicTypes = await enabledTypeNames(viewer);
+    const typeName = requestedPublicType(publicTypes, String(q.type || cfg.defaultType || "短剧"));
+    const sortMode = ["smart", "hot", "recent", "rating"].includes(String(q.sort || "")) ? String(q.sort) : cfg.sortMode;
+    const limit = Math.max(1, Math.min(20, Number(q.limit) || cfg.feedLimit || 10));
+    const cursor = Math.max(0, Number(q.cursor) || 0);
+    const rawSeed = Math.floor(Number(q.seed) || Date.now());
+    const seed = Math.abs(Number.isFinite(rawSeed) ? rawSeed : Date.now());
+    const excludeIds = parseIdList(q.exclude);
+    const where: any = {
+      status: "online",
+      typeName,
+      ...publicPlayableFilter(),
+    };
+    if (excludeIds.length) where.id = { notIn: excludeIds };
+    const total = await prisma.vod.count({ where });
+    if (!total) return { list: [], nextCursor: cursor, hasMore: false };
+
+    const orderBy = shortsOrderBy(sortMode);
+    const include = {
+      _count: { select: publicPlayCountSelect() },
+      images: { orderBy: [{ isHero: "desc" as const }, { score: "desc" as const }] },
+      plays: {
+        where: { source: { enabled: true } },
+        include: { source: true },
+      },
+    };
+    const take = Math.min(Math.max(limit * 3, limit), total);
+    const normalizedCursor = cursor % total;
+    const start = (seed % total + normalizedCursor) % total;
+    const firstTake = Math.min(take, total - start);
+    const rows = await prisma.vod.findMany({ where, orderBy, skip: start, take: firstTake, include });
+    if (rows.length < take) {
+      rows.push(
+        ...(await prisma.vod.findMany({
+          where,
+          orderBy,
+          skip: 0,
+          take: take - rows.length,
+          include,
+        })),
+      );
+    }
+
+    let followedIds = new Set<number>();
+    let historyIds = new Set<number>();
+    if (viewer?.id && sortMode === "smart") {
+      const [follows, histories] = await Promise.all([
+        prisma.userFollow.findMany({
+          where: { userId: viewer.id, vod: { status: "online", typeName } },
+          orderBy: { createdAt: "desc" },
+          take: 80,
+          select: { vodId: true },
+        }),
+        prisma.watchHistory.findMany({
+          where: { userId: viewer.id, vod: { status: "online", typeName } },
+          orderBy: { updatedAt: "desc" },
+          take: 80,
+          select: { vodId: true },
+        }),
+      ]);
+      followedIds = new Set(follows.map((x) => x.vodId));
+      historyIds = new Set(histories.map((x) => x.vodId));
+    }
+
+    const scoredRows = rows
+      .map((vod: any, index: number) => {
+        let score = rows.length - index;
+        if (followedIds.has(vod.id)) score += 120;
+        if (historyIds.has(vod.id)) score -= 45;
+        score += Math.min(40, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 12);
+        if (Number(vod.rating) > 0) score += Number(vod.rating);
+        return { vod, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.vod);
+
+    const list = scoredRows
+      .map((vod: any) => {
+        const play = bestPublicPlay(vod);
+        if (!play) return null;
+        const episodes = publicEpisodes(play.episodes);
+        return {
+          vod: publicVodCard(vod),
+          play: {
+            id: play.id,
+            sourceName: play.sourceName,
+            epCount: play.epCount || episodes.length,
+            alive: play.alive,
+            score: play.score,
+            playKind: play.playKind,
+            epIndex: 0,
+            epName: episodes[0]?.name || "第1集",
+            episodes,
+          },
+        };
+      })
+      .filter(Boolean)
+      .slice(0, limit);
+    return {
+      list,
+      nextCursor: cursor + rows.length,
+      hasMore: total > list.length,
+    };
   });
 
   // 每日更新：按最近7个自然日期分组，每天最多14部

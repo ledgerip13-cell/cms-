@@ -58,6 +58,57 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="刷短剧" name="shorts">
+          <el-form :model="form.shortsConfig" label-width="120px" class="site-form">
+            <el-form-item label="显示入口">
+              <el-switch v-model="form.shortsConfig.enabled" active-text="显示" inactive-text="隐藏" />
+              <div class="hint inline">关闭后前台导航不显示“刷短剧”，直接访问也只显示停用提示。</div>
+            </el-form-item>
+
+            <el-form-item label="默认分类">
+              <el-input v-model="form.shortsConfig.defaultType" placeholder="短剧" maxlength="24" style="max-width:220px" />
+              <div class="hint inline">需匹配前台已启用分类名，例如：短剧、漫剧。</div>
+            </el-form-item>
+
+            <el-form-item label="推荐排序">
+              <el-radio-group v-model="form.shortsConfig.sortMode">
+                <el-radio-button v-for="item in shortsSortOptions" :key="item.value" :label="item.value">{{ item.label }}</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item label="每次加载">
+              <el-input-number v-model="form.shortsConfig.feedLimit" :min="4" :max="20" :step="1" controls-position="right" />
+              <div class="hint inline">建议 8-12，过大会增加接口和首屏压力。</div>
+            </el-form-item>
+
+            <el-form-item label="游客试看">
+              <el-input-number v-model="form.shortsConfig.guestPreviewEpisodes" :min="0" :max="20" :step="1" controls-position="right" />
+              <div class="hint inline">0 表示不额外放行；实际播放仍受后端分类观看权限控制。</div>
+            </el-form-item>
+
+            <el-divider content-position="left">前台交互</el-divider>
+
+            <el-form-item label="框架内搜索">
+              <el-switch v-model="form.shortsConfig.enableSearch" active-text="开启" inactive-text="关闭" />
+              <div class="hint inline">开启后搜索在短剧框架内完成，不跳回普通列表页。</div>
+            </el-form-item>
+
+            <el-form-item label="左右滑手势">
+              <el-switch v-model="form.shortsConfig.enableSwipeGestures" active-text="开启" inactive-text="关闭" />
+              <div class="hint inline">左滑返回上一层级，右滑打开当前短剧详情面板。</div>
+            </el-form-item>
+
+            <el-form-item label="沉浸按钮">
+              <el-switch v-model="form.shortsConfig.showImmersiveButton" active-text="显示" inactive-text="隐藏" />
+            </el-form-item>
+
+            <el-form-item label="自动下一集">
+              <el-switch v-model="form.shortsConfig.autoPlayNext" active-text="开启" inactive-text="关闭" />
+              <div class="hint inline">全集观看时当前集结束后自动滑到下一集。</div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="主题设置" name="theme">
           <div class="theme-layout">
             <div class="theme-panel">
@@ -162,6 +213,30 @@
         <p class="pv-desc">{{ form.description || '（网站描述）' }}</p>
         <p class="pv-foot">{{ form.footer || '（页脚文字）' }}</p>
         <p class="pv-foot">注册：{{ form.allowRegister ? (form.inviteRequired ? '开放 · 需邀请码池' : '开放') : '关闭' }}</p>
+      </template>
+
+      <template v-else-if="activeSettingTab === 'shorts'">
+        <div class="sec-title" style="margin-bottom:14px">刷短剧预览</div>
+        <div class="shorts-preview">
+          <div class="sp-phone">
+            <div class="sp-top">
+              <span>刷短剧</span>
+              <em>{{ form.shortsConfig.enabled ? '已开启' : '已隐藏' }}</em>
+            </div>
+            <div class="sp-video">
+              <b>{{ form.shortsConfig.defaultType || '短剧' }}</b>
+              <span>{{ shortsSortLabel(form.shortsConfig.sortMode) }}</span>
+              <button v-if="form.shortsConfig.showImmersiveButton">沉浸</button>
+            </div>
+            <div class="sp-bottom">
+              <span>每次 {{ form.shortsConfig.feedLimit }} 条</span>
+              <span>{{ form.shortsConfig.enableSearch ? '框架内搜索' : '搜索关闭' }}</span>
+            </div>
+          </div>
+          <p class="pv-foot">左右滑：{{ form.shortsConfig.enableSwipeGestures ? '开启' : '关闭' }}</p>
+          <p class="pv-foot">自动下一集：{{ form.shortsConfig.autoPlayNext ? '开启' : '关闭' }}</p>
+          <p class="pv-foot">游客试看：{{ form.shortsConfig.guestPreviewEpisodes }} 集</p>
+        </div>
       </template>
 
       <template v-else>
@@ -269,13 +344,19 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { Check, Upload, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { api, DEFAULT_THEME, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
+import { api, DEFAULT_THEME, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
 
 const form = ref(readCachedSite())
 const saving = ref(false)
 const activeSettingTab = ref('basic')
 const activeThemeScope = ref('global')
 const activeFieldKey = ref('accent')
+const shortsSortOptions = [
+  { value: 'smart', label: '智能' },
+  { value: 'hot', label: '热度' },
+  { value: 'recent', label: '最新' },
+  { value: 'rating', label: '评分' },
+]
 const themeScopes = [
   { key: 'global', label: '全局' },
   { key: 'home', label: '首页' },
@@ -518,9 +599,11 @@ const previewVars = computed(() => {
 })
 
 function ensureTheme() { form.value.theme = normalizeTheme(form.value.theme) }
+function ensureShortsConfig() { form.value.shortsConfig = normalizeShortsConfig(form.value.shortsConfig) }
 async function load() {
   form.value = writeCachedSite(await api.adminSite())
   ensureTheme()
+  ensureShortsConfig()
 }
 
 function hasOwn(obj, key) {
@@ -554,6 +637,10 @@ function setActiveField(key) {
 
 function previewBlockLabel(block) {
   return previewLabels[block] || block
+}
+
+function shortsSortLabel(value) {
+  return shortsSortOptions.find(x => x.value === value)?.label || '智能'
 }
 
 function isInherited(scope, key) {
@@ -663,8 +750,10 @@ async function save() {
   saving.value = true
   try {
     ensureTheme()
+    ensureShortsConfig()
     form.value = writeCachedSite(await api.updateSite(form.value))
     ensureTheme()
+    ensureShortsConfig()
     ElMessage.success('站点设置已保存，前端刷新后生效')
   } catch (e) { ElMessage.error(e.message || '保存失败') } finally { saving.value = false }
 }
@@ -672,7 +761,7 @@ watch(activeThemeScope, () => {
   const keys = visibleThemeGroups.value.flatMap(g => g.fields.map(f => f.key))
   if (!keys.includes(activeFieldKey.value)) activeFieldKey.value = keys[0] || 'accent'
 })
-onMounted(() => { ensureTheme(); load() })
+onMounted(() => { ensureTheme(); ensureShortsConfig(); load() })
 </script>
 
 <style scoped>
@@ -694,6 +783,20 @@ onMounted(() => { ensureTheme(); load() })
 .pv-search { flex-shrink: 0; font-size: 12px; color: #8a94a7; background: #141925; padding: 6px 12px; border-radius: 14px; }
 .pv-desc { color: var(--text-2); font-size: 13px; margin: 14px 4px 6px; line-height: 1.6; }
 .pv-foot { color: var(--text-3); font-size: 12px; margin: 0 4px; line-height: 1.7; }
+.shorts-preview { display: grid; gap: 10px; }
+.sp-phone { width: 188px; height: 332px; margin: 0 auto 8px; border-radius: 24px; overflow: hidden; position: relative;
+  background: linear-gradient(180deg, #111827, #05060a); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 48px rgba(15,23,42,.18); color: #fff; }
+.sp-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 14px 12px 34px;
+  background: linear-gradient(180deg, rgba(0,0,0,.72), transparent); font-size: 12px; font-weight: 900; }
+.sp-top em { font-style: normal; color: rgba(255,255,255,.62); font-size: 10px; }
+.sp-video { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 0 12px 48px;
+  background: radial-gradient(circle at 58% 36%, rgba(255,94,108,.22), transparent 34%); }
+.sp-video b { font-size: 18px; line-height: 1.2; }
+.sp-video span { margin-top: 5px; font-size: 11px; color: rgba(255,255,255,.68); }
+.sp-video button { position: absolute; right: 10px; bottom: 86px; width: 42px; height: 26px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px;
+  background: rgba(255,255,255,.1); color: #fff; font-size: 11px; font-weight: 900; }
+.sp-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; gap: 8px; padding: 13px 12px;
+  background: linear-gradient(0deg, rgba(0,0,0,.72), transparent); font-size: 10px; color: rgba(255,255,255,.72); }
 .theme-layout { max-width: 860px; }
 .theme-tabs { width: 100%; }
 .scope-note { margin: 2px 0 14px; color: var(--text-3); font-size: 12px; }

@@ -1,5 +1,6 @@
 <template>
-  <div class="layout">
+  <router-view v-if="isShortsRoute" />
+  <div v-else class="layout">
     <!-- 移动端遮罩 -->
     <div v-if="drawer" class="sb-backdrop" @click="drawer=false"></div>
 
@@ -13,6 +14,10 @@
         <div class="sb-item" :class="{on: !curType && !isSearch}" @click="pick('')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
           <span>全军出鸡</span>
+        </div>
+        <div v-if="shortsEnabled" class="sb-item" @click="goShorts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="18" rx="3"/><path d="M11 9l4 3-4 3z"/></svg>
+          <span>刷短剧</span>
         </div>
         <div class="sb-sep"></div>
         <div class="sb-label">分类</div>
@@ -29,6 +34,7 @@
       <header class="topbar">
         <div class="mobile-tabs" aria-label="移动端分类导航">
           <button class="mobile-tab" :class="{on: !curType && !isSearch}" @click="pick('')">全军出鸡</button>
+          <button v-if="shortsEnabled" class="mobile-tab" @click="goShorts">刷短剧</button>
           <button v-for="t in types" :key="t.name" class="mobile-tab" :class="{on: curType===t.name}" @click="pick(t.name)">
             {{ t.name || '未分类' }}
           </button>
@@ -140,6 +146,8 @@ const user = currentUser
 
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
+const isShortsRoute = computed(() => route.path === '/shorts')
+const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
 
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
 watch(() => route.fullPath, () => {
@@ -151,6 +159,10 @@ function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
 function onErr(e) { e.target.style.visibility='hidden' }
 function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
+function goShorts() {
+  if (!shortsEnabled.value) return
+  kw.value=''; drawer.value=false; searchOpen.value=false; router.push('/shorts')
+}
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
 function openLogin() { openAuthDialog({ mode: 'login', redirect: route.fullPath }) }

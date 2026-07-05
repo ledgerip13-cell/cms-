@@ -5,10 +5,12 @@ import { signPlaybackToken } from "../auth.js";
 import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
 import { createHlsCleanTask } from "../collector/taskRunner.js";
+import { normalizeShortsConfig } from "./site.js";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
 const cache = new Map<string, { at: number; result: any }>();
 const TTL = 10 * 60 * 1000; // 10分钟
+const SHORTS_PREVIEW_CODES = new Set(["login_required", "vip_required", "level_required", "vip_or_level_required"]);
 
 export default async function resolveRoutes(app: FastifyInstance) {
   async function resolveWithCache(cacheKey: string, url: string) {
@@ -35,7 +37,15 @@ export default async function resolveRoutes(app: FastifyInstance) {
       }
       const viewer = await viewerFromRequest(req);
       const watchAccess = await accessForType(play.vod.typeName, "watch", viewer);
-      if (!watchAccess.allowed) {
+      const site = await prisma.siteConfig.findUnique({ where: { id: 1 } });
+      const shortsConfig = normalizeShortsConfig((site as any)?.shortsConfig);
+      const shortsPreviewAllowed = shortsConfig.enabled
+        && !viewer
+        && String(q.context || "") === "shorts"
+        && play.vod.typeName === shortsConfig.defaultType
+        && epIndex < shortsConfig.guestPreviewEpisodes
+        && SHORTS_PREVIEW_CODES.has(String(watchAccess.code || ""));
+      if (!watchAccess.allowed && !shortsPreviewAllowed) {
         return { ok: false, code: watchAccess.code, error: watchAccess.message || "无观看权限", requirement: (watchAccess as any).requirement || null };
       }
       let episodes: Array<{ name?: string; url?: string }> = [];

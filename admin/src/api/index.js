@@ -126,6 +126,7 @@ export const EMPTY_SITE = {
   announcement: '',
   allowRegister: true,
   theme: {},
+  shortsConfig: {},
 }
 
 export const DEFAULT_THEME = {
@@ -187,6 +188,18 @@ export const DEFAULT_THEME = {
   list: {},
 }
 
+export const DEFAULT_SHORTS_CONFIG = {
+  enabled: true,
+  defaultType: '短剧',
+  sortMode: 'smart',
+  feedLimit: 10,
+  guestPreviewEpisodes: 0,
+  enableSearch: true,
+  enableSwipeGestures: true,
+  showImmersiveButton: true,
+  autoPlayNext: true,
+}
+
 export function normalizeTheme(theme) {
   let raw = theme
   if (typeof raw === 'string') {
@@ -197,9 +210,35 @@ export function normalizeTheme(theme) {
   return out
 }
 
+export function normalizeShortsConfig(config) {
+  let raw = config
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
+  }
+  const sortMode = ['smart', 'hot', 'recent', 'rating'].includes(String(raw?.sortMode || '')) ? raw.sortMode : DEFAULT_SHORTS_CONFIG.sortMode
+  const clamp = (value, fallback, min, max) => {
+    const n = Math.floor(Number(value))
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback
+  }
+  return {
+    ...DEFAULT_SHORTS_CONFIG,
+    ...(raw || {}),
+    enabled: raw?.enabled !== false,
+    defaultType: String(raw?.defaultType || DEFAULT_SHORTS_CONFIG.defaultType).trim().slice(0, 24) || DEFAULT_SHORTS_CONFIG.defaultType,
+    sortMode,
+    feedLimit: clamp(raw?.feedLimit, DEFAULT_SHORTS_CONFIG.feedLimit, 4, 20),
+    guestPreviewEpisodes: clamp(raw?.guestPreviewEpisodes, DEFAULT_SHORTS_CONFIG.guestPreviewEpisodes, 0, 20),
+    enableSearch: raw?.enableSearch !== false,
+    enableSwipeGestures: raw?.enableSwipeGestures !== false,
+    showImmersiveButton: raw?.showImmersiveButton !== false,
+    autoPlayNext: raw?.autoPlayNext !== false,
+  }
+}
+
 export function normalizeSite(site) {
   const next = { ...EMPTY_SITE, ...(site || {}) }
   next.theme = normalizeTheme(next.theme)
+  next.shortsConfig = normalizeShortsConfig(next.shortsConfig)
   return next
 }
 

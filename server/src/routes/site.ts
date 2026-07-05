@@ -28,10 +28,56 @@ function normalizeJsonField(value: any) {
   }
 }
 
+const DEFAULT_SHORTS_CONFIG = {
+  enabled: true,
+  defaultType: "短剧",
+  sortMode: "smart",
+  feedLimit: 10,
+  guestPreviewEpisodes: 0,
+  enableSearch: true,
+  enableSwipeGestures: true,
+  showImmersiveButton: true,
+  autoPlayNext: true,
+};
+
+function clampInt(value: any, fallback: number, min: number, max: number) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+export function normalizeShortsConfig(value: any) {
+  let raw = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw || "{}");
+    } catch {
+      raw = {};
+    }
+  }
+  const sortMode = ["smart", "hot", "recent", "rating"].includes(String(raw?.sortMode || ""))
+    ? String(raw.sortMode)
+    : DEFAULT_SHORTS_CONFIG.sortMode;
+  return {
+    ...DEFAULT_SHORTS_CONFIG,
+    ...(raw || {}),
+    enabled: raw?.enabled !== false,
+    defaultType: String(raw?.defaultType || DEFAULT_SHORTS_CONFIG.defaultType).trim().slice(0, 24) || DEFAULT_SHORTS_CONFIG.defaultType,
+    sortMode,
+    feedLimit: clampInt(raw?.feedLimit, DEFAULT_SHORTS_CONFIG.feedLimit, 4, 20),
+    guestPreviewEpisodes: clampInt(raw?.guestPreviewEpisodes, DEFAULT_SHORTS_CONFIG.guestPreviewEpisodes, 0, 20),
+    enableSearch: raw?.enableSearch !== false,
+    enableSwipeGestures: raw?.enableSwipeGestures !== false,
+    showImmersiveButton: raw?.showImmersiveButton !== false,
+    autoPlayNext: raw?.autoPlayNext !== false,
+  };
+}
+
 function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = false) {
   const { registerInviteCode, ...rest } = s;
   return {
     ...rest,
+    shortsConfig: normalizeShortsConfig((s as any).shortsConfig),
     inviteRequired,
   };
 }
@@ -69,6 +115,7 @@ export default async function siteRoutes(app: FastifyInstance) {
         footer: b.footer,
         announcement: b.announcement,
         theme: normalizeJsonField(b.theme),
+        shortsConfig: JSON.stringify(normalizeShortsConfig(b.shortsConfig)),
         allowRegister: Boolean(b.allowRegister),
       },
     });
