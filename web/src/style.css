@@ -303,26 +303,6 @@ button { font-family: inherit; }
 .mini-btn.primary { border-color: transparent; background: var(--btn-primary-bg); color: var(--btn-primary-text); }
 .mini-btn:disabled { opacity: .55; cursor: not-allowed; }
 .pv-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-.auth-page { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; }
-.auth-panel { width: min(420px, 100%); background: var(--card); border: 1px solid var(--line);
-  border-radius: 16px; padding: 24px; box-shadow: var(--shadow); }
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 22px; }
-.auth-tabs button { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.04);
-  color: var(--muted2); cursor: pointer; font-weight: 700; }
-.auth-tabs button.on { background: var(--btn-primary-bg); color: var(--btn-primary-text); border-color: transparent; }
-.auth-tabs button:disabled { opacity: .4; cursor: not-allowed; }
-.auth-title { font-size: 24px; font-weight: 850; margin-bottom: 8px; }
-.auth-sub { color: var(--muted); font-size: 13px; line-height: 1.7; margin-bottom: 22px; }
-.auth-form { display: flex; flex-direction: column; gap: 14px; }
-.auth-form label span { display: block; font-size: 12px; color: var(--muted2); margin-bottom: 7px; }
-.auth-form input { width: 100%; height: 42px; border-radius: 10px; border: 1px solid var(--line-hi);
-  background: #0f1118; color: var(--text); outline: none; padding: 0 13px; font-size: 14px; }
-.auth-form input:focus { border-color: var(--search-focus-border); }
-.auth-err { color: var(--btn-hover-text); font-size: 13px; }
-.auth-ok { color: #55d69f; font-size: 13px; }
-.auth-submit { height: 44px; border: none; border-radius: 11px; background: var(--btn-primary-bg); color: var(--btn-primary-text);
-  font-size: 15px; font-weight: 800; cursor: pointer; margin-top: 4px; }
-.auth-submit:disabled { opacity: .55; cursor: not-allowed; }
 .profile-page { display: flex; flex-direction: column; gap: 24px; }
 .profile-head, .pref-panel, .onboarding-panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
 .profile-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

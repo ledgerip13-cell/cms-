@@ -44,7 +44,7 @@
 
     <section class="row" v-if="follows.length">
       <div class="row-head"><div class="row-title">我的追剧</div></div>
-      <div class="row-scroll">
+      <div class="row-scroll follow-row">
         <VodCard v-for="x in follows" :key="x.id" :vod="x.vod" @click="goPlay(x.vod.id)" />
       </div>
     </section>
@@ -66,6 +66,8 @@
 import { computed, defineComponent, h, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
+import { openAuthDialog } from '../authDialog'
+import { apiErrorMessage, notifySuccess, notifyError } from '../feedback'
 import { levelTagStyle } from '../levelTag'
 import { clearSession, currentUser, refreshUser } from '../userStore'
 
@@ -126,22 +128,28 @@ async function savePrefs() {
     currentUser.value = u
     localStorage.setItem('vcms.user', JSON.stringify(u))
     msg.value = '已保存'
+    notifySuccess('偏好已保存')
     await loadRecommendations()
     if (isNewUser.value) {
       await router.replace(nextPath.value ? { path: '/me', query: { next: nextPath.value } } : '/me')
     }
   } catch (e) {
-    msg.value = e?.response?.data?.error || e?.message || '保存失败'
+    msg.value = apiErrorMessage(e, '保存失败')
+    notifyError(msg.value)
   } finally { saving.value = false }
 }
-function logout() { clearSession(); router.replace('/') }
+function logout() { clearSession(); notifySuccess('已退出登录'); router.replace('/') }
 async function loadRecommendations() {
   const r = await api.userRecommendations(24)
   recMeta.value = { source: r.source, types: r.types || [] }
   recs.value = r.list || []
 }
 async function load() {
-  if (!await refreshUser()) { router.replace({ path: '/auth', query: { redirect: '/me' } }); return }
+  if (!await refreshUser()) {
+    openAuthDialog({ mode: 'login', redirect: '/me', reason: '登录后进入个人中心' })
+    router.replace('/')
+    return
+  }
   prefs.value = user.value?.favoriteTypes || []
   const [ts, fs, hs] = await Promise.all([api.categories(), api.follows(50), api.history(50)])
   types.value = ts
@@ -151,3 +159,11 @@ async function load() {
 }
 onMounted(load)
 </script>
+
+<style scoped>
+.follow-row { grid-auto-columns: 176px; }
+
+@media (max-width: 640px) {
+  .follow-row { grid-auto-columns: 128px; }
+}
+</style>

@@ -61,6 +61,21 @@ function toViewer(user: any): AccessViewer {
   };
 }
 
+function accessRequirement(mode: string, levelIds: number[]) {
+  if (mode === "login") return { kind: "login", label: "登录" };
+  if (mode === "vip") return { kind: "vip", label: "VIP会员" };
+  if (mode === "level") return { kind: "level", label: "指定会员等级", levelIds };
+  if (mode === "vip_or_level") return { kind: "vip_or_level", label: "VIP会员或指定会员等级", levelIds };
+  return null;
+}
+
+function deniedAccess(mode: string, levelIds: number[], code: string, message: string) {
+  const requirement = accessRequirement(mode, levelIds);
+  return requirement
+    ? { allowed: false, code, message, requirement }
+    : { allowed: false, code, message };
+}
+
 export async function viewerFromUserId(userId: number): Promise<AccessViewer> {
   if (!Number.isInteger(userId) || userId <= 0) return null;
   const user = await prisma.webUser.findUnique({
@@ -88,22 +103,22 @@ function accessRuleAllowed(mode: string, levelIds: number[], viewer: AccessViewe
   if (mode === "public") return { allowed: true, code: "ok", message: "" };
   if (mode === "inherit") return { allowed: true, code: "ok", message: "" };
   if (mode === "login") {
-    return viewer ? { allowed: true, code: "ok", message: "" } : { allowed: false, code: "login_required", message: "请先登录" };
+    return viewer ? { allowed: true, code: "ok", message: "" } : deniedAccess(mode, levelIds, "login_required", "请先登录");
   }
   if (mode === "vip") {
-    if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
-    return viewer.isVip ? { allowed: true, code: "ok", message: "" } : { allowed: false, code: "vip_required", message: "当前分类需要会员权限" };
+    if (!viewer) return deniedAccess(mode, levelIds, "login_required", "请先登录");
+    return viewer.isVip ? { allowed: true, code: "ok", message: "" } : deniedAccess(mode, levelIds, "vip_required", "当前分类需要会员权限");
   }
   if (mode === "level") {
-    if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
+    if (!viewer) return deniedAccess(mode, levelIds, "login_required", "请先登录");
     return viewer.levelId && levelIds.includes(viewer.levelId)
       ? { allowed: true, code: "ok", message: "" }
-      : { allowed: false, code: "level_required", message: "当前分类需要指定会员等级权限" };
+      : deniedAccess(mode, levelIds, "level_required", "当前分类需要指定会员等级权限");
   }
   if (mode === "vip_or_level") {
-    if (!viewer) return { allowed: false, code: "login_required", message: "请先登录" };
+    if (!viewer) return deniedAccess(mode, levelIds, "login_required", "请先登录");
     if (viewer.isVip || (viewer.levelId && levelIds.includes(viewer.levelId))) return { allowed: true, code: "ok", message: "" };
-    return { allowed: false, code: "vip_or_level_required", message: "当前分类需要指定会员等级权限" };
+    return deniedAccess(mode, levelIds, "vip_or_level_required", "当前分类需要指定会员等级权限");
   }
   return { allowed: false, code: "hidden", message: hiddenMessage };
 }
@@ -143,7 +158,23 @@ export async function enabledTypeNames(viewer: AccessViewer = null) {
 export async function accessForType(typeName: string, action: AccessAction, viewer: AccessViewer = null) {
   const category = await prisma.category.findFirst({ where: { name: typeName } });
   if (!category) return { allowed: false, code: "category_missing", message: "分类不存在或不可用" };
-  return categoryAllowed(category, action, viewer);
+  const access: any = categoryAllowed(category, action, viewer);
+  const levelIds = access.requirement?.levelIds;
+  if (!Array.isArray(levelIds) || !levelIds.length) return access;
+  const levels = await prisma.vipLevel.findMany({
+    where: { id: { in: levelIds }, enabled: true },
+    orderBy: [{ sort: "asc" }, { id: "asc" }],
+    select: { id: true, name: true },
+  });
+  const levelNames = levels.map((level) => level.name).filter(Boolean);
+  return {
+    ...access,
+    requirement: {
+      ...access.requirement,
+      levelNames,
+      label: levelNames.length ? levelNames.join(" / ") : access.requirement.label,
+    },
+  };
 }
 
 export function publicTypeList(types: string[]) {

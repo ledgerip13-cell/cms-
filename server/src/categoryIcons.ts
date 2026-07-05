@@ -31,6 +31,7 @@ export const CATEGORY_ICON_KEYS = [
   "music",
   "mystery",
   "news",
+  "play",
   "podcast",
   "radio",
   "ranking",

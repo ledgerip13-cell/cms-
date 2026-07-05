@@ -243,6 +243,8 @@ export default async function userRoutes(app: FastifyInstance) {
     const b = (req.body as any) || {};
     const username = String(b.username || "").trim();
     const password = String(b.password || "");
+    if (!username) return reply.code(400).send({ error: "请输入账号" });
+    if (!password) return reply.code(400).send({ error: "请输入密码" });
     const u = await prisma.webUser.findUnique({ where: { username }, include: { vipLevel: true } });
     if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
     if (!(await checkPassword(password, u.password))) return reply.code(401).send({ error: "密码错误" });

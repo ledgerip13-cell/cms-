@@ -75,16 +75,25 @@
       <el-form-item label="分类名"><el-input v-model="form.name" /></el-form-item>
       <el-form-item label="标识"><el-input v-model="form.slug" placeholder="英文，可选" /></el-form-item>
       <el-form-item label="图标">
-        <div class="icon-field">
-          <el-select v-model="form.icon" clearable filterable placeholder="自动匹配" style="width:240px">
-            <el-option v-for="icon in categoryIconOptions" :key="icon.value" :label="icon.label" :value="icon.value">
-              <span class="icon-option">
-                <span class="cat-icon" v-html="categoryIconSvg(icon.value)"></span>
-                <span>{{ icon.label }}</span>
-              </span>
-            </el-option>
-          </el-select>
-          <span class="icon-preview" v-html="categoryIconSvg(form.icon, form.name)"></span>
+        <div class="icon-picker">
+          <div class="icon-field">
+            <el-select v-model="form.icon" clearable filterable placeholder="自动匹配" style="width:240px">
+              <el-option v-for="icon in categoryIconOptions" :key="icon.value" :label="icon.label" :value="icon.value">
+                <span class="icon-option">
+                  <span class="cat-icon" v-html="categoryIconSvg(icon.value)"></span>
+                  <span>{{ icon.label }}</span>
+                </span>
+              </el-option>
+            </el-select>
+            <span class="icon-preview" v-html="categoryIconSvg(form.icon, form.name)"></span>
+          </div>
+          <div class="custom-icon-row">
+            <el-input v-model="customSvgInput" type="textarea" :rows="3" placeholder="粘贴 iconfont SVG 代码" />
+            <div class="custom-icon-actions">
+              <el-button size="small" type="primary" plain @click="applyCustomIcon">新增SVG</el-button>
+              <el-button v-if="isCustomIcon(form.icon)" size="small" @click="clearCustomIcon">清除自定义</el-button>
+            </div>
+          </div>
         </div>
       </el-form-item>
       <el-form-item label="排序"><el-input-number v-model="form.sort" :min="1" :max="999" /></el-form-item>
@@ -121,11 +130,12 @@ import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
-import { categoryIconOptions, categoryIconSvg, normalizeCategoryIcon } from '../categoryIcons'
+import { categoryIconOptions, categoryIconSvg, decodeCustomSvgIcon, encodeCustomSvgIcon, isCustomIcon, normalizeCategoryIcon } from '../categoryIcons'
 
 const cats = ref([]); const sources = ref([]); const maps = ref([]); const levels = ref([])
 const curSource = ref(null); const unmapped = ref(0)
 const dlg = ref(false); const form = ref({})
+const customSvgInput = ref('')
 const displayModes = [
   { value: 'public', label: '游客可见' },
   { value: 'login', label: '登录可见' },
@@ -188,8 +198,29 @@ async function toggleEnabled(row, v) {
 async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
 
-function openAdd() { form.value = { name:'', slug:'', icon:'', sort:100, enabled:true, displayMode:'public', displayLevelIds:[], watchMode:'inherit', watchLevelIds:[] }; dlg.value = true }
-function openEdit(row) { form.value = normalizeCat(row); dlg.value = true }
+function openAdd() {
+  customSvgInput.value = ''
+  form.value = { name:'', slug:'', icon:'', sort:100, enabled:true, displayMode:'public', displayLevelIds:[], watchMode:'inherit', watchLevelIds:[] }
+  dlg.value = true
+}
+function openEdit(row) {
+  form.value = normalizeCat(row)
+  customSvgInput.value = isCustomIcon(form.value.icon) ? decodeCustomSvgIcon(form.value.icon) : ''
+  dlg.value = true
+}
+function applyCustomIcon() {
+  const icon = encodeCustomSvgIcon(customSvgInput.value)
+  if (!icon) {
+    ElMessage.warning('SVG无效，仅支持 path/rect/circle/line/polyline/polygon 等基础元素')
+    return
+  }
+  form.value.icon = icon
+  ElMessage.success('SVG图标已应用')
+}
+function clearCustomIcon() {
+  form.value.icon = ''
+  customSvgInput.value = ''
+}
 async function saveCat() {
   try {
     const payload = { ...form.value }
@@ -229,6 +260,9 @@ onMounted(async () => {
 .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .hint { margin-left: 10px; color: #9aa4b2; font-size: 12px; }
 .cat-cell, .icon-option, .icon-field { display: flex; align-items: center; gap: 8px; }
+.icon-picker { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.custom-icon-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.custom-icon-actions { display: flex; flex-direction: column; gap: 8px; }
 .cat-icon, .icon-preview { display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
 .cat-icon :deep(svg), .icon-preview :deep(svg) { width: 18px; height: 18px; display: block; }
 .icon-preview { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-1); }

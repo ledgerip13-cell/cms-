@@ -2,13 +2,22 @@
   <div class="page play-wrap" v-if="vod.id">
     <!-- 左：播放器 + 选集 + 信息 -->
     <div class="player-col">
-      <div class="player-box">
-        <video v-show="mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
-        <iframe v-if="mode==='iframe'" :src="curUrl" class="video" frameborder="0"
+      <div class="player-box" :class="{locked: accessBlock}">
+        <div v-if="accessBlock" class="play-lock-bg" :style="playerBackdropStyle"></div>
+        <div v-if="accessBlock" class="play-lock">
+          <div class="play-lock-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </div>
+          <div class="play-lock-title">{{ accessBlock.title }}</div>
+          <div class="play-lock-desc">{{ accessBlock.desc }}</div>
+          <button class="play-lock-btn" type="button" @click="handleAccessAction">{{ accessBlock.actionText }}</button>
+        </div>
+        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
+        <iframe v-if="!accessBlock && mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
-        <div v-if="mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
-        <div v-if="playNotice" class="play-notice">{{ playNotice }}</div>
-        <div v-if="resolving" class="video-ph">正在解析播放地址…</div>
+        <div v-if="!accessBlock && mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
+        <div v-if="!accessBlock && playNotice" class="play-notice">{{ playNotice }}</div>
+        <div v-if="!accessBlock && resolving" class="video-ph">正在解析播放地址...</div>
       </div>
 
       <!-- 标题信息条 -->
@@ -176,6 +185,8 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
+import { openAuthDialog } from '../authDialog'
+import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
 import { currentUser } from '../userStore'
 defineOptions({ name: 'Play' })
 
@@ -192,6 +203,7 @@ const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const playNotice = ref('')
+const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
 let hls = null
 let hlsRecoverCount = 0
@@ -252,6 +264,56 @@ const activeGallery = computed(() => gallery.value[galleryIdx.value])
 // 当前选中的具体通道(flag)：有channels则取chanIdx对应项，否则回退用line本身(兼容旧数据)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
+const playerBackdropStyle = computed(() => {
+  const url = pic(vod.value)
+  return url ? { backgroundImage: `url(${url})` } : {}
+})
+
+function stopPlayback() {
+  clearPlayWatchdog()
+  if (hls) { hls.destroy(); hls = null }
+  const video = videoEl.value
+  if (video) {
+    try { video.pause() } catch {}
+    video.removeAttribute('src')
+    try { video.load() } catch {}
+  }
+  curUrl.value = ''
+  cleanFallbackUrl.value = ''
+}
+
+function accessTitle(result) {
+  const req = result?.requirement || {}
+  const label = req.label || (req.kind === 'vip' ? 'VIP会员' : '指定会员等级')
+  if (result?.code === 'login_required') {
+    if (req.kind === 'vip') return `当前影片需要登录后以${label}身份播放`
+    if (req.kind === 'level' || req.kind === 'vip_or_level') return `当前影片需要登录后以${label}身份播放`
+    return '当前影片需要登录后才能播放'
+  }
+  if (result?.code === 'vip_required') return `当前影片需要${label}才能播放`
+  if (result?.code === 'level_required' || result?.code === 'vip_or_level_required') return `当前影片需要${label}才能播放`
+  return result?.error || '当前影片暂无观看权限'
+}
+
+function showAccessBlock(result) {
+  stopPlayback()
+  const loginRequired = result?.code === 'login_required'
+  accessBlock.value = {
+    code: result?.code || 'access_denied',
+    title: accessTitle(result),
+    desc: loginRequired ? '登录成功后会自动重新尝试播放当前集。' : '当前账号权限不足，请切换符合权限的会员等级后再播放。',
+    actionText: loginRequired ? '登录后播放' : '查看我的会员',
+    retryAfterLogin: loginRequired,
+  }
+}
+
+function handleAccessAction() {
+  if (accessBlock.value?.code === 'login_required') {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: accessBlock.value.title })
+    return
+  }
+  router.push('/me')
+}
 
 function playHls(url) {
   mode.value = 'hls'
@@ -312,6 +374,7 @@ function playDirectUrl(url, kind = '') {
 async function playResolvedEp(i) {
   const channel = curChannel.value
   if (!channel?.id || !vod.value?.id) return
+  accessBlock.value = null
   resolving.value = true
   try {
     const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i })
@@ -322,8 +385,7 @@ async function playResolvedEp(i) {
       return
     }
     if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(r.code)) {
-      cleanFallbackUrl.value = ''
-      showPlayNotice(r.error || '当前内容无观看权限')
+      showAccessBlock(r)
       return
     }
   } catch {}
@@ -397,7 +459,7 @@ function switchChannel(i) {
 async function loadVod(id) {
   introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
   galleryOpen.value = false; galleryIdx.value = 0
-  notFound.value = false; vod.value = {}; followed.value = false
+  notFound.value = false; vod.value = {}; followed.value = false; accessBlock.value = null
   try {
     vod.value = await api.vod(id)
   } catch (e) {
@@ -447,15 +509,23 @@ function nextGallery() {
 async function toggleFollow() {
   if (!vod.value?.id) return
   if (!user.value) {
-    router.push({ path: '/auth', query: { redirect: route.fullPath } })
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可追剧和同步片单' })
     return
   }
-  const r = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
-  followed.value = r.followed
+  try {
+    const r = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
+    followed.value = r.followed
+    notifySuccess(r.followed ? '已加入追剧' : '已取消追剧')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '操作失败'))
+  }
 }
 
 onMounted(() => loadVod(route.params.id))
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
+watch(user, (next) => {
+  if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
+})
 onBeforeUnmount(() => {
   if (curUrl.value) saveWatchHistory(epIdx.value)
   if (hls) hls.destroy()
@@ -467,9 +537,25 @@ onBeforeUnmount(() => {
 .play-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 26px; }
 .player-col { min-width: 0; }
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
+.player-box.locked { background: #11131b; }
 .video { width: 100%; height: 100%; background: #000; }
 .video-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #667; pointer-events: none; }
+.play-lock-bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: blur(16px) brightness(.42) saturate(1.08);
+  transform: scale(1.08); opacity: .88; }
+.play-lock-bg::after { content: ''; position: absolute; inset: 0; background:
+  radial-gradient(circle at 50% 42%, rgba(20,22,29,.5), rgba(6,7,10,.9) 70%),
+  linear-gradient(0deg, rgba(0,0,0,.78), rgba(0,0,0,.18)); }
+.play-lock { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 24px; text-align: center; }
+.play-lock-icon { width: 54px; height: 54px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); color: #fff; backdrop-filter: blur(8px); }
+.play-lock-icon svg { width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.play-lock-title { max-width: 680px; color: #fff; font-size: 22px; line-height: 1.35; font-weight: 900; overflow-wrap: anywhere; }
+.play-lock-desc { max-width: 520px; color: #c4cad6; font-size: 13.5px; line-height: 1.7; }
+.play-lock-btn { height: 42px; padding: 0 24px; border: 0; border-radius: 11px; background: var(--btn-primary-bg);
+  color: var(--btn-primary-text); cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.play-lock-btn:hover { filter: brightness(1.06); }
 .play-notice { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3;
   border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(8,10,15,.82);
   color: #f6d7db; font-size: 13px; line-height: 1.45; padding: 9px 12px; backdrop-filter: blur(10px);
@@ -596,6 +682,12 @@ onBeforeUnmount(() => {
   .rec-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 @media (max-width: 480px) {
+  .play-lock { gap: 10px; padding: 18px; }
+  .play-lock-icon { width: 44px; height: 44px; }
+  .play-lock-icon svg { width: 23px; height: 23px; }
+  .play-lock-title { font-size: 17px; }
+  .play-lock-desc { font-size: 12.5px; }
+  .play-lock-btn { height: 38px; padding: 0 18px; }
   .pv-head {
     display: grid;
     grid-template-columns: 86px minmax(0, 1fr);

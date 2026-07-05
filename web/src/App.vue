@@ -12,7 +12,7 @@
       <nav class="sb-nav">
         <div class="sb-item" :class="{on: !curType && !isSearch}" @click="pick('')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
-          <span>首页</span>
+          <span>全军出鸡</span>
         </div>
         <div class="sb-sep"></div>
         <div class="sb-label">分类</div>
@@ -28,7 +28,7 @@
     <div class="main">
       <header class="topbar">
         <div class="mobile-tabs" aria-label="移动端分类导航">
-          <button class="mobile-tab" :class="{on: !curType && !isSearch}" @click="pick('')">首页</button>
+          <button class="mobile-tab" :class="{on: !curType && !isSearch}" @click="pick('')">全军出鸡</button>
           <button v-for="t in types" :key="t.name" class="mobile-tab" :class="{on: curType===t.name}" @click="pick(t.name)">
             {{ t.name || '未分类' }}
           </button>
@@ -89,7 +89,7 @@
               <span class="user-chip-text">{{ user.nickname || user.username }}</span>
               <span v-if="user.vipLevel" class="user-level-label" :style="levelTagStyle(user.vipLevel)">{{ user.vipLevel.name }}</span>
             </button>
-            <button v-else class="user-chip" @click="router.push({path:'/auth',query:{redirect:route.fullPath}})" aria-label="登录">
+            <button v-else class="user-chip" @click="openLogin" aria-label="登录">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
               <span class="user-chip-text">登录</span>
             </button>
@@ -106,13 +106,18 @@
       <footer v-if="site.footer" class="foot">{{ site.footer }}</footer>
     </div>
   </div>
+  <AuthModal />
+  <ToastStack />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import AuthModal from './components/AuthModal.vue'
+import ToastStack from './components/ToastStack.vue'
 import { api, imgUrl } from './api'
 import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writeCachedSite } from './siteConfig'
+import { openAuthDialog } from './authDialog'
 import { currentUser, refreshUser } from './userStore'
 import { levelTagStyle } from './levelTag'
 import { categoryIconSvg } from './categoryIcons'
@@ -148,6 +153,7 @@ function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
+function openLogin() { openAuthDialog({ mode: 'login', redirect: route.fullPath }) }
 function cancelSearch() {
   searchOpen.value = false
   searchInput.value?.blur?.()

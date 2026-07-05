@@ -36,7 +36,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
       const viewer = await viewerFromRequest(req);
       const watchAccess = await accessForType(play.vod.typeName, "watch", viewer);
       if (!watchAccess.allowed) {
-        return { ok: false, code: watchAccess.code, error: watchAccess.message || "无观看权限" };
+        return { ok: false, code: watchAccess.code, error: watchAccess.message || "无观看权限", requirement: (watchAccess as any).requirement || null };
       }
       let episodes: Array<{ name?: string; url?: string }> = [];
       try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
