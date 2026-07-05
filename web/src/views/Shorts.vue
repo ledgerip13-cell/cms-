@@ -181,7 +181,7 @@
             <div class="episode-sheet-head">
               <div>
                 <strong>{{ activeUnit?.vod?.name || '当前短剧' }}</strong>
-                <span>第{{ activeIndex + 1 }}集 / 共{{ activeUnit?.total || units.length }}集</span>
+                <span>第{{ currentEpisodeNumber }}集 / 共{{ currentEpisodeTotal }}集</span>
               </div>
               <button type="button" aria-label="关闭选集" @click="closeEpisodeSheet({ resume: true })">
                 <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -189,12 +189,12 @@
             </div>
             <div class="episode-grid">
               <button
-                v-for="(item, index) in units"
+                v-for="item in episodeOptions"
                 :key="item.key"
                 type="button"
-                :class="{on: index === activeIndex}"
-                @click="jumpEpisode(index)"
-              >{{ item.epName }}</button>
+                :class="{on: item.index === currentSeriesEpIndex}"
+                @click="jumpEpisode(item.index)"
+              >{{ item.name }}</button>
             </div>
           </div>
         </div>
@@ -326,6 +326,7 @@ const currentSec = ref(0)
 const durationSec = ref(0)
 const seekValue = ref(0)
 const seeking = ref(false)
+const seriesState = ref(null)
 const followState = reactive({})
 
 const unitKeys = new Set()
@@ -346,6 +347,7 @@ let gestureState = null
 let suppressMediaClick = false
 let suppressActiveIndexWatch = false
 let resumeAfterEpisodeSheet = false
+let playingUnit = null
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
@@ -353,6 +355,30 @@ const shortsConfig = computed(() => normalizeShortsConfig(site.value?.shortsConf
 const shortsDisabled = computed(() => shortsConfig.value.enabled === false)
 const feedBatchSize = computed(() => Math.max(4, Math.min(20, Number(shortsConfig.value.feedLimit) || 10)))
 const layerOpen = computed(() => episodeSheetOpen.value || detailSheetOpen.value || searchSheetOpen.value)
+const currentSeriesEpIndex = computed(() => {
+  if (feedMode.value !== 'series') return -1
+  return Math.max(0, Number(seriesState.value?.epIndex) || 0)
+})
+const currentEpisodeNumber = computed(() => feedMode.value === 'series' ? currentSeriesEpIndex.value + 1 : activeIndex.value + 1)
+const currentEpisodeTotal = computed(() => {
+  if (feedMode.value === 'series') return Math.max(1, Number(seriesState.value?.total) || 1)
+  return activeUnit.value?.total || units.value.length || 1
+})
+const episodeOptions = computed(() => {
+  const state = seriesState.value
+  if (feedMode.value !== 'series' || !state) {
+    return units.value.map((unit, index) => ({
+      key: unit.key || `feed:${index}`,
+      index,
+      name: unit.epName || `第${index + 1}集`,
+    }))
+  }
+  return state.episodes.map((ep, index) => ({
+    key: `ep:${state.baseUnit?.vod?.id || 'v'}:${state.baseUnit?.channel?.id || 'p'}:${index}`,
+    index,
+    name: ep?.name || `第${index + 1}集`,
+  }))
+})
 const progressPercent = computed(() => {
   if (!durationSec.value) return 0
   return Math.max(0, Math.min(100, (currentSec.value / durationSec.value) * 100))
@@ -445,6 +471,55 @@ function buildUnitFromVodDetail(vod) {
   })
 }
 
+function clampIndex(value, total) {
+  const max = Math.max(0, Number(total) - 1)
+  const next = Math.floor(Number(value) || 0)
+  return Math.max(0, Math.min(max, next))
+}
+
+function buildSeriesUnit(index) {
+  const state = seriesState.value
+  if (!state?.baseUnit) return null
+  const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
+  const epIndex = clampIndex(index, total)
+  const ep = state.episodes[epIndex] || {}
+  const base = state.baseUnit
+  return {
+    ...base,
+    key: `series:${base.vod.id}:${base.channel.id}:${epIndex}`,
+    epIndex,
+    epName: ep.name || `第${epIndex + 1}集`,
+    total,
+  }
+}
+
+function buildSeriesWindow(epIndex) {
+  const state = seriesState.value
+  const total = Math.max(1, Number(state?.total) || state?.episodes?.length || 1)
+  const current = clampIndex(epIndex, total)
+  const size = Math.min(3, total)
+  const start = Math.max(0, Math.min(current - 1, total - size))
+  return Array.from({ length: size }, (_, offset) => buildSeriesUnit(start + offset)).filter(Boolean)
+}
+
+async function showSeriesEpisode(index, options = {}) {
+  const state = seriesState.value
+  if (!state) return
+  const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
+  const epIndex = clampIndex(index, total)
+  const nextUnits = buildSeriesWindow(epIndex)
+  const nextActive = Math.max(0, nextUnits.findIndex(unit => unit.epIndex === epIndex))
+  suppressActiveIndexWatch = true
+  state.epIndex = epIndex
+  units.value = nextUnits
+  activeIndex.value = nextActive
+  await nextTick()
+  scrollToIndex(nextActive, options.behavior || 'auto')
+  suppressActiveIndexWatch = false
+  ensureMoreAhead()
+  if (options.play !== false) await playActive()
+}
+
 function appendFeedItems(items) {
   const list = []
   for (const item of items || []) {
@@ -514,6 +589,7 @@ async function loadFeed() {
     detailSheetOpen.value = false
     searchSheetOpen.value = false
     feedMode.value = 'wander'
+    seriesState.value = null
     activeIndex.value = 0
     wanderState = null
     units.value = []
@@ -641,6 +717,7 @@ async function playActive() {
   const seq = ++playSeq
   stopPlayback()
   accessBlock.value = null
+  playingUnit = unit || null
   if (!unit?.vod?.id || !unit?.channel?.id) return
   resolving.value = true
   try {
@@ -779,7 +856,7 @@ function onVideoError() {
 }
 
 function saveWatchHistory(progressOverride = null) {
-  const unit = activeUnit.value
+  const unit = playingUnit || activeUnit.value
   if (!user.value || !unit?.vod?.id || !playUrl.value) return
   const video = getVideo()
   const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
@@ -818,8 +895,17 @@ function nextItem() {
     paused.value = true
     return
   }
-  if (feedMode.value === 'series' && !shortsConfig.value.autoPlayNext) {
-    paused.value = true
+  if (feedMode.value === 'series') {
+    if (!shortsConfig.value.autoPlayNext) {
+      paused.value = true
+      return
+    }
+    const nextEp = currentSeriesEpIndex.value + 1
+    if (nextEp < currentEpisodeTotal.value) {
+      void showSeriesEpisode(nextEp, { behavior: 'smooth' })
+    } else {
+      paused.value = true
+    }
     return
   }
   if (activeIndex.value < units.value.length - 1) scrollToIndex(activeIndex.value + 1)
@@ -829,10 +915,11 @@ function nextItem() {
 
 function jumpEpisode(index) {
   if (feedMode.value !== 'series') return
-  const isCurrent = index === activeIndex.value
+  const isCurrent = index === currentSeriesEpIndex.value
   closeEpisodeSheet({ resume: isCurrent })
   if (isCurrent) return
-  scrollToIndex(index)
+  saveWatchHistory()
+  void showSeriesEpisode(index)
 }
 
 function openEpisodeSheet() {
@@ -915,20 +1002,20 @@ async function enterSeriesMode(unit = activeUnit.value) {
   }
   const episodes = Array.isArray(unit.channel.episodes) ? unit.channel.episodes : []
   const total = episodes.length || unit.total || 1
-  units.value = Array.from({ length: total }, (_, index) => ({
-    ...unit,
-    key: `series:${unit.vod.id}:${unit.channel.id}:${index}`,
-    epIndex: index,
-    epName: episodes[index]?.name || `第${index + 1}集`,
+  seriesState.value = {
+    baseUnit: {
+      ...unit,
+      key: `${unit.vod.id}:${unit.channel.id}:base`,
+      epIndex: 0,
+      epName: episodes[0]?.name || '第1集',
+      total,
+    },
+    episodes,
     total,
-  }))
+    epIndex: clampIndex(unit.epIndex || 0, total),
+  }
   feedMode.value = 'series'
-  activeIndex.value = Math.max(0, Math.min(unit.epIndex || 0, total - 1))
-  await nextTick()
-  scrollToIndex(activeIndex.value, 'auto')
-  suppressActiveIndexWatch = false
-  ensureMoreAhead()
-  await playActive()
+  await showSeriesEpisode(seriesState.value.epIndex, { behavior: 'auto' })
 }
 
 async function enterImmersive(unit = activeUnit.value) {
@@ -946,12 +1033,14 @@ async function exitSeriesMode() {
   immersiveMode.value = false
   if (!wanderState) {
     feedMode.value = 'wander'
+    seriesState.value = null
     await loadFeed()
     return
   }
   saveWatchHistory()
   suppressActiveIndexWatch = true
   feedMode.value = 'wander'
+  seriesState.value = null
   units.value = wanderState.units || []
   activeIndex.value = Math.max(0, Math.min(wanderState.activeIndex || 0, units.value.length - 1))
   feedCursor = Number(wanderState.feedCursor) || 0
@@ -1176,6 +1265,13 @@ watch(activeIndex, async () => {
   if (suppressActiveIndexWatch) return
   saveWatchHistory()
   historySaveAt = 0
+  if (feedMode.value === 'series') {
+    const unit = activeUnit.value
+    if (!unit) return
+    await showSeriesEpisode(unit.epIndex, { behavior: 'auto', play: false })
+    await playActive()
+    return
+  }
   ensureMoreAhead()
   await nextTick()
   await playActive()
