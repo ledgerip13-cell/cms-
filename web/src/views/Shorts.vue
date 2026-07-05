@@ -39,6 +39,7 @@
         v-else
         ref="feedEl"
         class="shorts-feed"
+        :class="{ frozen: layerOpen }"
         @scroll.passive="onFeedScroll"
         @pointerdown="onGestureStart"
         @pointermove="onGestureMove"
@@ -120,7 +121,7 @@
                 <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.2-8.18C.75 9.25 2.7 5 6.7 5c2.05 0 3.35 1.12 4.05 2.08C11.45 6.12 12.75 5 14.8 5c4 0 5.95 4.25 3.9 7.82C16.5 16.65 12 21 12 21z"/></svg>
                 <span>{{ isFollowed(unit.vod.id) ? '已追' : '追剧' }}</span>
               </button>
-              <button v-if="feedMode === 'series'" type="button" class="action-btn" aria-label="选集" @click="episodeSheetOpen = true">
+              <button v-if="feedMode === 'series'" type="button" class="action-btn" aria-label="选集" @click="openEpisodeSheet">
                 <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></svg>
                 <span>选集</span>
               </button>
@@ -135,7 +136,7 @@
               </button>
             </template>
             <template v-else>
-              <button type="button" class="action-btn" aria-label="选集" @click="episodeSheetOpen = true">
+              <button type="button" class="action-btn" aria-label="选集" @click="openEpisodeSheet">
                 <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></svg>
                 <span>选集</span>
               </button>
@@ -170,7 +171,7 @@
         <div
           v-if="episodeSheetOpen"
           class="episode-mask"
-          @click="episodeSheetOpen = false"
+          @click="closeEpisodeSheet({ resume: true })"
           @pointerdown="onLayerGestureStart"
           @pointermove="onGestureMove"
           @pointerup="onLayerGestureEnd"
@@ -182,7 +183,7 @@
                 <strong>{{ activeUnit?.vod?.name || '当前短剧' }}</strong>
                 <span>第{{ activeIndex + 1 }}集 / 共{{ activeUnit?.total || units.length }}集</span>
               </div>
-              <button type="button" aria-label="关闭选集" @click="episodeSheetOpen = false">
+              <button type="button" aria-label="关闭选集" @click="closeEpisodeSheet({ resume: true })">
                 <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
@@ -344,12 +345,14 @@ let previousBodyOverflow = ''
 let gestureState = null
 let suppressMediaClick = false
 let suppressActiveIndexWatch = false
+let resumeAfterEpisodeSheet = false
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
 const shortsConfig = computed(() => normalizeShortsConfig(site.value?.shortsConfig))
 const shortsDisabled = computed(() => shortsConfig.value.enabled === false)
 const feedBatchSize = computed(() => Math.max(4, Math.min(20, Number(shortsConfig.value.feedLimit) || 10)))
+const layerOpen = computed(() => episodeSheetOpen.value || detailSheetOpen.value || searchSheetOpen.value)
 const progressPercent = computed(() => {
   if (!durationSec.value) return 0
   return Math.max(0, Math.min(100, (currentSec.value / durationSec.value) * 100))
@@ -365,7 +368,7 @@ function goBack() {
     return
   }
   if (episodeSheetOpen.value) {
-    episodeSheetOpen.value = false
+    closeEpisodeSheet({ resume: true })
     return
   }
   if (immersiveMode.value) {
@@ -737,6 +740,15 @@ function togglePause() {
   }
 }
 
+function pauseCurrentVideo() {
+  const video = getVideo()
+  if (!video || video.paused) return false
+  video.pause()
+  paused.value = true
+  needsTap.value = false
+  return true
+}
+
 function onMediaClick() {
   if (suppressMediaClick) return
   togglePause()
@@ -802,6 +814,10 @@ function onVideoTimeUpdate() {
 
 function nextItem() {
   saveWatchHistory()
+  if (layerOpen.value || seeking.value) {
+    paused.value = true
+    return
+  }
   if (feedMode.value === 'series' && !shortsConfig.value.autoPlayNext) {
     paused.value = true
     return
@@ -813,8 +829,23 @@ function nextItem() {
 
 function jumpEpisode(index) {
   if (feedMode.value !== 'series') return
-  episodeSheetOpen.value = false
+  const isCurrent = index === activeIndex.value
+  closeEpisodeSheet({ resume: isCurrent })
+  if (isCurrent) return
   scrollToIndex(index)
+}
+
+function openEpisodeSheet() {
+  if (feedMode.value !== 'series') return
+  resumeAfterEpisodeSheet = pauseCurrentVideo()
+  episodeSheetOpen.value = true
+}
+
+function closeEpisodeSheet(options = {}) {
+  const shouldResume = Boolean(options?.resume && resumeAfterEpisodeSheet && !accessBlock.value)
+  episodeSheetOpen.value = false
+  resumeAfterEpisodeSheet = false
+  if (shouldResume) void nextTick(() => playNow({ allowMutedRetry: true }))
 }
 
 function startSeek() {
@@ -869,6 +900,7 @@ async function enterSeriesMode(unit = activeUnit.value) {
   }
   saveWatchHistory()
   episodeSheetOpen.value = false
+  resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
   suppressActiveIndexWatch = true
@@ -909,6 +941,7 @@ async function enterImmersive(unit = activeUnit.value) {
 
 async function exitSeriesMode() {
   episodeSheetOpen.value = false
+  resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
   immersiveMode.value = false
   if (!wanderState) {
@@ -1085,7 +1118,7 @@ function returnPreviousShortsLayer() {
     return
   }
   if (episodeSheetOpen.value) {
-    episodeSheetOpen.value = false
+    closeEpisodeSheet({ resume: true })
     return
   }
   if (immersiveMode.value) {
@@ -1187,6 +1220,7 @@ onBeforeUnmount(() => {
 .shorts-title strong { display: block; font-size: 17px; font-weight: 900; letter-spacing: 0; }
 .shorts-title span { display: block; margin-top: 3px; font-size: 11px; color: rgba(255,255,255,.62); }
 .shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; }
+.shorts-feed.frozen { overflow: hidden; }
 .shorts-feed::-webkit-scrollbar { display: none; }
 .short-card { position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #05060a; }
 .short-media { position: absolute; inset: 0; background: #05060a; }
