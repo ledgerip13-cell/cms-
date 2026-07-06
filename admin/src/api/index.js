@@ -205,6 +205,7 @@ export const DEFAULT_SHORTS_CONFIG = {
 
 export const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
+  proxyMode: 'direct',
 }
 
 export function normalizeTheme(theme) {
@@ -251,6 +252,7 @@ export function normalizePlayConfig(config) {
     ...DEFAULT_PLAY_CONFIG,
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
+    proxyMode: ['direct', 'key', 'proxy'].includes(raw?.proxyMode) ? raw.proxyMode : 'direct',
   }
 }
 

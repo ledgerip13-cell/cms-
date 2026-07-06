@@ -42,6 +42,7 @@ const DEFAULT_SHORTS_CONFIG = {
 
 const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
+  proxyMode: "direct", // 全局默认回源模式: direct/key/proxy（源级 inherit 回落此值）
 };
 
 function clampInt(value: any, fallback: number, min: number, max: number) {
@@ -86,10 +87,12 @@ export function normalizePlayConfig(value: any) {
       raw = {};
     }
   }
+  const proxyMode = ["direct", "key", "proxy"].includes(String(raw?.proxyMode)) ? raw.proxyMode : "direct";
   return {
     ...DEFAULT_PLAY_CONFIG,
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
+    proxyMode,
   };
 }
 

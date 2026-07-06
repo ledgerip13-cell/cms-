@@ -10,11 +10,12 @@ import { normalizeShortsConfig } from "./site.js";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
 const cache = new Map<string, { at: number; result: any }>();
-const TTL = 10 * 60 * 1000; // 10分钟
+const TTL = 30 * 60 * 1000; // 30分钟（sign 实测稳定 >1h，配合前端 403 自愈兵双保险）
 const SHORTS_PREVIEW_CODES = new Set(["login_required", "vip_required", "level_required", "vip_or_level_required"]);
 
 export default async function resolveRoutes(app: FastifyInstance) {
-  async function resolveWithCache(cacheKey: string, url: string) {
+  async function resolveWithCache(cacheKey: string, url: string, force = false) {
+    if (force) cache.delete(cacheKey); // 自愈：强制重解，丢弃旧 sign
     const hit = cache.get(cacheKey);
     if (hit && Date.now() - hit.at < TTL) return hit.result;
     const result = await resolveShareUrl(url);
@@ -53,7 +54,8 @@ export default async function resolveRoutes(app: FastifyInstance) {
       try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
       const url = episodes[epIndex]?.url || "";
       if (!url) return { ok: false, error: "播放集数不存在" };
-      const result = await resolveWithCache(`play:${playId}:${epIndex}`, url);
+      const fresh = q.fresh === "1" || q.fresh === "true"; // 前端撞 403 时传 fresh=1 强制重解拿新 sign
+      const result = await resolveWithCache(`play:${playId}:${epIndex}`, url, fresh);
       if (!result?.ok || !result.url || !/\.m3u8(\?|$)/i.test(result.url)) return result;
       // 回源模式：source.proxyMode(inherit→全局)。key/proxy 才走本站中转，direct 保持原逻辑
       const globalMode = await getGlobalProxyMode();

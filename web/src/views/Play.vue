@@ -207,6 +207,7 @@ const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
 let hls = null
 let hlsRecoverCount = 0
+let selfHealTried = false // 自愈：sign 过期(403)时重解析一次拿新地址
 let pendingSeekSec = 0
 let lastHistorySaveAt = 0
 let playNoticeTimer = 0
@@ -360,6 +361,7 @@ function playHls(url) {
         return
       }
       clearPlayWatchdog()
+      if (trySelfHeal()) return // 先尝试重解析拿新 sign(治 sign 过期/403)
       showPlayNotice(describePlaybackError(data))
       if (tryCleanFallback(url)) return
       tryNextPlayback()
@@ -380,13 +382,21 @@ function playDirectUrl(url, kind = '') {
   video.play().catch(()=>{})
 }
 
-async function playResolvedEp(i) {
+function trySelfHeal() {
+  if (selfHealTried) return false
+  selfHealTried = true
+  playResolvedEp(epIdx.value, { fresh: true })
+  return true
+}
+
+async function playResolvedEp(i, opts = {}) {
   const channel = curChannel.value
   if (!channel?.id || !vod.value?.id) return
+  if (!opts.fresh) selfHealTried = false // 正常起播重置自愈标记
   accessBlock.value = null
   resolving.value = true
   try {
-    const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i })
+    const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i, ...(opts.fresh ? { fresh: 1 } : {}) })
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       playDirectUrl(r.url, r.kind)

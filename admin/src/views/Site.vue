@@ -115,6 +115,14 @@
               <el-switch v-model="form.playConfig.hideDuplicateSourceChannels" active-text="开启" inactive-text="关闭" />
               <div class="hint inline">同一采集源下，若 HLS 直链与 share/iframe 包装通道集数完全一致，观众端只显示直链通道。</div>
             </el-form-item>
+            <el-form-item label="全局回源模式">
+              <el-select v-model="form.playConfig.proxyMode" style="width:300px">
+                <el-option label="direct 直连源站（默认，不吃带宽）" value="direct" />
+                <el-option label="key 仅代理密钥（加密源，TS直连）" value="key" />
+                <el-option label="proxy TS全中转（藏源/防盗链，吃带宽）" value="proxy" />
+              </el-select>
+              <div class="hint inline">采集源回源模式选“跟随全局”时使用此默认值。默认 direct 不下载任何 TS；需藏源/处理加密源才逐源或全局调高。</div>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
 
