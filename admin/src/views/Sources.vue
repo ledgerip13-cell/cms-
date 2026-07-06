@@ -15,6 +15,11 @@
       <el-table-column prop="flag" label="播放标识" width="90">
         <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.flag || '-' }}</el-tag></template>
       </el-table-column>
+      <el-table-column label="回源" width="72">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.proxyMode==='proxy'?'warning':(row.proxyMode==='key'?'success':'info')" effect="plain">{{ {inherit:'跟随',direct:'直连',key:'key',proxy:'中转'}[row.proxyMode||'inherit'] }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="采集 API" min-width="160">
         <template #default="{ row }">
           <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.apiUrl }}</div>
@@ -78,6 +83,15 @@
         </div>
       </el-form-item>
       <el-form-item label="播放标识"><el-input v-model="form.flag" placeholder="rym3u8（可留空）" /></el-form-item>
+      <el-form-item label="回源模式">
+        <el-select v-model="form.proxyMode" style="width:260px">
+          <el-option label="跟随全局（默认）" value="inherit" />
+          <el-option label="direct 直连源站（不吃带宽）" value="direct" />
+          <el-option label="key 仅代理密钥（加密源用，TS直连）" value="key" />
+          <el-option label="proxy TS全中转（藏源/防盗链，吃带宽）" value="proxy" />
+        </el-select>
+        <small style="margin-left:8px;color:#9aa4b2">默认不下载；加密源选 key</small>
+      </el-form-item>
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
       <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
       <el-divider>定时自动采集</el-divider>
@@ -339,7 +353,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', proxyMode:'inherit', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {

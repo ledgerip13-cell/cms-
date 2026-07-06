@@ -53,6 +53,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       name: b.name,
       apiUrl: b.apiUrl,
       flag: b.flag,
+      proxyMode: ["inherit", "direct", "key", "proxy"].includes(String(b.proxyMode)) ? b.proxyMode : undefined,
       priority: b.priority,
       enabled: b.enabled,
       autoSync: b.autoSync,
