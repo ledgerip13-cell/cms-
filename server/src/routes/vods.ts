@@ -242,7 +242,10 @@ function mergeWhere(...items: any[]) {
 
 function cleanupCategoryWhere(input: any) {
   const categoryName = String(input?.categoryName || "").trim();
-  return categoryName ? { typeName: categoryName } : null;
+  const subType = String(input?.subType || "").trim();
+  if (subType && !categoryName) throw new Error("选择子分类前请先选择主分类");
+  if (!categoryName) return null;
+  return subType ? { typeName: categoryName, subType } : { typeName: categoryName };
 }
 
 const SERIES_MARKER_RE = /(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)$/i;
@@ -693,6 +696,19 @@ export default async function vodRoutes(app: FastifyInstance) {
   // ============ 以下需登录（admin 后台管理专用，可看到全部状态+支持批量操作）============
   app.register(async (secured) => {
     secured.addHook("preHandler", authGuard);
+
+    secured.get("/api/admin/subtypes", async (req) => {
+      const q = req.query as any;
+      const type = String(q.type || "").trim();
+      if (!type) return [];
+      const rows = await prisma.vod.groupBy({
+        by: ["subType"],
+        where: { typeName: type, subType: { not: "" } },
+        _count: { _all: true },
+        orderBy: { _count: { subType: "desc" } },
+      });
+      return rows.map((r) => ({ name: r.subType, count: r._count._all }));
+    });
 
     // 后台单片详情（含已下架），供管理页“线路详情”面板用，复用同一份组装逻辑
     secured.get("/api/admin/vods/:id", async (req, reply) => {

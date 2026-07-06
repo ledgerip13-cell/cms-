@@ -19,7 +19,7 @@
           豆瓣匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
-        <el-button type="danger" plain @click="cleanupDlg=true">影片清理</el-button>
+        <el-button type="danger" plain @click="openCleanup">影片清理</el-button>
       </div>
       <div class="vod-count">去重后 {{ total }} 部</div>
     </div>
@@ -279,13 +279,22 @@
         </el-select>
       </el-form-item>
       <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="采集源">
-        <el-select v-model="cleanupForm.sourceId" filterable style="width:260px">
+        <el-select v-model="cleanupForm.sourceId" filterable style="width:260px" @change="cleanupPreview=null">
           <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="分类">
-        <el-select v-model="cleanupForm.categoryName" clearable filterable placeholder="全部分类" style="width:260px" @change="cleanupPreview=null">
+      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="主分类">
+        <el-select v-model="cleanupForm.categoryName" clearable filterable placeholder="全部主分类" style="width:260px" @change="onCleanupCategoryChange">
           <el-option v-for="t in types" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="子分类">
+        <el-select v-model="cleanupForm.subType" clearable filterable
+          :disabled="!cleanupForm.categoryName"
+          :loading="cleanupSubtypesLoading"
+          :placeholder="cleanupForm.categoryName ? '全部子分类' : '先选择主分类'"
+          style="width:260px" @change="cleanupPreview=null">
+          <el-option v-for="t in cleanupSubtypes" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
         </el-select>
       </el-form-item>
       <el-form-item v-if="cleanupForm.rule === 'offline_old'" label="下架天数">
@@ -333,6 +342,7 @@
       <el-table-column prop="name" label="片名" min-width="180" />
       <el-table-column prop="year" label="年份" width="80" />
       <el-table-column prop="typeName" label="分类" width="100" />
+      <el-table-column prop="subType" label="子分类" width="110" />
       <el-table-column label="线路" width="80">
         <template #default="{ row }">{{ row._count?.plays || 0 }}</template>
       </el-table-column>
@@ -419,11 +429,14 @@ const selected = ref([]); const tableRef = ref(null)
 const cleanupDlg = ref(false)
 const cleanupLoading = ref(false)
 const cleanupPreview = ref(null)
+const cleanupSubtypes = ref([])
+const cleanupSubtypesLoading = ref(false)
 const currentYear = new Date().getFullYear()
 const cleanupForm = ref({
   rule: 'disabled_source_only',
   sourceId: '',
   categoryName: '',
+  subType: '',
   days: 30,
   limit: 500,
   deleteOrphans: true,
@@ -469,6 +482,28 @@ async function batchMetaMatch() {
     ElMessage.success(r.message || `已提交任务 #${r.taskId}`)
     tableRef.value?.clearSelection()
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+function openCleanup() {
+  cleanupDlg.value = true
+  if (cleanupForm.value.categoryName && !cleanupSubtypes.value.length) loadCleanupSubtypes()
+}
+async function onCleanupCategoryChange() {
+  cleanupPreview.value = null
+  cleanupForm.value.subType = ''
+  cleanupSubtypes.value = []
+  await loadCleanupSubtypes()
+}
+async function loadCleanupSubtypes() {
+  const type = cleanupForm.value.categoryName
+  if (!type) return
+  cleanupSubtypesLoading.value = true
+  try {
+    cleanupSubtypes.value = await api.adminSubtypes(type)
+  } catch (e) {
+    ElMessage.error(e.message || '子分类加载失败')
+  } finally {
+    cleanupSubtypesLoading.value = false
+  }
 }
 async function previewCleanup() {
   cleanupLoading.value = true

@@ -53,6 +53,7 @@ export const api = {
   editVod: (id, d) => http.put(`/vods/${id}`, d),
   refreshVod: (id) => http.post(`/vods/${id}/refresh`),
   types: () => http.get('/types'),
+  adminSubtypes: (type) => http.get('/admin/subtypes', { params: { type } }),
   stats: () => http.get('/stats'),
   // categories & mapping
   categories: () => http.get('/categories'),
