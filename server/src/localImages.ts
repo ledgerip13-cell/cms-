@@ -76,7 +76,11 @@ export function isLocalImageUrl(url: unknown) {
   return String(url || "").startsWith(LOCAL_IMAGE_PREFIX);
 }
 
-export async function downloadImageToLocal(url: string, timeoutMs = 15000) {
+export async function downloadImageToLocal(
+  url: string,
+  opts: { encrypt?: boolean; timeoutMs?: number } = {}
+) {
+  const timeoutMs = opts.timeoutMs ?? 15000;
   const raw = String(url || "").trim();
   if (!raw || isLocalImageUrl(raw)) return raw;
 
@@ -122,7 +126,7 @@ export async function downloadImageToLocal(url: string, timeoutMs = 15000) {
     return LOCAL_IMAGE_PREFIX + name;
   } catch {}
   const tmp = path.join(IMAGE_DIR, `${name}.${randomUUID()}.tmp`);
-  await writeFile(tmp, encryptImage(buf));
+  await writeFile(tmp, opts.encrypt === false ? buf : encryptImage(buf));
   await rename(tmp, finalPath);
   return LOCAL_IMAGE_PREFIX + name;
 }

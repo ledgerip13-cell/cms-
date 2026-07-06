@@ -228,8 +228,11 @@
         <small style="margin-left:8px;color:#9aa4b2">同一源详情批次并发，推荐 3；源不稳时调 1</small>
       </el-form-item>
       <el-form-item label="封面图片">
-        <el-checkbox v-model="syncForm.localizeImages">下载到本地</el-checkbox>
-        <small style="margin-left:8px;color:#9aa4b2">成功下载后保存内部地址；下载失败不保留远程坏图</small>
+        <div class="image-options">
+          <el-checkbox v-model="syncForm.localizeImages" @change="onLocalizeImagesChange">下载到本地</el-checkbox>
+          <el-checkbox v-model="syncForm.encryptLocalImages" :disabled="!syncForm.localizeImages">本地图片加密</el-checkbox>
+          <small style="color:#9aa4b2">下载失败不保留远程坏图；加密后磁盘不保存明文，前台由后端解密输出。</small>
+        </div>
       </el-form-item>
       <el-form-item label="后置动作">
         <div class="post-actions">
@@ -272,7 +275,7 @@ const formRules = {
   }, trigger: 'blur' }],
 }
 const syncDlg = ref(false); const syncing = ref(false)
-const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, typeIds: [] }); let syncTarget = null
+const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, typeIds: [] }); let syncTarget = null
 const selectedSyncTypeIds = computed(() => {
   const ids = Array.isArray(syncForm.value.typeIds)
     ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
@@ -460,6 +463,7 @@ async function openSync(row) {
     maxPages:100,
     detailConcurrency:3,
     localizeImages:false,
+    encryptLocalImages:true,
     typeIds:[],
     yearMode:'',
     year: currentYear,
@@ -485,6 +489,9 @@ async function openSync(row) {
   }
 }
 function onTypeChange() { estText.value = '' }
+function onLocalizeImagesChange(value) {
+  syncForm.value.encryptLocalImages = Boolean(value)
+}
 async function estimate() {
   const typeIds = selectedSyncTypeIds.value
   if (!typeIds.length) return
@@ -530,5 +537,6 @@ onMounted(load)
 .domain-host { font-weight: 600; line-height: 1.5; }
 .form-help { color: #9aa4b2; font-size: 12px; line-height: 1.6; }
 .year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.image-options { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .post-actions { display: flex; flex-direction: column; gap: 4px; }
 </style>

@@ -21,6 +21,7 @@ export interface SyncOptions {
   cleanAfterCollect?: boolean;
   detailConcurrency?: number;
   localizeImages?: boolean;
+  encryptLocalImages?: boolean;
   resume?: ResumeCursor;    // 断点续采游标
 }
 
@@ -294,7 +295,7 @@ async function upsertVod(
   let pic = rawPic;
   if (opts.localizeImages && rawPic) {
     try {
-      pic = await downloadImageToLocal(rawPic);
+      pic = await downloadImageToLocal(rawPic, { encrypt: opts.encryptLocalImages !== false });
     } catch {
       pic = "";
     }
