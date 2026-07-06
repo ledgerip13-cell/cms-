@@ -125,6 +125,16 @@ async function pauseIfRequested(taskId: number, message = "已暂停") {
 
 // 服务重启回收：将遗留的 running/pending 僵尸任务自动从断点续跑（采集）或标失败
 const MAX_RESUME = 5; // 自动续跑上限，防死循环
+
+function cleanRestartMarks(message: unknown) {
+  return String(message || "").replace(/\s*\[重启续跑\]/g, "").trim();
+}
+
+function restartResumeMessage(message: unknown) {
+  const base = cleanRestartMarks(message);
+  return base ? `${base} [重启续跑]` : "服务重启后自动恢复排队 [重启续跑]";
+}
+
 export async function recoverOrphanTasks() {
   const orphans = await prisma.task.findMany({
     where: { status: { in: ["running", "pending", "canceling"] } },
@@ -148,21 +158,21 @@ export async function recoverOrphanTasks() {
       if (cur) opts.resume = cur;
       await taskUpdate({
         where: { id: t.id },
-        data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
       void pumpCollectQueue();
       resumed++;
     } else if (t.type === "hls_clean" && t.resumeCount < MAX_RESUME) {
       await taskUpdate({
         where: { id: t.id },
-        data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
       void pumpHlsCleanQueue();
       resumed++;
     } else if (t.type === "meta" && t.resumeCount < MAX_RESUME) {
       await taskUpdate({
         where: { id: t.id },
-        data: { status: "pending", resumeCount: { increment: 1 }, message: (t.message || "") + " [重启续跑]", finishedAt: null },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
       void pumpMetaQueue();
       resumed++;
@@ -214,40 +224,107 @@ export async function createHlsCleanTask(opts: {
   dryRun?: boolean;
   priority?: number;
 } = {}) {
-  const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
+  const normalized = normalizeHlsCleanTaskOptions(opts);
+  const duplicate = await findActiveHlsCleanTask(normalized.key);
+  if (duplicate) return duplicate;
+  const playIds = normalized.opts.playIds || [];
   const [source, vod] = await Promise.all([
-    opts.sourceId ? prisma.source.findUnique({ where: { id: opts.sourceId }, select: { name: true } }) : null,
-    opts.vodId ? prisma.vod.findUnique({ where: { id: opts.vodId }, select: { name: true } }) : null,
+    normalized.opts.sourceId ? prisma.source.findUnique({ where: { id: normalized.opts.sourceId }, select: { name: true } }) : null,
+    normalized.opts.vodId ? prisma.vod.findUnique({ where: { id: normalized.opts.vodId }, select: { name: true } }) : null,
   ]);
   const sourceName = playIds.length
-    ? opts.vodId
-      ? `影片「${vod?.name || opts.vodId}」· ${playIds.length}条线路`
+    ? normalized.opts.vodId
+      ? `影片「${vod?.name || normalized.opts.vodId}」· ${playIds.length}条线路`
       : `指定线路 ${playIds.length} 条`
-    : opts.playId
-    ? `线路#${opts.playId}`
-    : opts.vodId
-      ? `影片「${vod?.name || opts.vodId}」`
-      : opts.sourceId && opts.categoryName
-        ? `${source?.name || `源#${opts.sourceId}`} / ${opts.categoryName}`
-        : opts.sourceId
-          ? `${source?.name || `源#${opts.sourceId}`}`
-          : opts.categoryName
-            ? opts.categoryName
+    : normalized.opts.playId
+    ? `线路#${normalized.opts.playId}`
+    : normalized.opts.vodId
+      ? `影片「${vod?.name || normalized.opts.vodId}」`
+      : normalized.opts.sourceId && normalized.opts.categoryName
+        ? `${source?.name || `源#${normalized.opts.sourceId}`} / ${normalized.opts.categoryName}`
+        : normalized.opts.sourceId
+          ? `${source?.name || `源#${normalized.opts.sourceId}`}`
+          : normalized.opts.categoryName
+            ? normalized.opts.categoryName
             : "全部范围";
   const task = await prisma.task.create({
     data: {
       type: "hls_clean",
-      sourceId: opts.sourceId || null,
+      sourceId: normalized.opts.sourceId || null,
       sourceName,
-      mode: opts.dryRun ? "dry" : "full",
+      mode: normalized.opts.dryRun ? "dry" : "full",
       status: "pending",
       priority: clampPriority(opts.priority),
-      params: JSON.stringify(opts),
+      params: JSON.stringify(normalized.opts),
     },
   });
   emitTaskChange();
   void pumpHlsCleanQueue();
   return task;
+}
+
+function normalizeMaybeNumber(value: unknown) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+function normalizeMaybeIndex(value: unknown) {
+  if (value === "" || value === null || typeof value === "undefined") return undefined;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
+function normalizeHlsCleanTaskOptions(opts: any = {}) {
+  const playIds = Array.isArray(opts.playIds)
+    ? [...new Set<number>(opts.playIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b)
+    : [];
+  const strategyIds = Array.isArray(opts.strategyIds)
+    ? [...new Set<string>(opts.strategyIds.map((x: any) => String(x || "").trim()).filter(Boolean))].sort()
+    : undefined;
+  const normalized: any = {
+    sourceId: normalizeMaybeNumber(opts.sourceId),
+    categoryName: String(opts.categoryName || "").trim() || undefined,
+    vodId: normalizeMaybeNumber(opts.vodId),
+    playId: normalizeMaybeNumber(opts.playId),
+    playIds: playIds.length ? playIds : undefined,
+    epIndex: normalizeMaybeIndex(opts.epIndex),
+    episodeMode: opts.episodeMode === "all" ? "all" : "first",
+    limit: Math.max(1, Math.min(2000, Number(opts.limit) || 100)),
+    strategyId: String(opts.strategyId || "").trim() || undefined,
+    strategyIds,
+    dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
+  };
+  for (const key of Object.keys(normalized)) {
+    if (typeof normalized[key] === "undefined") delete normalized[key];
+  }
+  const key = JSON.stringify({
+    sourceId: normalized.sourceId || null,
+    categoryName: normalized.categoryName || "",
+    vodId: normalized.vodId || null,
+    playId: normalized.playId || null,
+    playIds: normalized.playIds || [],
+    epIndex: typeof normalized.epIndex === "number" ? normalized.epIndex : null,
+    episodeMode: normalized.episodeMode,
+    limit: normalized.limit,
+    strategyId: normalized.strategyId || "",
+    strategyIds: normalized.strategyIds || [],
+    dryRun: typeof normalized.dryRun === "boolean" ? normalized.dryRun : null,
+  });
+  return { opts: normalized, key };
+}
+
+async function findActiveHlsCleanTask(key: string) {
+  const rows = await prisma.task.findMany({
+    where: { type: "hls_clean", status: { in: ["pending", "running", "paused", "canceling"] } },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  });
+  for (const row of rows) {
+    let opts: any = {};
+    try { opts = row.params ? JSON.parse(row.params) : {}; } catch {}
+    if (normalizeHlsCleanTaskOptions(opts).key === key) return row;
+  }
+  return null;
 }
 
 async function pumpHlsCleanQueue() {

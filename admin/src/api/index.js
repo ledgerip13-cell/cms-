@@ -69,6 +69,7 @@ export const api = {
   tasks: (params) => http.get('/tasks', { params }),
   taskActiveCount: () => http.get('/tasks/active/count'),
   cleanupTasks: () => http.delete('/tasks/cleanup'),
+  batchTasks: (ids, action) => http.post('/tasks/batch', { ids, action }),
   cancelTask: (id) => http.post(`/tasks/${id}/cancel`),
   pauseTask: (id) => http.post(`/tasks/${id}/pause`),
   resumeTask: (id) => http.post(`/tasks/${id}/resume`),

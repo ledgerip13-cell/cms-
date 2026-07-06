@@ -74,70 +74,51 @@ export default async function taskRoutes(app: FastifyInstance) {
     return { active: n };
   });
 
-  // 中止任务：排队任务直接取消；运行中任务先置为中止中，等执行器收尾后落为取消。
-  secured.post("/api/tasks/:id/cancel", async (req) => {
-    const id = Number((req.params as any).id);
-    const t = await prisma.task.findUnique({ where: { id } });
+  function parseTaskIds(value: unknown) {
+    return [...new Set((Array.isArray(value) ? value : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0))]
+      .slice(0, 100);
+  }
+
+  async function cancelTaskRecord(t: any) {
     if (!t) return { ok: false, error: "任务不存在" };
     if (t.status === "canceling") return { ok: true };
     if (!["running", "pending", "paused"].includes(t.status)) return { ok: false, error: "任务非运行中，无需中止" };
-    requestCancel(id); // 信号活执行器
+    requestCancel(t.id);
     await prisma.task.update({
-      where: { id },
+      where: { id: t.id },
       data: t.status === "pending" || t.status === "paused"
         ? { status: "canceled", message: "已手动中止", finishedAt: new Date() }
         : { status: "canceling", message: "正在中止，当前步骤完成后停止", finishedAt: null },
     });
-    emitTaskChange();
-    wakeTaskQueues();
     return { ok: true };
-  });
+  }
 
-  secured.post("/api/tasks/:id/pause", async (req) => {
-    const id = Number((req.params as any).id);
-    const t = await prisma.task.findUnique({ where: { id } });
+  async function pauseTaskRecord(t: any) {
     if (!t) return { ok: false, error: "任务不存在" };
     if (t.status === "paused") return { ok: true };
     if (!["pending", "running"].includes(t.status)) return { ok: false, error: "只有排队或运行中的任务可暂停" };
-    requestPause(id);
+    requestPause(t.id);
     if (t.status === "pending") {
-      await prisma.task.update({ where: { id }, data: { status: "paused", message: "已暂停", finishedAt: null } });
+      await prisma.task.update({ where: { id: t.id }, data: { status: "paused", message: "已暂停", finishedAt: null } });
     } else {
-      await prisma.task.update({ where: { id }, data: { message: "正在暂停，当前步骤完成后停止" } });
+      await prisma.task.update({ where: { id: t.id }, data: { message: "正在暂停，当前步骤完成后停止" } });
     }
-    emitTaskChange();
     return { ok: true };
-  });
+  }
 
-  secured.post("/api/tasks/:id/resume", async (req) => {
-    const id = Number((req.params as any).id);
-    const t = await prisma.task.findUnique({ where: { id } });
+  async function resumeTaskRecord(t: any) {
     if (!t) return { ok: false, error: "任务不存在" };
     if (t.status !== "paused") return { ok: false, error: "只有已暂停任务可恢复" };
-    clearPause(id);
-    await prisma.task.update({ where: { id }, data: { status: "pending", message: "已恢复排队", finishedAt: null } });
-    emitTaskChange();
-    wakeTaskQueues();
+    clearPause(t.id);
+    await prisma.task.update({ where: { id: t.id }, data: { status: "pending", message: "已恢复排队", finishedAt: null } });
     return { ok: true };
-  });
+  }
 
-  secured.patch("/api/tasks/:id/priority", async (req) => {
-    const id = Number((req.params as any).id);
-    const priority = Math.max(1, Math.min(999, Math.floor(Number((req.body as any)?.priority) || 100)));
-    const t = await prisma.task.findUnique({ where: { id } });
+  async function retryTaskRecord(t: any) {
     if (!t) return { ok: false, error: "任务不存在" };
-    if (!["pending", "paused"].includes(t.status)) return { ok: false, error: "只有排队或暂停任务可调整优先级" };
-    await prisma.task.update({ where: { id }, data: { priority } });
-    emitTaskChange();
-    wakeTaskQueues();
-    return { ok: true, priority };
-  });
-
-  // 重试任务（按原参数新建一个任务）
-  secured.post("/api/tasks/:id/retry", async (req) => {
-    const id = Number((req.params as any).id);
-    const t = await prisma.task.findUnique({ where: { id } });
-    if (!t) return { ok: false, error: "任务不存在" };
+    if (!["failed", "canceled", "done"].includes(t.status)) return { ok: false, error: "只有完成、失败或已中止任务可重试" };
     let opts: any = {};
     try { opts = t.params ? JSON.parse(t.params) : {}; } catch {}
     if (t.type === "collect" && t.sourceId) {
@@ -161,6 +142,87 @@ export default async function taskRoutes(app: FastifyInstance) {
       return { ok: true, taskId: nt.id };
     }
     return { ok: false, error: "该类型不支持重试" };
+  }
+
+  secured.post("/api/tasks/batch", async (req) => {
+    const b = (req.body as any) || {};
+    const ids = parseTaskIds(b.ids);
+    const action = String(b.action || "");
+    if (!ids.length) return { ok: false, error: "未选择任务" };
+    if (!["cancel", "pause", "resume", "retry"].includes(action)) return { ok: false, error: "不支持的批量操作" };
+    const rows = await prisma.task.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    let ok = 0;
+    const skipped: Array<{ id: number; error: string }> = [];
+    const taskIds: number[] = [];
+    for (const id of ids) {
+      const row = byId.get(id);
+      const result = action === "cancel"
+        ? await cancelTaskRecord(row)
+        : action === "pause"
+          ? await pauseTaskRecord(row)
+          : action === "resume"
+            ? await resumeTaskRecord(row)
+            : await retryTaskRecord(row);
+      if (result.ok) {
+        ok++;
+        if ((result as any).taskId) taskIds.push((result as any).taskId);
+      } else {
+        skipped.push({ id, error: result.error || "操作失败" });
+      }
+    }
+    emitTaskChange();
+    wakeTaskQueues();
+    return { ok: true, action, count: ok, skipped, taskIds };
+  });
+
+  // 中止任务：排队任务直接取消；运行中任务先置为中止中，等执行器收尾后落为取消。
+  secured.post("/api/tasks/:id/cancel", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    const result = await cancelTaskRecord(t);
+    emitTaskChange();
+    wakeTaskQueues();
+    return result;
+  });
+
+  secured.post("/api/tasks/:id/pause", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    const result = await pauseTaskRecord(t);
+    emitTaskChange();
+    return result;
+  });
+
+  secured.post("/api/tasks/:id/resume", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    const result = await resumeTaskRecord(t);
+    emitTaskChange();
+    wakeTaskQueues();
+    return result;
+  });
+
+  secured.patch("/api/tasks/:id/priority", async (req) => {
+    const id = Number((req.params as any).id);
+    const priority = Math.max(1, Math.min(999, Math.floor(Number((req.body as any)?.priority) || 100)));
+    const t = await prisma.task.findUnique({ where: { id } });
+    if (!t) return { ok: false, error: "任务不存在" };
+    if (!["pending", "paused"].includes(t.status)) return { ok: false, error: "只有排队或暂停任务可调整优先级" };
+    await prisma.task.update({ where: { id }, data: { priority } });
+    emitTaskChange();
+    wakeTaskQueues();
+    return { ok: true, priority };
+  });
+
+  // 重试任务（按原参数新建一个任务）
+  secured.post("/api/tasks/:id/retry", async (req) => {
+    const id = Number((req.params as any).id);
+    const t = await prisma.task.findUnique({ where: { id } });
+    const result = await retryTaskRecord(t);
+    emitTaskChange();
+    wakeTaskQueues();
+    return result;
   });
 
   // 按片名单独采集（旧版一步到位，仍保留兼容）：遍历所有启用源搜索关键词入库
