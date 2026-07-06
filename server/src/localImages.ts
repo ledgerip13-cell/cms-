@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -8,6 +8,38 @@ const MAX_IMAGE_BYTES = Number(process.env.LOCAL_IMAGE_MAX_BYTES || 8 * 1024 * 1
 export const LOCAL_IMAGE_PREFIX = "/api/media/images/";
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
+const ENCRYPTED_MAGIC = Buffer.from("VCMSIMG1");
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
+
+function encryptionKey() {
+  const raw = process.env.MEDIA_ENCRYPTION_KEY || process.env.JWT_SECRET || "video-cms-dev-secret-change-me";
+  const b64 = Buffer.from(raw, "base64");
+  if (b64.length === 32 && /^[A-Za-z0-9+/=]+$/.test(raw)) return b64;
+  return createHash("sha256").update(raw).digest();
+}
+
+function encryptImage(buf: Buffer) {
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(buf), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([ENCRYPTED_MAGIC, iv, tag, encrypted]);
+}
+
+function decryptImage(buf: Buffer) {
+  if (!buf.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC)) return buf;
+  const ivStart = ENCRYPTED_MAGIC.length;
+  const tagStart = ivStart + IV_BYTES;
+  const dataStart = tagStart + TAG_BYTES;
+  if (buf.length <= dataStart) throw new Error("bad encrypted image");
+  const iv = buf.subarray(ivStart, tagStart);
+  const tag = buf.subarray(tagStart, dataStart);
+  const encrypted = buf.subarray(dataStart);
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+}
 
 function extFromContentType(contentType: string) {
   const ct = contentType.toLowerCase().split(";")[0].trim();
@@ -90,7 +122,7 @@ export async function downloadImageToLocal(url: string, timeoutMs = 15000) {
     return LOCAL_IMAGE_PREFIX + name;
   } catch {}
   const tmp = path.join(IMAGE_DIR, `${name}.${randomUUID()}.tmp`);
-  await writeFile(tmp, buf);
+  await writeFile(tmp, encryptImage(buf));
   await rename(tmp, finalPath);
   return LOCAL_IMAGE_PREFIX + name;
 }
@@ -99,7 +131,7 @@ export async function readLocalImage(name: string) {
   if (!/^[a-f0-9]{40}\.(jpg|png|webp|gif|avif)$/.test(name)) return null;
   const file = path.join(IMAGE_DIR, name);
   try {
-    const buf = await readFile(file);
+    const buf = decryptImage(await readFile(file));
     return { buf, contentType: contentTypeFromName(name) };
   } catch {
     return null;

@@ -26,6 +26,8 @@ services:
     environment:
       PORT: "5150"
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+      JWT_SECRET: "${JWT_SECRET:-video-cms-dev-secret-change-me}"
+      MEDIA_ENCRYPTION_KEY: "${MEDIA_ENCRYPTION_KEY:-}"
     depends_on:
       postgres:
         condition: service_healthy
