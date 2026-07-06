@@ -87,13 +87,18 @@ async function fetchText(url: string, timeoutMs = 12000): Promise<string> {
   }
 }
 
-// 规则1：lz/通用 share 页 —— 内联 `var main = "/path/index.m3u8?sign=..."`，真实地址 = origin + main
+// 规则1：通用 share 页 —— 内联 JS 变量(var/let/const main|url|...)= 相对或绝对的 m3u8/mp4 地址
+// 已验证覆盖：量子(var main)、如意(var main + 转义斜杠 \/)、1080网(const url)
+// 真实地址 = origin + 相对路径；已是全链则直接用
 function ruleVarMain(html: string, origin: string): string | null {
-  const m = html.match(/var\s+main\s*=\s*["']([^"']+)["']/);
+  // 变量名兼容 main/url/vurl/urls/playurl/videourl/src/purl，声明兼容 var/let/const
+  const re = /(?:var|let|const)\s+(?:main|url|vurl|urls|playurl|videourl|src|purl)\s*=\s*["']([^"']+)["']/i;
+  const m = html.match(re);
   if (!m) return null;
-  const main = m[1];
-  if (/^https?:\/\//i.test(main)) return main;      // 已是全链
-  if (main.startsWith("/")) return origin + main;    // 相对路径拼 origin
+  const val = m[1].replace(/\\\//g, "/").trim(); // 反转义 \/ → /（如意等源会转义斜杠）
+  if (!/\.(m3u8|mp4)/i.test(val)) return null;   // 必须像可播地址，避免误命中其它变量
+  if (/^https?:\/\//i.test(val)) return val;      // 已是全链
+  if (val.startsWith("/")) return origin + val;    // 相对路径拼 origin
   return null;
 }
 
