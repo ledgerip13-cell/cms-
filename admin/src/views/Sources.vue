@@ -176,7 +176,7 @@
         <small style="margin-left:8px;color:#9aa4b2">只拉近N小时更新(不重复旧片)</small>
       </el-form-item>
       <el-form-item label="采集分类">
-        <el-select v-model="syncForm.typeId" clearable placeholder="全部分类" style="width:240px"
+        <el-select v-model="syncForm.typeIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="全部分类" style="width:360px"
           filterable :loading="classLoading" @change="onTypeChange">
           <template v-if="classTree.length">
             <el-option-group v-for="p in classTree" :key="p.typeId"
@@ -189,9 +189,9 @@
           <el-option v-else v-for="t in srcTypes" :key="t.typeId" :label="`${t.typeName} (${t.typeId})`" :value="t.typeId" />
         </el-select>
         <el-button link type="primary" :loading="counting" style="margin-left:8px"
-          v-if="syncForm.typeId" @click="estimate">预估可采</el-button>
+          v-if="selectedSyncTypeIds.length" @click="estimate">预估可采</el-button>
         <div style="font-size:12px;color:#9aa4b2">
-          留空=全部；选父类会自动展开其所有子类。
+          留空=全部；可多选；选父类会自动展开其所有子类。
           <span v-if="estText" style="color:#67c23a">{{ estText }}</span>
         </div>
       </el-form-item>
@@ -262,7 +262,13 @@ const formRules = {
   }, trigger: 'blur' }],
 }
 const syncDlg = ref(false); const syncing = ref(false)
-const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5 }); let syncTarget = null
+const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, typeIds: [] }); let syncTarget = null
+const selectedSyncTypeIds = computed(() => {
+  const ids = Array.isArray(syncForm.value.typeIds)
+    ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
+    : syncForm.value.typeId ? [String(syncForm.value.typeId)] : []
+  return [...new Set(ids)]
+})
 const currentYear = new Date().getFullYear()
 const autoSrcTypes = ref([])
 const autoClassTree = ref([])
@@ -435,7 +441,7 @@ async function openSync(row) {
     mode:'full',
     hours:24,
     maxPages:100,
-    typeId:'',
+    typeIds:[],
     yearMode:'',
     year: currentYear,
     yearStart: currentYear,
@@ -457,19 +463,28 @@ async function openSync(row) {
 }
 function onTypeChange() { estText.value = '' }
 async function estimate() {
-  if (!syncForm.value.typeId) return
+  const typeIds = selectedSyncTypeIds.value
+  if (!typeIds.length) return
   counting.value = true; estText.value = ''
   try {
     const hours = syncForm.value.mode === 'incr' ? syncForm.value.hours : 0
-    const r = await api.sourceTypeCount(syncTarget.id, syncForm.value.typeId, hours)
-    if (r?.ok) estText.value = `预估可采 ${r.total} 部` + (r.expanded ? `（已展开${r.expanded}个子类）` : '') + (hours ? `（近${hours}h）` : '（全量）')
+    const r = await api.sourceTypeCount(syncTarget.id, typeIds, hours)
+    if (r?.ok) {
+      const parts = []
+      if (r.selected > 1) parts.push(`已选${r.selected}类`)
+      if (r.expanded) parts.push(`展开${r.expanded}个子类`)
+      if (r.targets && r.targets !== r.selected) parts.push(`实际${r.targets}类`)
+      estText.value = `预估可采 ${r.total} 部` + (parts.length ? `（${parts.join(' / ')}）` : '') + (hours ? `（近${hours}h）` : '（全量）')
+    }
     else estText.value = '预估失败'
   } catch (e) { estText.value = '预估失败' } finally { counting.value = false }
 }
 async function doSync() {
   syncing.value = true
   try {
-    const r = await api.syncSource(syncTarget.id, syncForm.value)
+    const payload = { ...syncForm.value, typeIds: selectedSyncTypeIds.value }
+    delete payload.typeId
+    const r = await api.syncSource(syncTarget.id, payload)
     ElMessage.success('采集任务已提交，可去「采集任务」查看进度')
     syncDlg.value = false
     // 提示跳转任务页

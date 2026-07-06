@@ -10,6 +10,7 @@ export interface SyncOptions {
   maxPages?: number;
   hours?: number;
   typeId?: string | number; // 按分类采集(源内 type_id)
+  typeIds?: (string | number)[]; // 按多个分类采集(源内 type_id)
   yearMode?: "" | "eq" | "gt" | "gte" | "lt" | "lte" | "range";
   year?: string | number;
   yearStart?: string | number;
@@ -76,6 +77,11 @@ function matchYearFilter(year: unknown, opts: SyncOptions) {
 
 function filterByYear<T extends RawVod>(rows: T[], opts: SyncOptions) {
   return yearFilterEnabled(opts) ? rows.filter((r) => matchYearFilter(r.vod_year, opts)) : rows;
+}
+
+function normalizeTypeIds(opts: SyncOptions) {
+  const raw = Array.isArray(opts.typeIds) ? opts.typeIds : (opts.typeId ? [opts.typeId] : []);
+  return [...new Set(raw.map((x) => String(x || "").trim()).filter(Boolean))];
 }
 
 const IMG_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
@@ -508,21 +514,31 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
     return r.result;
   }
 
-  const rawTypeId = opts.typeId ? String(opts.typeId) : undefined;
+  const rawTypeIds = normalizeTypeIds(opts);
   try {
     // 分类列表：续采直接用游标里已展开的；首次才去展开父类
     let typeIds: (string | null | undefined)[];
     if (resume?.typeIds) {
       typeIds = resume.typeIds;
     } else {
-      typeIds = [rawTypeId ?? null];
-      if (rawTypeId) {
+      typeIds = rawTypeIds.length ? rawTypeIds : [null];
+      if (rawTypeIds.length) {
         try {
           const classes = await withApi((u) => fetchClasses(u));
-          const children = classes.filter((c) => c.typePid === rawTypeId).map((c) => c.typeId);
-          if (children.length) {
-            typeIds = children;
-            message += ` [展开父类${rawTypeId}→${children.length}个子类]`;
+          const expanded: string[] = [];
+          const expandedMessages: string[] = [];
+          for (const rawTypeId of rawTypeIds) {
+            const children = classes.filter((c) => c.typePid === rawTypeId).map((c) => c.typeId);
+            if (children.length) {
+              expanded.push(...children);
+              expandedMessages.push(`${rawTypeId}→${children.length}`);
+            } else {
+              expanded.push(rawTypeId);
+            }
+          }
+          typeIds = [...new Set(expanded)];
+          if (expandedMessages.length) {
+            message += ` [展开父类${expandedMessages.join(",")}]`;
           }
         } catch { /* 拉分类失败则按原 typeId 直接采 */ }
       }

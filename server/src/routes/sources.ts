@@ -183,11 +183,13 @@ export default async function sourceRoutes(app: FastifyInstance) {
   app.post("/api/sources/:id/sync", async (req) => {
     const id = Number((req.params as any).id);
     const b = (req.body as any) || {};
+    const typeIds = parseAutoTypeIds(b.typeIds ?? b.typeId);
     const task = await createCollectTask(id, {
       mode: b.mode || "incr",
       maxPages: b.maxPages,
       hours: b.hours,
-      typeId: b.typeId || undefined,
+      typeIds,
+      typeId: typeIds.length === 1 ? typeIds[0] : undefined,
       yearMode: b.yearMode || "",
       year: b.year,
       yearStart: b.yearStart,
@@ -235,18 +237,28 @@ export default async function sourceRoutes(app: FastifyInstance) {
   // 预估某分类可采总量（父类自动汇总其子类）
   app.get("/api/sources/:id/typecount", async (req) => {
     const id = Number((req.params as any).id);
-    const t = String((req.query as any).t || "");
+    const typeIds = parseAutoTypeIds((req.query as any).t);
     const hours = Number((req.query as any).hours) || 0;
     const s = await prisma.source.findUnique({ where: { id } });
-    if (!s || !t) return { ok: false, total: 0 };
+    if (!s || !typeIds.length) return { ok: false, total: 0 };
     try {
       const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
       const { result: classes, usedUrl } = await withFailover(urls, (u) => fetchClasses(u));
-      const children = classes.filter((c) => c.typePid === t).map((c) => c.typeId);
-      const targets = children.length ? children : [t];
+      const targets: string[] = [];
+      let expanded = 0;
+      for (const t of typeIds) {
+        const children = classes.filter((c) => c.typePid === t).map((c) => c.typeId);
+        if (children.length) {
+          targets.push(...children);
+          expanded += children.length;
+        } else {
+          targets.push(t);
+        }
+      }
+      const uniqTargets = [...new Set(targets)];
       let total = 0;
-      for (const tid of targets) total += await fetchTypeTotal(usedUrl, tid, hours);
-      return { ok: true, total, expanded: children.length };
+      for (const tid of uniqTargets) total += await fetchTypeTotal(usedUrl, tid, hours);
+      return { ok: true, total, selected: typeIds.length, expanded, targets: uniqTargets.length };
     } catch (e: any) {
       return { ok: false, total: 0, error: e?.message || String(e) };
     }

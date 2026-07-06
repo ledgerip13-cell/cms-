@@ -35,7 +35,7 @@ export const api = {
   sourceLogs: (id) => http.get(`/sources/${id}/logs`),
   sourceTypes: (id) => http.get(`/sources/${id}/types`),
   sourceClasses: (id) => http.get(`/sources/${id}/classes`),
-  sourceTypeCount: (id, t, hours) => http.get(`/sources/${id}/typecount`, { params: { t, hours } }),
+  sourceTypeCount: (id, t, hours) => http.get(`/sources/${id}/typecount`, { params: { t: Array.isArray(t) ? t.join(',') : t, hours } }),
   sourcePlayDomains: (id) => http.get(`/sources/${id}/play-domains`),
   replaceSourcePlayDomain: (id, d) => http.post(`/sources/${id}/play-domains/replace`, d),
   collectByKeyword: (keyword, options = {}) => http.post('/collect/keyword', { keyword, ...options }),

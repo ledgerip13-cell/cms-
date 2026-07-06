@@ -22,7 +22,8 @@ export function serializeAutoTypeIds(value: unknown) {
 
 function uniqueTypeIds(values: unknown[]) {
   return [...new Set(values
-    .map((value) => String(value || "").trim())
+    .flatMap((value) => String(value || "").split(","))
+    .map((value) => value.trim())
     .filter(Boolean))]
     .slice(0, 100);
 }
