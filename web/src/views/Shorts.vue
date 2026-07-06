@@ -372,6 +372,8 @@ const SERIES_SCROLL_SETTLE_MS = 90
 const SERIES_SNAP_EPSILON = 0.03
 const WANDER_PLAY_SETTLE_MS = 120
 const SCROLL_SUPPRESS_MS = 260
+const INSTANT_SCROLL_SUPPRESS_MS = 120
+const SMOOTH_SCROLL_SUPPRESS_MS = 520
 const HISTORY_MIN_PROGRESS_SEC = 20
 const HISTORY_SAVE_INTERVAL_MS = 60 * 1000
 
@@ -665,8 +667,7 @@ async function showSeriesEpisode(index, options = {}) {
   units.value = nextUnits
   activeIndex.value = nextActive
   await nextTick()
-  ignoreScrollUntil = Date.now() + SCROLL_SUPPRESS_MS
-  scrollToIndex(nextActive, options.behavior || 'auto')
+  scrollToIndex(nextActive, options.behavior || 'auto', { suppress: true })
   suppressActiveIndexWatch = false
   ensureMoreAhead()
   if (options.play !== false) schedulePlayActive(Number(options.settleMs) || 0)
@@ -762,7 +763,7 @@ async function loadFeed() {
     suppressActiveIndexWatch = false
   }
   await nextTick()
-  scrollToIndex(0, 'auto')
+  scrollToIndex(0, 'auto', { suppress: true })
   ensureMoreAhead()
   schedulePlayActive(WANDER_PLAY_SETTLE_MS)
 }
@@ -789,11 +790,23 @@ function onFeedScroll() {
   })
 }
 
-function scrollToIndex(index, behavior = 'smooth') {
+function scrollToIndex(index, behavior = 'smooth', options = {}) {
   const el = feedEl.value
   if (!el) return
   const next = Math.max(0, Math.min(units.value.length - 1, index))
+  if (options.suppress) {
+    clearSeriesScrollSettleTimer()
+    const duration = behavior === 'smooth' ? SMOOTH_SCROLL_SUPPRESS_MS : INSTANT_SCROLL_SUPPRESS_MS
+    ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + duration)
+  }
+  const previousScrollBehavior = el.style.scrollBehavior
+  if (behavior !== 'smooth') el.style.scrollBehavior = 'auto'
   el.scrollTo({ top: next * el.clientHeight, behavior })
+  if (behavior !== 'smooth') {
+    window.requestAnimationFrame(() => {
+      if (feedEl.value === el) el.style.scrollBehavior = previousScrollBehavior
+    })
+  }
 }
 
 function ensureMoreAhead() {
@@ -1388,7 +1401,7 @@ async function exitSeriesMode() {
   }
   wanderState = null
   await nextTick()
-  scrollToIndex(activeIndex.value, 'auto')
+  scrollToIndex(activeIndex.value, 'auto', { suppress: true })
   suppressActiveIndexWatch = false
   ensureMoreAhead()
   schedulePlayActive(WANDER_PLAY_SETTLE_MS)
@@ -1611,7 +1624,7 @@ function preventMultiTouchZoom(event) {
 }
 
 function keepActiveCardInView() {
-  window.requestAnimationFrame(() => scrollToIndex(activeIndex.value, 'auto'))
+  window.requestAnimationFrame(() => scrollToIndex(activeIndex.value, 'auto', { suppress: true }))
 }
 
 watch(activeIndex, async () => {
@@ -1679,7 +1692,7 @@ onBeforeUnmount(() => {
 .shorts-title { min-width: 0; text-align: center; line-height: 1.15; }
 .shorts-title strong { display: block; font-size: 17px; font-weight: 900; letter-spacing: 0; }
 .shorts-title span { display: block; margin-top: 3px; font-size: 11px; color: rgba(255,255,255,.62); }
-.shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; }
+.shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
 .shorts-feed.frozen { overflow: hidden; }
 .shorts-feed::-webkit-scrollbar { display: none; }
 .short-card { position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #05060a; }
