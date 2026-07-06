@@ -181,7 +181,7 @@
             <div class="episode-sheet-head">
               <div>
                 <strong>{{ activeUnit?.vod?.name || '当前短剧' }}</strong>
-                <span>第{{ currentEpisodeNumber }}集 / 共{{ currentEpisodeTotal }}集</span>
+                <span>播放到第{{ currentEpisodeNumber }}集 / 共{{ currentEpisodeTotal }}集</span>
               </div>
               <button type="button" aria-label="关闭选集" @click="closeEpisodeSheet({ resume: true })">
                 <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -194,7 +194,10 @@
                 type="button"
                 :class="{on: item.index === currentSeriesEpIndex}"
                 @click="jumpEpisode(item.index)"
-              >{{ item.name }}</button>
+              >
+                <span>{{ item.name }}</span>
+                <em v-if="item.index === currentSeriesEpIndex">播放中</em>
+              </button>
             </div>
           </div>
         </div>
@@ -362,6 +365,13 @@ defineOptions({ name: 'Shorts' })
 const SHORTS_MUTED_KEY = 'vcms.shorts.muted'
 const SHORTS_SEARCH_HISTORY_KEY = 'vcms.shorts.search.history'
 const SEARCH_HISTORY_LIMIT = 6
+const RESOLVE_CACHE_TTL = 20 * 60 * 1000
+const RESOLVE_CACHE_LIMIT = 80
+const SERIES_PLAY_SETTLE_MS = 240
+const WANDER_PLAY_SETTLE_MS = 120
+const SCROLL_SUPPRESS_MS = 260
+const HISTORY_MIN_PROGRESS_SEC = 20
+const HISTORY_SAVE_INTERVAL_MS = 60 * 1000
 
 function readMutedPreference() {
   try {
@@ -438,6 +448,8 @@ const followState = reactive({})
 
 const unitKeys = new Set()
 const unitVodIds = new Set()
+const resolveCache = new Map()
+const resolveInflight = new Map()
 const MORE_THRESHOLD = 5
 
 let feedCursor = 0
@@ -454,6 +466,11 @@ let suppressActiveIndexWatch = false
 let resumeAfterEpisodeSheet = false
 let playingUnit = null
 let progressIdleTimer = 0
+let playSettleTimer = 0
+let seriesCommitTimer = 0
+let ignoreScrollUntil = 0
+let lastSavedHistoryKey = ''
+let lastSavedHistoryAt = 0
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
@@ -631,6 +648,10 @@ function buildSeriesWindow(epIndex) {
 async function showSeriesEpisode(index, options = {}) {
   const state = seriesState.value
   if (!state) return
+  if (options.play !== false) {
+    cancelPendingPlayback({ stop: true })
+    historySaveAt = 0
+  }
   const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
   const epIndex = clampIndex(index, total)
   const nextUnits = buildSeriesWindow(epIndex)
@@ -640,10 +661,11 @@ async function showSeriesEpisode(index, options = {}) {
   units.value = nextUnits
   activeIndex.value = nextActive
   await nextTick()
+  ignoreScrollUntil = Date.now() + SCROLL_SUPPRESS_MS
   scrollToIndex(nextActive, options.behavior || 'auto')
   suppressActiveIndexWatch = false
   ensureMoreAhead()
-  if (options.play !== false) await playActive()
+  if (options.play !== false) schedulePlayActive(Number(options.settleMs) || 0)
 }
 
 function appendFeedItems(items) {
@@ -706,6 +728,8 @@ async function loadNextFeed(limit = feedBatchSize.value) {
 async function loadFeed() {
   loading.value = true
   suppressActiveIndexWatch = true
+  clearSeriesCommitTimer()
+  cancelPendingPlayback({ stop: true })
   try {
     if (shortsDisabled.value) {
       units.value = []
@@ -735,13 +759,14 @@ async function loadFeed() {
   await nextTick()
   scrollToIndex(0, 'auto')
   ensureMoreAhead()
-  await playActive()
+  schedulePlayActive(WANDER_PLAY_SETTLE_MS)
 }
 
 function onFeedScroll() {
   if (scrollRaf) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
+    if (suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
     const el = feedEl.value
     if (!el) return
     const h = Math.max(1, el.clientHeight)
@@ -809,6 +834,107 @@ function getVideo() {
   return Array.isArray(videoEl.value) ? videoEl.value[0] : videoEl.value
 }
 
+function clearPlaySettleTimer() {
+  if (playSettleTimer) {
+    window.clearTimeout(playSettleTimer)
+    playSettleTimer = 0
+  }
+}
+
+function clearSeriesCommitTimer() {
+  if (seriesCommitTimer) {
+    window.clearTimeout(seriesCommitTimer)
+    seriesCommitTimer = 0
+  }
+}
+
+function cancelPendingPlayback(options = {}) {
+  clearPlaySettleTimer()
+  playSeq += 1
+  resolving.value = false
+  if (options.stop) stopPlayback()
+}
+
+function schedulePlayActive(delay = 0) {
+  clearPlaySettleTimer()
+  playSeq += 1
+  resolving.value = false
+  const ms = Math.max(0, Number(delay) || 0)
+  if (!ms) {
+    void playActive()
+    return
+  }
+  playSettleTimer = window.setTimeout(() => {
+    playSettleTimer = 0
+    void playActive()
+  }, ms)
+}
+
+function scheduleSeriesCommit(epIndex) {
+  const state = seriesState.value
+  if (!state) return
+  const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
+  const targetEp = clampIndex(epIndex, total)
+  clearSeriesCommitTimer()
+  cancelPendingPlayback({ stop: true })
+  historySaveAt = 0
+  state.epIndex = targetEp
+  void showSeriesEpisode(targetEp, { behavior: 'auto', play: false })
+  seriesCommitTimer = window.setTimeout(() => {
+    seriesCommitTimer = 0
+    if (feedMode.value !== 'series' || !seriesState.value) return
+    if (currentSeriesEpIndex.value !== targetEp) return
+    schedulePlayActive(0)
+  }, SERIES_PLAY_SETTLE_MS)
+}
+
+function resolveCacheKey(unit) {
+  const viewerId = user.value?.id || user.value?.mid || 0
+  return `${viewerId || 'guest'}:${unit?.vod?.id || 0}:${unit?.channel?.id || 0}:${unit?.epIndex || 0}`
+}
+
+function pruneResolveCache() {
+  while (resolveCache.size > RESOLVE_CACHE_LIMIT) {
+    const first = resolveCache.keys().next().value
+    if (!first) break
+    resolveCache.delete(first)
+  }
+}
+
+async function resolveUnitPlayback(unit, options = {}) {
+  const fresh = Boolean(options?.fresh)
+  const key = resolveCacheKey(unit)
+  const now = Date.now()
+  if (!fresh) {
+    const hit = resolveCache.get(key)
+    if (hit && now - hit.at < RESOLVE_CACHE_TTL) {
+      resolveCache.delete(key)
+      resolveCache.set(key, hit)
+      return hit.result
+    }
+    if (hit) resolveCache.delete(key)
+    if (resolveInflight.has(key)) return resolveInflight.get(key)
+  }
+  const promise = api.resolvePlay({
+    vodId: unit.vod.id,
+    playId: unit.channel.id,
+    epIndex: unit.epIndex,
+    context: 'shorts',
+    ...(fresh ? { fresh: 1 } : {}),
+  }).then((result) => {
+    if (!fresh && result?.ok && result.url) {
+      resolveCache.delete(key)
+      resolveCache.set(key, { at: Date.now(), result })
+      pruneResolveCache()
+    }
+    return result
+  }).finally(() => {
+    if (!fresh && resolveInflight.get(key) === promise) resolveInflight.delete(key)
+  })
+  if (!fresh) resolveInflight.set(key, promise)
+  return promise
+}
+
 function accessTitle(result) {
   const req = result?.requirement || {}
   const label = req.label || (req.kind === 'vip' ? 'VIP会员' : '指定会员等级')
@@ -845,12 +971,13 @@ async function playActive() {
   const unit = activeUnit.value
   const seq = ++playSeq
   stopPlayback()
+  historySaveAt = 0
   accessBlock.value = null
   playingUnit = unit || null
   if (!unit?.vod?.id || !unit?.channel?.id) return
   resolving.value = true
   try {
-    const result = await api.resolvePlay({ vodId: unit.vod.id, playId: unit.channel.id, epIndex: unit.epIndex, context: 'shorts' })
+    const result = await resolveUnitPlayback(unit)
     if (seq !== playSeq) return
     if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(result?.code)) {
       showAccessBlock(result)
@@ -861,7 +988,6 @@ async function playActive() {
       return
     }
     await attachVideo(result.url, result.kind || '')
-    saveWatchHistory(0)
   } catch (error) {
     if (seq === playSeq) notifyError(apiErrorMessage(error, '播放解析失败'))
   } finally {
@@ -974,12 +1100,18 @@ function onVideoError() {
   videoReady.value = false
 }
 
-function saveWatchHistory(progressOverride = null) {
+function saveWatchHistory(progressOverride = null, options = {}) {
   const unit = playingUnit || activeUnit.value
   if (!user.value || !unit?.vod?.id || !playUrl.value) return
   const video = getVideo()
   const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
+  if (progressSec < HISTORY_MIN_PROGRESS_SEC) return
   const durationSec = Math.floor(Number(video?.duration) || 0)
+  const key = `${unit.vod.id}:${unit.channel.id}:${unit.epIndex}`
+  const now = Date.now()
+  if (!options.force && key === lastSavedHistoryKey && now - lastSavedHistoryAt < HISTORY_SAVE_INTERVAL_MS) return
+  lastSavedHistoryKey = key
+  lastSavedHistoryAt = now
   api.saveHistory({
     vodId: unit.vod.id,
     lineId: unit.channel.id,
@@ -1003,13 +1135,13 @@ function onVideoTimeUpdate() {
   }
   if (!user.value) return
   const now = Date.now()
-  if (now - historySaveAt < 15000) return
+  if (currentSec.value < HISTORY_MIN_PROGRESS_SEC || now - historySaveAt < HISTORY_SAVE_INTERVAL_MS) return
   historySaveAt = now
   saveWatchHistory()
 }
 
 function nextItem() {
-  saveWatchHistory()
+  saveWatchHistory(null, { force: true })
   if (layerOpen.value || seeking.value) {
     paused.value = true
     return
@@ -1021,7 +1153,7 @@ function nextItem() {
     }
     const nextEp = currentSeriesEpIndex.value + 1
     if (nextEp < currentEpisodeTotal.value) {
-      void showSeriesEpisode(nextEp, { behavior: 'smooth' })
+      void showSeriesEpisode(nextEp, { behavior: 'smooth', settleMs: WANDER_PLAY_SETTLE_MS })
     } else {
       paused.value = true
     }
@@ -1037,8 +1169,8 @@ function jumpEpisode(index) {
   const isCurrent = index === currentSeriesEpIndex.value
   closeEpisodeSheet({ resume: isCurrent })
   if (isCurrent) return
-  saveWatchHistory()
-  void showSeriesEpisode(index)
+  saveWatchHistory(null, { force: true })
+  void showSeriesEpisode(index, { settleMs: SERIES_PLAY_SETTLE_MS })
 }
 
 function openEpisodeSheet() {
@@ -1137,12 +1269,12 @@ async function enterSeriesMode(unit = activeUnit.value) {
     episodeSheetOpen.value = false
     const nextEp = clampIndex(unit.epIndex || 0, currentEpisodeTotal.value)
     if (nextEp !== currentSeriesEpIndex.value) {
-      saveWatchHistory()
-      await showSeriesEpisode(nextEp, { behavior: 'auto' })
+      saveWatchHistory(null, { force: true })
+      await showSeriesEpisode(nextEp, { behavior: 'auto', settleMs: SERIES_PLAY_SETTLE_MS })
     }
     return
   }
-  saveWatchHistory()
+  saveWatchHistory(null, { force: true })
   episodeSheetOpen.value = false
   resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
@@ -1195,7 +1327,7 @@ async function exitSeriesMode() {
     await loadFeed()
     return
   }
-  saveWatchHistory()
+  saveWatchHistory(null, { force: true })
   suppressActiveIndexWatch = true
   feedMode.value = 'wander'
   seriesState.value = null
@@ -1215,7 +1347,7 @@ async function exitSeriesMode() {
   scrollToIndex(activeIndex.value, 'auto')
   suppressActiveIndexWatch = false
   ensureMoreAhead()
-  await playActive()
+  schedulePlayActive(WANDER_PLAY_SETTLE_MS)
 }
 
 function isFollowed(vodId) {
@@ -1440,22 +1572,22 @@ function keepActiveCardInView() {
 
 watch(activeIndex, async () => {
   if (suppressActiveIndexWatch) return
-  saveWatchHistory()
+  saveWatchHistory(null, { force: true })
   historySaveAt = 0
   if (feedMode.value === 'series') {
     const unit = activeUnit.value
     if (!unit) return
-    await showSeriesEpisode(unit.epIndex, { behavior: 'auto', play: false })
-    await playActive()
+    scheduleSeriesCommit(unit.epIndex)
     return
   }
   ensureMoreAhead()
+  cancelPendingPlayback({ stop: true })
   await nextTick()
-  await playActive()
+  schedulePlayActive(WANDER_PLAY_SETTLE_MS)
 })
 
 watch(user, (next) => {
-  if (next && accessBlock.value?.retryAfterLogin) playActive()
+  if (next && accessBlock.value?.retryAfterLogin) schedulePlayActive(0)
   if (next && activeUnit.value?.vod?.id) loadFollowState(activeUnit.value.vod.id)
   if (next && librarySheetOpen.value) void loadLibrary(true)
   if (!next) {
@@ -1471,13 +1603,15 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
+  clearPlaySettleTimer()
+  clearSeriesCommitTimer()
   clearProgressIdleTimer()
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
   librarySheetOpen.value = false
   restoreViewportZoom()
-  saveWatchHistory()
+  saveWatchHistory(null, { force: true })
   stopPlayback()
 })
 </script>
@@ -1581,9 +1715,13 @@ onBeforeUnmount(() => {
 .episode-sheet-head svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .episode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; max-height: calc(min(62dvh, 520px) - 86px); overflow: auto; scrollbar-width: none; }
 .episode-grid::-webkit-scrollbar { display: none; }
-.episode-grid button { height: 38px; min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.08);
-  color: rgba(255,255,255,.84); font-size: 12px; font-weight: 850; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.episode-grid button { height: 42px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.84);
+  font-size: 12px; font-weight: 850; cursor: pointer; overflow: hidden; }
 .episode-grid button.on { border-color: rgba(255,255,255,.76); background: rgba(255,255,255,.22); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.episode-grid button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
+.episode-grid button em { color: rgba(255,255,255,.62); font-size: 10px; line-height: 1; font-style: normal; font-weight: 900; }
+.episode-grid button.on em { color: rgba(255,255,255,.86); }
 .detail-body { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 13px; align-items: start; }
 .detail-body img { width: 92px; aspect-ratio: 3 / 4; border-radius: 10px; object-fit: cover; background: rgba(255,255,255,.08); }
 .detail-tags { margin-top: 0; }
