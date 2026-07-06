@@ -17,6 +17,7 @@ model Source {
   activeApiUrl String          @default("") // 最近一次采集实际生效的url(运维可见性)
   playDomains  String          @default("[]") // JSON数组：该源已入库播放地址域名统计，供后台快速展示/替换
   flag         String          @default("") // from标识，如 rym3u8（可为空，自动探测）
+  proxyMode    String          @default("inherit") // 回源模式: inherit(跟随全局)/direct(直连源站)/key(仅代理key)/proxy(TS中转)
   priority     Int             @default(100) // 线路优先级，越小越靠前
   enabled      Boolean         @default(true) // 开关
   status       String          @default("unknown") // ok / fail / unknown（测活结果）
