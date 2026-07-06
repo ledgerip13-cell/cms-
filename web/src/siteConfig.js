@@ -9,6 +9,7 @@ export const EMPTY_SITE = {
   announcement: '',
   theme: {},
   shortsConfig: {},
+  playConfig: {},
 }
 
 export const DEFAULT_THEME = {
@@ -82,6 +83,10 @@ export const DEFAULT_SHORTS_CONFIG = {
   autoPlayNext: true,
 }
 
+export const DEFAULT_PLAY_CONFIG = {
+  hideDuplicateSourceChannels: true,
+}
+
 function normalizeTheme(theme) {
   let raw = theme
   if (typeof raw === 'string') {
@@ -117,10 +122,23 @@ export function normalizeShortsConfig(config) {
   }
 }
 
+export function normalizePlayConfig(config) {
+  let raw = config
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
+  }
+  return {
+    ...DEFAULT_PLAY_CONFIG,
+    ...(raw || {}),
+    hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
+  }
+}
+
 export function normalizeSite(site) {
   const next = { ...EMPTY_SITE, ...(site || {}) }
   next.theme = normalizeTheme(next.theme)
   next.shortsConfig = normalizeShortsConfig(next.shortsConfig)
+  next.playConfig = normalizePlayConfig(next.playConfig)
   return next
 }
 

@@ -5,7 +5,7 @@ import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
-import { normalizeShortsConfig } from "./site.js";
+import { normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -111,7 +111,35 @@ async function siteShortsConfig() {
   return normalizeShortsConfig((site as any)?.shortsConfig);
 }
 
-function bestPublicPlay(vod: any) {
+async function sitePlayConfig() {
+  const site = await prisma.siteConfig.findUnique({ where: { id: 1 } });
+  return normalizePlayConfig((site as any)?.playConfig);
+}
+
+function episodeShape(channel: { epCount?: number; episodes?: Array<{ name?: string }> }) {
+  const episodes = Array.isArray(channel.episodes) ? channel.episodes : [];
+  return JSON.stringify({
+    count: Number(channel.epCount) || episodes.length,
+    names: episodes.map((ep, index) => String(ep?.name || `第${index + 1}集`).trim()),
+  });
+}
+
+function visibleSourceChannels<T extends { alive: boolean; playKind?: string; episodes?: Array<{ name?: string }>; epCount?: number }>(channels: T[], playConfig: any) {
+  if (!playConfig?.hideDuplicateSourceChannels || channels.length < 2) return channels;
+  const directKeys = new Set(
+    channels
+      .filter((channel) => channel.alive !== false && (channel.playKind === "hls" || channel.playKind === "resolved"))
+      .map(episodeShape),
+  );
+  if (!directKeys.size) return channels;
+  const filtered = channels.filter((channel) => {
+    if (channel.playKind !== "iframe") return true;
+    return !directKeys.has(episodeShape(channel));
+  });
+  return filtered.length ? filtered : channels;
+}
+
+function bestPublicPlay(vod: any, playConfig: any = null) {
   const rows = (vod?.plays || [])
     .map((p: any) => {
       const episodes = parseEpisodes(p.episodes);
@@ -130,6 +158,15 @@ function bestPublicPlay(vod: any) {
       };
     })
     .filter((p: any) => p.id && p.episodes.length);
+  if (playConfig?.hideDuplicateSourceChannels && rows.length > 1) {
+    const bySource = new Map<number, typeof rows>();
+    for (const row of rows) {
+      if (!bySource.has(row.sourceId)) bySource.set(row.sourceId, []);
+      bySource.get(row.sourceId)!.push(row);
+    }
+    rows.length = 0;
+    for (const group of bySource.values()) rows.push(...visibleSourceChannels(group, playConfig));
+  }
   rows.sort((a: any, b: any) => {
     if (a.alive !== b.alive) return a.alive ? -1 : 1;
     if (b.score !== a.score) return b.score - a.score;
@@ -389,6 +426,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (!total) return { list: [], nextCursor: cursor, hasMore: false };
 
     const orderBy = shortsOrderBy(sortMode);
+    const playConfig = await sitePlayConfig();
     const include = {
       _count: { select: publicPlayCountSelect() },
       images: { orderBy: [{ isHero: "desc" as const }, { score: "desc" as const }] },
@@ -449,7 +487,7 @@ export default async function vodRoutes(app: FastifyInstance) {
 
     const list = scoredRows
       .map((vod: any) => {
-        const play = bestPublicPlay(vod);
+        const play = bestPublicPlay(vod, playConfig);
         if (!play) return null;
         const episodes = publicEpisodes(play.episodes);
         return {
@@ -574,6 +612,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const viewer = await viewerFromRequest(req);
     const publicTypes = await enabledTypeNames(viewer);
     if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName) || !vod.plays.length) return reply.code(404).send({ error: "not found" });
+    const playConfig = await sitePlayConfig();
     const allChannels = vod.plays.map((p) => ({
       id: p.id,
       sourceId: p.sourceId,
@@ -602,7 +641,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const lines = [...bySource.values()]
       .map((channels) => {
         const sorted = [...channels].sort(byHealth);
-        const best = sorted[0];
+        const visibleChannels = visibleSourceChannels(sorted, playConfig);
+        const best = visibleChannels[0] || sorted[0];
         return {
           id: best.id,
           sourceId: best.sourceId,
@@ -614,7 +654,7 @@ export default async function vodRoutes(app: FastifyInstance) {
           score: best.score,
           playKind: best.playKind,
           episodes: publicEpisodes(best.episodes),
-          channels: sorted.map((c) => ({ ...c, episodes: publicEpisodes(c.episodes) })), // 同源全部备用通道(按健康分降序)，前端需展示备用tab时用
+          channels: visibleChannels.map((c) => ({ ...c, episodes: publicEpisodes(c.episodes) })), // 观众端按播放策略隐藏重复包装通道
         };
       })
       .sort(byHealth);

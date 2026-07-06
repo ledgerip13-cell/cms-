@@ -109,6 +109,15 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="播放策略" name="playback">
+          <el-form :model="form.playConfig" label-width="140px" class="site-form">
+            <el-form-item label="隐藏重复通道">
+              <el-switch v-model="form.playConfig.hideDuplicateSourceChannels" active-text="开启" inactive-text="关闭" />
+              <div class="hint inline">同一采集源下，若 HLS 直链与 share/iframe 包装通道集数完全一致，观众端只显示直链通道。</div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="主题设置" name="theme">
           <div class="theme-layout">
             <div class="theme-panel">
@@ -239,6 +248,19 @@
         </div>
       </template>
 
+      <template v-else-if="activeSettingTab === 'playback'">
+        <div class="sec-title" style="margin-bottom:14px">播放策略预览</div>
+        <div class="play-policy-preview">
+          <div class="policy-row">
+            <b>重复包装通道</b>
+            <el-tag size="small" :type="form.playConfig.hideDuplicateSourceChannels ? 'success' : 'info'" effect="plain">
+              {{ form.playConfig.hideDuplicateSourceChannels ? '观众端隐藏' : '观众端展示' }}
+            </el-tag>
+          </div>
+          <p class="pv-foot">后台仍保留全部原始线路；该策略只影响观众播放页和刷短剧选线。</p>
+        </div>
+      </template>
+
       <template v-else>
         <div class="preview-head">
           <div>
@@ -344,7 +366,7 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { Check, Upload, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { api, DEFAULT_THEME, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
+import { api, DEFAULT_THEME, normalizePlayConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
 
 const form = ref(readCachedSite())
 const saving = ref(false)
@@ -600,10 +622,12 @@ const previewVars = computed(() => {
 
 function ensureTheme() { form.value.theme = normalizeTheme(form.value.theme) }
 function ensureShortsConfig() { form.value.shortsConfig = normalizeShortsConfig(form.value.shortsConfig) }
+function ensurePlayConfig() { form.value.playConfig = normalizePlayConfig(form.value.playConfig) }
 async function load() {
   form.value = writeCachedSite(await api.adminSite())
   ensureTheme()
   ensureShortsConfig()
+  ensurePlayConfig()
 }
 
 function hasOwn(obj, key) {
@@ -751,9 +775,11 @@ async function save() {
   try {
     ensureTheme()
     ensureShortsConfig()
+    ensurePlayConfig()
     form.value = writeCachedSite(await api.updateSite(form.value))
     ensureTheme()
     ensureShortsConfig()
+    ensurePlayConfig()
     ElMessage.success('站点设置已保存，前端刷新后生效')
   } catch (e) { ElMessage.error(e.message || '保存失败') } finally { saving.value = false }
 }
@@ -761,7 +787,7 @@ watch(activeThemeScope, () => {
   const keys = visibleThemeGroups.value.flatMap(g => g.fields.map(f => f.key))
   if (!keys.includes(activeFieldKey.value)) activeFieldKey.value = keys[0] || 'accent'
 })
-onMounted(() => { ensureTheme(); ensureShortsConfig(); load() })
+onMounted(() => { ensureTheme(); ensureShortsConfig(); ensurePlayConfig(); load() })
 </script>
 
 <style scoped>
@@ -797,6 +823,10 @@ onMounted(() => { ensureTheme(); ensureShortsConfig(); load() })
   background: rgba(255,255,255,.1); color: #fff; font-size: 11px; font-weight: 900; }
 .sp-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; gap: 8px; padding: 13px 12px;
   background: linear-gradient(0deg, rgba(0,0,0,.72), transparent); font-size: 10px; color: rgba(255,255,255,.72); }
+.play-policy-preview { display: grid; gap: 10px; }
+.policy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: #fafbfc; }
+.policy-row b { color: var(--text-1); font-size: 14px; }
 .theme-layout { max-width: 860px; }
 .theme-tabs { width: 100%; }
 .scope-note { margin: 2px 0 14px; color: var(--text-3); font-size: 12px; }

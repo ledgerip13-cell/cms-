@@ -40,6 +40,10 @@ const DEFAULT_SHORTS_CONFIG = {
   autoPlayNext: true,
 };
 
+const DEFAULT_PLAY_CONFIG = {
+  hideDuplicateSourceChannels: true,
+};
+
 function clampInt(value: any, fallback: number, min: number, max: number) {
   const n = Math.floor(Number(value));
   if (!Number.isFinite(n)) return fallback;
@@ -73,11 +77,28 @@ export function normalizeShortsConfig(value: any) {
   };
 }
 
+export function normalizePlayConfig(value: any) {
+  let raw = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw || "{}");
+    } catch {
+      raw = {};
+    }
+  }
+  return {
+    ...DEFAULT_PLAY_CONFIG,
+    ...(raw || {}),
+    hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
+  };
+}
+
 function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = false) {
   const { registerInviteCode, ...rest } = s;
   return {
     ...rest,
     shortsConfig: normalizeShortsConfig((s as any).shortsConfig),
+    playConfig: normalizePlayConfig((s as any).playConfig),
     inviteRequired,
   };
 }
@@ -116,6 +137,7 @@ export default async function siteRoutes(app: FastifyInstance) {
         announcement: b.announcement,
         theme: normalizeJsonField(b.theme),
         shortsConfig: JSON.stringify(normalizeShortsConfig(b.shortsConfig)),
+        playConfig: JSON.stringify(normalizePlayConfig(b.playConfig)),
         allowRegister: Boolean(b.allowRegister),
       },
     });

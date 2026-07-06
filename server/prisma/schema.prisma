@@ -76,6 +76,7 @@ model SiteConfig {
   announcement       String   @default("") // 公告(可选)
   theme              String   @default("{}") // 前台主题配置 JSON
   shortsConfig       String   @default("{}") // 刷短剧配置 JSON
+  playConfig         String   @default("{}") // 播放策略配置 JSON
   allowRegister      Boolean  @default(true) // 是否开放前台用户注册
   registerInviteCode String   @default("") // 注册邀请码(留空=不需要)
   updatedAt          DateTime @updatedAt
