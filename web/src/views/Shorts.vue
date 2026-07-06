@@ -10,9 +10,14 @@
           <strong>刷短剧</strong>
           <span>{{ feedMode === 'series' ? '全集观看' : (activeUnit ? '短剧漫游' : '热门短剧') }}</span>
         </div>
-        <button v-if="shortsConfig.enableSearch" class="icon-btn" type="button" aria-label="搜索短剧" @click="openSearchSheet">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        </button>
+        <div class="shorts-top-actions">
+          <button v-if="shortsConfig.enableSearch" class="icon-btn" type="button" aria-label="搜索短剧" @click="openSearchSheet">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          </button>
+          <button class="icon-btn" type="button" aria-label="继续看和追剧" @click="openLibrarySheet">
+            <svg viewBox="0 0 24 24"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v13l-7-3.8-7 3.8z"/><path d="M9 9h6M9 12.5h4"/></svg>
+          </button>
+        </div>
       </header>
 
       <div v-if="shortsDisabled" class="shorts-empty">
@@ -280,6 +285,72 @@
           </div>
         </div>
       </transition>
+
+      <transition name="episode-sheet">
+        <div
+          v-if="librarySheetOpen"
+          class="episode-mask"
+          @click="closeLibrarySheet"
+          @pointerdown="onLayerGestureStart"
+          @pointermove="onGestureMove"
+          @pointerup="onLayerGestureEnd"
+          @pointercancel="onGestureCancel"
+        >
+          <div class="library-sheet-panel" @click.stop>
+            <div class="episode-sheet-head">
+              <div>
+                <strong>我的短剧</strong>
+                <span>继续看和追剧</span>
+              </div>
+              <button type="button" aria-label="关闭我的短剧" @click="closeLibrarySheet">
+                <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div class="library-tabs">
+              <button type="button" :class="{on: libraryTab === 'history'}" @click="libraryTab = 'history'">
+                继续看 <span>{{ libraryHistories.length }}</span>
+              </button>
+              <button type="button" :class="{on: libraryTab === 'follow'}" @click="libraryTab = 'follow'">
+                我的追剧 <span>{{ libraryFollows.length }}</span>
+              </button>
+            </div>
+
+            <div v-if="libraryLoading" class="library-state">
+              <div class="shorts-spinner small"></div>
+              <span>加载中</span>
+            </div>
+            <div v-else-if="libraryError" class="library-state">
+              <span>{{ libraryError }}</span>
+              <button type="button" @click="loadLibrary(true)">重试</button>
+            </div>
+            <template v-else-if="libraryTab === 'history'">
+              <div v-if="libraryHistories.length" class="library-list">
+                <button v-for="item in libraryHistories" :key="item.id" type="button" class="library-item" @click="openLibraryHistory(item)">
+                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || '')" :alt="item.vod.name" @error="onImgError" />
+                  <span class="library-info">
+                    <b>{{ item.vod.name }}</b>
+                    <em>{{ historySubText(item) }}</em>
+                    <i v-if="historyProgressText(item)">{{ historyProgressText(item) }}</i>
+                  </span>
+                </button>
+              </div>
+              <div v-else class="library-state">暂无观看记录</div>
+            </template>
+            <template v-else>
+              <div v-if="libraryFollows.length" class="library-list">
+                <button v-for="item in libraryFollows" :key="item.id" type="button" class="library-item" @click="openLibraryFollow(item)">
+                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || '')" :alt="item.vod.name" @error="onImgError" />
+                  <span class="library-info">
+                    <b>{{ item.vod.name }}</b>
+                    <em>{{ item.vod.year || '年份未知' }} · {{ item.vod.remarks || item.vod.typeName || shortsConfig.defaultType }}</em>
+                  </span>
+                </button>
+              </div>
+              <div v-else class="library-state">暂无追剧</div>
+            </template>
+          </div>
+        </div>
+      </transition>
     </main>
   </div>
 </template>
@@ -317,11 +388,17 @@ const videoReady = ref(false)
 const episodeSheetOpen = ref(false)
 const detailSheetOpen = ref(false)
 const searchSheetOpen = ref(false)
+const librarySheetOpen = ref(false)
 const immersiveMode = ref(false)
 const site = ref(readCachedSite())
 const searchKw = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
+const libraryTab = ref('history')
+const libraryLoading = ref(false)
+const libraryError = ref('')
+const libraryHistories = ref([])
+const libraryFollows = ref([])
 const currentSec = ref(0)
 const durationSec = ref(0)
 const seekValue = ref(0)
@@ -354,7 +431,7 @@ const activeUnit = computed(() => units.value[activeIndex.value] || null)
 const shortsConfig = computed(() => normalizeShortsConfig(site.value?.shortsConfig))
 const shortsDisabled = computed(() => shortsConfig.value.enabled === false)
 const feedBatchSize = computed(() => Math.max(4, Math.min(20, Number(shortsConfig.value.feedLimit) || 10)))
-const layerOpen = computed(() => episodeSheetOpen.value || detailSheetOpen.value || searchSheetOpen.value)
+const layerOpen = computed(() => episodeSheetOpen.value || detailSheetOpen.value || searchSheetOpen.value || librarySheetOpen.value)
 const currentSeriesEpIndex = computed(() => {
   if (feedMode.value !== 'series') return -1
   return Math.max(0, Number(seriesState.value?.epIndex) || 0)
@@ -387,6 +464,10 @@ const progressPercent = computed(() => {
 function goBack() {
   if (searchSheetOpen.value) {
     closeSearchSheet()
+    return
+  }
+  if (librarySheetOpen.value) {
+    closeLibrarySheet()
     return
   }
   if (detailSheetOpen.value) {
@@ -452,9 +533,15 @@ function buildUnit(item) {
   }
 }
 
-function buildUnitFromVodDetail(vod) {
-  const line = Array.isArray(vod?.lines) ? vod.lines[0] : null
+function buildUnitFromVodDetail(vod, options = {}) {
+  const lines = Array.isArray(vod?.lines) ? vod.lines : []
+  const preferredLineId = Number(options?.lineId)
+  const line = lines.find(item => Number(item?.id) === preferredLineId) || lines[0]
   if (!vod?.id || !line?.id) return null
+  const episodes = Array.isArray(line.episodes) ? line.episodes : []
+  const total = line.epCount || episodes.length || 1
+  const epIndex = clampIndex(options?.epIndex, total)
+  const ep = episodes[epIndex] || {}
   return buildUnit({
     vod,
     play: {
@@ -464,9 +551,9 @@ function buildUnitFromVodDetail(vod) {
       alive: line.alive !== false,
       score: Number(line.score) || 0,
       playKind: line.playKind || '',
-      epIndex: 0,
-      epName: line.episodes?.[0]?.name || '第1集',
-      episodes: Array.isArray(line.episodes) ? line.episodes : [],
+      epIndex,
+      epName: ep.name || `第${epIndex + 1}集`,
+      episodes,
     },
   })
 }
@@ -588,6 +675,7 @@ async function loadFeed() {
     immersiveMode.value = false
     detailSheetOpen.value = false
     searchSheetOpen.value = false
+    librarySheetOpen.value = false
     feedMode.value = 'wander'
     seriesState.value = null
     activeIndex.value = 0
@@ -982,7 +1070,13 @@ async function enterSeriesMode(unit = activeUnit.value) {
   if (wasSeries && current?.vod?.id === unit.vod.id && current?.channel?.id === unit.channel.id) {
     detailSheetOpen.value = false
     searchSheetOpen.value = false
+    librarySheetOpen.value = false
     episodeSheetOpen.value = false
+    const nextEp = clampIndex(unit.epIndex || 0, currentEpisodeTotal.value)
+    if (nextEp !== currentSeriesEpIndex.value) {
+      saveWatchHistory()
+      await showSeriesEpisode(nextEp, { behavior: 'auto' })
+    }
     return
   }
   saveWatchHistory()
@@ -990,6 +1084,7 @@ async function enterSeriesMode(unit = activeUnit.value) {
   resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
+  librarySheetOpen.value = false
   suppressActiveIndexWatch = true
   if (!wasSeries || !wanderState) {
     wanderState = {
@@ -1085,6 +1180,7 @@ function openSearchSheet() {
   if (!shortsConfig.value.enableSearch) return
   detailSheetOpen.value = false
   episodeSheetOpen.value = false
+  librarySheetOpen.value = false
   searchSheetOpen.value = true
   if (!searchResults.value.length) void runShortSearch()
 }
@@ -1113,30 +1209,111 @@ async function runShortSearch() {
 }
 
 async function openSearchResult(item) {
-  if (!item?.id) return
+  await openVodInShorts(item?.id, { errorText: '短剧打开失败' })
+}
+
+function isShortVod(vod) {
+  const type = shortsConfig.value.defaultType
+  return !type || !vod?.typeName || vod.typeName === type
+}
+
+async function loadLibrary(force = false) {
+  if (!user.value || libraryLoading.value) return
+  if (!force && (libraryHistories.value.length || libraryFollows.value.length)) return
+  libraryLoading.value = true
+  libraryError.value = ''
   try {
-    const vod = await api.vod(item.id)
-    const unit = buildUnitFromVodDetail(vod)
+    const [histories, follows] = await Promise.all([api.history(50), api.follows(50)])
+    libraryHistories.value = (Array.isArray(histories) ? histories : []).filter(item => item?.vod?.id && isShortVod(item.vod))
+    libraryFollows.value = (Array.isArray(follows) ? follows : []).filter(item => item?.vod?.id && isShortVod(item.vod))
+  } catch (error) {
+    libraryError.value = apiErrorMessage(error, '我的短剧加载失败')
+  } finally {
+    libraryLoading.value = false
+  }
+}
+
+function openLibrarySheet() {
+  if (!user.value) {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后查看继续看和追剧' })
+    return
+  }
+  searchSheetOpen.value = false
+  detailSheetOpen.value = false
+  episodeSheetOpen.value = false
+  libraryTab.value = 'history'
+  librarySheetOpen.value = true
+  void loadLibrary(true)
+}
+
+function closeLibrarySheet() {
+  librarySheetOpen.value = false
+}
+
+async function openVodInShorts(vodId, options = {}) {
+  if (!vodId) return
+  try {
+    const vod = await api.vod(vodId)
+    const unit = buildUnitFromVodDetail(vod, options)
     if (!unit) {
       notifyWarning('当前短剧暂无可用线路')
       return
     }
     closeSearchSheet()
+    closeLibrarySheet()
     await enterSeriesMode(unit)
   } catch (error) {
-    notifyError(apiErrorMessage(error, '短剧打开失败'))
+    notifyError(apiErrorMessage(error, options?.errorText || '短剧打开失败'))
   }
+}
+
+function openLibraryHistory(item) {
+  void openVodInShorts(item?.vod?.id, {
+    epIndex: item?.epIndex,
+    lineId: item?.lineId,
+    errorText: '观看记录打开失败',
+  })
+}
+
+function openLibraryFollow(item) {
+  void openVodInShorts(item?.vod?.id, { epIndex: 0, errorText: '追剧打开失败' })
+}
+
+function formatLibraryTime(value) {
+  if (!value) return '刚刚'
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function historySubText(item) {
+  const index = Math.max(0, Number(item?.epIndex) || 0)
+  const ep = item?.epName || `第${index + 1}集`
+  return `${ep} · ${formatLibraryTime(item?.updatedAt)}`
+}
+
+function historyProgressText(item) {
+  const progress = Math.floor(Number(item?.progressSec) || 0)
+  const duration = Math.floor(Number(item?.durationSec) || 0)
+  if (progress <= 0) return ''
+  if (duration > 0) return `看到 ${formatTime(progress)} / ${formatTime(duration)}`
+  return `看到 ${formatTime(progress)}`
 }
 
 function openDetailSheet() {
   if (!activeUnit.value || immersiveMode.value) return
   searchSheetOpen.value = false
   episodeSheetOpen.value = false
+  librarySheetOpen.value = false
   detailSheetOpen.value = true
 }
 
 function isInteractiveGestureTarget(target) {
-  return Boolean(target?.closest?.('button,input,a,textarea,select,.episode-sheet-panel,.detail-sheet-panel,.search-sheet-panel,.short-progress'))
+  return Boolean(target?.closest?.('button,input,a,textarea,select,.episode-sheet-panel,.detail-sheet-panel,.search-sheet-panel,.library-sheet-panel,.short-progress'))
 }
 
 function isLayerInteractiveGestureTarget(target) {
@@ -1204,6 +1381,10 @@ function returnPreviousShortsLayer() {
   }
   if (searchSheetOpen.value) {
     closeSearchSheet()
+    return
+  }
+  if (librarySheetOpen.value) {
+    closeLibrarySheet()
     return
   }
   if (episodeSheetOpen.value) {
@@ -1280,6 +1461,11 @@ watch(activeIndex, async () => {
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playActive()
   if (next && activeUnit.value?.vod?.id) loadFollowState(activeUnit.value.vod.id)
+  if (next && librarySheetOpen.value) void loadLibrary(true)
+  if (!next) {
+    libraryHistories.value = []
+    libraryFollows.value = []
+  }
 })
 
 onMounted(async () => {
@@ -1292,6 +1478,7 @@ onBeforeUnmount(() => {
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
+  librarySheetOpen.value = false
   restoreViewportZoom()
   saveWatchHistory()
   stopPlayback()
@@ -1305,10 +1492,11 @@ onBeforeUnmount(() => {
   linear-gradient(135deg, #05060a, #0e1017 58%, #05060a); }
 .shorts-shell { position: relative; width: min(100vw, 430px); height: 100dvh; margin: 0 auto; overflow: hidden;
   background: #05060a; box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 70px rgba(0,0,0,.72); }
-.shorts-top { position: absolute; top: 0; left: 0; right: 0; z-index: 9; display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px;
+.shorts-top { position: absolute; top: 0; left: 0; right: 0; z-index: 9; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
   background: linear-gradient(180deg, rgba(0,0,0,.58), rgba(0,0,0,0)); pointer-events: none; }
 .shorts-top > * { pointer-events: auto; }
+.shorts-top-actions { display: flex; justify-content: flex-end; gap: 8px; min-width: 38px; }
 .icon-btn { width: 38px; height: 38px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(14,16,22,.42);
   color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(12px); }
 .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
@@ -1379,7 +1567,7 @@ onBeforeUnmount(() => {
 .episode-mask { position: absolute; inset: 0; z-index: 24; display: flex; align-items: flex-end; background: linear-gradient(180deg, transparent 30%, rgba(0,0,0,.54)); }
 .episode-sheet-panel { width: 100%; max-height: min(62dvh, 520px); padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,.12);
   border-radius: 18px 18px 0 0; background: rgba(12,14,20,.84); box-shadow: 0 -28px 70px rgba(0,0,0,.46); backdrop-filter: blur(22px); }
-.detail-sheet-panel, .search-sheet-panel { width: 100%; max-height: min(76dvh, 620px); padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,.12);
+.detail-sheet-panel, .search-sheet-panel, .library-sheet-panel { width: 100%; max-height: min(76dvh, 620px); padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,.12);
   border-radius: 18px 18px 0 0; background: rgba(12,14,20,.9); box-shadow: 0 -28px 70px rgba(0,0,0,.5); backdrop-filter: blur(22px); overflow: hidden; }
 .episode-sheet-head { display: grid; grid-template-columns: minmax(0, 1fr) 36px; align-items: center; gap: 12px; margin-bottom: 14px; }
 .episode-sheet-head strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.25; font-weight: 950; }
@@ -1409,15 +1597,32 @@ onBeforeUnmount(() => {
 .short-search-results span { min-width: 0; display: grid; gap: 4px; }
 .short-search-results b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.2; }
 .short-search-results em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.58); font-size: 11px; line-height: 1.2; font-style: normal; }
+.library-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; padding: 3px; border: 1px solid rgba(255,255,255,.1); border-radius: 13px; background: rgba(255,255,255,.06); }
+.library-tabs button { min-width: 0; height: 34px; border: 0; border-radius: 10px; background: transparent; color: rgba(255,255,255,.68); font-size: 12px; font-weight: 900; cursor: pointer; }
+.library-tabs button.on { background: rgba(255,255,255,.16); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.library-tabs span { margin-left: 3px; color: rgba(255,255,255,.5); font-size: 11px; }
+.library-list { display: grid; gap: 8px; max-height: calc(min(76dvh, 620px) - 142px); overflow: auto; scrollbar-width: none; }
+.library-list::-webkit-scrollbar { display: none; }
+.library-item { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: center; min-width: 0; min-height: 72px; padding: 7px;
+  border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.06); color: #fff; text-align: left; cursor: pointer; }
+.library-item img { width: 52px; height: 58px; border-radius: 9px; object-fit: cover; background: rgba(255,255,255,.08); }
+.library-info { min-width: 0; display: grid; gap: 4px; }
+.library-info b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.2; }
+.library-info em, .library-info i { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.58); font-size: 11px; line-height: 1.2; font-style: normal; }
+.library-info i { color: rgba(255,255,255,.48); }
+.library-state { min-height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; color: rgba(255,255,255,.62); font-size: 13px; font-weight: 800; text-align: center; }
+.library-state button { height: 34px; border: 0; border-radius: 10px; padding: 0 16px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
 .search-state { height: 120px; display: flex; align-items: center; justify-content: center; gap: 9px; color: rgba(255,255,255,.62); font-size: 13px; font-weight: 800; }
 .episode-sheet-enter-active, .episode-sheet-leave-active { transition: opacity .18s ease; }
 .episode-sheet-enter-active .episode-sheet-panel, .episode-sheet-leave-active .episode-sheet-panel,
 .episode-sheet-enter-active .detail-sheet-panel, .episode-sheet-leave-active .detail-sheet-panel,
-.episode-sheet-enter-active .search-sheet-panel, .episode-sheet-leave-active .search-sheet-panel { transition: transform .18s ease; }
+.episode-sheet-enter-active .search-sheet-panel, .episode-sheet-leave-active .search-sheet-panel,
+.episode-sheet-enter-active .library-sheet-panel, .episode-sheet-leave-active .library-sheet-panel { transition: transform .18s ease; }
 .episode-sheet-enter-from, .episode-sheet-leave-to { opacity: 0; }
 .episode-sheet-enter-from .episode-sheet-panel, .episode-sheet-leave-to .episode-sheet-panel,
 .episode-sheet-enter-from .detail-sheet-panel, .episode-sheet-leave-to .detail-sheet-panel,
-.episode-sheet-enter-from .search-sheet-panel, .episode-sheet-leave-to .search-sheet-panel { transform: translateY(18px); }
+.episode-sheet-enter-from .search-sheet-panel, .episode-sheet-leave-to .search-sheet-panel,
+.episode-sheet-enter-from .library-sheet-panel, .episode-sheet-leave-to .library-sheet-panel { transform: translateY(18px); }
 .shorts-loading, .shorts-empty { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: rgba(255,255,255,.76); }
 .shorts-empty strong { color: #fff; font-size: 18px; }
 .empty-icon { width: 58px; height: 58px; border-radius: 18px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); }
