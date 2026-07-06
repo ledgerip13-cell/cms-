@@ -95,8 +95,9 @@
         </el-form-item>
         <el-form-item label="增量窗口"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
         <el-form-item label="采集分类">
-          <el-select v-model="form.autoTypeIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="全部分类" style="width:360px"
-            filterable :loading="autoClassLoading" :disabled="!form.id">
+          <el-select v-model="form.autoTypeIds" multiple clearable collapse-tags collapse-tags-tooltip
+            :placeholder="autoClassLoading ? '分类加载中...' : '全部分类'" style="width:360px"
+            filterable :loading="autoClassLoading" :disabled="autoClassLoading || !form.id">
             <template v-if="autoClassTree.length">
               <el-option-group v-for="p in autoClassTree" :key="p.typeId"
                 :label="p.children.length ? `${p.typeName}（父类·含${p.children.length}子类）` : p.typeName">
@@ -176,8 +177,9 @@
         <small style="margin-left:8px;color:#9aa4b2">只拉近N小时更新(不重复旧片)</small>
       </el-form-item>
       <el-form-item label="采集分类">
-        <el-select v-model="syncForm.typeIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="全部分类" style="width:360px"
-          filterable :loading="classLoading" @change="onTypeChange">
+        <el-select v-model="syncForm.typeIds" multiple clearable collapse-tags collapse-tags-tooltip
+          :placeholder="classLoading ? '分类加载中...' : '全部分类'" style="width:360px"
+          filterable :loading="classLoading" :disabled="classLoading" @change="onTypeChange">
           <template v-if="classTree.length">
             <el-option-group v-for="p in classTree" :key="p.typeId"
               :label="p.children.length ? `${p.typeName}（父类·含${p.children.length}子类）` : p.typeName">
@@ -340,11 +342,16 @@ async function loadAutoTypes(row) {
   if (!row?.id) return
   autoClassLoading.value = true
   try {
-    const r = await api.sourceClasses(row.id)
-    autoClassTree.value = r?.ok ? r.tree : []
-  } catch { autoClassTree.value = [] }
-  finally { autoClassLoading.value = false }
-  try { autoSrcTypes.value = await api.sourceTypes(row.id) } catch { autoSrcTypes.value = [] }
+    const [classRes, typeRes] = await Promise.allSettled([
+      api.sourceClasses(row.id),
+      api.sourceTypes(row.id),
+    ])
+    const classPayload = classRes.status === 'fulfilled' ? classRes.value : null
+    autoClassTree.value = classPayload?.ok ? classPayload.tree : []
+    autoSrcTypes.value = typeRes.status === 'fulfilled' ? typeRes.value : []
+  } finally {
+    autoClassLoading.value = false
+  }
 }
 async function save() {
   const valid = await formRef.value?.validate().catch(() => false)
@@ -436,6 +443,8 @@ const counting = ref(false)
 const estText = ref('')
 async function openSync(row) {
   syncTarget = row
+  srcTypes.value = []
+  classTree.value = []
   // 首次建库默认全量 + 大页数，避免增量窗口把全量过滤成个位数
   syncForm.value = {
     mode:'full',
@@ -450,16 +459,20 @@ async function openSync(row) {
     cleanAfterCollect: false,
   }
   estText.value = ''
-  classTree.value = []
   syncDlg.value = true
   // 实时拉上游分类树（含父子），失败则回退已发现的 srcTypes
   classLoading.value = true
   try {
-    const r = await api.sourceClasses(row.id)
-    classTree.value = r?.ok ? r.tree : []
-  } catch { classTree.value = [] }
-  finally { classLoading.value = false }
-  try { srcTypes.value = await api.sourceTypes(row.id) } catch { srcTypes.value = [] }
+    const [classRes, typeRes] = await Promise.allSettled([
+      api.sourceClasses(row.id),
+      api.sourceTypes(row.id),
+    ])
+    const classPayload = classRes.status === 'fulfilled' ? classRes.value : null
+    classTree.value = classPayload?.ok ? classPayload.tree : []
+    srcTypes.value = typeRes.status === 'fulfilled' ? typeRes.value : []
+  } finally {
+    classLoading.value = false
+  }
 }
 function onTypeChange() { estText.value = '' }
 async function estimate() {
