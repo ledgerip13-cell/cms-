@@ -4,6 +4,7 @@ import { refreshSourcePlayDomains } from "../playDomains.js";
 import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, resolveApiUrls, withFailover, type RawVod } from "./maccms.js";
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
+import { downloadImageToLocal, isLocalImageUrl } from "../localImages.js";
 
 export interface SyncOptions {
   mode?: "full" | "incr";
@@ -19,6 +20,7 @@ export interface SyncOptions {
   metaAfterCollect?: boolean;
   cleanAfterCollect?: boolean;
   detailConcurrency?: number;
+  localizeImages?: boolean;
   resume?: ResumeCursor;    // 断点续采游标
 }
 
@@ -272,7 +274,8 @@ async function resolveCategory(
 async function upsertVod(
   sourceId: number,
   raw: RawVod,
-  catCache: Map<string, string>
+  catCache: Map<string, string>,
+  opts: SyncOptions = {}
 ) {
   const lines = parsePlay(raw);
   if (!lines.length) return { vodId: 0, added: 0, updated: 0, merged: 0 };
@@ -287,12 +290,21 @@ async function upsertVod(
 
   const existing = await prisma.vod.findUnique({ where: { fingerprint: fp } });
   const subType = (raw.type_name || "").trim(); // 原始小类
+  const rawPic = raw.vod_pic || "";
+  let pic = rawPic;
+  if (opts.localizeImages && rawPic) {
+    try {
+      pic = await downloadImageToLocal(rawPic);
+    } catch {
+      pic = "";
+    }
+  }
   const vodData = {
     name: raw.vod_name,
     year: raw.vod_year || "",
     typeName,
     subType,
-    pic: raw.vod_pic || "",
+    pic,
     actor: raw.vod_actor || "",
     director: raw.vod_director || "",
     area: raw.vod_area || "",
@@ -303,10 +315,13 @@ async function upsertVod(
   let vod;
   let mergedFlag = 0;
   if (existing) {
+    const nextPic = opts.localizeImages
+      ? (vodData.pic || (isLocalImageUrl(existing.pic) ? existing.pic : ""))
+      : (existing.pic || vodData.pic);
     vod = await prisma.vod.update({
       where: { id: existing.id },
       data: {
-        pic: existing.pic || vodData.pic,
+        pic: nextPic,
         blurb: existing.blurb || vodData.blurb,
         remarks: vodData.remarks || existing.remarks,
         // 分类：已映射(非未分类)则始终应用，否则保留原有
@@ -427,7 +442,7 @@ export async function collectKeywordCandidates(
         const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
         for (const raw of details) {
           try {
-            const r = await upsertVod(sourceId, raw, catCache);
+            const r = await upsertVod(sourceId, raw, catCache, opts);
             added += r.added; updated += r.updated; merged += r.merged;
             if (r.vodId) vodIds.add(r.vodId);
             sAdded += r.added; sUpdated += r.updated;
@@ -477,7 +492,7 @@ export async function syncByKeyword(
           const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
           for (const raw of details) {
             try {
-              const r = await upsertVod(src.id, raw, catCache);
+              const r = await upsertVod(src.id, raw, catCache, opts);
               added += r.added; updated += r.updated; merged += r.merged;
               if (r.vodId) vodIds.add(r.vodId);
               sAdded += r.added; sUpdated += r.updated;
@@ -615,7 +630,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
         const details = await fetchDetailBatches(ids, tid, pg);
         for (const raw of details) {
           try {
-            const r = await upsertVod(sourceId, raw, catCache);
+            const r = await upsertVod(sourceId, raw, catCache, opts);
             added += r.added; updated += r.updated; merged += r.merged;
             if (r.vodId) vodIds.add(r.vodId);
           } catch {}

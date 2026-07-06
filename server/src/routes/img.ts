@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { readLocalImage } from "../localImages.js";
 
 // 图片代理：解决豆瓣等图床防盗链（无 Referer 返回 418，需带同源 Referer）
 // 仅代理白名单图床，避免被当作开放代理滥用（SSRF 防护）
@@ -13,6 +14,16 @@ function refererFor(host: string): string {
 }
 
 export default async function imgRoutes(app: FastifyInstance) {
+  app.get("/api/media/images/:name", async (req, reply) => {
+    const name = String((req.params as any).name || "");
+    const img = await readLocalImage(name);
+    if (!img) return reply.code(404).send({ error: "not found" });
+    reply
+      .header("Content-Type", img.contentType)
+      .header("Cache-Control", "public, max-age=2592000, immutable")
+      .send(img.buf);
+  });
+
   app.get("/api/img", async (req, reply) => {
     const u = String((req.query as any).u || "");
     if (!u) return reply.code(400).send({ error: "missing u" });

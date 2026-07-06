@@ -29,6 +29,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - vcms_storage:/app/storage
     ports:
       - "127.0.0.1:5150:5150"
 
@@ -51,5 +53,6 @@ services:
       - "5152:80"      # 对外可访问(观众前端)
 
 volumes:
+  vcms_storage:
   vcms_pgdata:
     external: true

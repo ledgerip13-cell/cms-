@@ -197,6 +197,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       metaAfterCollect: b.metaAfterCollect !== false,
       cleanAfterCollect: Boolean(b.cleanAfterCollect),
       detailConcurrency: b.detailConcurrency,
+      localizeImages: Boolean(b.localizeImages),
     });
     return { taskId: task.id, status: task.status, message: "采集任务已提交，请到「采集任务」查看进度" };
   });
