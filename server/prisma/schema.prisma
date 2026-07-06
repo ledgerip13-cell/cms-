@@ -298,6 +298,7 @@ model Vod {
   typeName      String         @default("") // 统一大类名（电影/电视剧/…）
   subType       String         @default("") // 原始小类/标签（剧情片/恐怖片/…）供大类下钻
   pic           String         @default("") // 封面
+  localPic      String         @default("") // 本地化封面备用图，远程图失败时使用
   actor         String         @default("")
   director      String         @default("")
   area          String         @default("")

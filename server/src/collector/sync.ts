@@ -292,12 +292,12 @@ async function upsertVod(
   const existing = await prisma.vod.findUnique({ where: { fingerprint: fp } });
   const subType = (raw.type_name || "").trim(); // 原始小类
   const rawPic = raw.vod_pic || "";
-  let pic = rawPic;
+  let localPic = "";
   if (opts.localizeImages && rawPic) {
     try {
-      pic = await downloadImageToLocal(rawPic, { encrypt: opts.encryptLocalImages !== false });
+      localPic = await downloadImageToLocal(rawPic, { encrypt: opts.encryptLocalImages !== false });
     } catch {
-      pic = "";
+      localPic = "";
     }
   }
   const vodData = {
@@ -305,7 +305,8 @@ async function upsertVod(
     year: raw.vod_year || "",
     typeName,
     subType,
-    pic,
+    pic: rawPic,
+    localPic,
     actor: raw.vod_actor || "",
     director: raw.vod_director || "",
     area: raw.vod_area || "",
@@ -316,13 +317,13 @@ async function upsertVod(
   let vod;
   let mergedFlag = 0;
   if (existing) {
-    const nextPic = opts.localizeImages
-      ? (vodData.pic || (isLocalImageUrl(existing.pic) ? existing.pic : ""))
-      : (existing.pic || vodData.pic);
+    const nextPic = vodData.pic || (isLocalImageUrl(existing.pic) ? "" : existing.pic);
+    const nextLocalPic = vodData.localPic || existing.localPic || (isLocalImageUrl(existing.pic) ? existing.pic : "");
     vod = await prisma.vod.update({
       where: { id: existing.id },
       data: {
         pic: nextPic,
+        localPic: nextLocalPic,
         blurb: existing.blurb || vodData.blurb,
         remarks: vodData.remarks || existing.remarks,
         // 分类：已映射(非未分类)则始终应用，否则保留原有

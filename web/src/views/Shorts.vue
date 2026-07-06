@@ -54,7 +54,7 @@
         <article v-for="(unit, i) in units" :key="unit.key" class="short-card" :class="{ locked: i === activeIndex && accessBlock }">
           <div class="short-media" @click="i === activeIndex && onMediaClick()">
             <div class="short-poster-bg" :style="posterStyle(unit)"></div>
-            <img class="short-poster" :src="poster(unit)" :alt="unit.vod.name" loading="lazy" @error="onImgError" />
+            <img class="short-poster" :src="poster(unit)" :alt="unit.vod.name" loading="lazy" @error="onImgError($event, fallbackPoster(unit))" />
             <video
               v-if="i === activeIndex && playingKey === unit.key && playUrl && !accessBlock"
               ref="videoEl"
@@ -226,7 +226,7 @@
               </button>
             </div>
             <div class="detail-body">
-              <img v-if="activeUnit" :src="poster(activeUnit)" :alt="activeUnit.vod.name" @error="onImgError" />
+              <img v-if="activeUnit" :src="poster(activeUnit)" :alt="activeUnit.vod.name" @error="onImgError($event, fallbackPoster(activeUnit))" />
               <div>
                 <div class="meta-tags detail-tags">
                   <span>{{ activeUnit?.vod?.typeName || shortsConfig.defaultType }}</span>
@@ -275,7 +275,7 @@
             <div v-else-if="!searchResults.length" class="search-state">暂无结果</div>
             <div v-else class="short-search-results">
               <button v-for="item in searchResults" :key="item.id" type="button" @click="openSearchResult(item)">
-                <img :src="imgUrl(item.officialPic || item.pic || '')" :alt="item.name" @error="onImgError" />
+                <img :src="imgUrl(item.officialPic || item.pic || item.localPic || '')" :alt="item.name" @error="onImgError($event, imgUrl(item.localPic || ''))" />
                 <span>
                   <b>{{ item.name }}</b>
                   <em>{{ item.year || '年份未知' }} · {{ item.remarks || item.typeName || shortsConfig.defaultType }}</em>
@@ -326,7 +326,7 @@
             <template v-else-if="libraryTab === 'history'">
               <div v-if="libraryHistories.length" class="library-list">
                 <button v-for="item in libraryHistories" :key="item.id" type="button" class="library-item" @click="openLibraryHistory(item)">
-                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || '')" :alt="item.vod.name" @error="onImgError" />
+                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || item.vod.localPic || '')" :alt="item.vod.name" @error="onImgError($event, imgUrl(item.vod.localPic || ''))" />
                   <span class="library-info">
                     <b>{{ item.vod.name }}</b>
                     <em>{{ historySubText(item) }}</em>
@@ -339,7 +339,7 @@
             <template v-else>
               <div v-if="libraryFollows.length" class="library-list">
                 <button v-for="item in libraryFollows" :key="item.id" type="button" class="library-item" @click="openLibraryFollow(item)">
-                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || '')" :alt="item.vod.name" @error="onImgError" />
+                  <img :src="imgUrl(item.vod.officialPic || item.vod.pic || item.vod.localPic || '')" :alt="item.vod.name" @error="onImgError($event, imgUrl(item.vod.localPic || ''))" />
                   <span class="library-info">
                     <b>{{ item.vod.name }}</b>
                     <em>{{ item.vod.year || '年份未知' }} · {{ item.vod.remarks || item.vod.typeName || shortsConfig.defaultType }}</em>
@@ -491,7 +491,11 @@ function goBack() {
 }
 
 function poster(unit) {
-  return imgUrl(unit?.vod?.officialPic || unit?.vod?.pic || '')
+  return imgUrl(unit?.vod?.officialPic || unit?.vod?.pic || unit?.vod?.localPic || '')
+}
+
+function fallbackPoster(unit) {
+  return imgUrl(unit?.vod?.localPic || '')
 }
 
 function posterStyle(unit) {
@@ -499,8 +503,14 @@ function posterStyle(unit) {
   return url ? { backgroundImage: `url(${url})` } : {}
 }
 
-function onImgError(event) {
-  event.target.style.visibility = 'hidden'
+function onImgError(event, fallback = '') {
+  const img = event?.target
+  if (fallback && img && img.dataset.localFallbackApplied !== '1' && img.getAttribute('src') !== fallback) {
+    img.dataset.localFallbackApplied = '1'
+    img.src = fallback
+    return
+  }
+  if (img) img.style.visibility = 'hidden'
 }
 
 function isDirectM3u8(url) {

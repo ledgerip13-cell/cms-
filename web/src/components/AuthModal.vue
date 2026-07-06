@@ -304,7 +304,8 @@ function selectWallPosters(rows) {
 }
 
 function posterUrl(row) {
-  const urls = [row?.officialPic, row?.pic, row?.heroPic].filter(Boolean)
+  const remoteUrls = [row?.officialPic, row?.pic, row?.heroPic].filter(Boolean)
+  const urls = remoteUrls.length ? remoteUrls : [row?.localPic].filter(Boolean)
   urls.sort((a, b) => imageScore(b) - imageScore(a))
   return imgUrl(urls[0] || '')
 }

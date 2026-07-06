@@ -100,8 +100,22 @@ const VodCard = defineComponent({
   setup(props, { emit }) {
     return () => h('div', { class: 'card2', onClick: () => emit('click') }, [
       h('div', { class: 'poster' }, [
-        props.vod.officialPic || props.vod.pic
-          ? h('img', { src: imgUrl(props.vod.officialPic || props.vod.pic), alt: props.vod.name, loading: 'lazy', onError: (e) => { e.target.style.visibility = 'hidden' } })
+        props.vod.officialPic || props.vod.pic || props.vod.localPic
+          ? h('img', {
+            src: imgUrl(props.vod.officialPic || props.vod.pic || props.vod.localPic),
+            alt: props.vod.name,
+            loading: 'lazy',
+            onError: (e) => {
+              const img = e.target
+              const fallback = imgUrl(props.vod.localPic || '')
+              if (fallback && img.dataset.localFallbackApplied !== '1' && img.getAttribute('src') !== fallback) {
+                img.dataset.localFallbackApplied = '1'
+                img.src = fallback
+              } else {
+                img.style.visibility = 'hidden'
+              }
+            }
+          })
           : h('div', { class: 'noimg' }, '暂无封面'),
         props.vod.rating ? h('span', { class: 'badge score' }, props.vod.rating) : null,
         h('div', { class: 'poster-hover' }, [h('span', { class: 'play-ic' }, [h('svg', { viewBox: '0 0 24 24', fill: 'currentColor' }, [h('path', { d: 'M8 5v14l11-7z' })])])]),

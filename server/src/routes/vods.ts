@@ -59,7 +59,7 @@ function heroImageCandidates(vod: any) {
         : Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
     if (img.isHero || img.type === "backdrop" || img.type === "still" || img.type === "poster") push(img.url, wide, img.type || "asset");
   }
-  push(vod.officialPic || vod.pic || "", false, "posterFallback");
+  push(vod.officialPic || vod.pic || vod.localPic || "", false, "posterFallback");
   return candidates;
 }
 

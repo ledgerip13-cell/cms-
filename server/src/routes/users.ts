@@ -142,12 +142,12 @@ export default async function userRoutes(app: FastifyInstance) {
         follows: {
           orderBy: { createdAt: "desc" },
           take: 20,
-          include: { vod: { select: { id: true, name: true, typeName: true, pic: true, officialPic: true, heroPic: true } } },
+          include: { vod: { select: { id: true, name: true, typeName: true, pic: true, localPic: true, officialPic: true, heroPic: true } } },
         },
         histories: {
           orderBy: { updatedAt: "desc" },
           take: 20,
-          include: { vod: { select: { id: true, name: true, typeName: true, pic: true, officialPic: true, heroPic: true } } },
+          include: { vod: { select: { id: true, name: true, typeName: true, pic: true, localPic: true, officialPic: true, heroPic: true } } },
         },
       },
     });

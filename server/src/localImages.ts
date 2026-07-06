@@ -73,7 +73,13 @@ function localNameFor(url: string, ext: string) {
 }
 
 export function isLocalImageUrl(url: unknown) {
-  return String(url || "").startsWith(LOCAL_IMAGE_PREFIX);
+  const raw = String(url || "").trim();
+  if (raw.startsWith(LOCAL_IMAGE_PREFIX)) return true;
+  try {
+    return new URL(raw).pathname.startsWith(LOCAL_IMAGE_PREFIX);
+  } catch {
+    return false;
+  }
 }
 
 export async function downloadImageToLocal(

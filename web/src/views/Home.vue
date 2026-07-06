@@ -60,7 +60,7 @@
           <div class="hero-rail-track">
             <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
               @click.stop="selectHero(i)" @touchstart.passive="pauseHeroLoop" @mouseenter="heroIdx=i; pauseHeroLoop()">
-              <img :src="thumbPic(h)" :alt="h.name" @error="onErr" />
+              <img :src="thumbPic(h)" :alt="h.name" @error="onErr($event, fallbackPic(h))" />
             </div>
           </div>
         </div>
@@ -84,7 +84,7 @@
         <div class="row-scroll">
           <div v-for="v in userRecs" :key="v.id" class="card2" @click="goPlay(v.id)">
             <div class="poster">
-              <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+              <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
               <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
@@ -115,7 +115,7 @@
         <div class="row-scroll" v-if="activeUpdateItems.length">
           <div v-for="v in activeUpdateItems" :key="v.id" class="card2" @click="goPlay(v.id)">
             <div class="poster">
-              <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+              <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
               <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
@@ -145,7 +145,7 @@
         <div class="row-scroll">
           <div v-for="v in row.list" :key="v.id" class="card2" @click="goPlay(v.id)">
             <div class="poster">
-              <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+              <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
               <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
@@ -220,7 +220,7 @@
       <div v-else class="grid">
         <div v-for="v in list" :key="v.id" class="card2" @click="goPlay(v.id)">
           <div class="poster">
-            <img v-if="v.officialPic || v.pic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr" />
+            <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
             <div v-else class="noimg">暂无封面</div>
             <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
             <span v-else class="badge">{{ v.remarks || v.year }}</span>
@@ -257,10 +257,19 @@ const isSearch = computed(() => !!route.query.kw)
 const discover = computed(() => !curType.value && !isSearch.value)
 
 function goPlay(id) { router.push('/play/'+id) }
-function onErr(e) { e.target.style.visibility='hidden' }
-function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
-function thumbPic(v) { return imgUrl(v.pic || v.officialPic || '') }
-function heroPic(v) { return imgUrl(v.heroImage || v.heroPic || v.officialPic || v.pic || '') }
+function onErr(e, fallback = '') {
+  const img = e?.target
+  if (fallback && img && img.dataset.localFallbackApplied !== '1' && img.getAttribute('src') !== fallback) {
+    img.dataset.localFallbackApplied = '1'
+    img.src = fallback
+    return
+  }
+  if (img) img.style.visibility='hidden'
+}
+function pic(v) { return imgUrl(v.officialPic || v.pic || v.localPic || '') }
+function fallbackPic(v) { return imgUrl(v.localPic || '') }
+function thumbPic(v) { return imgUrl(v.pic || v.officialPic || v.localPic || '') }
+function heroPic(v) { return imgUrl(v.heroImage || v.heroPic || v.officialPic || v.pic || v.localPic || '') }
 function heroImageWide(v) { return Boolean(v.heroImageWide) }
 function withRandomHeroImage(v) {
   const images = Array.isArray(v.heroImages) ? v.heroImages.filter(img => img?.url) : []
@@ -330,7 +339,7 @@ async function loadDiscover() {
   await ensureTypes()
   // Hero：保留后台返回的全部有封面候选，移动端只通过可视窗口裁切
   const hot = await api.hot(12)
-  hero.value = hot.map(withRandomHeroImage).filter(v => v.heroImage || v.heroPic || v.officialPic || v.pic)
+  hero.value = hot.map(withRandomHeroImage).filter(v => v.heroImage || v.heroPic || v.officialPic || v.pic || v.localPic)
   startHeroLoop()
   // 分行：前 6 个大类各取 12 部最近更新
   const top = types.value.filter(t => t.count > 0).slice(0, 6)

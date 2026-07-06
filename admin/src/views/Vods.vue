@@ -89,7 +89,7 @@
       <el-table-column type="selection" width="42" @click.stop />
       <el-table-column label="封面" width="70">
         <template #default="{ row }">
-          <el-image v-if="row.officialPic || row.pic" :src="coverUrl(row)" fit="cover" style="width:44px;height:60px;border-radius:4px" lazy @error="fallbackCover(row)">
+          <el-image v-if="row.officialPic || row.pic || row.localPic" :src="coverUrl(row)" fit="cover" style="width:44px;height:60px;border-radius:4px" lazy @error="fallbackCover(row)">
             <template #error><div class="noimg">无图</div></template>
           </el-image>
           <div v-else class="noimg">无图</div>
@@ -145,7 +145,7 @@
   <el-drawer v-model="drawer" :title="cur.name" size="620">
     <div v-if="cur.id">
       <div class="detail-head">
-        <el-image v-if="cur.officialPic || cur.pic" :src="coverUrl(cur)" fit="cover" style="width:110px;height:150px;border-radius:8px" @error="fallbackCover(cur)" />
+        <el-image v-if="cur.officialPic || cur.pic || cur.localPic" :src="coverUrl(cur)" fit="cover" style="width:110px;height:150px;border-radius:8px" @error="fallbackCover(cur)" />
         <div class="meta">
           <p><b>年份:</b> {{ cur.year || '—' }} · <b>分类:</b> {{ cur.typeName || '—' }}</p>
           <p><b>地区:</b> {{ cur.area || '—' }} · <b>语言:</b> {{ cur.lang || '—' }}</p>
@@ -447,10 +447,17 @@ const cleanupForm = ref({
 })
 
 function coverUrl(row) {
-  return imgUrl(row?._coverFallback ? row.pic : (row.officialPic || row.pic || ''))
+  if (row?._coverStage === 'local') return imgUrl(row.localPic || '')
+  if (row?._coverStage === 'pic') return imgUrl(row.pic || row.localPic || '')
+  return imgUrl(row?.officialPic || row?.pic || row?.localPic || '')
 }
 function fallbackCover(row) {
-  if (row?.officialPic && row?.pic && !row._coverFallback) row._coverFallback = true
+  if (!row) return
+  if (row._coverStage !== 'pic' && row.officialPic && row.pic) {
+    row._coverStage = 'pic'
+    return
+  }
+  if (row._coverStage !== 'local' && row.localPic) row._coverStage = 'local'
 }
 
 async function load() {

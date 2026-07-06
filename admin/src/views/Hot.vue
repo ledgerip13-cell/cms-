@@ -59,7 +59,7 @@
         <el-table-column type="index" label="#" width="52" />
         <el-table-column label="封面" width="72">
           <template #default="{ row }">
-            <el-image v-if="row.officialPic || row.pic" :src="imgUrl(row.officialPic || row.pic)" fit="cover" class="poster">
+            <el-image v-if="row.officialPic || row.pic || row.localPic" :src="coverUrl(row)" fit="cover" class="poster" @error="fallbackCover(row)">
               <template #error><div class="noimg">无图</div></template>
             </el-image>
             <div v-else class="noimg">无图</div>
@@ -128,6 +128,21 @@ async function save() {
 }
 
 onMounted(load)
+
+function coverUrl(row) {
+  if (row?._coverStage === 'local') return imgUrl(row.localPic || '')
+  if (row?._coverStage === 'pic') return imgUrl(row.pic || row.localPic || '')
+  return imgUrl(row?.officialPic || row?.pic || row?.localPic || '')
+}
+
+function fallbackCover(row) {
+  if (!row) return
+  if (row._coverStage !== 'pic' && row.officialPic && row.pic) {
+    row._coverStage = 'pic'
+    return
+  }
+  if (row._coverStage !== 'local' && row.localPic) row._coverStage = 'local'
+}
 </script>
 
 <style scoped>

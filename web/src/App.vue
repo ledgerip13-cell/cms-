@@ -69,7 +69,7 @@
                   <div v-for="(h,i) in hot" :key="h.id" class="sp-item" @click="goPlay(h.id)">
                     <span class="sp-rank" :class="['r'+(i+1), {top:i<3}]">{{ i+1 }}</span>
                     <div class="sp-thumb">
-                      <img v-if="h.officialPic || h.pic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr" />
+                      <img v-if="h.officialPic || h.pic || h.localPic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr($event, fallbackPic(h))" />
                       <div v-else class="noimg"></div>
                       <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                     </div>
@@ -155,8 +155,17 @@ watch(() => route.fullPath, () => {
   applySiteTheme(site.value, themePageFromRoute(route))
 })
 
-function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
-function onErr(e) { e.target.style.visibility='hidden' }
+function pic(v) { return imgUrl(v.officialPic || v.pic || v.localPic || '') }
+function fallbackPic(v) { return imgUrl(v.localPic || '') }
+function onErr(e, fallback = '') {
+  const img = e?.target
+  if (fallback && img && img.dataset.localFallbackApplied !== '1' && img.getAttribute('src') !== fallback) {
+    img.dataset.localFallbackApplied = '1'
+    img.src = fallback
+    return
+  }
+  if (img) img.style.visibility='hidden'
+}
 function goHome() { kw.value=''; drawer.value=false; router.push('/') }
 function pick(t) { kw.value=''; drawer.value=false; router.push({ path:'/', query: t?{type:t}:{} }) }
 function goShorts() {

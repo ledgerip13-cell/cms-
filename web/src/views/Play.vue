@@ -22,8 +22,8 @@
 
       <!-- 标题信息条 -->
       <div class="pv-head">
-        <div class="pv-poster" v-if="vod.officialPic || vod.pic">
-          <img :src="pic(vod)" :alt="vod.name" @error="onErr" />
+        <div class="pv-poster" v-if="vod.officialPic || vod.pic || vod.localPic">
+          <img :src="pic(vod)" :alt="vod.name" @error="onErr($event, fallbackPic(vod))" />
         </div>
         <div class="pv-meta">
           <h1 class="pv-title">{{ vod.name }}
@@ -114,7 +114,7 @@
       <div v-if="related.length" class="rec-list">
         <div v-for="r in related" :key="r.id" class="rec-item" @click="goPlay(r.id)">
           <div class="rec-poster">
-            <img v-if="r.officialPic || r.pic" :src="pic(r)" :alt="r.name" loading="lazy" @error="onErr" />
+            <img v-if="r.officialPic || r.pic || r.localPic" :src="pic(r)" :alt="r.name" loading="lazy" @error="onErr($event, fallbackPic(r))" />
             <div v-else class="noimg">无封面</div>
             <span v-if="r.rating" class="rec-score">{{ r.rating }}</span>
           </div>
@@ -213,8 +213,17 @@ let playNoticeTimer = 0
 let playWatchdogTimer = 0
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
-function onErr(e) { e.target.style.visibility='hidden' }
-function pic(v) { return imgUrl(v.officialPic || v.pic || '') }
+function onErr(e, fallback = '') {
+  const img = e?.target
+  if (fallback && img && img.dataset.localFallbackApplied !== '1' && img.getAttribute('src') !== fallback) {
+    img.dataset.localFallbackApplied = '1'
+    img.src = fallback
+    return
+  }
+  if (img) img.style.visibility='hidden'
+}
+function pic(v) { return imgUrl(v.officialPic || v.pic || v.localPic || '') }
+function fallbackPic(v) { return imgUrl(v.localPic || '') }
 function goPlay(id) { router.push('/play/'+id) }
 function searchPerson(name) { if (name) router.push({ path: '/', query: { kw: name } }) }
 function showPlayNotice(message) {
