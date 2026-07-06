@@ -18,8 +18,8 @@
       </div>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe @selection-change="selected = $event">
-      <el-table-column type="selection" width="44" />
+    <el-table ref="tableRef" row-key="id" :data="list" v-loading="loading" stripe @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="44" :reserve-selection="true" />
       <el-table-column prop="id" label="#" width="60" />
       <el-table-column label="类型" width="90">
         <template #default="{ row }">
@@ -94,6 +94,7 @@ import { api } from '../api'
 
 const list = ref([]); const total = ref(0); const page = ref(1); const size = 20
 const loading = ref(false); const active = ref(0); const connected = ref(false)
+const tableRef = ref(null)
 const selected = ref([])
 let es = null
 
@@ -111,6 +112,13 @@ const canBatchCancel = computed(() => selected.value.some((row) => batchStatus.c
 const canBatchPause = computed(() => selected.value.some((row) => batchStatus.pause.includes(row.status)))
 const canBatchResume = computed(() => selected.value.some((row) => batchStatus.resume.includes(row.status)))
 const canBatchRetry = computed(() => selected.value.some((row) => batchStatus.retry.includes(row.status)))
+function onSelectionChange(rows) {
+  selected.value = rows
+}
+function clearSelected() {
+  tableRef.value?.clearSelection?.()
+  selected.value = []
+}
 function duration(r) {
   if (!r.startedAt) return '—'
   const end = r.finishedAt ? new Date(r.finishedAt) : new Date()
@@ -170,6 +178,7 @@ function connectSSE() {
 }
 async function cleanup() {
   const r = await api.cleanupTasks(); ElMessage.success(`已清理 ${r.removed} 条`)
+  clearSelected()
   // SSE 会推送变更；兼顾分页完整性手动 load 一次
   load()
 }
@@ -206,6 +215,7 @@ async function batchAction(action) {
     if (r?.ok) {
       const skipped = r.skipped?.length ? `，跳过 ${r.skipped.length} 条` : ''
       ElMessage.success(`已${labels[action]} ${r.count || 0} 条${skipped}`)
+      clearSelected()
       load()
     } else {
       ElMessage.error(r?.error || '批量操作失败')

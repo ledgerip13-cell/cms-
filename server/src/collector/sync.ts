@@ -18,6 +18,7 @@ export interface SyncOptions {
   autoRun?: boolean;
   metaAfterCollect?: boolean;
   cleanAfterCollect?: boolean;
+  detailConcurrency?: number;
   resume?: ResumeCursor;    // 断点续采游标
 }
 
@@ -82,6 +83,12 @@ function filterByYear<T extends RawVod>(rows: T[], opts: SyncOptions) {
 function normalizeTypeIds(opts: SyncOptions) {
   const raw = Array.isArray(opts.typeIds) ? opts.typeIds : (opts.typeId ? [opts.typeId] : []);
   return [...new Set(raw.map((x) => String(x || "").trim()).filter(Boolean))];
+}
+
+function clampDetailConcurrency(value: unknown) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.min(5, Math.floor(n)));
 }
 
 const IMG_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36";
@@ -495,6 +502,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   const mode = opts.mode || "incr";
   const hours = mode === "incr" ? opts.hours || source.syncHours || 24 : 0;
   const maxPages = opts.maxPages || (mode === "incr" ? 30 : 100);
+  const detailWorkers = clampDetailConcurrency(opts.detailConcurrency);
 
   const start = Date.now();
   const resume = opts.resume;
@@ -512,6 +520,36 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
     const r = await withFailover(ordered, fn);
     activeUrl = r.usedUrl;
     return r.result;
+  }
+
+  async function fetchDetailBatch(batch: (string | number)[], tid: string | null | undefined, pg: number) {
+    try {
+      return filterByYear(await withApi((u) => fetchDetail(u, batch)), opts);
+    } catch (e: any) {
+      message += ` [detail err t${tid} p${pg}: ${e?.message}]`;
+      return [];
+    }
+  }
+
+  async function fetchDetailBatches(ids: (string | number)[], tid: string | null | undefined, pg: number) {
+    const batches: (string | number)[][] = [];
+    for (let j = 0; j < ids.length; j += 20) batches.push(ids.slice(j, j + 20));
+    if (detailWorkers <= 1 || batches.length <= 1) {
+      const rows: RawVod[] = [];
+      for (const batch of batches) rows.push(...await fetchDetailBatch(batch, tid, pg));
+      return rows;
+    }
+    let next = 0;
+    const results: RawVod[][] = new Array(batches.length);
+    const workerCount = Math.min(detailWorkers, batches.length);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const idx = next++;
+        if (idx >= batches.length) return;
+        results[idx] = await fetchDetailBatch(batches[idx], tid, pg);
+      }
+    }));
+    return results.flat();
   }
 
   const rawTypeIds = normalizeTypeIds(opts);
@@ -574,22 +612,13 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
         const listRes = pg === 1 ? firstResults[i] : await withApi((u) => fetchList(u, pg, hours, 15000, norm(tid)));
         const ids = listRes.list.map((v) => v.vod_id);
         if (!ids.length) break;
-        for (let j = 0; j < ids.length; j += 20) {
-          const batch = ids.slice(j, j + 20);
-          let details: RawVod[] = [];
+        const details = await fetchDetailBatches(ids, tid, pg);
+        for (const raw of details) {
           try {
-            details = filterByYear(await withApi((u) => fetchDetail(u, batch)), opts);
-          } catch (e: any) {
-            message += ` [detail err t${tid} p${pg}: ${e?.message}]`;
-            continue;
-          }
-          for (const raw of details) {
-            try {
-              const r = await upsertVod(sourceId, raw, catCache);
-              added += r.added; updated += r.updated; merged += r.merged;
-              if (r.vodId) vodIds.add(r.vodId);
-            } catch {}
-          }
+            const r = await upsertVod(sourceId, raw, catCache);
+            added += r.added; updated += r.updated; merged += r.merged;
+            if (r.vodId) vodIds.add(r.vodId);
+          } catch {}
         }
         // 断点：下一个要处理的位置是 (i, pg+1)
         const cursor: ResumeCursor = {
@@ -599,7 +628,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
         if (onProgress) await onProgress({ pageNow, pageTotal, added, updated, merged, cursor });
       }
     }
-    message = `pages=${pageTotal} added=${added} updated=${updated} merged=${merged}` + message;
+    message = `pages=${pageTotal} detailConcurrency=${detailWorkers} added=${added} updated=${updated} merged=${merged}` + message;
   } catch (e: any) {
     ok = false;
     message = e?.message || String(e);

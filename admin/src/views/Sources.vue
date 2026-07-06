@@ -223,6 +223,10 @@
         <el-input-number v-model="syncForm.maxPages" :min="1" :max="2000" />
         <small style="margin-left:8px;color:#9aa4b2">{{ syncForm.mode==='full' ? '全量建议调大' : '安全上限' }}</small>
       </el-form-item>
+      <el-form-item label="详情并发">
+        <el-input-number v-model="syncForm.detailConcurrency" :min="1" :max="5" />
+        <small style="margin-left:8px;color:#9aa4b2">同一源详情批次并发，推荐 3；源不稳时调 1</small>
+      </el-form-item>
       <el-form-item label="后置动作">
         <div class="post-actions">
           <el-checkbox v-model="syncForm.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
@@ -264,7 +268,7 @@ const formRules = {
   }, trigger: 'blur' }],
 }
 const syncDlg = ref(false); const syncing = ref(false)
-const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, typeIds: [] }); let syncTarget = null
+const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, typeIds: [] }); let syncTarget = null
 const selectedSyncTypeIds = computed(() => {
   const ids = Array.isArray(syncForm.value.typeIds)
     ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
@@ -450,6 +454,7 @@ async function openSync(row) {
     mode:'full',
     hours:24,
     maxPages:100,
+    detailConcurrency:3,
     typeIds:[],
     yearMode:'',
     year: currentYear,
