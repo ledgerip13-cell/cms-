@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { resolveShareUrl } from "../collector/resolver.js";
-import { signPlaybackToken } from "../auth.js";
+import { signPlaybackToken, signProxyToken } from "../auth.js";
+import { getGlobalProxyMode, resolveEffectiveMode, refererOf } from "../playProxy.js";
 import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
 import { createHlsCleanTask } from "../collector/taskRunner.js";
@@ -30,7 +31,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (playId && vodId) {
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true, source: { select: { enabled: true } } },
+        include: { vod: true, source: { select: { enabled: true, proxyMode: true } } },
       });
       if (!play || !play.source.enabled || play.vodId !== vodId || play.vod.status !== "online") {
         return { ok: false, error: "播放资源不存在或不可用" };
@@ -54,6 +55,14 @@ export default async function resolveRoutes(app: FastifyInstance) {
       if (!url) return { ok: false, error: "播放集数不存在" };
       const result = await resolveWithCache(`play:${playId}:${epIndex}`, url);
       if (!result?.ok || !result.url || !/\.m3u8(\?|$)/i.test(result.url)) return result;
+      // 回源模式：source.proxyMode(inherit→全局)。key/proxy 才走本站中转，direct 保持原逻辑
+      const globalMode = await getGlobalProxyMode();
+      const effMode = resolveEffectiveMode((play.source as any).proxyMode, globalMode);
+      if (effMode !== "direct") {
+        const ref = refererOf(result.url);
+        const tok = signProxyToken({ u: result.url, ref, kind: "mp", mode: effMode, mid: viewer?.id });
+        return { ...result, url: `/api/hls-mp?t=${encodeURIComponent(tok)}`, kind: "m3u8", rule: `proxy_${effMode}`, fallbackUrl: result.url };
+      }
       const cfg = await ensureHlsCleanConfig();
       if (!cfg.enabled) return result;
       const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);

@@ -28,6 +28,16 @@ export function verifyPlaybackToken(token: string): any {
   return data;
 }
 
+// 回源代理 token：给 /api/hls-mp | /api/hls-key | /api/hls-ts 用，内含目标绝对地址+referer，短时效
+export function signProxyToken(payload: { u: string; ref?: string; kind: "mp" | "key" | "ts"; mode?: string; mid?: number }) {
+  return jwt.sign({ ...payload, t: "proxy" }, SECRET, { expiresIn: "30m" });
+}
+export function verifyProxyToken(token: string, kind: "mp" | "key" | "ts"): any {
+  const data = verifyToken(token);
+  if (data?.t !== "proxy" || data?.kind !== kind) throw new Error("bad proxy token");
+  return data;
+}
+
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
 }
