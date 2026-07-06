@@ -368,6 +368,8 @@ const SEARCH_HISTORY_LIMIT = 6
 const RESOLVE_CACHE_TTL = 20 * 60 * 1000
 const RESOLVE_CACHE_LIMIT = 80
 const SERIES_PLAY_SETTLE_MS = 240
+const SERIES_SCROLL_SETTLE_MS = 90
+const SERIES_SNAP_EPSILON = 0.03
 const WANDER_PLAY_SETTLE_MS = 120
 const SCROLL_SUPPRESS_MS = 260
 const HISTORY_MIN_PROGRESS_SEC = 20
@@ -468,6 +470,7 @@ let playingUnit = null
 let progressIdleTimer = 0
 let playSettleTimer = 0
 let seriesCommitTimer = 0
+let seriesScrollSettleTimer = 0
 let ignoreScrollUntil = 0
 let lastSavedHistoryKey = ''
 let lastSavedHistoryAt = 0
@@ -648,6 +651,7 @@ function buildSeriesWindow(epIndex) {
 async function showSeriesEpisode(index, options = {}) {
   const state = seriesState.value
   if (!state) return
+  clearSeriesScrollSettleTimer()
   if (options.play !== false) {
     cancelPendingPlayback({ stop: true })
     historySaveAt = 0
@@ -729,6 +733,7 @@ async function loadFeed() {
   loading.value = true
   suppressActiveIndexWatch = true
   clearSeriesCommitTimer()
+  clearSeriesScrollSettleTimer()
   cancelPendingPlayback({ stop: true })
   try {
     if (shortsDisabled.value) {
@@ -770,7 +775,16 @@ function onFeedScroll() {
     const el = feedEl.value
     if (!el) return
     const h = Math.max(1, el.clientHeight)
-    const next = Math.max(0, Math.min(units.value.length - 1, Math.round(el.scrollTop / h)))
+    const raw = el.scrollTop / h
+    const next = Math.max(0, Math.min(units.value.length - 1, Math.round(raw)))
+    if (feedMode.value === 'series') {
+      const distance = Math.abs(raw - next)
+      if (distance > SERIES_SNAP_EPSILON) {
+        scheduleSeriesScrollSettle()
+        return
+      }
+      clearSeriesScrollSettleTimer()
+    }
     if (next !== activeIndex.value) activeIndex.value = next
   })
 }
@@ -848,6 +862,13 @@ function clearSeriesCommitTimer() {
   }
 }
 
+function clearSeriesScrollSettleTimer() {
+  if (seriesScrollSettleTimer) {
+    window.clearTimeout(seriesScrollSettleTimer)
+    seriesScrollSettleTimer = 0
+  }
+}
+
 function cancelPendingPlayback(options = {}) {
   clearPlaySettleTimer()
   playSeq += 1
@@ -886,6 +907,28 @@ function scheduleSeriesCommit(epIndex) {
     if (currentSeriesEpIndex.value !== targetEp) return
     schedulePlayActive(0)
   }, SERIES_PLAY_SETTLE_MS)
+}
+
+function scheduleSeriesScrollSettle() {
+  clearSeriesScrollSettleTimer()
+  seriesScrollSettleTimer = window.setTimeout(() => {
+    seriesScrollSettleTimer = 0
+    commitSettledSeriesScroll()
+  }, SERIES_SCROLL_SETTLE_MS)
+}
+
+function commitSettledSeriesScroll() {
+  if (feedMode.value !== 'series' || suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
+  const el = feedEl.value
+  if (!el) return
+  const h = Math.max(1, el.clientHeight)
+  const raw = el.scrollTop / h
+  const next = Math.max(0, Math.min(units.value.length - 1, Math.round(raw)))
+  if (Math.abs(raw - next) > SERIES_SNAP_EPSILON) {
+    scheduleSeriesScrollSettle()
+    return
+  }
+  if (next !== activeIndex.value) activeIndex.value = next
 }
 
 function resolveCacheKey(unit) {
@@ -1321,6 +1364,7 @@ async function exitSeriesMode() {
   resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
   immersiveMode.value = false
+  clearSeriesScrollSettleTimer()
   if (!wanderState) {
     feedMode.value = 'wander'
     seriesState.value = null
@@ -1605,6 +1649,7 @@ onBeforeUnmount(() => {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   clearPlaySettleTimer()
   clearSeriesCommitTimer()
+  clearSeriesScrollSettleTimer()
   clearProgressIdleTimer()
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
