@@ -65,6 +65,11 @@
               </el-select>
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="60">
+            <template #default="{ row }">
+              <el-button size="small" type="danger" link @click="delMap(row)">删</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </el-col>
@@ -244,6 +249,10 @@ async function save(row, v) {
   ElMessage.success(r?.backfilled ? `映射已更新，已回刷 ${r.backfilled} 部影片` : '映射已更新')
   loadUnmapped()
   loadCats()
+}
+async function delMap(row) {
+  await ElMessageBox.confirm(`删除源分类「${row.sourceTypeName || row.sourceTypeId}」？若该分类仍在采集范围内，下次采集会重新生成。`, '确认删除', { type:'warning' })
+  await api.delTypemap(row.id); ElMessage.success('已删除'); loadMaps(); loadUnmapped()
 }
 onMounted(async () => {
   const [sourceRows, levelRows] = await Promise.all([api.sources(), api.vipLevels()])

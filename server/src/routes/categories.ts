@@ -177,6 +177,15 @@ export default async function categoryRoutes(app: FastifyInstance) {
       return { ...row, backfilled };
     });
 
+    // 删除某个源分类映射行（“小类”）。注：若该源分类仍在采集范围内，下次采集会重新生成
+    admin.delete("/api/admin/typemaps/:id", async (req, reply) => {
+      const id = Number((req.params as any).id);
+      const row = await prisma.sourceTypeMap.findUnique({ where: { id } });
+      if (!row) return reply.code(404).send({ error: "映射不存在" });
+      await prisma.sourceTypeMap.delete({ where: { id } });
+      return { ok: true };
+    });
+
     // 未映射数量提醒
     admin.get("/api/admin/typemaps/unmapped", async () => {
       const n = await prisma.sourceTypeMap.count({ where: { categoryId: null } });

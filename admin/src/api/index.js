@@ -65,6 +65,7 @@ export const api = {
   delCategory: (id) => http.delete(`/admin/categories/${id}`),
   typemaps: (sourceId) => http.get('/admin/typemaps', { params: { sourceId } }),
   setTypemap: (id, categoryId) => http.post(`/admin/typemaps/${id}`, { categoryId }),
+  delTypemap: (id) => http.delete(`/admin/typemaps/${id}`),
   unmappedCount: () => http.get('/admin/typemaps/unmapped'),
   // tasks
   tasks: (params) => http.get('/tasks', { params }),
