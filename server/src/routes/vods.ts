@@ -99,6 +99,75 @@ function parseIdList(value: unknown, limit = 500) {
   return [...new Set(raw.split(",").map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0))].slice(0, limit);
 }
 
+function parseStringList(value: unknown, limit = 40) {
+  if (typeof value === "undefined" || value === null || value === "") return [];
+  const rows = Array.isArray(value) ? value : String(value).split(",");
+  return [...new Set(rows.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, limit);
+}
+
+function parseSubtypeRules(value: unknown, limit = 120) {
+  if (typeof value === "undefined" || value === null || value === "") return [];
+  let rows: any = value;
+  if (typeof rows === "string") {
+    try {
+      rows = JSON.parse(rows || "[]");
+    } catch {
+      rows = rows.split(",");
+    }
+  }
+  if (!Array.isArray(rows)) rows = [];
+  const seen = new Set<string>();
+  const out: Array<{ type: string; name: string }> = [];
+  for (const row of rows) {
+    const raw = typeof row === "string" ? row : "";
+    const parts = raw ? raw.split("::") : [];
+    const type = String((typeof row === "object" ? row?.type : parts[0]) || "").trim();
+    const name = String((typeof row === "object" ? (row?.name || row?.subType || row?.sub) : parts[1]) || "").trim();
+    const key = `${type}::${name}`;
+    if (!type || !name || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ type, name });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function shortFeedTypeWhere(publicTypes: string[], q: any, cfg: any) {
+  if (q.type) {
+    const typeName = requestedPublicType(publicTypes, String(q.type));
+    return q.sub ? { typeName, subType: String(q.sub) } : { typeName };
+  }
+  const queryTypes = parseStringList(q.types);
+  const preferredTypes = queryTypes.length ? queryTypes : parseStringList(cfg?.preferredTypes);
+  const typeNames = preferredTypes.filter((type) => isPublicType(publicTypes, type));
+  const querySubtypes = parseSubtypeRules(q.subs);
+  const preferredSubtypes = querySubtypes.length ? querySubtypes : parseSubtypeRules(cfg?.preferredSubtypes);
+  const subtypeFilters = preferredSubtypes
+    .filter((item) => isPublicType(publicTypes, item.type))
+    .map((item) => ({ typeName: item.type, subType: item.name }));
+  const filters: any[] = [];
+  if (typeNames.length) filters.push({ typeName: { in: typeNames } });
+  filters.push(...subtypeFilters);
+  if (!filters.length) return { typeName: requestedPublicType(publicTypes, String(cfg?.defaultType || "短剧")) };
+  return filters.length === 1 ? filters[0] : { OR: filters };
+}
+
+function vodListTypeWhere(publicTypes: string[], q: any) {
+  if (q.type) {
+    const typeName = requestedPublicType(publicTypes, String(q.type));
+    return q.sub ? { typeName, subType: String(q.sub) } : { typeName };
+  }
+  const typeNames = parseStringList(q.types).filter((type) => isPublicType(publicTypes, type));
+  const subtypeFilters = parseSubtypeRules(q.subs)
+    .filter((item) => isPublicType(publicTypes, item.type))
+    .map((item) => ({ typeName: item.type, subType: item.name }));
+  const filters: any[] = [];
+  if (typeNames.length) filters.push({ typeName: { in: typeNames } });
+  filters.push(...subtypeFilters);
+  if (!filters.length) return null;
+  return filters.length === 1 ? filters[0] : { OR: filters };
+}
+
 function shortsOrderBy(sortMode: string) {
   if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { ratingCount: "desc" as const }, { id: "desc" as const }];
   if (sortMode === "rating") return [{ rating: "desc" as const }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
@@ -312,17 +381,19 @@ export default async function vodRoutes(app: FastifyInstance) {
     const publicTypes = await enabledTypeNames(viewer);
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
     const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter() };
+    const and: any[] = [];
     if (q.kw) {
       const kw = String(q.kw);
-      where.OR = [
+      and.push({ OR: [
         { name: { contains: kw } },
         { actor: { contains: kw } },
         { director: { contains: kw } },
         { people: { some: { person: { name: { contains: kw } } } } },
-      ];
+      ] });
     }
-    if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
-    if (q.sub) where.subType = q.sub;
+    const typeWhere = vodListTypeWhere(publicTypes, q);
+    if (typeWhere) and.push(typeWhere);
+    if (and.length) where.AND = and;
     if (q.year === "2005年以前") {
       // year 字段是自由文本，不能用字典序比较。列出 1900~2004 全部取值做 IN 查询，
       // 比 raw SQL 更安全，也避免在应用层做内存分页过滤破坏分页正确性。
@@ -412,7 +483,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (!cfg.enabled) return { list: [], nextCursor: 0, hasMore: false, disabled: true };
     const viewer = await viewerFromRequest(req);
     const publicTypes = await enabledTypeNames(viewer);
-    const typeName = requestedPublicType(publicTypes, String(q.type || cfg.defaultType || "短剧"));
+    const typeWhere = shortFeedTypeWhere(publicTypes, q, cfg);
     const sortMode = ["smart", "hot", "recent", "rating"].includes(String(q.sort || "")) ? String(q.sort) : cfg.sortMode;
     const limit = Math.max(1, Math.min(20, Number(q.limit) || cfg.feedLimit || 10));
     const cursor = Math.max(0, Number(q.cursor) || 0);
@@ -421,7 +492,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const excludeIds = parseIdList(q.exclude);
     const where: any = {
       status: "online",
-      typeName,
+      ...typeWhere,
       ...publicPlayableFilter(),
     };
     if (excludeIds.length) where.id = { notIn: excludeIds };
@@ -460,13 +531,13 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (viewer?.id && sortMode === "smart") {
       const [follows, histories] = await Promise.all([
         prisma.userFollow.findMany({
-          where: { userId: viewer.id, vod: { status: "online", typeName } },
+          where: { userId: viewer.id, vod: { status: "online", ...typeWhere } },
           orderBy: { createdAt: "desc" },
           take: 80,
           select: { vodId: true },
         }),
         prisma.watchHistory.findMany({
-          where: { userId: viewer.id, vod: { status: "online", typeName } },
+          where: { userId: viewer.id, vod: { status: "online", ...typeWhere } },
           orderBy: { updatedAt: "desc" },
           take: 80,
           select: { vodId: true },

@@ -1,5 +1,13 @@
 <template>
-  <div class="shorts-page" :class="{ 'immersive-mode': immersiveMode }">
+  <div
+    class="shorts-page"
+    :class="{
+      'immersive-mode': immersiveMode,
+      'portrait-locked': portraitLockVisible,
+      'landscape-theater-mode': landscapeTheaterMode,
+      'theater-rotated': landscapeTheaterMode && !viewportLandscape,
+    }"
+  >
     <div class="shorts-bg"></div>
     <main class="shorts-shell">
       <header v-if="!immersiveMode" class="shorts-top">
@@ -46,13 +54,13 @@
         class="shorts-feed"
         :class="{ frozen: layerOpen, 'series-feed': feedMode === 'series' }"
         @scroll.passive="onFeedScroll"
-        @touchstart="onSeriesTouchStart"
-        @touchmove="onSeriesTouchMove"
-        @touchend="onSeriesTouchEnd"
-        @touchcancel="onSeriesTouchCancel"
-        @wheel.passive="onSeriesWheel"
       >
-        <article v-for="(unit, i) in units" :key="unit.key" class="short-card" :class="{ locked: i === activeIndex && accessBlock }">
+        <article
+          v-for="(unit, i) in units"
+          :key="unit.key"
+          class="short-card"
+          :class="{ locked: i === activeIndex && accessBlock, theater: i === activeIndex && landscapeTheaterMode }"
+        >
           <div class="short-media" @click="i === activeIndex && onMediaClick()">
             <div class="short-poster-bg" :style="posterStyle(unit)"></div>
             <img class="short-poster" :src="poster(unit)" :alt="unit.vod.name" loading="lazy" @error="onImgError($event, fallbackPoster(unit))" />
@@ -60,12 +68,14 @@
               v-if="i === activeIndex && playingKey === unit.key && playUrl && !accessBlock"
               ref="videoEl"
               class="short-video"
-              :class="{landscape: videoLandscape, ready: videoReady}"
+              :class="{contain: videoContain, portrait: !videoContain, ready: videoReady}"
               autoplay
               playsinline
               webkit-playsinline
               :muted="muted"
               @loadedmetadata="onVideoMeta"
+              @loadeddata="onVideoResize"
+              @resize="onVideoResize"
               @canplay="onVideoCanPlay"
               @timeupdate="onVideoTimeUpdate"
               @ended="nextItem"
@@ -122,9 +132,23 @@
                 <span>{{ formatTime(durationSec) }}</span>
               </div>
             </div>
+
+            <div v-if="i === activeIndex && landscapeTheaterMode && !accessBlock" class="theater-controls" @click.stop>
+              <div class="theater-top">
+                <button class="theater-pill" type="button" @click="exitLandscapeTheater">退出横屏</button>
+                <span v-if="viewportLandscape">退出后请转回竖屏</span>
+              </div>
+              <div class="theater-bottom">
+                <button class="theater-control-btn" type="button" :disabled="!canGoPreviousTheater" @click="previousTheaterEpisode">上一集</button>
+                <button class="theater-control-btn primary" type="button" @click="togglePause">{{ paused ? '播放' : '暂停' }}</button>
+                <button class="theater-control-btn" type="button" :disabled="!canGoNextTheater" @click="nextTheaterEpisode">下一集</button>
+                <button class="theater-control-btn" type="button" :disabled="feedMode !== 'series'" @click="openEpisodeSheet">选集</button>
+                <button class="theater-control-btn" type="button" @click="toggleMute">{{ muted ? '开声' : '静音' }}</button>
+              </div>
+            </div>
           </div>
 
-          <aside v-if="i === activeIndex && !accessBlock" class="short-actions" :class="{ compact: immersiveMode }">
+          <aside v-if="i === activeIndex && !accessBlock && !landscapeTheaterMode" class="short-actions" :class="{ compact: immersiveMode }">
             <template v-if="!immersiveMode">
               <button type="button" class="action-btn" :class="{on: isFollowed(unit.vod.id)}" aria-label="追剧" @click="toggleFollow(unit)">
                 <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.2-8.18C.75 9.25 2.7 5 6.7 5c2.05 0 3.35 1.12 4.05 2.08C11.45 6.12 12.75 5 14.8 5c4 0 5.95 4.25 3.9 7.82C16.5 16.65 12 21 12 21z"/></svg>
@@ -156,9 +180,15 @@
             </template>
           </aside>
 
-          <div v-if="i === activeIndex && !immersiveMode" class="short-meta">
-            <div v-if="feedMode === 'wander'" class="watch-full-row">
-              <button class="watch-full-btn" type="button" @click="enterSeriesMode(unit)">观看全集</button>
+          <div v-if="i === activeIndex && !immersiveMode && !landscapeTheaterMode" class="short-meta">
+            <div v-if="feedMode === 'wander' || videoLandscape" class="watch-full-row">
+              <button v-if="feedMode === 'wander'" class="watch-full-btn" type="button" @click="enterSeriesMode(unit)">观看全集</button>
+              <button
+                v-if="videoLandscape && playingKey === unit.key && playUrl"
+                class="watch-full-btn landscape-full-btn"
+                type="button"
+                @click.stop="enterLandscapeTheater"
+              >横屏观看</button>
             </div>
             <div class="short-meta-main">
               <div class="episode-pill">{{ unit.epName }} / 共{{ unit.total }}集</div>
@@ -175,6 +205,15 @@
         </article>
         <div v-if="loadingMore" class="feed-tail">加载更多短剧...</div>
       </section>
+
+      <div v-if="portraitLockVisible" class="portrait-lock-mask">
+        <div class="rotate-icon">
+          <svg viewBox="0 0 24 24"><path d="M7 4h7a4 4 0 0 1 4 4v1"/><path d="M20 7l-2-2-2 2"/><rect x="6" y="9" width="12" height="9" rx="2"/><path d="M10 21h4"/></svg>
+        </div>
+        <strong>竖屏观看短剧</strong>
+        <span>{{ canEnterLandscapeTheater ? '当前为横屏片源，可直接进入站内横屏观看' : '短剧流保持竖屏，转回竖屏后继续播放' }}</span>
+        <button v-if="canEnterLandscapeTheater" type="button" @click.stop="enterLandscapeTheater">进入横屏观看</button>
+      </div>
 
       <transition name="episode-sheet">
         <div
@@ -201,7 +240,8 @@
                 @click="jumpEpisode(item.index)"
               >
                 <span>{{ item.name }}</span>
-                <em v-if="item.index === currentSeriesEpIndex">播放中</em>
+                <em v-if="item.index === currentSeriesEpIndex">{{ item.resumeText ? `播放中 · ${item.resumeText}` : '播放中' }}</em>
+                <em v-else-if="item.resumeText">{{ item.resumeText }}</em>
               </button>
             </div>
           </div>
@@ -372,13 +412,10 @@ const SHORTS_SEARCH_HISTORY_KEY = 'vcms.shorts.search.history'
 const SEARCH_HISTORY_LIMIT = 6
 const RESOLVE_CACHE_TTL = 20 * 60 * 1000
 const RESOLVE_CACHE_LIMIT = 80
+const SERIES_WINDOW_RADIUS = 3
 const SERIES_PLAY_SETTLE_MS = 240
 const SERIES_SCROLL_SETTLE_MS = 90
 const SERIES_SNAP_EPSILON = 0.03
-const SERIES_TOUCH_THRESHOLD = 0.18
-const SERIES_VELOCITY_THRESHOLD = 0.45
-const SERIES_SWIPE_ANIMATION_MS = 180
-const SERIES_WHEEL_COOLDOWN_MS = 420
 const WANDER_PLAY_SETTLE_MS = 120
 const SCROLL_SUPPRESS_MS = 260
 const INSTANT_SCROLL_SUPPRESS_MS = 120
@@ -434,6 +471,7 @@ const accessBlock = ref(null)
 const needsTap = ref(false)
 const paused = ref(false)
 const muted = ref(readMutedPreference())
+const videoContain = ref(true)
 const videoLandscape = ref(false)
 const videoReady = ref(false)
 const episodeSheetOpen = ref(false)
@@ -457,7 +495,10 @@ const seekValue = ref(0)
 const seeking = ref(false)
 const progressActive = ref(false)
 const seriesState = ref(null)
+const viewportLandscape = ref(false)
+const landscapeTheaterMode = ref(false)
 const followState = reactive({})
+const vodHistoryState = reactive({})
 
 const unitKeys = new Set()
 const unitVodIds = new Set()
@@ -482,13 +523,13 @@ let progressIdleTimer = 0
 let playSettleTimer = 0
 let seriesCommitTimer = 0
 let seriesScrollSettleTimer = 0
-let seriesSwipeFrame = 0
-let seriesTouch = null
-let seriesAnimating = false
-let seriesWheelLockedUntil = 0
+let seriesPlayFallbackTimer = 0
 let ignoreScrollUntil = 0
 let lastSavedHistoryKey = ''
 let lastSavedHistoryAt = 0
+let restoringShortsRoute = false
+let pendingResumeSeek = null
+let orientationQuery = null
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
@@ -496,6 +537,13 @@ const shortsConfig = computed(() => normalizeShortsConfig(site.value?.shortsConf
 const shortsDisabled = computed(() => shortsConfig.value.enabled === false)
 const feedBatchSize = computed(() => Math.max(4, Math.min(20, Number(shortsConfig.value.feedLimit) || 10)))
 const layerOpen = computed(() => episodeSheetOpen.value || detailSheetOpen.value || searchSheetOpen.value || librarySheetOpen.value)
+const portraitLockVisible = computed(() => viewportLandscape.value && !landscapeTheaterMode.value)
+const canEnterLandscapeTheater = computed(() => {
+  const unit = activeUnit.value
+  return Boolean(unit && videoLandscape.value && playingKey.value === unit.key && playUrl.value && !accessBlock.value)
+})
+const canGoPreviousTheater = computed(() => feedMode.value === 'series' && currentSeriesEpIndex.value > 0)
+const canGoNextTheater = computed(() => feedMode.value === 'series' && currentSeriesEpIndex.value < currentEpisodeTotal.value - 1)
 const currentSeriesEpIndex = computed(() => {
   if (feedMode.value !== 'series') return -1
   return Math.max(0, Number(seriesState.value?.epIndex) || 0)
@@ -512,12 +560,15 @@ const episodeOptions = computed(() => {
       key: unit.key || `feed:${index}`,
       index,
       name: unit.epName || `第${index + 1}集`,
+      resumeText: '',
     }))
   }
+  const history = normalizeHistoryRecord(state.history)
   return state.episodes.map((ep, index) => ({
     key: `ep:${state.baseUnit?.vod?.id || 'v'}:${state.baseUnit?.channel?.id || 'p'}:${index}`,
     index,
     name: ep?.name || `第${index + 1}集`,
+    resumeText: episodeResumeText(history, index),
   }))
 })
 const progressPercent = computed(() => {
@@ -525,7 +576,52 @@ const progressPercent = computed(() => {
   return Math.max(0, Math.min(100, (currentSec.value / durationSec.value) * 100))
 })
 
+function shortsPreferredTypes(config = shortsConfig.value) {
+  const rows = Array.isArray(config?.preferredTypes) ? config.preferredTypes : []
+  return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))]
+}
+
+function shortsPreferredSubtypes(config = shortsConfig.value) {
+  const rows = Array.isArray(config?.preferredSubtypes) ? config.preferredSubtypes : []
+  const seen = new Set()
+  const out = []
+  for (const item of rows) {
+    const type = String(item?.type || '').trim()
+    const name = String(item?.name || item?.subType || item?.sub || '').trim()
+    const key = `${type}::${name}`
+    if (!type || !name || seen.has(key)) continue
+    seen.add(key)
+    out.push({ type, name })
+  }
+  return out
+}
+
+function shortsScopeParams(config = shortsConfig.value) {
+  const types = shortsPreferredTypes(config)
+  const subtypes = shortsPreferredSubtypes(config)
+  if (types.length || subtypes.length) {
+    return {
+      ...(types.length ? { types: types.join(',') } : {}),
+      ...(subtypes.length ? { subs: JSON.stringify(subtypes) } : {}),
+    }
+  }
+  return { type: config.defaultType }
+}
+
+function vodInShortsScope(vod, config = shortsConfig.value) {
+  if (!vod) return false
+  const types = shortsPreferredTypes(config)
+  const subtypes = shortsPreferredSubtypes(config)
+  if (!types.length && !subtypes.length) return !config.defaultType || vod.typeName === config.defaultType
+  if (types.includes(vod.typeName)) return true
+  return subtypes.some(item => item.type === vod.typeName && item.name === vod.subType)
+}
+
 function goBack() {
+  if (landscapeTheaterMode.value) {
+    exitLandscapeTheater()
+    return
+  }
   if (searchSheetOpen.value) {
     closeSearchSheet()
     return
@@ -577,6 +673,43 @@ function onImgError(event, fallback = '') {
   if (img) img.style.visibility = 'hidden'
 }
 
+function normalizeHistoryRecord(item) {
+  if (!item) return null
+  const epIndex = Math.max(0, Number(item.epIndex) || 0)
+  const progressSec = Math.max(0, Math.floor(Number(item.progressSec) || 0))
+  const durationSec = Math.max(0, Math.floor(Number(item.durationSec) || 0))
+  const lineId = Number(item.lineId) || 0
+  return {
+    id: item.id,
+    vodId: Number(item.vodId || item.vod?.id) || 0,
+    lineId,
+    epIndex,
+    epName: item.epName || `第${epIndex + 1}集`,
+    progressSec,
+    durationSec,
+    updatedAt: item.updatedAt || null,
+  }
+}
+
+function historyFromOptions(options = {}) {
+  if (options.history) return normalizeHistoryRecord(options.history)
+  const hasProgress = options.resumeProgressSec !== undefined || options.resumeDurationSec !== undefined || options.resumeUpdatedAt
+  if (!hasProgress) return null
+  return normalizeHistoryRecord({
+    lineId: options.lineId,
+    epIndex: options.epIndex,
+    epName: options.resumeEpName,
+    progressSec: options.resumeProgressSec,
+    durationSec: options.resumeDurationSec,
+    updatedAt: options.resumeUpdatedAt,
+  })
+}
+
+function episodeResumeText(history, index) {
+  if (!history || history.epIndex !== index || history.progressSec < HISTORY_MIN_PROGRESS_SEC) return ''
+  return `上次 ${formatTime(history.progressSec)}`
+}
+
 function isDirectM3u8(url) {
   return /\.m3u8(\?|$)/i.test(url)
 }
@@ -616,7 +749,7 @@ function buildUnitFromVodDetail(vod, options = {}) {
   const total = line.epCount || episodes.length || 1
   const epIndex = clampIndex(options?.epIndex, total)
   const ep = episodes[epIndex] || {}
-  return buildUnit({
+  const unit = buildUnit({
     vod,
     play: {
       id: line.id,
@@ -630,6 +763,8 @@ function buildUnitFromVodDetail(vod, options = {}) {
       episodes,
     },
   })
+  unit.resumeHistory = normalizeHistoryRecord(options.resumeHistory)
+  return unit
 }
 
 function clampIndex(value, total) {
@@ -645,12 +780,15 @@ function buildSeriesUnit(index) {
   const epIndex = clampIndex(index, total)
   const ep = state.episodes[epIndex] || {}
   const base = state.baseUnit
+  const history = normalizeHistoryRecord(state.history)
+  const resumeHistory = history?.epIndex === epIndex ? history : null
   return {
     ...base,
     key: `series:${base.vod.id}:${base.channel.id}:${epIndex}`,
     epIndex,
     epName: ep.name || `第${epIndex + 1}集`,
     total,
+    resumeHistory,
   }
 }
 
@@ -658,8 +796,8 @@ function buildSeriesWindow(epIndex) {
   const state = seriesState.value
   const total = Math.max(1, Number(state?.total) || state?.episodes?.length || 1)
   const current = clampIndex(epIndex, total)
-  const size = Math.min(3, total)
-  const start = Math.max(0, Math.min(current - 1, total - size))
+  const size = Math.min(SERIES_WINDOW_RADIUS * 2 + 1, total)
+  const start = Math.max(0, Math.min(current - SERIES_WINDOW_RADIUS, total - size))
   return Array.from({ length: size }, (_, offset) => buildSeriesUnit(start + offset)).filter(Boolean)
 }
 
@@ -667,7 +805,7 @@ async function showSeriesEpisode(index, options = {}) {
   const state = seriesState.value
   if (!state) return
   clearSeriesScrollSettleTimer()
-  clearSeriesSwipeAnimation()
+  clearSeriesPlayFallbackTimer()
   if (options.play !== false) {
     cancelPendingPlayback({ stop: true })
     historySaveAt = 0
@@ -678,6 +816,7 @@ async function showSeriesEpisode(index, options = {}) {
   const nextActive = Math.max(0, nextUnits.findIndex(unit => unit.epIndex === epIndex))
   suppressActiveIndexWatch = true
   state.epIndex = epIndex
+  syncShortsRoute()
   units.value = nextUnits
   activeIndex.value = nextActive
   await nextTick()
@@ -701,12 +840,19 @@ function appendFeedItems(items) {
 }
 
 async function loadFollowState(vodId) {
-  if (!vodId || followState[vodId] !== undefined || !user.value) return
+  if (!vodId || !user.value) return null
+  if (followState[vodId] !== undefined && vodHistoryState[vodId] !== undefined) {
+    return { followed: followState[vodId], history: vodHistoryState[vodId] }
+  }
   try {
     const state = await api.userVodState(vodId)
     followState[vodId] = Boolean(state.followed)
+    vodHistoryState[vodId] = normalizeHistoryRecord(state.history)
+    return state
   } catch {
     followState[vodId] = false
+    vodHistoryState[vodId] = null
+    return null
   }
 }
 
@@ -721,7 +867,7 @@ async function loadNextFeed(limit = feedBatchSize.value) {
       const result = await api.shortFeed({
         cursor: feedCursor,
         limit: Math.max(limit, limit - addedTotal),
-        type: shortsConfig.value.defaultType,
+        ...shortsScopeParams(),
         sort: shortsConfig.value.sortMode,
         seed: feedSeed,
         exclude,
@@ -749,14 +895,14 @@ async function loadFeed() {
   suppressActiveIndexWatch = true
   clearSeriesCommitTimer()
   clearSeriesScrollSettleTimer()
-  clearSeriesSwipeAnimation()
-  seriesTouch = null
+  clearSeriesPlayFallbackTimer()
   cancelPendingPlayback({ stop: true })
   try {
     if (shortsDisabled.value) {
       units.value = []
       return
     }
+    landscapeTheaterMode.value = false
     immersiveMode.value = false
     detailSheetOpen.value = false
     searchSheetOpen.value = false
@@ -785,11 +931,11 @@ async function loadFeed() {
 }
 
 function onFeedScroll() {
+  if (landscapeTheaterMode.value) return
   if (scrollRaf) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
     if (suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
-    if (feedMode.value === 'series' && (seriesTouch || seriesAnimating)) return
     const el = feedEl.value
     if (!el) return
     const h = Math.max(1, el.clientHeight)
@@ -799,11 +945,14 @@ function onFeedScroll() {
       const distance = Math.abs(raw - next)
       if (distance > SERIES_SNAP_EPSILON) {
         scheduleSeriesScrollSettle()
+        scheduleSeriesPlayFallback()
         return
       }
       clearSeriesScrollSettleTimer()
+      scheduleSeriesPlayFallback()
     }
     if (next !== activeIndex.value) activeIndex.value = next
+    else if (feedMode.value === 'series') scheduleSeriesPlayFallback()
   })
 }
 
@@ -850,6 +999,7 @@ function preloadPoster(unit) {
 }
 
 function stopPlayback() {
+  pendingResumeSeek = null
   if (hls) {
     hls.destroy()
     hls = null
@@ -864,6 +1014,7 @@ function stopPlayback() {
   playingKey.value = ''
   needsTap.value = false
   paused.value = false
+  videoContain.value = true
   videoLandscape.value = false
   videoReady.value = false
   currentSec.value = 0
@@ -899,12 +1050,11 @@ function clearSeriesScrollSettleTimer() {
   }
 }
 
-function clearSeriesSwipeAnimation() {
-  if (seriesSwipeFrame) {
-    window.cancelAnimationFrame(seriesSwipeFrame)
-    seriesSwipeFrame = 0
+function clearSeriesPlayFallbackTimer() {
+  if (seriesPlayFallbackTimer) {
+    window.clearTimeout(seriesPlayFallbackTimer)
+    seriesPlayFallbackTimer = 0
   }
-  seriesAnimating = false
 }
 
 function cancelPendingPlayback(options = {}) {
@@ -912,6 +1062,60 @@ function cancelPendingPlayback(options = {}) {
   playSeq += 1
   resolving.value = false
   if (options.stop) stopPlayback()
+}
+
+function findSeriesUnitIndex(epIndex) {
+  return units.value.findIndex(unit => Number(unit?.epIndex) === Number(epIndex))
+}
+
+function needsSeriesWindowRebase(epIndex) {
+  const state = seriesState.value
+  if (!state) return false
+  const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
+  if (units.value.length >= total) return false
+  const index = findSeriesUnitIndex(epIndex)
+  return index < 0 || index <= 1 || index >= units.value.length - 2
+}
+
+function shortsQuerySignature(query) {
+  return ['mode', 'vodId', 'lineId', 'ep']
+    .map(key => `${key}:${query?.[key] ?? ''}`)
+    .join('|')
+}
+
+function replaceShortsQuery(nextQuery) {
+  if (restoringShortsRoute) return
+  if (shortsQuerySignature(route.query) === shortsQuerySignature(nextQuery)) return
+  router.replace({ path: route.path || '/shorts', query: nextQuery }).catch(() => {})
+}
+
+function syncShortsRoute(options = {}) {
+  const query = { ...route.query }
+  if (options.clear || feedMode.value !== 'series' || !seriesState.value?.baseUnit) {
+    delete query.mode
+    delete query.vodId
+    delete query.lineId
+    delete query.ep
+    replaceShortsQuery(query)
+    return
+  }
+  const state = seriesState.value
+  query.mode = 'series'
+  query.vodId = String(state.baseUnit.vod.id)
+  query.lineId = String(state.baseUnit.channel.id)
+  query.ep = String(clampIndex(state.epIndex, state.total))
+  replaceShortsQuery(query)
+}
+
+function parseShortsRouteTarget() {
+  if (route.query?.mode !== 'series' || !route.query?.vodId) return null
+  const vodId = Number(route.query.vodId)
+  if (!Number.isFinite(vodId) || vodId <= 0) return null
+  return {
+    vodId,
+    lineId: Number(route.query.lineId) || undefined,
+    epIndex: Number(route.query.ep) || 0,
+  }
 }
 
 function schedulePlayActive(delay = 0) {
@@ -934,17 +1138,55 @@ function scheduleSeriesCommit(epIndex) {
   if (!state) return
   const total = Math.max(1, Number(state.total) || state.episodes.length || 1)
   const targetEp = clampIndex(epIndex, total)
+  clearSeriesPlayFallbackTimer()
   clearSeriesCommitTimer()
   cancelPendingPlayback({ stop: true })
   historySaveAt = 0
   state.epIndex = targetEp
-  void showSeriesEpisode(targetEp, { behavior: 'auto', play: false })
-  seriesCommitTimer = window.setTimeout(() => {
+  syncShortsRoute()
+  seriesCommitTimer = window.setTimeout(async () => {
     seriesCommitTimer = 0
     if (feedMode.value !== 'series' || !seriesState.value) return
     if (currentSeriesEpIndex.value !== targetEp) return
+    if (needsSeriesWindowRebase(targetEp)) {
+      await showSeriesEpisode(targetEp, { behavior: 'auto', play: false })
+      if (feedMode.value !== 'series' || currentSeriesEpIndex.value !== targetEp) return
+    }
     schedulePlayActive(0)
   }, SERIES_PLAY_SETTLE_MS)
+}
+
+function ensureSeriesPlaybackAfterScroll() {
+  if (feedMode.value !== 'series' || layerOpen.value || seeking.value || suppressActiveIndexWatch) return
+  const unit = activeUnit.value
+  if (!unit) return
+  if (currentSeriesEpIndex.value !== unit.epIndex) {
+    scheduleSeriesCommit(unit.epIndex)
+    return
+  }
+  if (resolving.value) return
+  if (playingKey.value !== unit.key || !playUrl.value) {
+    schedulePlayActive(0)
+    return
+  }
+  const video = getVideo()
+  if (video && video.paused && !paused.value && !needsTap.value && !accessBlock.value) {
+    void playNow({ mutedFallback: true })
+  }
+}
+
+function scheduleSeriesPlayFallback() {
+  if (feedMode.value !== 'series') return
+  clearSeriesPlayFallbackTimer()
+  seriesPlayFallbackTimer = window.setTimeout(() => {
+    seriesPlayFallbackTimer = 0
+    if (Date.now() < ignoreScrollUntil) {
+      scheduleSeriesPlayFallback()
+      return
+    }
+    commitSettledSeriesScroll()
+    window.setTimeout(ensureSeriesPlaybackAfterScroll, 0)
+  }, SERIES_PLAY_SETTLE_MS + SERIES_SCROLL_SETTLE_MS)
 }
 
 function scheduleSeriesScrollSettle() {
@@ -967,124 +1209,6 @@ function commitSettledSeriesScroll() {
     return
   }
   if (next !== activeIndex.value) activeIndex.value = next
-}
-
-function isSeriesSwipeBlocked() {
-  return feedMode.value !== 'series' || layerOpen.value || seeking.value
-}
-
-function isInteractiveSwipeTarget(target) {
-  return Boolean(target?.closest?.('button, a, input, textarea, select, .short-progress'))
-}
-
-function clampSeriesScrollTop(value) {
-  const el = feedEl.value
-  if (!el) return 0
-  const max = Math.max(0, (units.value.length - 1) * el.clientHeight)
-  return Math.max(0, Math.min(max, value))
-}
-
-function animateSeriesScrollTo(index, options = {}) {
-  const el = feedEl.value
-  if (!el) return
-  clearSeriesSwipeAnimation()
-  clearSeriesScrollSettleTimer()
-  const h = Math.max(1, el.clientHeight)
-  const targetIndex = Math.max(0, Math.min(units.value.length - 1, index))
-  const start = el.scrollTop
-  const target = targetIndex * h
-  const delta = target - start
-  const duration = Math.max(1, Number(options.duration) || SERIES_SWIPE_ANIMATION_MS)
-  const startedAt = performance.now()
-  seriesAnimating = true
-  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + duration + INSTANT_SCROLL_SUPPRESS_MS)
-  const finish = () => {
-    el.scrollTop = target
-    seriesSwipeFrame = 0
-    seriesAnimating = false
-    if (options.commit !== false && targetIndex !== activeIndex.value) activeIndex.value = targetIndex
-  }
-  if (Math.abs(delta) < 1) {
-    finish()
-    return
-  }
-  const step = (now) => {
-    const progress = Math.min(1, (now - startedAt) / duration)
-    const eased = 1 - Math.pow(1 - progress, 3)
-    el.scrollTop = start + delta * eased
-    if (progress < 1) {
-      seriesSwipeFrame = window.requestAnimationFrame(step)
-    } else {
-      finish()
-    }
-  }
-  seriesSwipeFrame = window.requestAnimationFrame(step)
-}
-
-function onSeriesTouchStart(event) {
-  if (isSeriesSwipeBlocked()) return
-  if (isInteractiveSwipeTarget(event.target)) return
-  const touch = event.touches?.[0]
-  const el = feedEl.value
-  if (!touch || !el) return
-  clearSeriesSwipeAnimation()
-  clearSeriesScrollSettleTimer()
-  seriesTouch = {
-    startY: touch.clientY,
-    lastY: touch.clientY,
-    startScrollTop: el.scrollTop,
-    startedAt: performance.now(),
-  }
-  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + SMOOTH_SCROLL_SUPPRESS_MS)
-}
-
-function onSeriesTouchMove(event) {
-  if (!seriesTouch || feedMode.value !== 'series') return
-  const touch = event.touches?.[0]
-  const el = feedEl.value
-  if (!touch || !el) return
-  event.preventDefault()
-  seriesTouch.lastY = touch.clientY
-  const deltaY = seriesTouch.startY - touch.clientY
-  el.scrollTop = clampSeriesScrollTop(seriesTouch.startScrollTop + deltaY)
-  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + INSTANT_SCROLL_SUPPRESS_MS)
-}
-
-function finishSeriesTouch(cancel = false) {
-  const touch = seriesTouch
-  const el = feedEl.value
-  seriesTouch = null
-  if (!touch || !el || feedMode.value !== 'series') return
-  const h = Math.max(1, el.clientHeight)
-  const deltaY = touch.startY - touch.lastY
-  const elapsed = Math.max(1, performance.now() - touch.startedAt)
-  const velocity = Math.abs(deltaY) / elapsed
-  let target = activeIndex.value
-  if (!cancel && (Math.abs(deltaY) > h * SERIES_TOUCH_THRESHOLD || velocity > SERIES_VELOCITY_THRESHOLD)) {
-    target += deltaY > 0 ? 1 : -1
-  } else if (!cancel) {
-    target = Math.round(el.scrollTop / h)
-  }
-  target = Math.max(0, Math.min(units.value.length - 1, target))
-  animateSeriesScrollTo(target)
-}
-
-function onSeriesTouchEnd() {
-  finishSeriesTouch(false)
-}
-
-function onSeriesTouchCancel() {
-  finishSeriesTouch(true)
-}
-
-function onSeriesWheel(event) {
-  if (isSeriesSwipeBlocked() || seriesAnimating || Date.now() < seriesWheelLockedUntil) return
-  const delta = Number(event.deltaY) || 0
-  if (Math.abs(delta) < 18) return
-  const target = Math.max(0, Math.min(units.value.length - 1, activeIndex.value + (delta > 0 ? 1 : -1)))
-  if (target === activeIndex.value) return
-  seriesWheelLockedUntil = Date.now() + SERIES_WHEEL_COOLDOWN_MS
-  animateSeriesScrollTo(target)
 }
 
 function resolveCacheKey(unit) {
@@ -1166,6 +1290,33 @@ function handleAccessAction() {
   notifyWarning('当前账号权限不足，请返回后到个人中心处理会员权限')
 }
 
+function buildResumeSeek(unit) {
+  const history = normalizeHistoryRecord(unit?.resumeHistory)
+  if (!history || history.epIndex !== unit?.epIndex || history.progressSec < HISTORY_MIN_PROGRESS_SEC) return null
+  return {
+    key: unit.key,
+    progressSec: history.progressSec,
+  }
+}
+
+function applyPendingResumeSeek(video) {
+  const pending = pendingResumeSeek
+  if (!pending || !video || pending.key !== playingKey.value) return
+  const duration = Number(video.duration) || 0
+  const maxTarget = duration > 8 ? duration - 6 : duration
+  const target = Math.max(0, Math.min(pending.progressSec, maxTarget || pending.progressSec))
+  if (target < HISTORY_MIN_PROGRESS_SEC) {
+    pendingResumeSeek = null
+    return
+  }
+  try {
+    video.currentTime = target
+    currentSec.value = Math.floor(target)
+    seekValue.value = duration ? Math.round((target / duration) * 1000) : seekValue.value
+    pendingResumeSeek = null
+  } catch {}
+}
+
 async function playActive() {
   const unit = activeUnit.value
   const seq = ++playSeq
@@ -1173,6 +1324,7 @@ async function playActive() {
   historySaveAt = 0
   accessBlock.value = null
   playingUnit = unit || null
+  pendingResumeSeek = buildResumeSeek(unit)
   if (!unit?.vod?.id || !unit?.channel?.id) return
   resolving.value = true
   try {
@@ -1204,6 +1356,10 @@ async function attachVideo(url, kind) {
   video.muted = muted.value
   video.autoplay = true
   video.playsInline = true
+  if (video.readyState >= 1) {
+    updateVideoFit(video)
+    applyPendingResumeSeek(video)
+  }
   if (hls) {
     hls.destroy()
     hls = null
@@ -1296,22 +1452,59 @@ function toggleMute() {
   if (video) video.muted = muted.value
 }
 
+function updateVideoFit(video) {
+  const width = Number(video?.videoWidth || 0)
+  const height = Number(video?.videoHeight || 0)
+  const knownSize = width > 0 && height > 0
+  const landscape = knownSize && width > height * 1.15
+  videoLandscape.value = landscape
+  videoContain.value = !knownSize || landscape
+}
+
 function onVideoMeta(event) {
   const video = event.target
-  videoLandscape.value = Number(video.videoWidth || 0) > Number(video.videoHeight || 0) * 1.18
+  updateVideoFit(video)
   durationSec.value = Math.floor(Number(video.duration) || 0)
+  applyPendingResumeSeek(video)
   currentSec.value = Math.floor(Number(video.currentTime) || 0)
   seekValue.value = durationSec.value ? Math.round((currentSec.value / durationSec.value) * 1000) : 0
 }
 
-function onVideoCanPlay() {
+function onVideoResize(event) {
+  updateVideoFit(event?.target || getVideo())
+}
+
+function onVideoCanPlay(event) {
+  updateVideoFit(event?.target || getVideo())
   videoReady.value = true
 }
 
 function onVideoError() {
   notifyWarning('当前集播放失败')
   paused.value = true
+  videoLandscape.value = false
   videoReady.value = false
+}
+
+function rememberLocalHistory(unit, progressSec, durationSec) {
+  if (!unit?.vod?.id || progressSec < HISTORY_MIN_PROGRESS_SEC) return
+  const record = normalizeHistoryRecord({
+    vodId: unit.vod.id,
+    lineId: unit.channel.id,
+    epIndex: unit.epIndex,
+    epName: unit.epName,
+    progressSec,
+    durationSec,
+    updatedAt: new Date().toISOString(),
+  })
+  vodHistoryState[unit.vod.id] = record
+  if (
+    feedMode.value === 'series' &&
+    seriesState.value?.baseUnit?.vod?.id === unit.vod.id &&
+    Number(seriesState.value?.baseUnit?.channel?.id) === Number(unit.channel.id)
+  ) {
+    seriesState.value.history = record
+  }
 }
 
 function saveWatchHistory(progressOverride = null, options = {}) {
@@ -1326,6 +1519,7 @@ function saveWatchHistory(progressOverride = null, options = {}) {
   if (!options.force && key === lastSavedHistoryKey && now - lastSavedHistoryAt < HISTORY_SAVE_INTERVAL_MS) return
   lastSavedHistoryKey = key
   lastSavedHistoryAt = now
+  rememberLocalHistory(unit, progressSec, durationSec)
   api.saveHistory({
     vodId: unit.vod.id,
     lineId: unit.channel.id,
@@ -1376,6 +1570,18 @@ function nextItem() {
   if (activeIndex.value < units.value.length - 1) scrollToIndex(activeIndex.value + 1)
   else if (feedMode.value === 'wander') void loadNextFeed(feedBatchSize.value).then(() => scrollToIndex(activeIndex.value + 1))
   else paused.value = true
+}
+
+function previousTheaterEpisode() {
+  if (!canGoPreviousTheater.value) return
+  saveWatchHistory(null, { force: true })
+  void showSeriesEpisode(currentSeriesEpIndex.value - 1, { behavior: 'auto', settleMs: 0 })
+}
+
+function nextTheaterEpisode() {
+  if (!canGoNextTheater.value) return
+  saveWatchHistory(null, { force: true })
+  void showSeriesEpisode(currentSeriesEpIndex.value + 1, { behavior: 'auto', settleMs: 0 })
 }
 
 function jumpEpisode(index) {
@@ -1472,7 +1678,7 @@ function createFeedSeed() {
   return Date.now()
 }
 
-async function enterSeriesMode(unit = activeUnit.value) {
+async function enterSeriesMode(unit = activeUnit.value, options = {}) {
   if (!unit?.vod?.id || !unit?.channel?.id) return
   const wasSeries = feedMode.value === 'series'
   const current = activeUnit.value
@@ -1495,7 +1701,9 @@ async function enterSeriesMode(unit = activeUnit.value) {
   searchSheetOpen.value = false
   librarySheetOpen.value = false
   suppressActiveIndexWatch = true
-  if (!wasSeries || !wanderState) {
+  if (options.rememberWander === false) {
+    wanderState = null
+  } else if (!wasSeries || !wanderState) {
     wanderState = {
       units: units.value,
       activeIndex: activeIndex.value,
@@ -1506,6 +1714,8 @@ async function enterSeriesMode(unit = activeUnit.value) {
   }
   const episodes = Array.isArray(unit.channel.episodes) ? unit.channel.episodes : []
   const total = episodes.length || unit.total || 1
+  const history = normalizeHistoryRecord(unit.resumeHistory || vodHistoryState[unit.vod.id])
+  const matchingHistory = history && (!history.lineId || Number(history.lineId) === Number(unit.channel.id)) ? history : null
   seriesState.value = {
     baseUnit: {
       ...unit,
@@ -1517,6 +1727,7 @@ async function enterSeriesMode(unit = activeUnit.value) {
     episodes,
     total,
     epIndex: clampIndex(unit.epIndex || 0, total),
+    history: matchingHistory,
   }
   feedMode.value = 'series'
   await showSeriesEpisode(seriesState.value.epIndex, { behavior: 'auto' })
@@ -1531,16 +1742,17 @@ async function enterImmersive(unit = activeUnit.value) {
 }
 
 async function exitSeriesMode() {
+  landscapeTheaterMode.value = false
   episodeSheetOpen.value = false
   resumeAfterEpisodeSheet = false
   detailSheetOpen.value = false
   immersiveMode.value = false
   clearSeriesScrollSettleTimer()
-  clearSeriesSwipeAnimation()
-  seriesTouch = null
+  clearSeriesPlayFallbackTimer()
   if (!wanderState) {
     feedMode.value = 'wander'
     seriesState.value = null
+    syncShortsRoute({ clear: true })
     await loadFeed()
     return
   }
@@ -1548,6 +1760,7 @@ async function exitSeriesMode() {
   suppressActiveIndexWatch = true
   feedMode.value = 'wander'
   seriesState.value = null
+  syncShortsRoute({ clear: true })
   units.value = wanderState.units || []
   activeIndex.value = Math.max(0, Math.min(wanderState.activeIndex || 0, units.value.length - 1))
   feedCursor = Number(wanderState.feedCursor) || 0
@@ -1628,7 +1841,7 @@ async function runShortSearch() {
   try {
     const result = await api.vods({
       kw: kw || undefined,
-      type: shortsConfig.value.defaultType,
+      ...shortsScopeParams(),
       sort: kw ? 'hot' : shortsConfig.value.sortMode === 'recent' ? 'recent' : 'hot',
       size: 18,
     })
@@ -1646,8 +1859,7 @@ async function openSearchResult(item) {
 }
 
 function isShortVod(vod) {
-  const type = shortsConfig.value.defaultType
-  return !type || !vod?.typeName || vod.typeName === type
+  return vodInShortsScope(vod)
 }
 
 async function loadLibrary(force = false) {
@@ -1686,8 +1898,19 @@ function closeLibrarySheet() {
 async function openVodInShorts(vodId, options = {}) {
   if (!vodId) return
   try {
-    const vod = await api.vod(vodId)
-    const unit = buildUnitFromVodDetail(vod, options)
+    const [vod, userState] = await Promise.all([
+      api.vod(vodId),
+      options.useHistory === false || !user.value ? Promise.resolve(null) : loadFollowState(vodId),
+    ])
+    const optionHistory = historyFromOptions(options)
+    const cachedHistory = options.useHistory === false ? null : normalizeHistoryRecord(userState?.history || vodHistoryState[vodId])
+    const resumeHistory = optionHistory || cachedHistory
+    const unit = buildUnitFromVodDetail(vod, {
+      ...options,
+      lineId: options.lineId ?? resumeHistory?.lineId,
+      epIndex: options.epIndex ?? resumeHistory?.epIndex,
+      resumeHistory,
+    })
     if (!unit) {
       notifyWarning('当前短剧暂无可用线路')
       return
@@ -1702,6 +1925,7 @@ async function openVodInShorts(vodId, options = {}) {
 
 function openLibraryHistory(item) {
   void openVodInShorts(item?.vod?.id, {
+    history: item,
     epIndex: item?.epIndex,
     lineId: item?.lineId,
     errorText: '观看记录打开失败',
@@ -1745,15 +1969,91 @@ function openDetailSheet() {
   detailSheetOpen.value = true
 }
 
+async function lockOrientation(type) {
+  try {
+    if (screen?.orientation?.lock) await screen.orientation.lock(type)
+  } catch {}
+}
+
+function lockShortsPortrait() {
+  return lockOrientation('portrait')
+}
+
+function unlockShortsOrientation() {
+  try {
+    if (screen?.orientation?.unlock) screen.orientation.unlock()
+  } catch {}
+}
+
+async function enterLandscapeTheater() {
+  const unit = activeUnit.value
+  if (!unit || accessBlock.value) return
+  if (!videoLandscape.value) {
+    notifyWarning('当前视频不是横屏片源')
+    return
+  }
+  landscapeTheaterMode.value = true
+  immersiveMode.value = false
+  detailSheetOpen.value = false
+  searchSheetOpen.value = false
+  librarySheetOpen.value = false
+  episodeSheetOpen.value = false
+  resumeAfterEpisodeSheet = false
+  if (feedMode.value === 'wander') {
+    await enterSeriesMode(unit)
+  }
+  await nextTick()
+  keepActiveCardInView()
+  const video = getVideo()
+  if (video?.paused || paused.value) {
+    void playNow({ mutedFallback: true })
+  }
+}
+
+function exitLandscapeTheater() {
+  landscapeTheaterMode.value = false
+  updateViewportOrientation()
+  window.setTimeout(() => keepActiveCardInView(), 300)
+}
+
 async function refreshSiteConfig() {
   try {
     site.value = writeCachedSite(await api.site())
   } catch {}
 }
 
+async function restoreShortsRoute() {
+  const target = parseShortsRouteTarget()
+  if (!target || shortsDisabled.value) return false
+  loading.value = true
+  restoringShortsRoute = true
+  let restored = false
+  try {
+    const vod = await api.vod(target.vodId)
+    const unit = buildUnitFromVodDetail(vod, {
+      lineId: target.lineId,
+      epIndex: target.epIndex,
+      useHistory: false,
+    })
+    if (!unit) return false
+    await enterSeriesMode(unit, { rememberWander: false })
+    restored = true
+    return true
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '短剧恢复失败'))
+    return false
+  } finally {
+    restoringShortsRoute = false
+    loading.value = false
+    if (restored) syncShortsRoute()
+  }
+}
+
 function lockViewportZoom() {
   const tag = document.querySelector('meta[name="viewport"]')
   if (!tag) return
+  setupOrientationWatcher()
+  void lockShortsPortrait()
   previousViewportContent = tag.getAttribute('content') || ''
   tag.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover')
   previousBodyOverflow = document.body.style.overflow || ''
@@ -1762,6 +2062,7 @@ function lockViewportZoom() {
   document.addEventListener('gesturechange', preventBrowserZoom, { passive: false })
   document.addEventListener('touchmove', preventMultiTouchZoom, { passive: false })
   window.addEventListener('resize', keepActiveCardInView)
+  window.addEventListener('orientationchange', keepActiveCardInView)
 }
 
 function restoreViewportZoom() {
@@ -1773,6 +2074,9 @@ function restoreViewportZoom() {
   document.removeEventListener('gesturechange', preventBrowserZoom)
   document.removeEventListener('touchmove', preventMultiTouchZoom)
   window.removeEventListener('resize', keepActiveCardInView)
+  window.removeEventListener('orientationchange', keepActiveCardInView)
+  cleanupOrientationWatcher()
+  unlockShortsOrientation()
 }
 
 function preventBrowserZoom(event) {
@@ -1783,7 +2087,37 @@ function preventMultiTouchZoom(event) {
   if (event.touches?.length > 1) event.preventDefault()
 }
 
+function setupOrientationWatcher() {
+  if (!window.matchMedia) {
+    updateViewportOrientation()
+    return
+  }
+  orientationQuery = window.matchMedia('(orientation: landscape) and (max-height: 520px)')
+  updateViewportOrientation()
+  if (orientationQuery.addEventListener) orientationQuery.addEventListener('change', keepActiveCardInView)
+  else if (orientationQuery.addListener) orientationQuery.addListener(keepActiveCardInView)
+}
+
+function cleanupOrientationWatcher() {
+  if (!orientationQuery) return
+  if (orientationQuery.removeEventListener) orientationQuery.removeEventListener('change', keepActiveCardInView)
+  else if (orientationQuery.removeListener) orientationQuery.removeListener(keepActiveCardInView)
+  orientationQuery = null
+}
+
+function updateViewportOrientation() {
+  if (orientationQuery) {
+    viewportLandscape.value = Boolean(orientationQuery.matches)
+    return
+  }
+  const width = Number(window.innerWidth || document.documentElement.clientWidth || 0)
+  const height = Number(window.innerHeight || document.documentElement.clientHeight || 0)
+  viewportLandscape.value = width > height && height <= 520
+}
+
 function keepActiveCardInView() {
+  updateViewportOrientation()
+  if (portraitLockVisible.value) return
   window.requestAnimationFrame(() => scrollToIndex(activeIndex.value, 'auto', { suppress: true }))
 }
 
@@ -1810,26 +2144,41 @@ watch(user, (next) => {
   if (!next) {
     libraryHistories.value = []
     libraryFollows.value = []
+    Object.keys(vodHistoryState).forEach(key => delete vodHistoryState[key])
+  }
+})
+
+watch(portraitLockVisible, (locked, wasLocked) => {
+  if (locked) {
+    pauseCurrentVideo()
+    return
+  }
+  if (wasLocked && playingKey.value && playUrl.value && !layerOpen.value && !accessBlock.value) {
+    void nextTick(() => playNow({ mutedFallback: true }))
   }
 })
 
 onMounted(async () => {
   lockViewportZoom()
   await refreshSiteConfig()
-  loadFeed()
+  const restored = await restoreShortsRoute()
+  if (!restored) {
+    syncShortsRoute({ clear: true })
+    loadFeed()
+  }
 })
 onBeforeUnmount(() => {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   clearPlaySettleTimer()
   clearSeriesCommitTimer()
   clearSeriesScrollSettleTimer()
-  clearSeriesSwipeAnimation()
-  seriesTouch = null
+  clearSeriesPlayFallbackTimer()
   clearProgressIdleTimer()
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
   librarySheetOpen.value = false
+  landscapeTheaterMode.value = false
   restoreViewportZoom()
   saveWatchHistory(null, { force: true })
   stopPlayback()
@@ -1841,7 +2190,7 @@ onBeforeUnmount(() => {
 .shorts-bg { position: absolute; inset: 0; background:
   radial-gradient(circle at 50% 16%, rgba(255,94,108,.18), transparent 32%),
   linear-gradient(135deg, #05060a, #0e1017 58%, #05060a); }
-.shorts-shell { position: relative; width: min(100vw, 430px); height: 100dvh; margin: 0 auto; overflow: hidden;
+.shorts-shell { position: relative; width: min(100vw, 430px); height: 100%; margin: 0 auto; overflow: hidden;
   background: #05060a; box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 70px rgba(0,0,0,.72); }
 .shorts-top { position: absolute; top: 0; left: 0; right: 0; z-index: 9; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
@@ -1855,20 +2204,51 @@ onBeforeUnmount(() => {
 .shorts-title strong { display: block; font-size: 17px; font-weight: 900; letter-spacing: 0; }
 .shorts-title span { display: block; margin-top: 3px; font-size: 11px; color: rgba(255,255,255,.62); }
 .shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
-.shorts-feed.series-feed { overflow-y: hidden; scroll-snap-type: none; touch-action: none; }
+.shorts-feed.series-feed { scroll-snap-type: y mandatory; }
 .shorts-feed.frozen { overflow: hidden; }
+.landscape-theater-mode .shorts-shell { width: 100vw; max-width: none; box-shadow: none; }
+.landscape-theater-mode .shorts-feed { overflow: hidden; }
 .shorts-feed::-webkit-scrollbar { display: none; }
-.short-card { position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #05060a; }
+.short-card { position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #05060a; }
 .short-media { position: absolute; inset: 0; background: #05060a; }
 .short-poster-bg { position: absolute; inset: -18px; background-size: cover; background-position: center; filter: blur(28px) brightness(.48) saturate(1.18); transform: scale(1.1); }
-.short-poster, .short-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #05060a; transform: translateZ(0); backface-visibility: hidden; }
-.short-poster { z-index: 1; }
-.short-video { z-index: 2; opacity: 0; transition: opacity .16s ease; }
+.short-poster, .short-video { position: absolute; inset: 0; width: 100%; height: 100%; background: #05060a; transform: translateZ(0); backface-visibility: hidden; }
+.short-poster { z-index: 1; object-fit: cover; }
+.short-video { z-index: 2; opacity: 0; object-fit: contain; object-position: center center; transition: opacity .16s ease; }
 .short-video.ready { opacity: 1; }
-.short-video.landscape { object-fit: contain; }
+.short-video.portrait { object-fit: cover; }
 .short-dim { position: absolute; inset: 0; z-index: 3; pointer-events: none; background:
   linear-gradient(180deg, rgba(0,0,0,.6), transparent 22%, transparent 54%, rgba(0,0,0,.82)),
   linear-gradient(90deg, rgba(0,0,0,.48), transparent 42%, rgba(0,0,0,.24)); }
+.short-card.theater .short-media { position: fixed; inset: 0; z-index: 50; width: 100vw; height: 100dvh; overflow: hidden; background: #000; }
+.short-card.theater .short-poster-bg,
+.short-card.theater .short-poster,
+.short-card.theater .short-dim { display: none; }
+.short-card.theater .short-video { inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; opacity: 1; transform: none; }
+.theater-rotated .short-card.theater .short-video {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 100dvh;
+  height: 100dvw;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.short-card.theater .short-progress { position: fixed; left: 18px; right: 18px; bottom: calc(6px + env(safe-area-inset-bottom)); z-index: 58; }
+.short-card.theater .short-lock { position: fixed; z-index: 60; }
+.theater-controls { position: fixed; inset: 0; z-index: 59; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+.theater-top { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 12px 0; pointer-events: none; }
+.theater-top span { color: rgba(255,255,255,.72); font-size: 12px; font-weight: 850; text-shadow: 0 2px 10px rgba(0,0,0,.7); }
+.theater-pill,
+.theater-control-btn { min-width: 0; height: 36px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(12,14,20,.66); color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; backdrop-filter: blur(16px); box-shadow: 0 10px 28px rgba(0,0,0,.32); pointer-events: auto; }
+.theater-pill { padding: 0 15px; }
+.theater-bottom { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 0 12px calc(42px + env(safe-area-inset-bottom)); pointer-events: none; }
+.theater-control-btn { padding: 0 9px; white-space: nowrap; }
+.theater-control-btn.primary { background: rgba(255,255,255,.9); color: #11131a; border-color: rgba(255,255,255,.9); }
+.theater-control-btn:disabled { opacity: .38; cursor: not-allowed; }
+.landscape-theater-mode .shorts-top,
+.landscape-theater-mode .short-actions,
+.landscape-theater-mode .short-meta { display: none; }
+.landscape-theater-mode .episode-mask { position: fixed; z-index: 70; }
 .immersive-mode .short-dim { background:
   linear-gradient(180deg, rgba(0,0,0,.22), transparent 28%, transparent 72%, rgba(0,0,0,.48)),
   linear-gradient(90deg, rgba(0,0,0,.16), transparent 48%, rgba(0,0,0,.16)); }
@@ -1876,6 +2256,14 @@ onBeforeUnmount(() => {
   min-height: 42px; padding: 0 15px; border-radius: 999px; background: rgba(10,12,18,.58); color: #fff; font-size: 13px; font-weight: 800; backdrop-filter: blur(14px); }
 .play-state { width: 68px; height: 68px; min-height: 68px; justify-content: center; padding: 0; background: rgba(255,255,255,.2); }
 .play-state svg { width: 30px; height: 30px; margin-left: 3px; }
+.portrait-lock-mask { position: absolute; inset: 0; z-index: 32; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px;
+  padding: 24px; text-align: center; background: rgba(5,6,10,.94); color: #fff; backdrop-filter: blur(18px); }
+.portrait-lock-mask .rotate-icon { width: 58px; height: 58px; border-radius: 18px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.1); }
+.portrait-lock-mask svg { width: 31px; height: 31px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.portrait-lock-mask strong { font-size: 18px; line-height: 1.25; font-weight: 950; }
+.portrait-lock-mask span { max-width: 260px; color: rgba(255,255,255,.68); font-size: 12px; line-height: 1.55; font-weight: 760; }
+.portrait-lock-mask button { height: 38px; margin-top: 3px; border: 1px solid rgba(255,255,255,.76); border-radius: 999px; padding: 0 18px; background: rgba(255,255,255,.92); color: #101218; font-size: 13px; font-weight: 950; cursor: pointer; }
 .shorts-spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(255,255,255,.24); border-top-color: #fff; animation: spin .8s linear infinite; }
 .shorts-spinner.small { width: 18px; height: 18px; border-width: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1906,10 +2294,11 @@ onBeforeUnmount(() => {
 .short-lock-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .short-lock button, .shorts-empty button { height: 40px; border: 0; border-radius: 11px; padding: 0 22px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
 .short-lock .lock-ghost-btn { border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.1); color: #fff; }
-.watch-full-row { display: flex; justify-content: center; margin-bottom: 8px; padding-right: 0; pointer-events: none; }
+.watch-full-row { display: flex; justify-content: center; gap: 9px; margin-bottom: 8px; padding-right: 0; pointer-events: none; }
 .watch-full-btn { display: flex; align-items: center; justify-content: center; width: max-content; height: 31px; padding: 0 13px;
   border: 1px solid rgba(255,255,255,.72); border-radius: 999px; background: rgba(0,0,0,.16); color: #fff;
   font-size: 12px; font-weight: 900; cursor: pointer; backdrop-filter: blur(10px); text-shadow: 0 2px 8px rgba(0,0,0,.42); pointer-events: auto; }
+.landscape-full-btn { background: rgba(255,255,255,.18); }
 .short-progress { position: absolute; left: 13px; right: 13px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 10; display: grid; gap: 0;
   padding: 11px 0 4px; opacity: .56; transition: opacity .16s ease; isolation: isolate; }
 .short-progress.active, .short-progress:focus-within { opacity: .98; }
@@ -1941,7 +2330,7 @@ onBeforeUnmount(() => {
   font-size: 12px; font-weight: 850; cursor: pointer; overflow: hidden; }
 .episode-grid button.on { border-color: rgba(255,255,255,.76); background: rgba(255,255,255,.22); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
 .episode-grid button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
-.episode-grid button em { color: rgba(255,255,255,.62); font-size: 10px; line-height: 1; font-style: normal; font-weight: 900; }
+.episode-grid button em { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.62); font-size: 10px; line-height: 1; font-style: normal; font-weight: 900; }
 .episode-grid button.on em { color: rgba(255,255,255,.86); }
 .detail-body { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 13px; align-items: start; }
 .detail-body img { width: 92px; aspect-ratio: 3 / 4; border-radius: 10px; object-fit: cover; background: rgba(255,255,255,.08); }
@@ -2007,12 +2396,15 @@ onBeforeUnmount(() => {
   .short-actions { right: 8px; }
 }
 @media (orientation: landscape) and (max-height: 520px) {
-  .shorts-shell { width: min(100vw, calc(100dvh * .5625)); min-width: 220px; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 0 60px rgba(0,0,0,.76); }
+  .shorts-shell { width: min(100vw, 430px); box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 0 60px rgba(0,0,0,.76); }
+  .landscape-theater-mode .shorts-shell { width: 100vw; max-width: none; box-shadow: none; }
   .shorts-top { padding-top: calc(8px + env(safe-area-inset-top)); }
   .short-actions { bottom: calc(104px + env(safe-area-inset-bottom)); gap: 10px; }
   .short-actions.compact { bottom: calc(52px + env(safe-area-inset-bottom)); }
   .short-card.locked .short-meta { display: none; }
   .short-meta h1 { font-size: 18px; -webkit-line-clamp: 1; }
   .short-meta p { -webkit-line-clamp: 1; }
+  .theater-top { padding-top: calc(8px + env(safe-area-inset-top)); }
+  .theater-bottom { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
 }
 </style>

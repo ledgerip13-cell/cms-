@@ -10,6 +10,7 @@ export const EMPTY_SITE = {
   theme: {},
   shortsConfig: {},
   playConfig: {},
+  pwaConfig: {},
 }
 
 export const DEFAULT_THEME = {
@@ -74,6 +75,8 @@ export const DEFAULT_THEME = {
 export const DEFAULT_SHORTS_CONFIG = {
   enabled: true,
   defaultType: '短剧',
+  preferredTypes: [],
+  preferredSubtypes: [],
   sortMode: 'smart',
   feedLimit: 10,
   guestPreviewEpisodes: 0,
@@ -84,6 +87,15 @@ export const DEFAULT_SHORTS_CONFIG = {
 
 export const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
+}
+
+export const DEFAULT_PWA_CONFIG = {
+  enabled: true,
+  name: '',
+  shortName: '',
+  icon: '',
+  themeColor: '#0a0b0f',
+  backgroundColor: '#0a0b0f',
 }
 
 function normalizeTheme(theme) {
@@ -106,6 +118,30 @@ export function normalizeShortsConfig(config) {
     const n = Math.floor(Number(value))
     return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback
   }
+  const cleanList = (value, limit = 40) => {
+    const rows = Array.isArray(value) ? value : String(value || '').split(',')
+    return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit)
+  }
+  const cleanSubtypes = (value, limit = 120) => {
+    let rows = value
+    if (typeof rows === 'string') {
+      try { rows = JSON.parse(rows || '[]') } catch { rows = rows.split(',') }
+    }
+    if (!Array.isArray(rows)) rows = []
+    const seen = new Set()
+    const out = []
+    for (const item of rows) {
+      const parts = typeof item === 'string' ? item.split('::') : []
+      const type = String((typeof item === 'object' ? item?.type : parts[0]) || '').trim()
+      const name = String((typeof item === 'object' ? (item?.name || item?.subType || item?.sub) : parts[1]) || '').trim()
+      const key = `${type}::${name}`
+      if (!type || !name || seen.has(key)) continue
+      seen.add(key)
+      out.push({ type, name })
+      if (out.length >= limit) break
+    }
+    return out
+  }
   const rest = { ...(raw || {}) }
   delete rest.enableSwipeGestures
   return {
@@ -113,6 +149,8 @@ export function normalizeShortsConfig(config) {
     ...rest,
     enabled: raw?.enabled !== false,
     defaultType: String(raw?.defaultType || DEFAULT_SHORTS_CONFIG.defaultType).trim().slice(0, 24) || DEFAULT_SHORTS_CONFIG.defaultType,
+    preferredTypes: cleanList(raw?.preferredTypes),
+    preferredSubtypes: cleanSubtypes(raw?.preferredSubtypes),
     sortMode,
     feedLimit: clamp(raw?.feedLimit, DEFAULT_SHORTS_CONFIG.feedLimit, 4, 20),
     guestPreviewEpisodes: clamp(raw?.guestPreviewEpisodes, DEFAULT_SHORTS_CONFIG.guestPreviewEpisodes, 0, 20),
@@ -134,11 +172,30 @@ export function normalizePlayConfig(config) {
   }
 }
 
+export function normalizePwaConfig(config) {
+  let raw = config
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
+  }
+  const color = (value, fallback) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(value || '').trim()) ? String(value).trim() : fallback
+  return {
+    ...DEFAULT_PWA_CONFIG,
+    ...(raw || {}),
+    enabled: raw?.enabled !== false,
+    name: String(raw?.name || '').trim().slice(0, 60),
+    shortName: String(raw?.shortName || '').trim().slice(0, 24),
+    icon: String(raw?.icon || '').trim(),
+    themeColor: color(raw?.themeColor, DEFAULT_PWA_CONFIG.themeColor),
+    backgroundColor: color(raw?.backgroundColor, DEFAULT_PWA_CONFIG.backgroundColor),
+  }
+}
+
 export function normalizeSite(site) {
   const next = { ...EMPTY_SITE, ...(site || {}) }
   next.theme = normalizeTheme(next.theme)
   next.shortsConfig = normalizeShortsConfig(next.shortsConfig)
   next.playConfig = normalizePlayConfig(next.playConfig)
+  next.pwaConfig = normalizePwaConfig(next.pwaConfig)
   return next
 }
 
@@ -175,14 +232,23 @@ export function applySiteHead(site) {
   if (s.siteName) document.title = s.siteName
   upsertMeta('description', s.description)
   upsertMeta('keywords', s.keywords)
-  if (s.logo) {
+  const icon = s.pwaConfig?.icon || s.logo
+  upsertMeta('theme-color', s.pwaConfig?.themeColor || '#0a0b0f')
+  if (icon) {
     let link = document.querySelector("link[rel~='icon']")
     if (!link) {
       link = document.createElement('link')
       link.rel = 'icon'
       document.head.appendChild(link)
     }
-    link.href = s.logo
+    link.href = icon
+    let apple = document.querySelector("link[rel='apple-touch-icon']")
+    if (!apple) {
+      apple = document.createElement('link')
+      apple.rel = 'apple-touch-icon'
+      document.head.appendChild(apple)
+    }
+    apple.href = icon
   }
 }
 

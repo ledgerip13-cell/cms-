@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0b0f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <link rel="manifest" href="/api/pwa/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/api/pwa/apple-touch-icon.png" />
   <title></title>
   <script>
     (function () {
@@ -10,14 +16,18 @@
         if (site.siteName) document.title = site.siteName
         meta('description', site.description)
         meta('keywords', site.keywords)
-        if (site.logo) {
+        var pwa = site.pwaConfig || {}
+        if (pwa.themeColor) meta('theme-color', pwa.themeColor)
+        var icon = pwa.icon || site.logo
+        if (icon) {
+          // 仅动态设浏览器 tab 图标；apple-touch-icon 由静态 link 指向服务端端点，避免异步注入不可靠
           var link = document.querySelector('link[rel~="icon"]')
           if (!link) {
             link = document.createElement('link')
             link.rel = 'icon'
             document.head.appendChild(link)
           }
-          link.href = site.logo
+          link.href = icon
         }
       }
       function meta(name, content) {

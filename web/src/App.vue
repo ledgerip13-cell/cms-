@@ -114,6 +114,14 @@
   </div>
   <AuthModal />
   <ToastStack />
+  <div v-if="pwaUpdateReady" class="pwa-update">
+    <div>
+      <b>发现新版本</b>
+      <span>升级后可立即使用最新功能。</span>
+    </div>
+    <button type="button" @click="updatePwa">立即升级</button>
+    <button class="ghost" type="button" @click="pwaUpdateReady = false" aria-label="稍后再说">稍后</button>
+  </div>
 </template>
 
 <script setup>
@@ -127,6 +135,7 @@ import { openAuthDialog } from './authDialog'
 import { currentUser, refreshUser } from './userStore'
 import { levelTagStyle } from './levelTag'
 import { categoryIconSvg } from './categoryIcons'
+import { applyPwaUpdate, setupPwaUpdates } from './pwa'
 
 const router = useRouter()
 const route = useRoute()
@@ -143,6 +152,7 @@ const rankCache = new Map()
 const site = ref(readCachedSite())
 const searchInput = ref(null)
 const user = currentUser
+const pwaUpdateReady = ref(false)
 
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
@@ -194,6 +204,9 @@ async function openSearch() {
   if (!hot.value.length) await loadRank(rankCat.value)
 }
 function closeSearch() { searchOpen.value = false }
+function updatePwa() {
+  if (!applyPwaUpdate()) window.location.reload()
+}
 
 // 用 mousedown 而非延迟绑定的 click：避免与当次点击事件时序冲突导致“点一下消失”
 const vClickOutside = {
@@ -216,5 +229,6 @@ onMounted(async () => {
   try {
     types.value = await api.categories()
   } catch { types.value = [] }
+  if (site.value?.pwaConfig?.enabled !== false) setupPwaUpdates(() => { pwaUpdateReady.value = true })
 })
 </script>

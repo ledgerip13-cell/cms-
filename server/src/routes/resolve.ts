@@ -15,6 +15,16 @@ const TTL = 30 * 60 * 1000; // 30分钟（sign 实测稳定 >1h，配合前端 4
 const MAX_CACHE = 2000;
 const SHORTS_PREVIEW_CODES = new Set(["login_required", "vip_required", "level_required", "vip_or_level_required"]);
 
+function vodInShortsScope(vod: { typeName?: string; subType?: string }, config: any) {
+  const type = String(vod?.typeName || "");
+  const sub = String(vod?.subType || "");
+  const types = Array.isArray(config?.preferredTypes) ? config.preferredTypes.map((x: any) => String(x || "").trim()).filter(Boolean) : [];
+  const subtypes = Array.isArray(config?.preferredSubtypes) ? config.preferredSubtypes : [];
+  if (!types.length && !subtypes.length) return type === config.defaultType;
+  if (types.includes(type)) return true;
+  return subtypes.some((item: any) => String(item?.type || "") === type && String(item?.name || item?.subType || item?.sub || "") === sub);
+}
+
 export default async function resolveRoutes(app: FastifyInstance) {
   function setCache(cacheKey: string, result: any) {
     cache.delete(cacheKey);
@@ -73,7 +83,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
       const shortsPreviewAllowed = shortsConfig.enabled
         && !viewer
         && String(q.context || "") === "shorts"
-        && play.vod.typeName === shortsConfig.defaultType
+        && vodInShortsScope(play.vod, shortsConfig)
         && epIndex < shortsConfig.guestPreviewEpisodes
         && SHORTS_PREVIEW_CODES.has(String(watchAccess.code || ""));
       if (!watchAccess.allowed && !shortsPreviewAllowed) {

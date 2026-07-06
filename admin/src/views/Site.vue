@@ -66,8 +66,40 @@
             </el-form-item>
 
             <el-form-item label="默认分类">
-              <el-input v-model="form.shortsConfig.defaultType" placeholder="短剧" maxlength="24" style="max-width:220px" />
-              <div class="hint inline">需匹配前台已启用分类名，例如：短剧、漫剧。</div>
+              <el-select v-model="form.shortsConfig.defaultType" filterable placeholder="选择分类" style="width:240px">
+                <el-option v-for="item in categoryOptions" :key="item.name" :label="categoryLabel(item)" :value="item.name" />
+              </el-select>
+              <div class="hint inline">没有设置偏好时，刷短剧默认只取这个分类。</div>
+            </el-form-item>
+
+            <el-form-item label="偏好大类">
+              <el-select
+                v-model="form.shortsConfig.preferredTypes"
+                multiple
+                filterable
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="不选则使用默认分类"
+                style="width:360px"
+              >
+                <el-option v-for="item in categoryOptions" :key="item.name" :label="categoryLabel(item)" :value="item.name" />
+              </el-select>
+              <div class="hint inline">设置后，刷短剧漫游会在这些大类中混合推荐。</div>
+            </el-form-item>
+
+            <el-form-item label="偏好小类">
+              <el-cascader
+                v-model="preferredSubtypeKeys"
+                :options="shortsSubtypeOptions"
+                :props="subtypeCascaderProps"
+                filterable
+                clearable
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="选择大类下的小类"
+                style="width:420px"
+              />
+              <div class="hint inline">可和偏好大类一起使用；不选则不限制小类。</div>
             </el-form-item>
 
             <el-form-item label="推荐排序">
@@ -117,6 +149,49 @@
                 <el-option label="proxy TS全中转（藏源/防盗链，吃带宽）" value="proxy" />
               </el-select>
               <div class="hint inline">采集源回源模式选“跟随全局”时使用此默认值。默认 direct 不下载任何 TS；需藏源/处理加密源才逐源或全局调高。</div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <el-tab-pane label="PWA" name="pwa">
+          <el-form :model="form.pwaConfig" label-width="130px" class="site-form">
+            <el-form-item label="桌面安装">
+              <el-switch v-model="form.pwaConfig.enabled" active-text="开启" inactive-text="关闭" />
+              <div class="hint inline">开启后支持添加到手机桌面；新版本发布后前台会弹出升级提示。</div>
+            </el-form-item>
+
+            <el-form-item label="应用名称">
+              <el-input v-model="form.pwaConfig.name" placeholder="默认使用网站名称" maxlength="60" show-word-limit style="max-width:360px" />
+            </el-form-item>
+
+            <el-form-item label="短名称">
+              <el-input v-model="form.pwaConfig.shortName" placeholder="桌面图标下显示，默认取网站名称" maxlength="24" show-word-limit style="max-width:260px" />
+            </el-form-item>
+
+            <el-form-item label="桌面图标">
+              <div class="logo-row">
+                <div class="logo-preview">
+                  <img v-if="form.pwaConfig.icon || form.logo" :src="form.pwaConfig.icon || form.logo" alt="pwa icon" />
+                  <el-icon v-else :size="24" color="#c0c4cc"><Picture /></el-icon>
+                </div>
+                <div class="logo-actions">
+                  <el-upload :show-file-list="false" :before-upload="onPwaIcon" accept="image/*">
+                    <el-button :icon="Upload">上传桌面图标</el-button>
+                  </el-upload>
+                  <el-input v-model="form.pwaConfig.icon" placeholder="留空则使用网站图标，或粘贴图片 URL" style="width:360px;margin-top:8px" />
+                  <div class="hint">建议 512×512 PNG，留空时使用基础设置里的网站图标。</div>
+                </div>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="主题色">
+              <el-color-picker v-model="form.pwaConfig.themeColor" />
+              <el-input v-model="form.pwaConfig.themeColor" style="width:140px;margin-left:10px" />
+            </el-form-item>
+
+            <el-form-item label="启动背景色">
+              <el-color-picker v-model="form.pwaConfig.backgroundColor" />
+              <el-input v-model="form.pwaConfig.backgroundColor" style="width:140px;margin-left:10px" />
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -247,6 +322,7 @@
           </div>
           <p class="pv-foot">自动下一集：{{ form.shortsConfig.autoPlayNext ? '开启' : '关闭' }}</p>
           <p class="pv-foot">游客试看：{{ form.shortsConfig.guestPreviewEpisodes }} 集</p>
+          <p class="pv-foot">偏好范围：{{ shortsScopePreview }}</p>
         </div>
       </template>
 
@@ -261,6 +337,19 @@
           </div>
           <p class="pv-foot">后台仍保留全部原始线路；该策略只影响观众播放页和刷短剧选线。</p>
         </div>
+      </template>
+
+      <template v-else-if="activeSettingTab === 'pwa'">
+        <div class="sec-title" style="margin-bottom:14px">PWA 预览</div>
+        <div class="pwa-preview">
+          <div class="pwa-icon">
+            <img v-if="form.pwaConfig.icon || form.logo" :src="form.pwaConfig.icon || form.logo" alt="PWA 图标" />
+            <el-icon v-else :size="28" color="#c0c4cc"><Picture /></el-icon>
+          </div>
+          <b>{{ form.pwaConfig.shortName || form.pwaConfig.name || form.siteName || '视频CMS' }}</b>
+          <span>{{ form.pwaConfig.enabled ? '支持添加到桌面' : 'PWA 已关闭' }}</span>
+        </div>
+        <p class="pv-foot">更新提示：新版本发布后，已安装用户会看到前台升级弹窗。</p>
       </template>
 
       <template v-else>
@@ -368,13 +457,16 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { Check, Upload, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { api, DEFAULT_THEME, normalizePlayConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
+import { api, DEFAULT_THEME, normalizePlayConfig, normalizePwaConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
 
 const form = ref(readCachedSite())
 const saving = ref(false)
 const activeSettingTab = ref('basic')
 const activeThemeScope = ref('global')
 const activeFieldKey = ref('accent')
+const categoryOptions = ref([])
+const subtypeGroups = ref([])
+const subtypeCascaderProps = { multiple: true, emitPath: false }
 const shortsSortOptions = [
   { value: 'smart', label: '智能' },
   { value: 'hot', label: '热度' },
@@ -622,14 +714,85 @@ const previewVars = computed(() => {
   }
 })
 
+const shortsSubtypeOptions = computed(() => subtypeGroups.value.map(group => ({
+  value: `type:${group.type}`,
+  label: group.type,
+  disabled: !group.children.length,
+  children: group.children.map(item => ({
+    value: subtypeKey(group.type, item.name),
+    label: `${item.name} (${item.count || 0})`,
+  })),
+})))
+
+const preferredSubtypeKeys = computed({
+  get() {
+    const rows = Array.isArray(form.value.shortsConfig?.preferredSubtypes) ? form.value.shortsConfig.preferredSubtypes : []
+    return rows
+      .map(item => subtypeKey(item?.type, item?.name || item?.subType || item?.sub))
+      .filter(Boolean)
+  },
+  set(keys) {
+    form.value.shortsConfig.preferredSubtypes = (Array.isArray(keys) ? keys : [])
+      .map(parseSubtypeKey)
+      .filter(Boolean)
+  },
+})
+
+const shortsScopePreview = computed(() => {
+  const types = Array.isArray(form.value.shortsConfig?.preferredTypes) ? form.value.shortsConfig.preferredTypes.filter(Boolean) : []
+  const subtypes = Array.isArray(form.value.shortsConfig?.preferredSubtypes) ? form.value.shortsConfig.preferredSubtypes.filter(item => item?.type && item?.name) : []
+  const rows = []
+  if (types.length) rows.push(types.slice(0, 4).join('、') + (types.length > 4 ? ` 等${types.length}类` : ''))
+  if (subtypes.length) rows.push(subtypes.slice(0, 3).map(item => `${item.type}/${item.name}`).join('、') + (subtypes.length > 3 ? ` 等${subtypes.length}项` : ''))
+  return rows.length ? rows.join('；') : `默认 ${form.value.shortsConfig?.defaultType || '短剧'}`
+})
+
 function ensureTheme() { form.value.theme = normalizeTheme(form.value.theme) }
 function ensureShortsConfig() { form.value.shortsConfig = normalizeShortsConfig(form.value.shortsConfig) }
 function ensurePlayConfig() { form.value.playConfig = normalizePlayConfig(form.value.playConfig) }
+function ensurePwaConfig() { form.value.pwaConfig = normalizePwaConfig(form.value.pwaConfig) }
 async function load() {
   form.value = writeCachedSite(await api.adminSite())
   ensureTheme()
   ensureShortsConfig()
   ensurePlayConfig()
+  ensurePwaConfig()
+  await loadCategoryOptions()
+}
+
+function categoryLabel(item) {
+  return item?.count ? `${item.name} (${item.count})` : item?.name || ''
+}
+
+function subtypeKey(type, name) {
+  const t = String(type || '').trim()
+  const n = String(name || '').trim()
+  return t && n ? `${t}::${n}` : ''
+}
+
+function parseSubtypeKey(value) {
+  const [type, ...rest] = String(value || '').split('::')
+  const name = rest.join('::')
+  return type && name ? { type, name } : null
+}
+
+async function loadCategoryOptions() {
+  try {
+    const categories = await api.categories()
+    categoryOptions.value = Array.isArray(categories) ? categories.filter(item => item?.name) : []
+    const rows = await Promise.all(categoryOptions.value.map(async (item) => {
+      try {
+        const children = await api.adminSubtypes(item.name)
+        return { type: item.name, children: Array.isArray(children) ? children.filter(s => s?.name) : [] }
+      } catch {
+        return { type: item.name, children: [] }
+      }
+    }))
+    subtypeGroups.value = rows
+  } catch {
+    categoryOptions.value = []
+    subtypeGroups.value = []
+  }
 }
 
 function hasOwn(obj, key) {
@@ -772,16 +935,26 @@ function onLogo(file) {
   return false
 }
 
+function onPwaIcon(file) {
+  if (file.size > 512 * 1024) { ElMessage.warning('桌面图标建议小于 512KB'); return false }
+  const reader = new FileReader()
+  reader.onload = e => { form.value.pwaConfig.icon = e.target.result }
+  reader.readAsDataURL(file)
+  return false
+}
+
 async function save() {
   saving.value = true
   try {
     ensureTheme()
     ensureShortsConfig()
     ensurePlayConfig()
+    ensurePwaConfig()
     form.value = writeCachedSite(await api.updateSite(form.value))
     ensureTheme()
     ensureShortsConfig()
     ensurePlayConfig()
+    ensurePwaConfig()
     ElMessage.success('站点设置已保存，前端刷新后生效')
   } catch (e) { ElMessage.error(e.message || '保存失败') } finally { saving.value = false }
 }
@@ -789,7 +962,7 @@ watch(activeThemeScope, () => {
   const keys = visibleThemeGroups.value.flatMap(g => g.fields.map(f => f.key))
   if (!keys.includes(activeFieldKey.value)) activeFieldKey.value = keys[0] || 'accent'
 })
-onMounted(() => { ensureTheme(); ensureShortsConfig(); ensurePlayConfig(); load() })
+onMounted(() => { ensureTheme(); ensureShortsConfig(); ensurePlayConfig(); ensurePwaConfig(); load() })
 </script>
 
 <style scoped>
@@ -829,6 +1002,11 @@ onMounted(() => { ensureTheme(); ensureShortsConfig(); ensurePlayConfig(); load(
 .policy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 12px; border-radius: 12px;
   border: 1px solid var(--border); background: #fafbfc; }
 .policy-row b { color: var(--text-1); font-size: 14px; }
+.pwa-preview { display: grid; justify-items: center; gap: 8px; padding: 24px 12px; border-radius: 16px; background: #fafbfc; text-align: center; border: 1px solid var(--border); }
+.pwa-icon { width: 72px; height: 72px; border-radius: 18px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff; box-shadow: 0 12px 30px rgba(20,24,36,.12); }
+.pwa-icon img { width: 100%; height: 100%; object-fit: cover; }
+.pwa-preview b { color: var(--text-1); font-size: 15px; }
+.pwa-preview span { color: var(--text-3); font-size: 12px; }
 .theme-layout { max-width: 860px; }
 .theme-tabs { width: 100%; }
 .scope-note { margin: 2px 0 14px; color: var(--text-3); font-size: 12px; }
