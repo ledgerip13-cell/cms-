@@ -44,8 +44,13 @@
         v-else
         ref="feedEl"
         class="shorts-feed"
-        :class="{ frozen: layerOpen }"
+        :class="{ frozen: layerOpen, 'series-feed': feedMode === 'series' }"
         @scroll.passive="onFeedScroll"
+        @touchstart="onSeriesTouchStart"
+        @touchmove="onSeriesTouchMove"
+        @touchend="onSeriesTouchEnd"
+        @touchcancel="onSeriesTouchCancel"
+        @wheel.passive="onSeriesWheel"
       >
         <article v-for="(unit, i) in units" :key="unit.key" class="short-card" :class="{ locked: i === activeIndex && accessBlock }">
           <div class="short-media" @click="i === activeIndex && onMediaClick()">
@@ -370,6 +375,10 @@ const RESOLVE_CACHE_LIMIT = 80
 const SERIES_PLAY_SETTLE_MS = 240
 const SERIES_SCROLL_SETTLE_MS = 90
 const SERIES_SNAP_EPSILON = 0.03
+const SERIES_TOUCH_THRESHOLD = 0.18
+const SERIES_VELOCITY_THRESHOLD = 0.45
+const SERIES_SWIPE_ANIMATION_MS = 180
+const SERIES_WHEEL_COOLDOWN_MS = 420
 const WANDER_PLAY_SETTLE_MS = 120
 const SCROLL_SUPPRESS_MS = 260
 const INSTANT_SCROLL_SUPPRESS_MS = 120
@@ -473,6 +482,10 @@ let progressIdleTimer = 0
 let playSettleTimer = 0
 let seriesCommitTimer = 0
 let seriesScrollSettleTimer = 0
+let seriesSwipeFrame = 0
+let seriesTouch = null
+let seriesAnimating = false
+let seriesWheelLockedUntil = 0
 let ignoreScrollUntil = 0
 let lastSavedHistoryKey = ''
 let lastSavedHistoryAt = 0
@@ -654,6 +667,7 @@ async function showSeriesEpisode(index, options = {}) {
   const state = seriesState.value
   if (!state) return
   clearSeriesScrollSettleTimer()
+  clearSeriesSwipeAnimation()
   if (options.play !== false) {
     cancelPendingPlayback({ stop: true })
     historySaveAt = 0
@@ -735,6 +749,8 @@ async function loadFeed() {
   suppressActiveIndexWatch = true
   clearSeriesCommitTimer()
   clearSeriesScrollSettleTimer()
+  clearSeriesSwipeAnimation()
+  seriesTouch = null
   cancelPendingPlayback({ stop: true })
   try {
     if (shortsDisabled.value) {
@@ -773,6 +789,7 @@ function onFeedScroll() {
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
     if (suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
+    if (feedMode.value === 'series' && (seriesTouch || seriesAnimating)) return
     const el = feedEl.value
     if (!el) return
     const h = Math.max(1, el.clientHeight)
@@ -882,6 +899,14 @@ function clearSeriesScrollSettleTimer() {
   }
 }
 
+function clearSeriesSwipeAnimation() {
+  if (seriesSwipeFrame) {
+    window.cancelAnimationFrame(seriesSwipeFrame)
+    seriesSwipeFrame = 0
+  }
+  seriesAnimating = false
+}
+
 function cancelPendingPlayback(options = {}) {
   clearPlaySettleTimer()
   playSeq += 1
@@ -942,6 +967,124 @@ function commitSettledSeriesScroll() {
     return
   }
   if (next !== activeIndex.value) activeIndex.value = next
+}
+
+function isSeriesSwipeBlocked() {
+  return feedMode.value !== 'series' || layerOpen.value || seeking.value
+}
+
+function isInteractiveSwipeTarget(target) {
+  return Boolean(target?.closest?.('button, a, input, textarea, select, .short-progress'))
+}
+
+function clampSeriesScrollTop(value) {
+  const el = feedEl.value
+  if (!el) return 0
+  const max = Math.max(0, (units.value.length - 1) * el.clientHeight)
+  return Math.max(0, Math.min(max, value))
+}
+
+function animateSeriesScrollTo(index, options = {}) {
+  const el = feedEl.value
+  if (!el) return
+  clearSeriesSwipeAnimation()
+  clearSeriesScrollSettleTimer()
+  const h = Math.max(1, el.clientHeight)
+  const targetIndex = Math.max(0, Math.min(units.value.length - 1, index))
+  const start = el.scrollTop
+  const target = targetIndex * h
+  const delta = target - start
+  const duration = Math.max(1, Number(options.duration) || SERIES_SWIPE_ANIMATION_MS)
+  const startedAt = performance.now()
+  seriesAnimating = true
+  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + duration + INSTANT_SCROLL_SUPPRESS_MS)
+  const finish = () => {
+    el.scrollTop = target
+    seriesSwipeFrame = 0
+    seriesAnimating = false
+    if (options.commit !== false && targetIndex !== activeIndex.value) activeIndex.value = targetIndex
+  }
+  if (Math.abs(delta) < 1) {
+    finish()
+    return
+  }
+  const step = (now) => {
+    const progress = Math.min(1, (now - startedAt) / duration)
+    const eased = 1 - Math.pow(1 - progress, 3)
+    el.scrollTop = start + delta * eased
+    if (progress < 1) {
+      seriesSwipeFrame = window.requestAnimationFrame(step)
+    } else {
+      finish()
+    }
+  }
+  seriesSwipeFrame = window.requestAnimationFrame(step)
+}
+
+function onSeriesTouchStart(event) {
+  if (isSeriesSwipeBlocked()) return
+  if (isInteractiveSwipeTarget(event.target)) return
+  const touch = event.touches?.[0]
+  const el = feedEl.value
+  if (!touch || !el) return
+  clearSeriesSwipeAnimation()
+  clearSeriesScrollSettleTimer()
+  seriesTouch = {
+    startY: touch.clientY,
+    lastY: touch.clientY,
+    startScrollTop: el.scrollTop,
+    startedAt: performance.now(),
+  }
+  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + SMOOTH_SCROLL_SUPPRESS_MS)
+}
+
+function onSeriesTouchMove(event) {
+  if (!seriesTouch || feedMode.value !== 'series') return
+  const touch = event.touches?.[0]
+  const el = feedEl.value
+  if (!touch || !el) return
+  event.preventDefault()
+  seriesTouch.lastY = touch.clientY
+  const deltaY = seriesTouch.startY - touch.clientY
+  el.scrollTop = clampSeriesScrollTop(seriesTouch.startScrollTop + deltaY)
+  ignoreScrollUntil = Math.max(ignoreScrollUntil, Date.now() + INSTANT_SCROLL_SUPPRESS_MS)
+}
+
+function finishSeriesTouch(cancel = false) {
+  const touch = seriesTouch
+  const el = feedEl.value
+  seriesTouch = null
+  if (!touch || !el || feedMode.value !== 'series') return
+  const h = Math.max(1, el.clientHeight)
+  const deltaY = touch.startY - touch.lastY
+  const elapsed = Math.max(1, performance.now() - touch.startedAt)
+  const velocity = Math.abs(deltaY) / elapsed
+  let target = activeIndex.value
+  if (!cancel && (Math.abs(deltaY) > h * SERIES_TOUCH_THRESHOLD || velocity > SERIES_VELOCITY_THRESHOLD)) {
+    target += deltaY > 0 ? 1 : -1
+  } else if (!cancel) {
+    target = Math.round(el.scrollTop / h)
+  }
+  target = Math.max(0, Math.min(units.value.length - 1, target))
+  animateSeriesScrollTo(target)
+}
+
+function onSeriesTouchEnd() {
+  finishSeriesTouch(false)
+}
+
+function onSeriesTouchCancel() {
+  finishSeriesTouch(true)
+}
+
+function onSeriesWheel(event) {
+  if (isSeriesSwipeBlocked() || seriesAnimating || Date.now() < seriesWheelLockedUntil) return
+  const delta = Number(event.deltaY) || 0
+  if (Math.abs(delta) < 18) return
+  const target = Math.max(0, Math.min(units.value.length - 1, activeIndex.value + (delta > 0 ? 1 : -1)))
+  if (target === activeIndex.value) return
+  seriesWheelLockedUntil = Date.now() + SERIES_WHEEL_COOLDOWN_MS
+  animateSeriesScrollTo(target)
 }
 
 function resolveCacheKey(unit) {
@@ -1075,7 +1218,7 @@ async function attachVideo(url, kind) {
       })
       hls.loadSource(url)
       hls.attachMedia(video)
-      hls.on(Hls.Events.MANIFEST_PARSED, playNow)
+      hls.on(Hls.Events.MANIFEST_PARSED, () => playNow({ mutedFallback: true }))
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data?.fatal || !hls) return
         notifyWarning('当前线路播放失败，已暂停')
@@ -1087,7 +1230,7 @@ async function attachVideo(url, kind) {
   } else {
     video.src = url
   }
-  playNow()
+  playNow({ mutedFallback: true })
 }
 
 function markNeedsTap() {
@@ -1095,16 +1238,31 @@ function markNeedsTap() {
   paused.value = true
 }
 
-function playNow() {
+async function playNow(options = {}) {
   const video = getVideo()
   if (!video) return
-  video.muted = muted.value
-  video.play().then(() => {
+  const desiredMuted = muted.value
+  video.muted = desiredMuted
+  try {
+    await video.play()
     needsTap.value = false
     paused.value = false
-  }).catch(() => {
-    markNeedsTap()
-  })
+    return true
+  } catch {}
+  if (options.mutedFallback !== false && !desiredMuted) {
+    try {
+      video.muted = true
+      await video.play()
+      video.muted = desiredMuted
+      needsTap.value = false
+      paused.value = false
+      return true
+    } catch {
+      video.muted = desiredMuted
+    }
+  }
+  markNeedsTap()
+  return false
 }
 
 function togglePause() {
@@ -1226,7 +1384,7 @@ function jumpEpisode(index) {
   closeEpisodeSheet({ resume: isCurrent })
   if (isCurrent) return
   saveWatchHistory(null, { force: true })
-  void showSeriesEpisode(index, { settleMs: SERIES_PLAY_SETTLE_MS })
+  void showSeriesEpisode(index, { behavior: 'auto', settleMs: 0 })
 }
 
 function openEpisodeSheet() {
@@ -1378,6 +1536,8 @@ async function exitSeriesMode() {
   detailSheetOpen.value = false
   immersiveMode.value = false
   clearSeriesScrollSettleTimer()
+  clearSeriesSwipeAnimation()
+  seriesTouch = null
   if (!wanderState) {
     feedMode.value = 'wander'
     seriesState.value = null
@@ -1663,6 +1823,8 @@ onBeforeUnmount(() => {
   clearPlaySettleTimer()
   clearSeriesCommitTimer()
   clearSeriesScrollSettleTimer()
+  clearSeriesSwipeAnimation()
+  seriesTouch = null
   clearProgressIdleTimer()
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
@@ -1693,6 +1855,7 @@ onBeforeUnmount(() => {
 .shorts-title strong { display: block; font-size: 17px; font-weight: 900; letter-spacing: 0; }
 .shorts-title span { display: block; margin-top: 3px; font-size: 11px; color: rgba(255,255,255,.62); }
 .shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
+.shorts-feed.series-feed { overflow-y: hidden; scroll-snap-type: none; touch-action: none; }
 .shorts-feed.frozen { overflow: hidden; }
 .shorts-feed::-webkit-scrollbar { display: none; }
 .short-card { position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; background: #05060a; }
