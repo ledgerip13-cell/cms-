@@ -93,11 +93,6 @@
               <div class="hint inline">开启后搜索在短剧框架内完成，不跳回普通列表页。</div>
             </el-form-item>
 
-            <el-form-item label="左右滑手势">
-              <el-switch v-model="form.shortsConfig.enableSwipeGestures" active-text="开启" inactive-text="关闭" />
-              <div class="hint inline">左滑返回上一层级，右滑打开当前短剧详情面板。</div>
-            </el-form-item>
-
             <el-form-item label="沉浸按钮">
               <el-switch v-model="form.shortsConfig.showImmersiveButton" active-text="显示" inactive-text="隐藏" />
             </el-form-item>
@@ -250,7 +245,6 @@
               <span>{{ form.shortsConfig.enableSearch ? '框架内搜索' : '搜索关闭' }}</span>
             </div>
           </div>
-          <p class="pv-foot">左右滑：{{ form.shortsConfig.enableSwipeGestures ? '开启' : '关闭' }}</p>
           <p class="pv-foot">自动下一集：{{ form.shortsConfig.autoPlayNext ? '开启' : '关闭' }}</p>
           <p class="pv-foot">游客试看：{{ form.shortsConfig.guestPreviewEpisodes }} 集</p>
         </div>

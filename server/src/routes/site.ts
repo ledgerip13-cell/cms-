@@ -35,7 +35,6 @@ const DEFAULT_SHORTS_CONFIG = {
   feedLimit: 10,
   guestPreviewEpisodes: 0,
   enableSearch: true,
-  enableSwipeGestures: true,
   showImmersiveButton: true,
   autoPlayNext: true,
 };
@@ -63,16 +62,17 @@ export function normalizeShortsConfig(value: any) {
   const sortMode = ["smart", "hot", "recent", "rating"].includes(String(raw?.sortMode || ""))
     ? String(raw.sortMode)
     : DEFAULT_SHORTS_CONFIG.sortMode;
+  const rest = { ...(raw || {}) };
+  delete rest.enableSwipeGestures;
   return {
     ...DEFAULT_SHORTS_CONFIG,
-    ...(raw || {}),
+    ...rest,
     enabled: raw?.enabled !== false,
     defaultType: String(raw?.defaultType || DEFAULT_SHORTS_CONFIG.defaultType).trim().slice(0, 24) || DEFAULT_SHORTS_CONFIG.defaultType,
     sortMode,
     feedLimit: clampInt(raw?.feedLimit, DEFAULT_SHORTS_CONFIG.feedLimit, 4, 20),
     guestPreviewEpisodes: clampInt(raw?.guestPreviewEpisodes, DEFAULT_SHORTS_CONFIG.guestPreviewEpisodes, 0, 20),
     enableSearch: raw?.enableSearch !== false,
-    enableSwipeGestures: raw?.enableSwipeGestures !== false,
     showImmersiveButton: raw?.showImmersiveButton !== false,
     autoPlayNext: raw?.autoPlayNext !== false,
   };

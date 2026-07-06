@@ -46,10 +46,6 @@
         class="shorts-feed"
         :class="{ frozen: layerOpen }"
         @scroll.passive="onFeedScroll"
-        @pointerdown="onGestureStart"
-        @pointermove="onGestureMove"
-        @pointerup="onGestureEnd"
-        @pointercancel="onGestureCancel"
       >
         <article v-for="(unit, i) in units" :key="unit.key" class="short-card" :class="{ locked: i === activeIndex && accessBlock }">
           <div class="short-media" @click="i === activeIndex && onMediaClick()">
@@ -96,9 +92,8 @@
             <div
               v-if="feedMode === 'series' && i === activeIndex && playingKey === unit.key && playUrl && !accessBlock"
               class="short-progress"
+              :class="{ active: seeking || progressActive }"
               @click.stop
-              @pointerdown.stop="startSeek"
-              @touchstart.stop="startSeek"
             >
               <input
                 type="range"
@@ -108,10 +103,14 @@
                 :value="seekValue"
                 :style="{ '--progress': `${progressPercent}%` }"
                 aria-label="播放进度"
+                @pointerdown.stop="startSeek"
+                @pointermove.stop="touchProgressControls"
+                @pointerup.stop="commitSeek"
+                @pointercancel.stop="cancelSeek"
+                @touchstart.stop="startSeek"
+                @touchend.stop="commitSeek"
                 @input.stop="onSeekInput"
                 @change.stop="commitSeek"
-                @pointerup.stop="commitSeek"
-                @touchend.stop="commitSeek"
               />
               <div class="progress-time">
                 <span>{{ formatTime(currentSec) }}</span>
@@ -158,7 +157,7 @@
             </div>
             <div class="short-meta-main">
               <div class="episode-pill">{{ unit.epName }} / 共{{ unit.total }}集</div>
-              <h1>{{ unit.vod.name }}</h1>
+              <h1 class="short-title" tabindex="0" @click.stop="openDetailSheet" @keydown.enter.prevent="openDetailSheet" @keydown.space.prevent="openDetailSheet">{{ unit.vod.name }}</h1>
               <div class="meta-tags">
                 <span>{{ unit.vod.typeName || '短剧' }}</span>
                 <span v-if="unit.vod.year">{{ unit.vod.year }}</span>
@@ -177,10 +176,6 @@
           v-if="episodeSheetOpen"
           class="episode-mask"
           @click="closeEpisodeSheet({ resume: true })"
-          @pointerdown="onLayerGestureStart"
-          @pointermove="onGestureMove"
-          @pointerup="onLayerGestureEnd"
-          @pointercancel="onGestureCancel"
         >
           <div class="episode-sheet-panel" @click.stop>
             <div class="episode-sheet-head">
@@ -210,10 +205,6 @@
           v-if="detailSheetOpen"
           class="episode-mask"
           @click="detailSheetOpen = false"
-          @pointerdown="onLayerGestureStart"
-          @pointermove="onGestureMove"
-          @pointerup="onLayerGestureEnd"
-          @pointercancel="onGestureCancel"
         >
           <div class="detail-sheet-panel" @click.stop>
             <div class="episode-sheet-head">
@@ -249,12 +240,8 @@
           v-if="searchSheetOpen"
           class="episode-mask"
           @click="closeSearchSheet"
-          @pointerdown="onLayerGestureStart"
-          @pointermove="onGestureMove"
-          @pointerup="onLayerGestureEnd"
-          @pointercancel="onGestureCancel"
         >
-          <div class="search-sheet-panel" @click.stop>
+          <div class="search-sheet-panel" :class="{ 'with-history': searchHistory.length }" @click.stop>
             <div class="episode-sheet-head">
               <div>
                 <strong>短剧搜索</strong>
@@ -268,6 +255,15 @@
               <input v-model.trim="searchKw" type="search" placeholder="搜索短剧名、演员、导演" autocomplete="off" />
               <button type="submit">搜索</button>
             </form>
+            <div v-if="searchHistory.length" class="search-history">
+              <div class="search-history-head">
+                <span>最近搜索</span>
+                <button type="button" @click="clearSearchHistory">清空</button>
+              </div>
+              <div class="search-history-list">
+                <button v-for="term in searchHistory" :key="term" type="button" @click="pickSearchHistory(term)">{{ term }}</button>
+              </div>
+            </div>
             <div v-if="searchLoading" class="search-state">
               <div class="shorts-spinner small"></div>
               <span>搜索中</span>
@@ -291,10 +287,6 @@
           v-if="librarySheetOpen"
           class="episode-mask"
           @click="closeLibrarySheet"
-          @pointerdown="onLayerGestureStart"
-          @pointermove="onGestureMove"
-          @pointerup="onLayerGestureEnd"
-          @pointercancel="onGestureCancel"
         >
           <div class="library-sheet-panel" @click.stop>
             <div class="episode-sheet-head">
@@ -367,6 +359,42 @@ import { currentUser } from '../userStore'
 
 defineOptions({ name: 'Shorts' })
 
+const SHORTS_MUTED_KEY = 'vcms.shorts.muted'
+const SHORTS_SEARCH_HISTORY_KEY = 'vcms.shorts.search.history'
+const SEARCH_HISTORY_LIMIT = 6
+
+function readMutedPreference() {
+  try {
+    const raw = localStorage.getItem(SHORTS_MUTED_KEY)
+    return raw === null ? true : raw !== '0'
+  } catch {
+    return true
+  }
+}
+
+function writeMutedPreference(value) {
+  try {
+    localStorage.setItem(SHORTS_MUTED_KEY, value ? '1' : '0')
+  } catch {}
+}
+
+function readSearchHistory() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(SHORTS_SEARCH_HISTORY_KEY) || '[]')
+    return Array.isArray(rows)
+      ? rows.map(item => String(item || '').trim()).filter(Boolean).slice(0, SEARCH_HISTORY_LIMIT)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function writeSearchHistory(rows) {
+  try {
+    localStorage.setItem(SHORTS_SEARCH_HISTORY_KEY, JSON.stringify(rows.slice(0, SEARCH_HISTORY_LIMIT)))
+  } catch {}
+}
+
 const router = useRouter()
 const route = useRoute()
 const feedEl = ref(null)
@@ -382,7 +410,7 @@ const playingKey = ref('')
 const accessBlock = ref(null)
 const needsTap = ref(false)
 const paused = ref(false)
-const muted = ref(true)
+const muted = ref(readMutedPreference())
 const videoLandscape = ref(false)
 const videoReady = ref(false)
 const episodeSheetOpen = ref(false)
@@ -394,6 +422,7 @@ const site = ref(readCachedSite())
 const searchKw = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
+const searchHistory = ref(readSearchHistory())
 const libraryTab = ref('history')
 const libraryLoading = ref(false)
 const libraryError = ref('')
@@ -403,6 +432,7 @@ const currentSec = ref(0)
 const durationSec = ref(0)
 const seekValue = ref(0)
 const seeking = ref(false)
+const progressActive = ref(false)
 const seriesState = ref(null)
 const followState = reactive({})
 
@@ -420,11 +450,10 @@ let wanderState = null
 let feedSeed = 0
 let previousViewportContent = null
 let previousBodyOverflow = ''
-let gestureState = null
-let suppressMediaClick = false
 let suppressActiveIndexWatch = false
 let resumeAfterEpisodeSheet = false
 let playingUnit = null
+let progressIdleTimer = 0
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
@@ -772,6 +801,8 @@ function stopPlayback() {
   durationSec.value = 0
   seekValue.value = 0
   seeking.value = false
+  progressActive.value = false
+  clearProgressIdleTimer()
 }
 
 function getVideo() {
@@ -882,24 +913,14 @@ function markNeedsTap() {
   paused.value = true
 }
 
-function playNow(options = {}) {
+function playNow() {
   const video = getVideo()
   if (!video) return
-  const allowMutedRetry = typeof options !== 'object' || options?.allowMutedRetry !== false
   video.muted = muted.value
   video.play().then(() => {
     needsTap.value = false
     paused.value = false
   }).catch(() => {
-    if (allowMutedRetry && !video.muted) {
-      muted.value = true
-      video.muted = true
-      video.play().then(() => {
-        needsTap.value = false
-        paused.value = false
-      }).catch(markNeedsTap)
-      return
-    }
     markNeedsTap()
   })
 }
@@ -925,12 +946,12 @@ function pauseCurrentVideo() {
 }
 
 function onMediaClick() {
-  if (suppressMediaClick) return
   togglePause()
 }
 
 function toggleMute() {
   muted.value = !muted.value
+  writeMutedPreference(muted.value)
   const video = getVideo()
   if (video) video.muted = muted.value
 }
@@ -1030,14 +1051,40 @@ function closeEpisodeSheet(options = {}) {
   const shouldResume = Boolean(options?.resume && resumeAfterEpisodeSheet && !accessBlock.value)
   episodeSheetOpen.value = false
   resumeAfterEpisodeSheet = false
-  if (shouldResume) void nextTick(() => playNow({ allowMutedRetry: true }))
+  if (shouldResume) void nextTick(() => playNow())
+}
+
+function clearProgressIdleTimer() {
+  if (progressIdleTimer) {
+    window.clearTimeout(progressIdleTimer)
+    progressIdleTimer = 0
+  }
+}
+
+function showProgressControls() {
+  clearProgressIdleTimer()
+  progressActive.value = true
+}
+
+function scheduleProgressIdle() {
+  clearProgressIdleTimer()
+  progressIdleTimer = window.setTimeout(() => {
+    if (!seeking.value) progressActive.value = false
+  }, 1200)
+}
+
+function touchProgressControls() {
+  showProgressControls()
+  if (!seeking.value) scheduleProgressIdle()
 }
 
 function startSeek() {
+  showProgressControls()
   seeking.value = true
 }
 
 function onSeekInput(event) {
+  showProgressControls()
   seeking.value = true
   const next = Math.max(0, Math.min(1000, Number(event?.target?.value) || 0))
   seekValue.value = next
@@ -1052,9 +1099,15 @@ function commitSeek(event) {
     const nextTime = (durationSec.value * next) / 1000
     video.currentTime = nextTime
     currentSec.value = Math.floor(nextTime)
-    if (!paused.value) playNow({ allowMutedRetry: true })
+    if (!paused.value) playNow()
   }
   seeking.value = false
+  scheduleProgressIdle()
+}
+
+function cancelSeek() {
+  seeking.value = false
+  scheduleProgressIdle()
 }
 
 function formatTime(value) {
@@ -1199,14 +1252,35 @@ function closeSearchSheet() {
   searchSheetOpen.value = false
 }
 
+function rememberShortSearch(value) {
+  const term = String(value || '').trim()
+  if (!term) return
+  const next = [term, ...searchHistory.value.filter(item => item !== term)].slice(0, SEARCH_HISTORY_LIMIT)
+  searchHistory.value = next
+  writeSearchHistory(next)
+}
+
+function pickSearchHistory(term) {
+  searchKw.value = term
+  void runShortSearch()
+}
+
+function clearSearchHistory() {
+  searchHistory.value = []
+  writeSearchHistory([])
+}
+
 async function runShortSearch() {
   if (searchLoading.value) return
+  const kw = String(searchKw.value || '').trim()
+  searchKw.value = kw
+  if (kw) rememberShortSearch(kw)
   searchLoading.value = true
   try {
     const result = await api.vods({
-      kw: searchKw.value || undefined,
+      kw: kw || undefined,
       type: shortsConfig.value.defaultType,
-      sort: searchKw.value ? 'hot' : shortsConfig.value.sortMode === 'recent' ? 'recent' : 'hot',
+      sort: kw ? 'hot' : shortsConfig.value.sortMode === 'recent' ? 'recent' : 'hot',
       size: 18,
     })
     searchResults.value = Array.isArray(result?.list) ? result.list : []
@@ -1322,94 +1396,6 @@ function openDetailSheet() {
   detailSheetOpen.value = true
 }
 
-function isInteractiveGestureTarget(target) {
-  return Boolean(target?.closest?.('button,input,a,textarea,select,.episode-sheet-panel,.detail-sheet-panel,.search-sheet-panel,.library-sheet-panel,.short-progress'))
-}
-
-function isLayerInteractiveGestureTarget(target) {
-  return Boolean(target?.closest?.('button,input,a,textarea,select,.short-progress'))
-}
-
-function onGestureStart(event) {
-  if (!shortsConfig.value.enableSwipeGestures || isInteractiveGestureTarget(event.target)) return
-  if (event.pointerType === 'mouse' && event.button !== 0) return
-  gestureState = { x: event.clientX, y: event.clientY, at: Date.now() }
-  suppressMediaClick = false
-}
-
-function onLayerGestureStart(event) {
-  if (!shortsConfig.value.enableSwipeGestures || isLayerInteractiveGestureTarget(event.target)) return
-  if (event.pointerType === 'mouse' && event.button !== 0) return
-  gestureState = { x: event.clientX, y: event.clientY, at: Date.now(), layer: true }
-  suppressMediaClick = true
-}
-
-function onGestureMove(event) {
-  if (!gestureState) return
-  const dx = event.clientX - gestureState.x
-  const dy = event.clientY - gestureState.y
-  if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.15) suppressMediaClick = true
-}
-
-function onGestureEnd(event) {
-  if (!gestureState) return
-  const dx = event.clientX - gestureState.x
-  const dy = event.clientY - gestureState.y
-  const elapsed = Date.now() - gestureState.at
-  gestureState = null
-  if (Math.abs(dx) >= 72 && Math.abs(dx) > Math.abs(dy) * 1.35 && elapsed < 800) {
-    suppressMediaClick = true
-    if (dx < 0) returnPreviousShortsLayer()
-    else openDetailSheet()
-    window.setTimeout(() => { suppressMediaClick = false }, 80)
-    return
-  }
-  window.setTimeout(() => { suppressMediaClick = false }, 0)
-}
-
-function onLayerGestureEnd(event) {
-  if (!gestureState) return
-  const dx = event.clientX - gestureState.x
-  const dy = event.clientY - gestureState.y
-  const elapsed = Date.now() - gestureState.at
-  gestureState = null
-  if (dx < -72 && Math.abs(dx) > Math.abs(dy) * 1.35 && elapsed < 800) {
-    returnPreviousShortsLayer()
-  }
-  window.setTimeout(() => { suppressMediaClick = false }, 80)
-}
-
-function onGestureCancel() {
-  gestureState = null
-  window.setTimeout(() => { suppressMediaClick = false }, 0)
-}
-
-function returnPreviousShortsLayer() {
-  if (detailSheetOpen.value) {
-    detailSheetOpen.value = false
-    return
-  }
-  if (searchSheetOpen.value) {
-    closeSearchSheet()
-    return
-  }
-  if (librarySheetOpen.value) {
-    closeLibrarySheet()
-    return
-  }
-  if (episodeSheetOpen.value) {
-    closeEpisodeSheet({ resume: true })
-    return
-  }
-  if (immersiveMode.value) {
-    immersiveMode.value = false
-    return
-  }
-  if (feedMode.value === 'series') {
-    void exitSeriesMode()
-  }
-}
-
 async function refreshSiteConfig() {
   try {
     site.value = writeCachedSite(await api.site())
@@ -1485,6 +1471,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
+  clearProgressIdleTimer()
   episodeSheetOpen.value = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
@@ -1549,6 +1536,8 @@ onBeforeUnmount(() => {
 .episode-pill { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.13);
   color: rgba(255,255,255,.88); font-size: 12px; line-height: 1; font-weight: 850; backdrop-filter: blur(10px); }
 .short-meta h1 { margin-top: 10px; font-size: 21px; line-height: 1.22; font-weight: 950; letter-spacing: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.short-title { cursor: pointer; outline: none; }
+.short-title:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .meta-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .meta-tags span { display: inline-flex; align-items: center; justify-content: center; height: 23px; padding: 0 8px; border-radius: 7px;
   background: rgba(255,255,255,.1); color: rgba(255,255,255,.8); font-size: 11px; line-height: 1; font-weight: 750; backdrop-filter: blur(8px); }
@@ -1566,14 +1555,20 @@ onBeforeUnmount(() => {
 .watch-full-btn { display: flex; align-items: center; justify-content: center; width: max-content; height: 31px; padding: 0 13px;
   border: 1px solid rgba(255,255,255,.72); border-radius: 999px; background: rgba(0,0,0,.16); color: #fff;
   font-size: 12px; font-weight: 900; cursor: pointer; backdrop-filter: blur(10px); text-shadow: 0 2px 8px rgba(0,0,0,.42); pointer-events: auto; }
-.short-progress { position: absolute; left: 13px; right: 13px; bottom: calc(5px + env(safe-area-inset-bottom)); z-index: 10; display: grid; gap: 3px; }
-.short-progress input { width: 100%; height: 16px; margin: 0; appearance: none; -webkit-appearance: none; cursor: pointer; background: transparent; touch-action: none; }
+.short-progress { position: absolute; left: 13px; right: 13px; bottom: calc(2px + env(safe-area-inset-bottom)); z-index: 10; display: grid; gap: 0;
+  padding: 11px 0 4px; opacity: .56; transition: opacity .16s ease; isolation: isolate; }
+.short-progress.active, .short-progress:focus-within { opacity: .98; }
+.short-progress::before { content: ""; position: absolute; left: -13px; right: -13px; top: -24px; bottom: calc(-8px - env(safe-area-inset-bottom)); z-index: -1;
+  pointer-events: none; background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.18) 38%, rgba(0,0,0,.52)); }
+.short-progress input { width: 100%; height: 40px; margin: -17px 0 -14px; appearance: none; -webkit-appearance: none; cursor: pointer; background: transparent; touch-action: none; }
 .short-progress input::-webkit-slider-runnable-track { height: 3px; border-radius: 999px; background: linear-gradient(90deg, #fff var(--progress), rgba(255,255,255,.28) var(--progress)); }
 .short-progress input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 13px; height: 13px; margin-top: -5px; border-radius: 50%; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
 .short-progress input::-moz-range-track { height: 3px; border-radius: 999px; background: rgba(255,255,255,.28); }
 .short-progress input::-moz-range-progress { height: 3px; border-radius: 999px; background: #fff; }
 .short-progress input::-moz-range-thumb { width: 13px; height: 13px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
-.progress-time { display: flex; justify-content: space-between; color: rgba(255,255,255,.72); font-size: 10px; line-height: 1; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.progress-time { display: flex; justify-content: space-between; color: rgba(255,255,255,.76); font-size: 10px; line-height: 1; font-weight: 800;
+  opacity: 0; transform: translateY(2px); transition: opacity .16s ease, transform .16s ease; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.short-progress.active .progress-time, .short-progress:focus-within .progress-time { opacity: 1; transform: translateY(0); }
 .episode-mask { position: absolute; inset: 0; z-index: 24; display: flex; align-items: flex-end; background: linear-gradient(180deg, transparent 30%, rgba(0,0,0,.54)); }
 .episode-sheet-panel { width: 100%; max-height: min(62dvh, 520px); padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid rgba(255,255,255,.12);
   border-radius: 18px 18px 0 0; background: rgba(12,14,20,.84); box-shadow: 0 -28px 70px rgba(0,0,0,.46); backdrop-filter: blur(22px); }
@@ -1599,7 +1594,15 @@ onBeforeUnmount(() => {
 .short-search-box { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 9px; margin-bottom: 12px; }
 .short-search-box input { height: 40px; min-width: 0; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.08); color: #fff; padding: 0 12px; outline: none; }
 .short-search-box input::placeholder { color: rgba(255,255,255,.42); }
+.search-history { margin: -2px 0 12px; display: grid; gap: 8px; }
+.search-history-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: rgba(255,255,255,.58); font-size: 11px; font-weight: 850; }
+.search-history-head button { border: 0; background: transparent; color: rgba(255,255,255,.48); font-size: 11px; font-weight: 850; cursor: pointer; }
+.search-history-list { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.search-history-list::-webkit-scrollbar { display: none; }
+.search-history-list button { flex: 0 0 auto; max-width: 132px; height: 28px; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 0 10px;
+  background: rgba(255,255,255,.07); color: rgba(255,255,255,.78); font-size: 12px; font-weight: 820; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .short-search-results { display: grid; gap: 8px; max-height: calc(min(76dvh, 620px) - 132px); overflow: auto; scrollbar-width: none; }
+.search-sheet-panel.with-history .short-search-results { max-height: calc(min(76dvh, 620px) - 182px); }
 .short-search-results::-webkit-scrollbar { display: none; }
 .short-search-results button { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; align-items: center; min-width: 0; min-height: 62px; padding: 7px;
   border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.06); color: #fff; text-align: left; cursor: pointer; }

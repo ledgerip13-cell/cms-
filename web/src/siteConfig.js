@@ -78,7 +78,6 @@ export const DEFAULT_SHORTS_CONFIG = {
   feedLimit: 10,
   guestPreviewEpisodes: 0,
   enableSearch: true,
-  enableSwipeGestures: true,
   showImmersiveButton: true,
   autoPlayNext: true,
 }
@@ -107,16 +106,17 @@ export function normalizeShortsConfig(config) {
     const n = Math.floor(Number(value))
     return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback
   }
+  const rest = { ...(raw || {}) }
+  delete rest.enableSwipeGestures
   return {
     ...DEFAULT_SHORTS_CONFIG,
-    ...(raw || {}),
+    ...rest,
     enabled: raw?.enabled !== false,
     defaultType: String(raw?.defaultType || DEFAULT_SHORTS_CONFIG.defaultType).trim().slice(0, 24) || DEFAULT_SHORTS_CONFIG.defaultType,
     sortMode,
     feedLimit: clamp(raw?.feedLimit, DEFAULT_SHORTS_CONFIG.feedLimit, 4, 20),
     guestPreviewEpisodes: clamp(raw?.guestPreviewEpisodes, DEFAULT_SHORTS_CONFIG.guestPreviewEpisodes, 0, 20),
     enableSearch: raw?.enableSearch !== false,
-    enableSwipeGestures: raw?.enableSwipeGestures !== false,
     showImmersiveButton: raw?.showImmersiveButton !== false,
     autoPlayNext: raw?.autoPlayNext !== false,
   }
