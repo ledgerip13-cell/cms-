@@ -843,26 +843,20 @@ onBeforeUnmount(() => {
     grid-column: 2;
     align-self: start;
   }
-  .credit-line {
-    grid-column: 1 / -1;
-    margin-top: 2px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255,255,255,.045);
-    color: var(--muted2);
-    -webkit-line-clamp: 2;
-  }
+  .credit-line,
   .people-line,
-  .pv-intro,
   .still-section,
   .pv-actions {
-    grid-column: 1 / -1;
+    grid-column: 2;
+  }
+  .credit-line {
+    color: var(--muted2);
+    -webkit-line-clamp: 2;
   }
   .people-line {
     align-items: flex-start;
     gap: 7px;
     margin: 2px 0 0;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255,255,255,.045);
   }
   .people-label {
     flex: 0 0 auto;
@@ -871,11 +865,12 @@ onBeforeUnmount(() => {
     align-items: center;
   }
   .person-chip {
-    max-width: calc(50vw - 34px);
+    max-width: 100%;
     min-height: 26px;
   }
   .pv-intro {
-    margin-top: 0;
+    grid-column: 1 / -1;
+    margin-top: 2px;
     padding-top: 10px;
     border-top: 1px solid rgba(255,255,255,.045);
   }
@@ -884,14 +879,12 @@ onBeforeUnmount(() => {
     line-height: 1.68;
   }
   .pv-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 4px;
+    gap: 8px;
+    margin-top: 6px;
   }
   .pv-actions .mini-btn {
-    width: 100%;
-    height: 40px;
+    height: 34px;
+    padding: 0 12px;
     border-radius: 11px;
   }
   .now-playing {
