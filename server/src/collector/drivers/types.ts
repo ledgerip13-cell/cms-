@@ -21,4 +21,12 @@ export interface CollectorDriver {
   fetchClasses(apiUrl: string, timeoutMs?: number): Promise<ClassItem[]>;
   /** 按关键词搜索（不分页，取首页命中） */
   searchByKeyword(apiUrl: string, keyword: string, timeoutMs?: number): Promise<RawVod[]>;
+  /** 可选：按剧集拉字幕（如 iCloud 系源）。返回字幕轨列表，url 可为源站原始链（前端/SW 再解析） */
+  fetchSubtitle?(apiUrl: string, headNo: string, dramaNumber: number, timeoutMs?: number): Promise<SubtitleTrack[]>;
+}
+
+export interface SubtitleTrack {
+  lang: string;   // srclang, 如 zh/en
+  label: string;  // 展示名，如 中文/English
+  url: string;    // 字幕文件地址（可能是 iCloud 分享链，由前端 SW 解析）
 }

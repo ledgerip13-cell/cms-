@@ -6,8 +6,10 @@
 //  - iCloud filmUrl 内含 '#'（.../iclouddrive/GUID#文件名.m3u8），与 play 字符串分隔符冲突，
 //    故对每集 url 做 encodeURIComponent 编码，前端 icloudm3u8 分流时 decodeURIComponent 还原。
 //  - flag 固定 "icloudm3u8"，供前端识别走客户端解析而非服务器 /api/resolve。
-import type { CollectorDriver } from "./types.js";
+import type { CollectorDriver, SubtitleTrack } from "./types.js";
 import type { RawVod, ListResult, ClassItem } from "../maccms.js";
+
+const LANG_LABEL: Record<string, string> = { zh: "中文", "zh-cn": "简体", "zh-tw": "繁体", en: "English", ja: "日本語", ko: "한국어" };
 
 export const ICLOUD_FLAG = "icloudm3u8";
 
@@ -183,10 +185,29 @@ async function searchByKeyword(_apiUrl: string, _keyword: string, _timeoutMs = 1
   return [];
 }
 
+// 拉字幕：GET getSubtitleV2?headNo&dramaNumber → [{srclang,kind,src}]；src 为 iCloud .vtt 分享链（交前端 SW 解析）
+async function fetchSubtitle(apiUrl: string, headNo: string, dramaNumber: number, timeoutMs = 10000): Promise<SubtitleTrack[]> {
+  const origin = baseOf(apiUrl);
+  const j = await req(
+    origin,
+    `/api/sysvideosubtitle/getSubtitleV2?headNo=${encodeURIComponent(headNo)}&dramaNumber=${dramaNumber}`,
+    { method: "GET" },
+    timeoutMs
+  );
+  const arr: any[] = Array.isArray(j?.data) ? j.data : [];
+  return arr
+    .filter((s) => s && s.src)
+    .map((s) => {
+      const lang = String(s.srclang || "zh").toLowerCase();
+      return { lang, label: LANG_LABEL[lang] || lang, url: String(s.src) };
+    });
+}
+
 export const nbflixDriver: CollectorDriver = {
   name: "nbflix",
   fetchList,
   fetchDetail,
   fetchClasses,
   searchByKeyword,
+  fetchSubtitle,
 };

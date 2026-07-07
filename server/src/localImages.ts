@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
+import { isICloudShareUrl, resolveICloudDirect } from "./icloud.js";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -110,14 +111,22 @@ export async function downloadImageToLocal(
     Referer: target.origin,
     Accept: "image/avif,image/webp,image/*,*/*;q=0.8",
   };
-  const res = await fetch(raw, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  // iCloud 分享链（封面）：分享链本身返回网页 HTML，须先 CloudKit 解析成真实直链再抓（采集时一次性，安全）
+  // 本地文件名仍以原始 raw 派生，保证跨次采集稳定去重（直链带过期签名不适合做名字）
+  let fetchUrl = raw;
+  if (isICloudShareUrl(raw)) {
+    try { fetchUrl = await resolveICloudDirect(raw, timeoutMs); }
+    catch { return ""; } // 解析失败则不本地化，回退保留远程链交前端 SW 客户端解析
+  }
+  const res = await fetch(fetchUrl, { headers, signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) return "";
   const contentType = res.headers.get("content-type") || "";
   const declaredSize = Number(res.headers.get("content-length") || 0);
   if (declaredSize > MAX_IMAGE_BYTES) return "";
   const looksLikeImage = contentType.toLowerCase().startsWith("image/")
     || contentType.toLowerCase().includes("octet-stream")
-    || Boolean(extFromUrl(target));
+    || Boolean(extFromUrl(target))
+    || isICloudShareUrl(raw); // iCloud 直链路径无扩展名，靠 content-type 判定
   if (!looksLikeImage) return "";
 
   const buf = Buffer.from(await res.arrayBuffer());

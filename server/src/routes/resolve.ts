@@ -6,6 +6,7 @@ import { getGlobalProxyMode, resolveEffectiveMode, refererOf } from "../playProx
 import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
 import { createHlsCleanTask } from "../collector/taskRunner.js";
+import { getDriver } from "../collector/drivers/index.js";
 import { normalizeShortsConfig } from "./site.js";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
@@ -71,7 +72,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (playId && vodId) {
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true, source: { select: { enabled: true, proxyMode: true } } },
+        include: { vod: true, source: { select: { enabled: true, proxyMode: true, apiUrl: true, driver: true } } },
       });
       if (!play || !play.source.enabled || play.vodId !== vodId || play.vod.status !== "online") {
         return { ok: false, error: "播放资源不存在或不可用" };
@@ -98,7 +99,13 @@ export default async function resolveRoutes(app: FastifyInstance) {
       if (play.flag === "icloudm3u8") {
         let icloudUrl = url;
         try { icloudUrl = decodeURIComponent(url); } catch {}
-        return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client" };
+        // 按需拉字幕（dramaNumber 实测 = epIndex+1），字幕文件同为 iCloud 链，交前端 SW 解析
+        let subtitles: Array<{ lang: string; label: string; url: string }> = [];
+        try {
+          const drv = getDriver((play.source as any).driver);
+          if (drv.fetchSubtitle) subtitles = await drv.fetchSubtitle((play.source as any).apiUrl, String(play.sourceVodId), epIndex + 1);
+        } catch { /* 字幕失败不阻断播放 */ }
+        return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client", subtitles };
       }
       const fresh = q.fresh === "1" || q.fresh === "true"; // 前端撞 403 时传 fresh=1 强制重解拿新 sign
       const result = await resolveWithCache(`play:${playId}:${epIndex}`, url, fresh);
