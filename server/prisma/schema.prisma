@@ -14,6 +14,7 @@ model Source {
   name         String // 源名称，如 "如意资源网"
   apiUrl       String // 采集API地址（主用/兼容旧数据，实际请求优先用 apiUrls）
   apiUrls      String          @default("[]") // JSON数组：多个API入口(主备)，按序尝试failover，空则回退用apiUrl
+  driver       String          @default("maccms") // 采集驱动: maccms(苹果CMS标准) / nbflix(iCloud系源站)
   activeApiUrl String          @default("") // 最近一次采集实际生效的url(运维可见性)
   playDomains  String          @default("[]") // JSON数组：该源已入库播放地址域名统计，供后台快速展示/替换
   flag         String          @default("") // from标识，如 rym3u8（可为空，自动探测）

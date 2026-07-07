@@ -1,7 +1,8 @@
 // 采集编排：拉取某个源 → 详情解析 → 分类映射 → 去重合并入库
 import { prisma } from "../db.js";
 import { refreshSourcePlayDomains } from "../playDomains.js";
-import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, resolveApiUrls, withFailover, type RawVod } from "./maccms.js";
+import { parsePlay, resolveApiUrls, withFailover, type RawVod, type ListResult } from "./maccms.js";
+import { getDriver } from "./drivers/index.js";
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
 import { downloadImageToLocal, isLocalImageUrl } from "../localImages.js";
@@ -151,11 +152,11 @@ export async function backfillSubTypes(
     include: { plays: { include: { source: true }, take: 1 } },
   });
   // 按源分组：sourceId -> [{vodId, sourceVodId}]
-  const bySource = new Map<number, { apiUrl: string; name: string; items: { vodId: number; svid: string }[] }>();
+  const bySource = new Map<number, { apiUrl: string; driver: string; name: string; items: { vodId: number; svid: string }[] }>();
   for (const v of vods) {
     const p = v.plays[0];
     if (!p) continue;
-    if (!bySource.has(p.sourceId)) bySource.set(p.sourceId, { apiUrl: p.source.apiUrl, name: p.source.name, items: [] });
+    if (!bySource.has(p.sourceId)) bySource.set(p.sourceId, { apiUrl: p.source.apiUrl, driver: p.source.driver, name: p.source.name, items: [] });
     bySource.get(p.sourceId)!.items.push({ vodId: v.id, svid: p.sourceVodId });
   }
   let filled = 0, done = 0;
@@ -164,7 +165,7 @@ export async function backfillSubTypes(
     for (let i = 0; i < grp.items.length; i += 20) {
       const batch = grp.items.slice(i, i + 20);
       try {
-        const details = await fetchDetail(grp.apiUrl, batch.map((b) => b.svid));
+        const details = await getDriver(grp.driver).fetchDetail(grp.apiUrl, batch.map((b) => b.svid));
         const byId = new Map(details.map((d) => [String(d.vod_id), d]));
         for (const b of batch) {
           const raw = byId.get(b.svid);
@@ -197,7 +198,7 @@ export async function refreshVod(vodId: number) {
   let contentChanged = false;
   for (const p of vod.plays) {
     try {
-      const details = await fetchDetail(p.source.apiUrl, [p.sourceVodId]);
+      const details = await getDriver(p.source.driver).fetchDetail(p.source.apiUrl, [p.sourceVodId]);
       const raw = details.find((d) => String(d.vod_id) === p.sourceVodId) || details[0];
       if (!raw) { results.push({ source: p.source.name, ok: false, msg: "源无返回" }); continue; }
       if (raw.vod_remarks) latestRemarks = cleanText(raw.vod_remarks);
@@ -414,7 +415,7 @@ export async function previewByKeyword(keyword: string): Promise<{ ok: boolean; 
 
   for (const src of sources) {
     try {
-      const list = await searchByKeyword(src.apiUrl, kw);
+      const list = await getDriver(src.driver).searchByKeyword(src.apiUrl, kw);
       const hitList = list.filter((v) => (v.vod_name || "").includes(kw));
       // 按fingerprint汇总该源内的命中
       const bySrcFp = new Map<string, { hits: number; vodIds: (string|number)[] }>();
@@ -473,7 +474,7 @@ export async function collectKeywordCandidates(
     try {
       for (let j = 0; j < ids.length; j += 20) {
         const batch = ids.slice(j, j + 20);
-        const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
+        const details = filterByYear(await getDriver(src.driver).fetchDetail(src.apiUrl, batch), opts);
         for (const raw of details) {
           try {
             const r = await upsertVod(sourceId, raw, catCache, opts);
@@ -514,7 +515,7 @@ export async function syncByKeyword(
     const src = sources[i];
     let sAdded = 0, sUpdated = 0, sHits = 0;
     try {
-      const list = await searchByKeyword(src.apiUrl, kw);
+      const list = await getDriver(src.driver).searchByKeyword(src.apiUrl, kw);
       // 名字包含关键词才算命中（部分源 wd 参数只是模糊提示，需二次过滤）
       const hitList = list.filter((v) => (v.vod_name || "").includes(kw));
       sHits = hitList.length;
@@ -523,7 +524,7 @@ export async function syncByKeyword(
         const ids = hitList.map((v) => v.vod_id);
         for (let j = 0; j < ids.length; j += 20) {
           const batch = ids.slice(j, j + 20);
-          const details = filterByYear(await fetchDetail(src.apiUrl, batch), opts);
+          const details = filterByYear(await getDriver(src.driver).fetchDetail(src.apiUrl, batch), opts);
           for (const raw of details) {
             try {
               const r = await upsertVod(src.id, raw, catCache, opts);
@@ -548,6 +549,7 @@ export async function syncByKeyword(
 export async function syncSource(sourceId: number, opts: SyncOptions = {}, onProgress?: ProgressCb) {
   const source = await prisma.source.findUnique({ where: { id: sourceId } });
   if (!source) throw new Error("source not found");
+  const driver = getDriver(source.driver);
   const mode = opts.mode || "incr";
   const hours = mode === "incr" ? opts.hours || source.syncHours || 24 : 0;
   const maxPages = opts.maxPages || (mode === "incr" ? 30 : 100);
@@ -573,7 +575,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
 
   async function fetchDetailBatch(batch: (string | number)[], tid: string | null | undefined, pg: number) {
     try {
-      return filterByYear(await withApi((u) => fetchDetail(u, batch)), opts);
+      return filterByYear(await withApi((u) => driver.fetchDetail(u, batch)), opts);
     } catch (e: any) {
       message += ` [detail err t${tid} p${pg}: ${e?.message}]`;
       return [];
@@ -611,7 +613,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
       typeIds = rawTypeIds.length ? rawTypeIds : [null];
       if (rawTypeIds.length) {
         try {
-          const classes = await withApi((u) => fetchClasses(u));
+          const classes = await withApi((u) => driver.fetchClasses(u));
           const expanded: string[] = [];
           const expandedMessages: string[] = [];
           for (const rawTypeId of rawTypeIds) {
@@ -633,11 +635,11 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
     const norm = (t: string | null | undefined) => (t == null ? undefined : t);
 
     // 预算每类页数（跨子类累加）供进度/断点定位
-    const firstResults: Awaited<ReturnType<typeof fetchList>>[] = [];
+    const firstResults: ListResult[] = [];
     const perTypePages: number[] = [];
     let pageTotal = 0;
     for (const tid of typeIds) {
-      const first = await withApi((u) => fetchList(u, 1, hours, 15000, norm(tid)));
+      const first = await withApi((u) => driver.fetchList(u, 1, hours, 15000, norm(tid)));
       firstResults.push(first);
       const pages = Math.min(first.pagecount, maxPages);
       perTypePages.push(pages);
@@ -658,7 +660,7 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
       const from = i === startTi ? startPg : 1;
       for (let pg = from; pg <= pages; pg++) {
         pageNow++;
-        const listRes = pg === 1 ? firstResults[i] : await withApi((u) => fetchList(u, pg, hours, 15000, norm(tid)));
+        const listRes = pg === 1 ? firstResults[i] : await withApi((u) => driver.fetchList(u, pg, hours, 15000, norm(tid)));
         const ids = listRes.list.map((v) => v.vod_id);
         if (!ids.length) break;
         const details = await fetchDetailBatches(ids, tid, pg);
