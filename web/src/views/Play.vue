@@ -15,8 +15,12 @@
         <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError">
           <track v-for="(s,i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i===0" />
         </video>
-        <div v-if="!accessBlock && mode==='hls' && subtitles.length && subtitleShowing" class="sub-sync">
-          <span class="ss-tag">字幕</span>
+        <button v-if="!accessBlock && mode==='hls' && subtitles.length" class="sub-toggle"
+          :class="{on: subSyncOpen}" title="字幕设置" @click.stop="subSyncOpen = !subSyncOpen">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 15h3M7 11h6M14 15h3" stroke-linecap="round"/></svg>
+        </button>
+        <div v-if="!accessBlock && mode==='hls' && subtitles.length && subSyncOpen" class="sub-sync" @click.stop>
+          <span class="ss-tag">字幕同步</span>
           <button class="ss-btn" @click="adjustSubtitle(-0.5)" title="字幕提前0.5秒">−0.5s</button>
           <span class="ss-val">{{ (subtitleOffset>0?'+':'') + subtitleOffset.toFixed(1) }}s</span>
           <button class="ss-btn" @click="adjustSubtitle(0.5)" title="字幕延后0.5秒">+0.5s</button>
@@ -211,7 +215,7 @@ const videoEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
-const subtitles = ref([]); const subtitleOffset = ref(0); const subtitleShowing = ref(false)
+const subtitles = ref([]); const subtitleOffset = ref(0); const subSyncOpen = ref(false)
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
@@ -406,15 +410,8 @@ function playDirectUrl(url, kind = '') {
 }
 
 // 字幕轨（iCloud 系源经 resolve 返回同源代理地址）
-// 同步条只在用户真正通过原生 video 控件的 CC 开关打开字幕时才显示，而不是只要有字幕轨就一直悬浮在播放器上
-function watchSubtitleTrackState() {
-  const video = videoEl.value; if (!video) return
-  const tracks = video.textTracks; if (!tracks) return
-  const sync = () => { subtitleShowing.value = Array.from(tracks).some(t => t.mode === 'showing') }
-  tracks.addEventListener('change', sync)
-  sync()
-}
-
+// 同步面板是完全独立的设置面板：默认收起，只有用户点击字幕设置图标才展开，
+// 与原生 video 的 CC 开关状态完全解耦（浏览器原生菜单无法嵌入自定义 UI，只能做独立入口）
 function applySubtitleOffset() {
   const video = videoEl.value; if (!video) return
   const tracks = video.textTracks || []
@@ -450,8 +447,7 @@ async function playResolvedEp(i, opts = {}) {
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
-      subtitleShowing.value = false
-      if (subtitles.value.length) nextTick(() => watchSubtitleTrackState())
+      subSyncOpen.value = false
       // iCloud 链必须等 Service Worker 接管页面后才能发起请求（否则请求会绕过 SW 直接打到 iCloud 拿到网页而非视频）；
       // 首次访问时 App.vue 的 SW 注册与本组件加载存在竞态，实测确认过这个时序问题。
       if (isIcloudUrl(r.url)) await waitForServiceWorker()
@@ -614,7 +610,8 @@ function onPlayerKeydown(e) {
   }
 }
 
-onMounted(() => { loadVod(route.params.id); window.addEventListener('keydown', onPlayerKeydown) })
+function onGlobalClickCloseSubSync() { subSyncOpen.value = false }
+onMounted(() => { loadVod(route.params.id); window.addEventListener('keydown', onPlayerKeydown); document.addEventListener('click', onGlobalClickCloseSubSync) })
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
@@ -624,6 +621,7 @@ onBeforeUnmount(() => {
   if (hls) hls.destroy()
   clearPlayWatchdog()
   window.removeEventListener('keydown', onPlayerKeydown)
+  document.removeEventListener('click', onGlobalClickCloseSubSync)
 })
 </script>
 
@@ -633,7 +631,9 @@ onBeforeUnmount(() => {
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
 .video { width: 100%; height: 100%; background: #000; object-fit: contain; }
-.sub-sync { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.62); backdrop-filter: blur(8px); border-radius: 18px; font-size: 12px; z-index: 6; pointer-events: auto; }
+.sub-toggle { position: absolute; left: 12px; top: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.28); background: rgba(0,0,0,.5); color: rgba(255,255,255,.85); border-radius: 8px; cursor: pointer; z-index: 6; }
+.sub-toggle:hover, .sub-toggle.on { background: rgba(0,0,0,.72); color: #fff; }
+.sub-sync { position: absolute; left: 12px; top: 50px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.72); backdrop-filter: blur(8px); border-radius: 18px; font-size: 12px; z-index: 6; pointer-events: auto; }
 .sub-sync .ss-tag { color: rgba(255,255,255,.72); margin-right: 2px; }
 .sub-sync .ss-val { color: #fff; min-width: 40px; text-align: center; }
 .sub-sync .ss-btn, .sub-sync .ss-reset { border: 1px solid rgba(255,255,255,.28); background: transparent; color: #fff; border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
