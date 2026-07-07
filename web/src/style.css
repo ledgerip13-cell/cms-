@@ -122,7 +122,7 @@ button { font-family: inherit; }
 .search > svg { flex-shrink: 0; }
 .search:hover { border-color: rgba(255,255,255,.2); }
 .search:focus-within { border-color: var(--search-focus-border); background: rgba(20,22,29,.7); box-shadow: 0 0 0 4px var(--search-focus-shadow); }
-.search input { background: none; border: none; outline: none; color: var(--text); width: 100%; font-size: 15px; height: 34px; }
+.search input { background: none; border: none; outline: none; color: var(--text); width: 100%; font-size: 16px; height: 34px; }
 .search input::placeholder { color: #8a92a0; }
 .search .clear { cursor: pointer; font-size: 20px; line-height: 1; color: var(--muted); padding: 0 2px; }
 .search-btn { flex-shrink: 0; background: var(--search-button-bg); color: var(--search-button-text); border: none; cursor: pointer;
@@ -615,7 +615,7 @@ button { font-family: inherit; }
   .search input {
     min-width: 0;
     height: 40px;
-    font-size: 15px;
+    font-size: 16px;
   }
   .search input:placeholder-shown {
     text-overflow: ellipsis;

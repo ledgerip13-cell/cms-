@@ -2772,7 +2772,7 @@ onBeforeUnmount(() => {
 .detail-actions button, .short-search-box button { height: 38px; min-width: 0; border: 0; border-radius: 11px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
 .detail-actions button:nth-child(2) { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.12); }
 .short-search-box { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 9px; margin-bottom: 12px; }
-.short-search-box input { height: 40px; min-width: 0; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.08); color: #fff; padding: 0 12px; outline: none; }
+.short-search-box input { height: 40px; min-width: 0; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.08); color: #fff; padding: 0 12px; outline: none; font-size: 16px; }
 .short-search-box input::placeholder { color: rgba(255,255,255,.42); }
 .search-history { margin: -2px 0 12px; display: grid; gap: 8px; }
 .search-history-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: rgba(255,255,255,.58); font-size: 11px; font-weight: 850; }

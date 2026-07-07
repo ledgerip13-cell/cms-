@@ -431,7 +431,7 @@ onBeforeUnmount(unlockPageScroll)
 .auth-form { display: flex; flex-direction: column; gap: 13px; }
 .auth-form label span { display: block; margin-bottom: 7px; color: var(--muted2); font-size: 12px; font-weight: 700; }
 .auth-form input { width: 100%; height: 43px; border-radius: 10px; border: 1px solid rgba(255,255,255,.09);
-  background: rgba(9,10,15,.58); color: var(--text); outline: none; padding: 0 13px; font-size: 14px;
+  background: rgba(9,10,15,.58); color: var(--text); outline: none; padding: 0 13px; font-size: 16px;
   backdrop-filter: blur(10px); }
 .auth-form input:focus { border-color: var(--search-focus-border); box-shadow: 0 0 0 3px var(--search-focus-shadow); }
 .auth-form label.invalid input { border-color: rgba(255,94,108,.72); }
