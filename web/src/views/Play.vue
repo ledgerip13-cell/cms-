@@ -381,6 +381,19 @@ function playHls(url) {
   }
 }
 
+function isIcloudUrl(u) { return typeof u === 'string' && u.includes('/iclouddrive/') }
+async function waitForServiceWorker(timeoutMs = 4000) {
+  if (!('serviceWorker' in navigator)) return
+  try {
+    // 已有 controller 控制当前页面则无需等待
+    if (navigator.serviceWorker.controller) return
+    await Promise.race([
+      navigator.serviceWorker.register('/sw.js').then(() => navigator.serviceWorker.ready),
+      new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ])
+  } catch { /* SW 不可用时不阻塞播放，交给后续错误处理分支 */ }
+}
+
 function playDirectUrl(url, kind = '') {
   if (hls) { hls.destroy(); hls = null }
   if (kind === 'm3u8' || isDirectM3u8(url)) { playHls(url); return }
@@ -428,6 +441,9 @@ async function playResolvedEp(i, opts = {}) {
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
+      // iCloud 链必须等 Service Worker 接管页面后才能发起请求（否则请求会绕过 SW 直接打到 iCloud 拿到网页而非视频）；
+      // 首次访问时 App.vue 的 SW 注册与本组件加载存在竞态，实测确认过这个时序问题。
+      if (isIcloudUrl(r.url)) await waitForServiceWorker()
       playDirectUrl(r.url, r.kind)
       saveWatchHistory(i, pendingSeekSec || 0)
       return
@@ -606,7 +622,7 @@ onBeforeUnmount(() => {
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
 .video { width: 100%; height: 100%; background: #000; object-fit: contain; }
-.sub-sync { position: absolute; right: 12px; bottom: 56px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.62); backdrop-filter: blur(8px); border-radius: 18px; font-size: 12px; z-index: 6; }
+.sub-sync { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.62); backdrop-filter: blur(8px); border-radius: 18px; font-size: 12px; z-index: 6; pointer-events: auto; }
 .sub-sync .ss-tag { color: rgba(255,255,255,.72); margin-right: 2px; }
 .sub-sync .ss-val { color: #fff; min-width: 40px; text-align: center; }
 .sub-sync .ss-btn, .sub-sync .ss-reset { border: 1px solid rgba(255,255,255,.28); background: transparent; color: #fff; border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
