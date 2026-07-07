@@ -77,6 +77,8 @@
               @loadeddata="onVideoResize"
               @resize="onVideoResize"
               @canplay="onVideoCanPlay"
+              @pause="onVideoPauseEvent"
+              @playing="onVideoPlayingEvent"
               @timeupdate="onVideoTimeUpdate"
               @ended="nextItem"
               @error="onVideoError"
@@ -541,6 +543,8 @@ let feedSeed = 0
 let previousViewportContent = null
 let previousBodyOverflow = ''
 let suppressActiveIndexWatch = false
+let portraitLockIndex = -1
+let pendingUnmute = false
 let resumeAfterEpisodeSheet = false
 let playingUnit = null
 let progressIdleTimer = 0
@@ -991,11 +995,12 @@ async function loadFeed() {
 }
 
 function onFeedScroll() {
-  if (landscapeTheaterMode.value) return
+  if (landscapeTheaterMode.value || portraitLockVisible.value) return
   if (scrollRaf) return
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
     if (suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
+    if (landscapeTheaterMode.value || portraitLockVisible.value) return
     const el = feedEl.value
     if (!el) return
     const h = Math.max(1, el.clientHeight)
@@ -1259,6 +1264,7 @@ function scheduleSeriesScrollSettle() {
 
 function commitSettledSeriesScroll() {
   if (feedMode.value !== 'series' || suppressActiveIndexWatch || Date.now() < ignoreScrollUntil) return
+  if (landscapeTheaterMode.value || portraitLockVisible.value) return
   const el = feedEl.value
   if (!el) return
   const h = Math.max(1, el.clientHeight)
@@ -1589,6 +1595,7 @@ async function playNow(options = {}) {
   video.muted = desiredMuted
   try {
     await video.play()
+    if (!desiredMuted) pendingUnmute = false
     needsTap.value = false
     paused.value = false
     return true
@@ -1597,7 +1604,9 @@ async function playNow(options = {}) {
     try {
       video.muted = true
       await video.play()
-      video.muted = desiredMuted
+      // 静音 autoplay 成功后不能立即 unmute：无手势 unmute 会被 Chrome/Safari 策略性暂停。
+      // 保持静音继续播，等下一次用户手势（togglePause）再恢复声音。
+      pendingUnmute = true
       needsTap.value = false
       paused.value = false
       return true
@@ -1612,6 +1621,11 @@ async function playNow(options = {}) {
 function togglePause() {
   const video = getVideo()
   if (!video || resolving.value || accessBlock.value) return
+  // 用户手势入口：补回因 autoplay 策略暂时降级的声音
+  if (pendingUnmute) {
+    pendingUnmute = false
+    if (!muted.value) video.muted = false
+  }
   if (video.paused) playNow()
   else {
     video.pause()
@@ -1693,6 +1707,19 @@ function onVideoMeta(event) {
 
 function onVideoResize(event) {
   updateVideoFit(event?.target || getVideo())
+}
+
+function onVideoPauseEvent(event) {
+  // 同步浏览器策略性暂停到 UI，避免“看似卡死但无播放按钮”
+  const video = event?.target
+  if (!video || resolving.value || seeking.value) return
+  if (video.ended) return
+  paused.value = true
+}
+
+function onVideoPlayingEvent() {
+  paused.value = false
+  needsTap.value = false
 }
 
 function onVideoCanPlay(event) {
@@ -2387,12 +2414,26 @@ watch(user, (next) => {
   }
 })
 
-watch(portraitLockVisible, (locked, wasLocked) => {
+watch(portraitLockVisible, async (locked, wasLocked) => {
   if (locked) {
+    // 锁定时记住当前集数，防旋转期间 scroll 事件污染 activeIndex
+    portraitLockIndex = activeIndex.value
     pauseCurrentVideo()
     return
   }
-  if (wasLocked && playingKey.value && playUrl.value && !layerOpen.value && !accessBlock.value) {
+  if (!wasLocked) return
+  // 解锁：强制恢复锁定前的集数与滚动位置
+  if (portraitLockIndex >= 0 && portraitLockIndex < units.value.length) {
+    if (activeIndex.value !== portraitLockIndex) {
+      suppressActiveIndexWatch = true
+      activeIndex.value = portraitLockIndex
+      await nextTick()
+      suppressActiveIndexWatch = false
+    }
+    scrollToIndex(portraitLockIndex, 'auto', { suppress: true })
+  }
+  portraitLockIndex = -1
+  if (playingKey.value && playUrl.value && !layerOpen.value && !accessBlock.value) {
     void nextTick(() => playNow({ mutedFallback: true }))
   }
 })
