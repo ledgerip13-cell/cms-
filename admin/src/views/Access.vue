@@ -79,15 +79,19 @@
         <div class="card">
           <div class="toolbar">
             <div class="sec-title">操作审计</div>
-            <el-button @click="load">刷新</el-button>
+            <el-button :loading="logsLoading" @click="loadAuditLogs">刷新</el-button>
           </div>
-          <el-table :data="logs" height="560">
+          <el-table :data="logs" height="560" v-loading="logsLoading">
             <el-table-column prop="createdAt" label="时间" width="190" />
             <el-table-column prop="actor" label="操作人" width="120" />
             <el-table-column prop="action" label="动作" width="160" />
             <el-table-column prop="target" label="对象" width="180" />
             <el-table-column prop="detail" label="详情" show-overflow-tooltip />
           </el-table>
+          <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+            :total="logsTotal" :current-page="auditPage" :page-size="auditSize" :page-sizes="[50,100,200]"
+            @current-change="p=>{auditPage=p;loadAuditLogs()}"
+            @size-change="s=>{auditSize=s;auditPage=1;loadAuditLogs()}" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -130,6 +134,10 @@ const tab = ref('invites')
 const invites = ref([])
 const levels = ref([])
 const logs = ref([])
+const logsTotal = ref(0)
+const auditPage = ref(1)
+const auditSize = ref(100)
+const logsLoading = ref(false)
 const inviteForm = ref({ count: 10, maxUses: 1, remark: '' })
 const levelDialogOpen = ref(false)
 const levelDialogMode = ref('create')
@@ -147,10 +155,21 @@ function defaultLevelForm() {
 }
 
 async function load() {
-  const [is, lv, ls] = await Promise.all([api.invites(), api.vipLevels(), api.auditLogs(100)])
+  const [is, lv, audit] = await Promise.all([api.invites(), api.vipLevels(), api.auditLogs({ page: auditPage.value, size: auditSize.value })])
   invites.value = is
   levels.value = lv
-  logs.value = ls
+  logs.value = audit.list || []
+  logsTotal.value = audit.total || 0
+}
+async function loadAuditLogs() {
+  logsLoading.value = true
+  try {
+    const audit = await api.auditLogs({ page: auditPage.value, size: auditSize.value })
+    logs.value = audit.list || []
+    logsTotal.value = audit.total || 0
+  } finally {
+    logsLoading.value = false
+  }
 }
 async function createInvites() {
   await api.createInvites(inviteForm.value)
@@ -238,6 +257,7 @@ onMounted(load)
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .toolbar { gap: 12px; }
 .toolbar .sec-title { white-space: nowrap; }
+.pager { margin-top: 16px; justify-content: flex-end; }
 .level-name { display: flex; flex-direction: column; gap: 4px; }
 .color-field { display: flex; align-items: center; gap: 12px; }
 .level-preview-tag { border-radius: 7px; font-weight: 800; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }

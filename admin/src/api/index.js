@@ -53,6 +53,7 @@ export const api = {
   patchVod: (id, d) => http.patch(`/vods/${id}`, d),
   editVod: (id, d) => http.put(`/vods/${id}`, d),
   refreshVod: (id) => http.post(`/vods/${id}/refresh`),
+  resolvePlay: (d) => http.get('/resolve', { params: d }),
   types: () => http.get('/types'),
   adminSubtypes: (type) => http.get('/admin/subtypes', { params: { type } }),
   stats: () => http.get('/stats'),
@@ -66,6 +67,7 @@ export const api = {
   delCategory: (id) => http.delete(`/admin/categories/${id}`),
   typemaps: (sourceId) => http.get('/admin/typemaps', { params: { sourceId } }),
   setTypemap: (id, categoryId) => http.post(`/admin/typemaps/${id}`, { categoryId }),
+  batchTypemaps: (ids, categoryId) => http.post('/admin/typemaps/batch', { ids, categoryId }),
   delTypemap: (id) => http.delete(`/admin/typemaps/${id}`),
   unmappedCount: () => http.get('/admin/typemaps/unmapped'),
   // tasks
@@ -113,7 +115,10 @@ export const api = {
   createVipLevel: (d) => http.post('/admin/vip-levels', d),
   updateVipLevel: (id, d) => http.patch(`/admin/vip-levels/${id}`, d),
   deleteVipLevel: (id) => http.delete(`/admin/vip-levels/${id}`),
-  auditLogs: (limit = 100) => http.get('/admin/audit-logs', { params: { limit } }),
+  auditLogs: (params = { page: 1, size: 100 }) => {
+    const p = typeof params === 'number' ? { limit: params } : params
+    return http.get('/admin/audit-logs', { params: p })
+  },
   // site
   site: () => http.get('/site'),
   adminSite: () => http.get('/admin/site'),

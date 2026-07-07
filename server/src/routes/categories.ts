@@ -164,6 +164,29 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
     });
 
+    // 批量设置源type → 统一分类
+    admin.post("/api/admin/typemaps/batch", async (req, reply) => {
+      const b = (req.body as any) || {};
+      const ids: number[] = Array.isArray(b.ids)
+        ? [...new Set<number>(b.ids.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0))]
+        : [];
+      if (!ids.length) return reply.code(400).send({ error: "未选择任何源分类" });
+      const categoryId = b.categoryId == null || b.categoryId === "" ? null : Number(b.categoryId);
+      if (categoryId !== null) {
+        const category = await prisma.category.findUnique({ where: { id: categoryId } });
+        if (!category) return reply.code(400).send({ error: "目标分类不存在" });
+      }
+      const rows = await prisma.sourceTypeMap.findMany({ where: { id: { in: ids } }, select: { id: true } });
+      if (!rows.length) return reply.code(404).send({ error: "源分类不存在" });
+      await prisma.sourceTypeMap.updateMany({
+        where: { id: { in: rows.map((row) => row.id) } },
+        data: { categoryId },
+      });
+      let backfilled = 0;
+      for (const row of rows) backfilled += await backfillMapToVods(row.id);
+      return { ok: true, updated: rows.length, backfilled };
+    });
+
     // 设置某个源type → 统一分类
     admin.post("/api/admin/typemaps/:id", async (req) => {
       const id = Number((req.params as any).id);

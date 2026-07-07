@@ -93,15 +93,17 @@
 
         <div class="asset-title">最近追剧</div>
         <div v-if="detail.follows?.length" class="vod-list">
-          <div v-for="x in detail.follows" :key="x.id" class="vod-line">{{ x.vod?.name }}<span>{{ x.vod?.typeName }}</span></div>
+          <button v-for="x in detail.follows" :key="x.id" type="button" class="vod-line" @click="goVod(x.vod)">
+            <span class="vod-name">{{ x.vod?.name }}</span><span>{{ x.vod?.typeName }}</span>
+          </button>
         </div>
         <el-empty v-else description="暂无追剧" :image-size="72" />
 
         <div class="asset-title">最近观看</div>
         <div v-if="detail.histories?.length" class="vod-list">
-          <div v-for="x in detail.histories" :key="x.id" class="vod-line">
-            {{ x.vod?.name }}<span>{{ x.epName || `第 ${x.epIndex + 1} 集` }}</span>
-          </div>
+          <button v-for="x in detail.histories" :key="x.id" type="button" class="vod-line" @click="goVod(x.vod)">
+            <span class="vod-name">{{ x.vod?.name }}</span><span>{{ x.epName || `第 ${x.epIndex + 1} 集` }}</span>
+          </button>
         </div>
         <el-empty v-else description="暂无观看历史" :image-size="72" />
       </template>
@@ -154,9 +156,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { levelTagStyle } from '../levelTag'
 
+const router = useRouter()
 const q = ref({ kw: '', status: '', page: 1, pageSize: 20 })
 const rows = ref([])
 const total = ref(0)
@@ -220,6 +224,12 @@ function openPwd(row) {
   pwd.value = { id: row.id, username: row.username, password: '' }
   pwdOpen.value = true
 }
+function goVod(vod) {
+  const kw = String(vod?.name || '').trim()
+  if (!kw) return
+  detailOpen.value = false
+  router.push({ path: '/vods', query: { kw } })
+}
 
 async function saveEdit() {
   saving.value = true
@@ -282,7 +292,10 @@ onMounted(() => { load(); loadTypes(); loadLevels() })
 .asset-title { font-size: 14px; font-weight: 700; color: var(--text-1); margin: 20px 0 10px; }
 .vod-list { display: flex; flex-direction: column; gap: 8px; }
 .vod-line { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 12px; color: var(--text-1); }
+  border-radius: 8px; padding: 10px 12px; color: var(--text-1); background: #fff; cursor: pointer; text-align: left; }
+.vod-line:hover { border-color: var(--el-color-primary-light-5); color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.vod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vod-line span { color: var(--text-3); font-size: 12px; flex-shrink: 0; }
+.vod-line .vod-name { color: inherit; font-size: 13px; flex: 1 1 auto; min-width: 0; }
 @media (max-width: 900px) { .toolbar { align-items: flex-start; flex-direction: column; } }
 </style>

@@ -122,15 +122,20 @@
           <el-tag :type="row.status==='online'?'success':'info'" size="small">{{ row.status==='online'?'在线':'下架' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="292" fixed="right" align="center">
+      <el-table-column label="操作" width="132" fixed="right" align="center">
         <template #default="{ row }">
           <div class="vod-actions">
             <el-button size="small" @click.stop="openDetail(row)">线路</el-button>
-            <el-button size="small" type="primary" plain @click.stop="openEdit(row)">编辑</el-button>
-            <el-button size="small" :loading="row._refreshing" @click.stop="refreshOne(row)">采集更新</el-button>
-            <el-button size="small" :type="row.status==='online'?'warning':'success'" @click.stop="toggleStatus(row)">
-              {{ row.status==='online'?'下架':'上架' }}
-            </el-button>
+            <el-dropdown trigger="click" @command="cmd => handleVodCommand(cmd, row)" @click.stop>
+              <el-button size="small" plain :icon="MoreFilled" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
+                  <el-dropdown-item command="refresh" :disabled="row._refreshing">采集更新</el-dropdown-item>
+                  <el-dropdown-item command="status" divided>{{ row.status==='online'?'下架':'上架' }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </template>
       </el-table-column>
@@ -220,9 +225,16 @@
             <span style="color:#9aa4b2">{{ l.epCount }} 集</span>
           </template>
           <div class="eps">
-            <el-tag v-for="(e,i) in l.episodes.slice(0,60)" :key="i" size="small" effect="plain" class="ep"
-              @click="copy(e.url)" :title="e.url">{{ e.name }}</el-tag>
-            <span v-if="l.episodes.length>60" style="color:#9aa4b2">…共{{ l.episodes.length }}集</span>
+            <span v-for="(e,i) in visibleEpisodes(l)" :key="i" class="ep-wrap">
+              <el-tag size="small" effect="plain" class="ep" @click="copy(e.url)" :title="e.url">{{ e.name }}</el-tag>
+              <el-button size="small" link type="primary" @click="diagnoseEp(l, e, i)">诊断</el-button>
+            </span>
+            <div v-if="l.episodes.length>60" class="episode-more">
+              <span>共 {{ l.episodes.length }} 集</span>
+              <el-button size="small" link type="primary" @click="toggleEpisodes(l)">
+                {{ isEpisodesExpanded(l) ? '收起' : '展开全部' }}
+              </el-button>
+            </div>
           </div>
         </el-collapse-item>
       </el-collapse>
@@ -351,15 +363,57 @@
       </el-table-column>
     </el-table>
   </el-dialog>
+
+  <el-dialog v-model="diagOpen" title="线路播放诊断" width="720">
+    <div v-if="diag.line" class="diag-head">
+      <div>
+        <b>{{ cur.name }}</b>
+        <span>{{ diag.line.sourceName }} · {{ diag.ep?.name || `第 ${diag.epIndex + 1} 集` }}</span>
+      </div>
+      <el-tag :type="diagStatusType">{{ diagStatusText }}</el-tag>
+    </div>
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="线路ID">{{ diag.line?.id || '—' }}</el-descriptions-item>
+      <el-descriptions-item label="线路标识">{{ diag.line?.flag || '—' }}</el-descriptions-item>
+      <el-descriptions-item label="原始地址">
+        <div class="diag-url">
+          <code>{{ diag.ep?.url || '—' }}</code>
+          <el-button size="small" link type="primary" @click="copy(diag.ep?.url)">复制</el-button>
+        </div>
+      </el-descriptions-item>
+      <el-descriptions-item label="解析规则">{{ diag.result?.rule || '—' }}</el-descriptions-item>
+      <el-descriptions-item label="播放类型">{{ diag.result?.kind || (isM3u8(diag.result?.url) ? 'm3u8' : '—') }}</el-descriptions-item>
+      <el-descriptions-item label="解析地址">
+        <div class="diag-url">
+          <code>{{ diag.result?.url || diag.result?.error || '—' }}</code>
+          <el-button v-if="diag.result?.url" size="small" link type="primary" @click="copy(diag.result.url)">复制</el-button>
+          <el-button v-if="diag.result?.url" size="small" link type="primary" @click="openUrl(diag.result.url)">打开</el-button>
+        </div>
+      </el-descriptions-item>
+      <el-descriptions-item v-if="diag.result?.fallbackUrl" label="回退地址">
+        <div class="diag-url">
+          <code>{{ diag.result.fallbackUrl }}</code>
+          <el-button size="small" link type="primary" @click="copy(diag.result.fallbackUrl)">复制</el-button>
+        </div>
+      </el-descriptions-item>
+      <el-descriptions-item label="探测结果">{{ diag.probe || '未探测' }}</el-descriptions-item>
+    </el-descriptions>
+    <template #footer>
+      <el-button @click="diagOpen=false">关闭</el-button>
+      <el-button :loading="diag.loading" @click="diagnoseEp(diag.line, diag.ep, diag.epIndex, true)">重新解析</el-button>
+      <el-button v-if="diag.result?.url" type="primary" @click="openUrl(diag.result.url)">新窗口打开</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus } from '@element-plus/icons-vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
+import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus, MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 const router = useRouter()
+const route = useRoute()
 
 const kwDlg = ref(false); const kwInput = ref('')
 const kwSearching = ref(false); const kwSearched = ref(false)
@@ -423,9 +477,12 @@ async function metaBatch() {
     ElMessage.success(r.message || '已提交')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '提交失败') }
 }
-const q = reactive({ page: 1, size: 20, kw: '', type: '', status: '', sourceId: '', year: '' })
+const q = reactive({ page: 1, size: 20, kw: String(route.query.kw || ''), type: '', status: '', sourceId: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
+const expandedEpisodes = ref({})
+const diagOpen = ref(false)
+const diag = ref({ loading: false, line: null, ep: null, epIndex: 0, result: null, probe: '' })
 const cleanupDlg = ref(false)
 const cleanupLoading = ref(false)
 const cleanupPreview = ref(null)
@@ -540,6 +597,7 @@ async function executeCleanup() {
 async function openDetail(row) {
   cur.value = await api.vod(row.id)
   active.value = cur.value.lines?.length ? [cur.value.lines[0].id] : []
+  expandedEpisodes.value = {}
   drawer.value = true
 }
 async function togglePin(row) {
@@ -590,7 +648,65 @@ async function toggleStatus(row) {
   const s = row.status === 'online' ? 'offline' : 'online'
   await api.patchVod(row.id, { status: s }); ElMessage.success('已更新'); load()
 }
+function handleVodCommand(cmd, row) {
+  if (cmd === 'edit') return openEdit(row)
+  if (cmd === 'refresh') return refreshOne(row)
+  if (cmd === 'status') return toggleStatus(row)
+}
+function isEpisodesExpanded(line) {
+  return Boolean(expandedEpisodes.value[line.id])
+}
+function visibleEpisodes(line) {
+  const episodes = Array.isArray(line?.episodes) ? line.episodes : []
+  return isEpisodesExpanded(line) ? episodes : episodes.slice(0, 60)
+}
+function toggleEpisodes(line) {
+  expandedEpisodes.value = { ...expandedEpisodes.value, [line.id]: !isEpisodesExpanded(line) }
+}
 function copy(url) { navigator.clipboard?.writeText(url); ElMessage.success('已复制播放地址') }
+function isM3u8(url) {
+  return /\.m3u8(\?|$)/i.test(String(url || ''))
+}
+const diagStatusText = computed(() => {
+  if (diag.value.loading) return '解析中'
+  if (diag.value.result?.ok && diag.value.result?.url) return '可解析'
+  if (diag.value.result?.error) return '解析失败'
+  return '待诊断'
+})
+const diagStatusType = computed(() => {
+  if (diag.value.loading) return 'warning'
+  if (diag.value.result?.ok && diag.value.result?.url) return 'success'
+  if (diag.value.result?.error) return 'danger'
+  return 'info'
+})
+async function probeResolvedUrl(url) {
+  if (!url) return '无解析地址'
+  if (!/^https?:\/\//i.test(url) && !String(url).startsWith('/')) return '非 HTTP 地址，跳过探测'
+  try {
+    const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-2047' } })
+    const type = res.headers.get('content-type') || 'unknown'
+    return `${res.status} ${res.statusText || ''} · ${type}`.trim()
+  } catch (e) {
+    return `探测失败：${e?.message || e}`
+  }
+}
+async function diagnoseEp(line, ep, visibleIndex, fresh = false) {
+  const episodes = Array.isArray(line?.episodes) ? line.episodes : []
+  const epIndex = episodes.indexOf(ep) >= 0 ? episodes.indexOf(ep) : Number(visibleIndex) || 0
+  diagOpen.value = true
+  diag.value = { loading: true, line, ep, epIndex, result: null, probe: '' }
+  try {
+    const result = await api.resolvePlay({ vodId: cur.value.id, playId: line.id, epIndex, ...(fresh ? { fresh: 1 } : {}) })
+    const probe = result?.url ? await probeResolvedUrl(result.url) : ''
+    diag.value = { loading: false, line, ep, epIndex, result, probe }
+  } catch (e) {
+    diag.value = { loading: false, line, ep, epIndex, result: { ok: false, error: e.message || '解析失败' }, probe: '' }
+  }
+}
+function openUrl(url) {
+  if (!url) return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 async function matchOne(id) {
   ElMessage.info('正在匹配豆瓣…')
   try {
@@ -652,6 +768,13 @@ onMounted(async () => {
   load()
   loadMeta()
 })
+watch(() => route.query.kw, (kw) => {
+  const next = String(kw || '')
+  if (next === q.kw) return
+  q.kw = next
+  q.page = 1
+  load()
+})
 </script>
 
 <style scoped>
@@ -670,18 +793,18 @@ onMounted(async () => {
 .blurb { margin-top:14px; font-size:13px; color:#667085; line-height:1.7; max-height:120px; overflow:auto; }
 .eps { display: flex; flex-wrap: wrap; gap: 6px; }
 .ep { cursor: pointer; }
+.ep-wrap { display: inline-flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid #edf0f5; }
 .db-score { color: #ff9900; font-weight: 700; }
-.vod-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-  width: 100%;
-}
+.vod-actions { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; width: 100%; }
 .vod-actions .el-button + .el-button {
   margin-left: 0;
 }
+.episode-more { width: 100%; display: flex; align-items: center; gap: 8px; color:#9aa4b2; font-size: 12px; margin-top: 2px; }
+.diag-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.diag-head b, .diag-head span { display: block; }
+.diag-head span { color: #98a1b0; font-size: 12px; margin-top: 4px; }
+.diag-url { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.diag-url code { flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: normal; color: #4a5568; }
 .batch-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; margin-bottom: 12px;

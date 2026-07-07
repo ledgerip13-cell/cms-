@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-row :gutter="16">
-      <el-col :span="6" v-for="c in cards" :key="c.k">
+      <el-col :xs="24" :sm="12" :md="6" v-for="c in cards" :key="c.k" class="stat-col">
         <div class="card stat">
           <div class="stat-icon" :style="{background:c.bg}"><el-icon><component :is="c.icon" /></el-icon></div>
           <div>
@@ -42,6 +42,7 @@ onMounted(async () => {
 
 <style scoped>
 .stat { display: flex; align-items: center; gap: 16px; }
+.stat-col { margin-bottom: 16px; }
 .stat-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center;
   justify-content: center; color: #fff; font-size: 24px; }
 .stat-num { font-size: 28px; font-weight: 700; color: #1f2430; }
@@ -49,4 +50,8 @@ onMounted(async () => {
 .sec-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 .types { display: flex; flex-wrap: wrap; gap: 10px; }
 .type-tag b { color: #409eff; margin-left: 4px; }
+@media (max-width: 640px) {
+  .stat { min-height: 88px; }
+  .stat-num { font-size: 24px; }
+}
 </style>

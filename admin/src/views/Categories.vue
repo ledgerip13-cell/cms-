@@ -54,7 +54,20 @@
             <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </div>
-        <el-table :data="maps" size="small" max-height="560">
+        <div class="batch-map-bar">
+          <el-button size="small" plain @click="selectUnmapped">选中未映射</el-button>
+          <el-select v-model="batchCategoryId" placeholder="批量映射到" clearable filterable size="small" style="width:180px">
+            <el-option v-for="c in cats" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+          <el-button size="small" type="primary" :disabled="!selectedMaps.length || !batchCategoryId" :loading="batchSaving" @click="batchMap">
+            映射选中 {{ selectedMaps.length || '' }}
+          </el-button>
+          <el-button size="small" type="warning" plain :disabled="!selectedMaps.length" :loading="batchSaving" @click="batchClear">
+            清空选中映射
+          </el-button>
+        </div>
+        <el-table ref="mapTableRef" :data="maps" size="small" max-height="560" row-key="id" @selection-change="selectedMaps = $event">
+          <el-table-column type="selection" width="42" />
           <el-table-column prop="sourceTypeId" label="源type" width="80" />
           <el-table-column prop="sourceTypeName" label="源分类名" />
           <el-table-column label="→ 映射到统一分类" width="200">
@@ -141,6 +154,10 @@ const cats = ref([]); const sources = ref([]); const maps = ref([]); const level
 const curSource = ref(null); const unmapped = ref(0)
 const dlg = ref(false); const form = ref({})
 const customSvgInput = ref('')
+const mapTableRef = ref(null)
+const selectedMaps = ref([])
+const batchCategoryId = ref(null)
+const batchSaving = ref(false)
 const displayModes = [
   { value: 'public', label: '游客可见' },
   { value: 'login', label: '登录可见' },
@@ -200,8 +217,16 @@ async function toggleEnabled(row, v) {
     ElMessage.success(v ? '已在前台显示' : '已在前台隐藏')
   } catch (e) { row.enabled = !v; ElMessage.error(e.message) }
 }
-async function loadMaps() { if (curSource.value) maps.value = await api.typemaps(curSource.value) }
+async function loadMaps() {
+  selectedMaps.value = []
+  mapTableRef.value?.clearSelection?.()
+  if (curSource.value) maps.value = await api.typemaps(curSource.value)
+}
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
+function selectUnmapped() {
+  mapTableRef.value?.clearSelection?.()
+  for (const row of maps.value.filter(row => !row.categoryId)) mapTableRef.value?.toggleRowSelection?.(row, true)
+}
 
 function openAdd() {
   customSvgInput.value = ''
@@ -250,6 +275,35 @@ async function save(row, v) {
   loadUnmapped()
   loadCats()
 }
+async function batchMap() {
+  if (!selectedMaps.value.length || !batchCategoryId.value) return
+  batchSaving.value = true
+  try {
+    const r = await api.batchTypemaps(selectedMaps.value.map(row => row.id), batchCategoryId.value)
+    ElMessage.success(`已批量映射 ${r.updated} 项，回刷 ${r.backfilled || 0} 部影片`)
+    await Promise.all([loadMaps(), loadUnmapped(), loadCats()])
+  } catch (e) {
+    ElMessage.error(e.message || '批量映射失败')
+  } finally {
+    batchSaving.value = false
+  }
+}
+async function batchClear() {
+  if (!selectedMaps.value.length) return
+  const ok = await ElMessageBox.confirm(`确认清空选中的 ${selectedMaps.value.length} 项映射？`, '批量清空映射', { type:'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  batchSaving.value = true
+  try {
+    const r = await api.batchTypemaps(selectedMaps.value.map(row => row.id), null)
+    ElMessage.success(`已清空 ${r.updated} 项映射，回刷 ${r.backfilled || 0} 部影片`)
+    await Promise.all([loadMaps(), loadUnmapped(), loadCats()])
+  } catch (e) {
+    ElMessage.error(e.message || '批量清空失败')
+  } finally {
+    batchSaving.value = false
+  }
+}
 async function delMap(row) {
   await ElMessageBox.confirm(`删除源分类「${row.sourceTypeName || row.sourceTypeId}」？若该分类仍在采集范围内，下次采集会重新生成。`, '确认删除', { type:'warning' })
   await api.delTypemap(row.id); ElMessage.success('已删除'); loadMaps(); loadUnmapped()
@@ -266,6 +320,7 @@ onMounted(async () => {
 
 <style scoped>
 .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.batch-map-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -2px 0 12px; }
 .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .hint { margin-left: 10px; color: #9aa4b2; font-size: 12px; }
 .cat-cell, .icon-option, .icon-field { display: flex; align-items: center; gap: 8px; }

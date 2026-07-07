@@ -184,7 +184,18 @@ export default async function accessRoutes(app: FastifyInstance) {
 
   app.get("/api/admin/audit-logs", async (req) => {
     const q = (req.query as any) || {};
-    const take = Math.min(200, Number(q.limit) || 100);
-    return prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take });
+    const page = Math.max(1, Number(q.page) || 1);
+    const size = Math.max(10, Math.min(200, Number(q.size || q.limit) || 100));
+    const where = {};
+    const [total, list] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * size,
+        take: size,
+      }),
+    ]);
+    return { total, page, size, list };
   });
 }
