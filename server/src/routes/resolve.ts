@@ -93,6 +93,13 @@ export default async function resolveRoutes(app: FastifyInstance) {
       try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
       const url = episodes[epIndex]?.url || "";
       if (!url) return { ok: false, error: "播放集数不存在" };
+      // iCloud 系源（方案A）：服务器不解析，直接返回原始 iCloud 分享链（解码），
+      // 由浏览器 Service Worker 拦截 iclouddrive 请求走 CloudKit 客户端解析。不走代理/清洗（那会让解析汇聚到本站IP→被封）。
+      if (play.flag === "icloudm3u8") {
+        let icloudUrl = url;
+        try { icloudUrl = decodeURIComponent(url); } catch {}
+        return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client" };
+      }
       const fresh = q.fresh === "1" || q.fresh === "true"; // 前端撞 403 时传 fresh=1 强制重解拿新 sign
       const result = await resolveWithCache(`play:${playId}:${epIndex}`, url, fresh);
       if (!result?.ok || !result.url || !/\.m3u8(\?|$)/i.test(result.url)) return result;
