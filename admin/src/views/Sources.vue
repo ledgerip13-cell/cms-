@@ -70,6 +70,12 @@
   <el-dialog v-model="dlg" :title="form.id ? '编辑采集源' : '新增采集源'" width="520">
     <el-form ref="formRef" :model="form" :rules="formRules" label-width="90px">
       <el-form-item label="源名称" prop="name"><el-input v-model="form.name" placeholder="如：如意资源网" /></el-form-item>
+      <el-form-item label="采集驱动">
+        <el-select v-model="form.driver" style="width:260px">
+          <el-option v-for="d in drivers" :key="d.value" :label="d.label" :value="d.value" />
+        </el-select>
+        <small style="margin-left:8px;color:#9aa4b2">iCloud 源 API 填如 https://api.nbflix.com</small>
+      </el-form-item>
       <el-form-item label="采集API" prop="apiUrls">
         <div style="width:100%">
           <div v-for="(u,i) in form.apiUrls" :key="i" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
@@ -274,6 +280,7 @@ import { api } from '../api'
 const router = useRouter()
 
 const list = ref([]); const loading = ref(false)
+const drivers = ref([{ value: 'maccms', label: '苹果CMS (MacCMS 标准)' }])
 const dlg = ref(false); const form = ref({}); const formRef = ref(null)
 const domainDlg = ref(false)
 const domainManageDlg = ref(false)
@@ -353,7 +360,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], flag:'', proxyMode:'inherit', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', proxyMode:'inherit', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {
@@ -537,7 +544,10 @@ async function doSync() {
     }).then(() => router.push('/tasks')).catch(() => {})
   } catch (e) { ElMessage.error('提交失败: ' + e.message) } finally { syncing.value = false }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  api.drivers().then((d) => { if (Array.isArray(d) && d.length) drivers.value = d }).catch(() => {})
+})
 </script>
 
 <style scoped>

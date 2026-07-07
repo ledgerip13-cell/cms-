@@ -27,6 +27,7 @@ export const api = {
   changePassword: (d) => http.post('/auth/password', d),
   // sources
   sources: () => http.get('/sources'),
+  drivers: () => http.get('/drivers'),
   addSource: (d) => http.post('/sources', d),
   updateSource: (id, d) => http.put(`/sources/${id}`, d),
   delSource: (id) => http.delete(`/sources/${id}`),

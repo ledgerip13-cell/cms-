@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { ping, fetchClasses, fetchTypeTotal, resolveApiUrls, withFailover } from "../collector/maccms.js";
+import { getDriver, listDrivers } from "../collector/drivers/index.js";
+
+const DRIVER_IDS = listDrivers().map((d) => d.value);
+function normDriver(v: unknown): string { const s = String(v || "").trim(); return DRIVER_IDS.includes(s) ? s : "maccms"; }
 import { syncSource } from "../collector/sync.js";
 import { createCollectTask } from "../collector/taskRunner.js";
 import { probeBatch } from "../collector/probe.js";
@@ -32,6 +36,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         name,
         apiUrl,
         apiUrls: JSON.stringify(apiUrls),
+        driver: normDriver(b.driver),
         flag: b.flag || "",
         priority: b.priority ?? 100,
         enabled: b.enabled ?? true,
@@ -52,6 +57,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const data: any = {
       name: b.name,
       apiUrl: b.apiUrl,
+      driver: b.driver !== undefined ? normDriver(b.driver) : undefined,
       flag: b.flag,
       proxyMode: ["inherit", "direct", "key", "proxy"].includes(String(b.proxyMode)) ? b.proxyMode : undefined,
       priority: b.priority,
@@ -73,6 +79,9 @@ export default async function sourceRoutes(app: FastifyInstance) {
     await reloadSchedules();
     return s;
   });
+
+  // 采集驱动列表（建源下拉选）
+  app.get("/api/drivers", async () => listDrivers());
 
   // 删除
   app.delete("/api/sources/:id", async (req) => {
@@ -162,8 +171,17 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
     const results: any[] = [];
     let firstOk: any = null;
+    const drv = getDriver(s.driver);
     for (const u of urls) {
-      const r = await ping(u);
+      let r: any;
+      if (s.driver && s.driver !== "maccms") {
+        // 非 maccms 驱动：用驱动 fetchList 探一下作测活
+        const t0 = Date.now();
+        try { const lr = await drv.fetchList(u, 1); r = { ok: true, ms: Date.now() - t0, total: lr.total, format: "json", sample: lr.list[0]?.vod_name || "" }; }
+        catch (e: any) { r = { ok: false, ms: Date.now() - t0, error: e?.message || String(e) }; }
+      } else {
+        r = await ping(u);
+      }
       results.push({ url: u, ...r });
       if (r.ok && !firstOk) firstOk = { url: u, ...r };
     }
@@ -221,7 +239,8 @@ export default async function sourceRoutes(app: FastifyInstance) {
     if (!s) return { ok: false, error: "not found", tree: [] };
     try {
       const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
-      const { result: classes } = await withFailover(urls, (u) => fetchClasses(u));
+      const drv = getDriver(s.driver);
+      const { result: classes } = await withFailover(urls, (u) => drv.fetchClasses(u));
       // 构建父→子树；typePid=="0" 或无对应父节点的为顶级
       const byId = new Map(classes.map((c) => [c.typeId, c]));
       const parents = classes.filter((c) => c.typePid === "0" || !byId.has(c.typePid));
