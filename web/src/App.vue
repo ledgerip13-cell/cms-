@@ -133,7 +133,7 @@ import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writ
 import { openAuthDialog } from './authDialog'
 import { currentUser, refreshUser } from './userStore'
 import { levelTagStyle } from './levelTag'
-import { applyPwaUpdate, setupPwaUpdates } from './pwa'
+import { applyPwaUpdate, enforcePwaViewportLock, setupPwaUpdates, setupPwaViewportLock } from './pwa'
 
 const router = useRouter()
 const route = useRoute()
@@ -160,6 +160,7 @@ const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
 watch(() => route.fullPath, () => {
   drawer.value = false
+  enforcePwaViewportLock()
   applySiteTheme(site.value, themePageFromRoute(route))
 })
 
@@ -216,6 +217,7 @@ const vClickOutside = {
 }
 
 onMounted(async () => {
+  setupPwaViewportLock()
   applySiteHead(site.value)
   applySiteTheme(site.value, themePageFromRoute(route))
   refreshUser()
