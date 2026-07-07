@@ -79,10 +79,15 @@ function toRawVod(item: any, episodes?: { name: string; url: string }[]): RawVod
     const m = d.match(/(\d{4})/);
     return m ? m[1] : "";
   })();
+  const cls = String(item.videoClass || item.videoType || "").trim();
   const raw: RawVod = {
     vod_id: String(item.headNo ?? item.id ?? ""),
     vod_name: String(item.videoName || item.title || "").trim(),
-    type_name: String(item.videoClass || item.videoType || "").trim(),
+    // 源站不下发数字型 type_id，直接用 videoClass 名字当运 id：
+    //   ① resolveCategory 靠 `${sourceId}:${typeId}` 作 cache key，必须非空且量名量姓才能正确分流
+    //   ② 伤入库 SourceTypeMap遵命名可读，后台能直接看到 "动漫/犯罪片/.." 并手工映射到大类
+    type_id: cls,
+    type_name: cls,
     vod_year: year,
     vod_pic: String(item.posterUrl || ""), // iCloud webp 链，保持原始
     vod_actor: Array.isArray(item.cast) ? item.cast.join(",") : String(item.cast || ""),
@@ -108,16 +113,21 @@ function cleanEpName(name: string, idx: number): string {
 }
 
 async function fetchClasses(apiUrl: string, timeoutMs = 15000): Promise<ClassItem[]> {
+  // 源站 videoClass/list 接口的 id 与每条影片的 videoClass 名字字段不能直接关联（一个数字、一个名字）；
+  // 而数据中实际出现的 videoClass 名称又可能包含接口列表以外的新名（如 "剧情片/爱情片"）。
+  // 为保证后台选到的分类名 = 采集能匹配到，改为拉全量列表后按 videoClass 实际出现值去重；
+  // typeId=typeName（与 resolveCategory/upsert 链路一致）。
   const origin = baseOf(apiUrl);
-  const j = await req(origin, "/api/videoClass/list", { method: "GET" }, timeoutMs);
-  const arr = Array.isArray(j?.data) ? j.data : [];
-  return arr
-    .map((c: any) => ({
-      typeId: String(c.id ?? ""),
-      typePid: "0", // 源站分类为平铺结构
-      typeName: String(c.title || "").trim(),
-    }))
-    .filter((c: ClassItem) => c.typeId);
+  const j = await req(origin, `/api/video/listFormMobile?sort=1&pageNum=1&pageSize=5000`, { method: "GET" }, timeoutMs);
+  const list: any[] = Array.isArray(j?.data?.list) ? j.data.list : [];
+  const seen = new Set<string>();
+  const out: ClassItem[] = [];
+  for (const it of list) {
+    const nm = String(it.videoClass || it.videoType || "").trim();
+    if (nm && !seen.has(nm)) { seen.add(nm); out.push({ typeId: nm, typePid: "0", typeName: nm }); }
+  }
+  out.sort((a, b) => a.typeName.localeCompare(b.typeName, "zh"));
+  return out;
 }
 
 async function fetchList(
@@ -125,7 +135,7 @@ async function fetchList(
   page = 1,
   _hours = 0,
   timeoutMs = 15000,
-  _typeId?: string | number,
+  typeId?: string | number,
   _keyword?: string
 ): Promise<ListResult> {
   // 源站 classId 筛选不生效，统一全量采集，靠详情 videoClass 回填分类。
@@ -140,7 +150,10 @@ async function fetchList(
     { method: "GET" },
     timeoutMs
   );
-  const list: any[] = Array.isArray(j?.data?.list) ? j.data.list : [];
+  let list: any[] = Array.isArray(j?.data?.list) ? j.data.list : [];
+  // typeId 客户端过滤（源站 classId 参数不生效，但每条记录有 videoClass 名字，能精确匹配）
+  const filterCls = String(typeId || "").trim();
+  if (filterCls) list = list.filter((it) => String(it.videoClass || it.videoType || "").trim() === filterCls);
   // 全部已在第1页；runSync 若请求 page>1 返回空使循环安全终止
   const pageItems = page === 1 ? list : [];
   return { page, pagecount: 1, total: list.length, list: pageItems.map((it) => toRawVod(it)), format: "json" };

@@ -114,7 +114,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="增量窗口" v-if="form.driver !== 'nbflix'"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
-        <el-form-item label="采集分类" v-if="form.driver !== 'nbflix'">
+        <el-form-item label="采集分类">
           <el-select v-model="form.autoTypeIds" multiple clearable collapse-tags collapse-tags-tooltip
             :placeholder="autoClassLoading ? '分类加载中...' : '全部分类'" style="width:360px"
             filterable :loading="autoClassLoading" :disabled="autoClassLoading || !form.id">
@@ -200,7 +200,7 @@
         <el-input-number v-model="syncForm.hours" :min="1" :max="720" />
         <small style="margin-left:8px;color:#9aa4b2">只拉近N小时更新(不重复旧片)</small>
       </el-form-item>
-      <el-form-item label="采集分类" v-if="!isNbflixSync">
+      <el-form-item label="采集分类">
         <el-select v-model="syncForm.typeIds" multiple clearable collapse-tags collapse-tags-tooltip
           :placeholder="classLoading ? '分类加载中...' : '全部分类'" style="width:360px"
           filterable :loading="classLoading" :disabled="classLoading" @change="onTypeChange">
