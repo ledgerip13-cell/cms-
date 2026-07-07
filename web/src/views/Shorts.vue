@@ -134,16 +134,35 @@
             </div>
 
             <div v-if="i === activeIndex && landscapeTheaterMode && !accessBlock" class="theater-controls" @click.stop>
-              <div class="theater-top">
-                <button class="theater-pill" type="button" @click="exitLandscapeTheater">退出横屏</button>
-                <span v-if="viewportLandscape">退出后请转回竖屏</span>
+              <div class="theater-topbar">
+                <button class="theater-icon-btn" type="button" aria-label="退出横屏" @click="exitLandscapeTheater">
+                  <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="theater-now">
+                  <strong>{{ unit.vod.name }}</strong>
+                  <span>{{ unit.epName }} · {{ currentEpisodeNumber }}/{{ currentEpisodeTotal }}</span>
+                </div>
+                <div class="theater-top-actions">
+                  <button class="theater-icon-btn" type="button" :aria-label="muted ? '开声' : '静音'" @click="toggleMute">
+                    <svg v-if="muted" viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10H4z"/><path d="M18 9l3 3-3 3M21 9l-3 3 3 3"/></svg>
+                    <svg v-else viewBox="0 0 24 24"><path d="M4 10v4h4l5 4V6L8 10H4z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11"/></svg>
+                  </button>
+                  <button class="theater-icon-btn" type="button" aria-label="选集" :disabled="feedMode !== 'series'" @click="openEpisodeSheet">
+                    <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></svg>
+                  </button>
+                </div>
               </div>
-              <div class="theater-bottom">
-                <button class="theater-control-btn" type="button" :disabled="!canGoPreviousTheater" @click="previousTheaterEpisode">上一集</button>
-                <button class="theater-control-btn primary" type="button" @click="togglePause">{{ paused ? '播放' : '暂停' }}</button>
-                <button class="theater-control-btn" type="button" :disabled="!canGoNextTheater" @click="nextTheaterEpisode">下一集</button>
-                <button class="theater-control-btn" type="button" :disabled="feedMode !== 'series'" @click="openEpisodeSheet">选集</button>
-                <button class="theater-control-btn" type="button" @click="toggleMute">{{ muted ? '开声' : '静音' }}</button>
+              <div class="theater-center-controls">
+                <button class="theater-skip-btn" type="button" aria-label="上一集" :disabled="!canGoPreviousTheater" @click="previousTheaterEpisode">
+                  <svg viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M18 6l-8 6 8 6z"/></svg>
+                </button>
+                <button class="theater-play-btn" type="button" :aria-label="paused ? '播放' : '暂停'" @click="togglePause">
+                  <svg v-if="paused" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  <svg v-else viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg>
+                </button>
+                <button class="theater-skip-btn" type="button" aria-label="下一集" :disabled="!canGoNextTheater" @click="nextTheaterEpisode">
+                  <svg viewBox="0 0 24 24"><path d="M18 5v14"/><path d="M6 6l8 6-8 6z"/></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -1992,6 +2011,7 @@ async function enterLandscapeTheater() {
     notifyWarning('当前视频不是横屏片源')
     return
   }
+  void lockShortsPortrait()
   landscapeTheaterMode.value = true
   immersiveMode.value = false
   detailSheetOpen.value = false
@@ -2206,6 +2226,12 @@ onBeforeUnmount(() => {
 .shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
 .shorts-feed.series-feed { scroll-snap-type: y mandatory; }
 .shorts-feed.frozen { overflow: hidden; }
+.landscape-theater-mode {
+  --theater-safe-x: max(14px, env(safe-area-inset-left), env(safe-area-inset-right));
+  --theater-safe-top: max(10px, env(safe-area-inset-top), env(safe-area-inset-left), env(safe-area-inset-right));
+  --theater-safe-bottom: max(12px, env(safe-area-inset-bottom), env(safe-area-inset-left), env(safe-area-inset-right));
+  touch-action: none;
+}
 .landscape-theater-mode .shorts-shell { width: 100vw; max-width: none; box-shadow: none; }
 .landscape-theater-mode .shorts-feed { overflow: hidden; }
 .shorts-feed::-webkit-scrollbar { display: none; }
@@ -2220,35 +2246,139 @@ onBeforeUnmount(() => {
 .short-dim { position: absolute; inset: 0; z-index: 3; pointer-events: none; background:
   linear-gradient(180deg, rgba(0,0,0,.6), transparent 22%, transparent 54%, rgba(0,0,0,.82)),
   linear-gradient(90deg, rgba(0,0,0,.48), transparent 42%, rgba(0,0,0,.24)); }
-.short-card.theater .short-media { position: fixed; inset: 0; z-index: 50; width: 100vw; height: 100dvh; overflow: hidden; background: #000; }
-.short-card.theater .short-poster-bg,
-.short-card.theater .short-poster,
-.short-card.theater .short-dim { display: none; }
-.short-card.theater .short-video { inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; opacity: 1; transform: none; }
-.theater-rotated .short-card.theater .short-video {
-  inset: auto;
+.short-card.theater .short-media {
+  position: fixed;
   left: 50%;
   top: 50%;
+  z-index: 50;
+  width: 100vw;
+  height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+}
+.theater-rotated .short-card.theater .short-media {
+  width: 100vh;
+  height: 100vw;
   width: 100dvh;
   height: 100dvw;
   transform: translate(-50%, -50%) rotate(90deg);
 }
-.short-card.theater .short-progress { position: fixed; left: 18px; right: 18px; bottom: calc(6px + env(safe-area-inset-bottom)); z-index: 58; }
+.short-card.theater .short-poster-bg,
+.short-card.theater .short-poster,
+.short-card.theater .short-dim { display: none; }
+.short-card.theater .short-video { inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; opacity: 1; transform: none; }
+.short-card.theater .center-state.play-state { display: none; }
+.short-card.theater .short-progress {
+  position: absolute;
+  left: var(--theater-safe-x);
+  right: var(--theater-safe-x);
+  bottom: var(--theater-safe-bottom);
+  z-index: 62;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  opacity: 1;
+}
+.short-card.theater .short-progress::before { left: calc(-1 * var(--theater-safe-x)); right: calc(-1 * var(--theater-safe-x)); top: -48px; bottom: calc(-1 * var(--theater-safe-bottom)); background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.62)); }
+.short-card.theater .short-progress input { grid-column: 2; grid-row: 1; height: 36px; margin: -16px 0; }
+.short-card.theater .progress-time { display: contents; opacity: 1; transform: none; }
+.short-card.theater .progress-time span { color: rgba(255,255,255,.86); font-size: 11px; line-height: 1; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,.78); }
+.short-card.theater .progress-time span:first-child { grid-column: 1; grid-row: 1; text-align: left; }
+.short-card.theater .progress-time span:last-child { grid-column: 3; grid-row: 1; text-align: right; }
 .short-card.theater .short-lock { position: fixed; z-index: 60; }
-.theater-controls { position: fixed; inset: 0; z-index: 59; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
-.theater-top { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 12px 0; pointer-events: none; }
-.theater-top span { color: rgba(255,255,255,.72); font-size: 12px; font-weight: 850; text-shadow: 0 2px 10px rgba(0,0,0,.7); }
-.theater-pill,
-.theater-control-btn { min-width: 0; height: 36px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(12,14,20,.66); color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; backdrop-filter: blur(16px); box-shadow: 0 10px 28px rgba(0,0,0,.32); pointer-events: auto; }
-.theater-pill { padding: 0 15px; }
-.theater-bottom { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 0 12px calc(42px + env(safe-area-inset-bottom)); pointer-events: none; }
-.theater-control-btn { padding: 0 9px; white-space: nowrap; }
-.theater-control-btn.primary { background: rgba(255,255,255,.9); color: #11131a; border-color: rgba(255,255,255,.9); }
-.theater-control-btn:disabled { opacity: .38; cursor: not-allowed; }
+.theater-controls { position: absolute; inset: 0; z-index: 61; pointer-events: none; color: #fff; }
+.theater-topbar {
+  position: absolute;
+  left: var(--theater-safe-x);
+  right: var(--theater-safe-x);
+  top: var(--theater-safe-top);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.theater-now { min-width: 0; display: grid; gap: 3px; text-shadow: 0 2px 12px rgba(0,0,0,.78); }
+.theater-now strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.15; font-weight: 950; letter-spacing: 0; }
+.theater-now span { color: rgba(255,255,255,.68); font-size: 11px; line-height: 1; font-weight: 850; }
+.theater-top-actions { display: flex; gap: 8px; pointer-events: none; }
+.theater-icon-btn,
+.theater-skip-btn,
+.theater-play-btn {
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 50%;
+  background: rgba(9,11,16,.48);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 28px rgba(0,0,0,.32);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.theater-icon-btn { width: 42px; height: 42px; }
+.theater-icon-btn svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.theater-center-controls {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.theater-skip-btn { width: 54px; height: 54px; }
+.theater-skip-btn svg { width: 25px; height: 25px; fill: rgba(255,255,255,.12); stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.theater-play-btn { width: 70px; height: 70px; background: rgba(255,255,255,.9); color: #101218; border-color: rgba(255,255,255,.92); }
+.theater-play-btn svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.theater-play-btn svg[fill="currentColor"] { fill: currentColor; stroke: none; margin-left: 3px; }
+.theater-icon-btn:disabled,
+.theater-skip-btn:disabled { opacity: .36; cursor: not-allowed; }
 .landscape-theater-mode .shorts-top,
 .landscape-theater-mode .short-actions,
 .landscape-theater-mode .short-meta { display: none; }
-.landscape-theater-mode .episode-mask { position: fixed; z-index: 70; }
+.landscape-theater-mode .episode-mask {
+  position: fixed;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  z-index: 70;
+  width: 100vw;
+  height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
+  align-items: stretch;
+  justify-content: flex-end;
+  background: rgba(0,0,0,.48);
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+}
+.theater-rotated .episode-mask {
+  width: 100vh;
+  height: 100vw;
+  width: 100dvh;
+  height: 100dvw;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.landscape-theater-mode .episode-sheet-panel {
+  width: min(340px, 42%);
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  border-top: 0;
+  border-left: 1px solid rgba(255,255,255,.12);
+  padding: var(--theater-safe-top) var(--theater-safe-x) var(--theater-safe-bottom) 14px;
+}
+.landscape-theater-mode .episode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: calc(100% - 56px); }
 .immersive-mode .short-dim { background:
   linear-gradient(180deg, rgba(0,0,0,.22), transparent 28%, transparent 72%, rgba(0,0,0,.48)),
   linear-gradient(90deg, rgba(0,0,0,.16), transparent 48%, rgba(0,0,0,.16)); }
@@ -2384,6 +2514,8 @@ onBeforeUnmount(() => {
 .episode-sheet-enter-from .detail-sheet-panel, .episode-sheet-leave-to .detail-sheet-panel,
 .episode-sheet-enter-from .search-sheet-panel, .episode-sheet-leave-to .search-sheet-panel,
 .episode-sheet-enter-from .library-sheet-panel, .episode-sheet-leave-to .library-sheet-panel { transform: translateY(18px); }
+.landscape-theater-mode .episode-sheet-enter-from .episode-sheet-panel,
+.landscape-theater-mode .episode-sheet-leave-to .episode-sheet-panel { transform: translateX(18px); }
 .shorts-loading, .shorts-empty { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: rgba(255,255,255,.76); }
 .shorts-empty strong { color: #fff; font-size: 18px; }
 .empty-icon { width: 58px; height: 58px; border-radius: 18px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); }
@@ -2404,7 +2536,5 @@ onBeforeUnmount(() => {
   .short-card.locked .short-meta { display: none; }
   .short-meta h1 { font-size: 18px; -webkit-line-clamp: 1; }
   .short-meta p { -webkit-line-clamp: 1; }
-  .theater-top { padding-top: calc(8px + env(safe-area-inset-top)); }
-  .theater-bottom { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
 }
 </style>

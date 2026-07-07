@@ -54,6 +54,7 @@ const DEFAULT_PWA_CONFIG = {
   icon: "",
   themeColor: "#0a0b0f",
   backgroundColor: "#0a0b0f",
+  orientation: "portrait",
 };
 
 function clampInt(value: any, fallback: number, min: number, max: number) {
@@ -164,6 +165,7 @@ export function normalizePwaConfig(value: any) {
     icon: String(raw?.icon || "").trim(),
     themeColor: color(raw?.themeColor, DEFAULT_PWA_CONFIG.themeColor),
     backgroundColor: color(raw?.backgroundColor, DEFAULT_PWA_CONFIG.backgroundColor),
+    orientation: "portrait",
   };
 }
 
@@ -238,6 +240,7 @@ export default async function siteRoutes(app: FastifyInstance) {
       start_url: "/",
       scope: "/",
       display: "standalone",
+      orientation: pwa.orientation,
       theme_color: pwa.themeColor,
       background_color: pwa.backgroundColor,
       icons: [
