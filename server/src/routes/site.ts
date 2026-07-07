@@ -47,6 +47,10 @@ const DEFAULT_PLAY_CONFIG = {
   proxyMode: "direct", // 全局默认回源模式: direct/key/proxy（源级 inherit 回落此值）
 };
 
+const DEFAULT_HOME_CONFIG = {
+  dailyUpdateTypes: [] as string[],
+};
+
 const DEFAULT_PWA_CONFIG = {
   enabled: true,
   name: "",
@@ -143,6 +147,22 @@ export function normalizePlayConfig(value: any) {
   };
 }
 
+export function normalizeHomeConfig(value: any) {
+  let raw = value;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw || "{}");
+    } catch {
+      raw = {};
+    }
+  }
+  return {
+    ...DEFAULT_HOME_CONFIG,
+    ...(raw || {}),
+    dailyUpdateTypes: cleanStringList(raw?.dailyUpdateTypes, 20),
+  };
+}
+
 export function normalizePwaConfig(value: any) {
   let raw = value;
   if (typeof raw === "string") {
@@ -173,6 +193,7 @@ function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = 
   const { registerInviteCode, ...rest } = s;
   return {
     ...rest,
+    homeConfig: normalizeHomeConfig((s as any).homeConfig),
     shortsConfig: normalizeShortsConfig((s as any).shortsConfig),
     playConfig: normalizePlayConfig((s as any).playConfig),
     pwaConfig: normalizePwaConfig((s as any).pwaConfig),
@@ -213,6 +234,7 @@ export default async function siteRoutes(app: FastifyInstance) {
         footer: b.footer,
         announcement: b.announcement,
         theme: normalizeJsonField(b.theme),
+        homeConfig: JSON.stringify(normalizeHomeConfig(b.homeConfig)),
         shortsConfig: JSON.stringify(normalizeShortsConfig(b.shortsConfig)),
         playConfig: JSON.stringify(normalizePlayConfig(b.playConfig)),
         pwaConfig: JSON.stringify(normalizePwaConfig(b.pwaConfig)),

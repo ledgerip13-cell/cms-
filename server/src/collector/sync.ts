@@ -193,6 +193,7 @@ export async function refreshVod(vodId: number) {
   let latestRemarks = "";
   const sourcePics: string[] = []; // 各源最新封面候选
   let latestSubType = "";
+  let contentChanged = false;
   for (const p of vod.plays) {
     try {
       const details = await fetchDetail(p.source.apiUrl, [p.sourceVodId]);
@@ -206,15 +207,18 @@ export async function refreshVod(vodId: number) {
       if (!line || !line.episodes.length) { results.push({ source: p.source.name, ok: false, msg: "无播放地址" }); continue; }
       const before = p.epCount;
       const kind = line.episodes.every((e) => isDirectM3u8(e.url)) ? "hls" : "iframe";
+      const nextEpisodes = JSON.stringify(line.episodes);
+      const changed = p.episodes !== nextEpisodes || p.epCount !== line.episodes.length || p.playKind !== kind;
       await prisma.play.update({
         where: { id: p.id },
         data: {
-          episodes: JSON.stringify(line.episodes),
+          episodes: nextEpisodes,
           epCount: line.episodes.length,
           playKind: kind,
           syncedAt: new Date(),
         },
       });
+      if (changed) contentChanged = true;
       results.push({ source: p.source.name, ok: true, before, after: line.episodes.length });
       updated++;
     } catch (e: any) {
@@ -223,8 +227,12 @@ export async function refreshVod(vodId: number) {
   }
   // 同步最新“更新状态”(remarks) + 回填小类
   const vodPatch: any = {};
-  if (latestRemarks && latestRemarks !== vod.remarks) vodPatch.remarks = latestRemarks;
+  if (latestRemarks && latestRemarks !== vod.remarks) {
+    vodPatch.remarks = latestRemarks;
+    contentChanged = true;
+  }
   if (latestSubType && latestSubType !== vod.subType) vodPatch.subType = latestSubType;
+  if (contentChanged) vodPatch.contentUpdatedAt = new Date();
   if (Object.keys(vodPatch).length) await prisma.vod.update({ where: { id: vodId }, data: vodPatch });
 
   // 封面修复：当前 pic 打不开则从候选(豆瓣高清图 / 各源最新封面)里挑一张能用的替换
@@ -316,24 +324,28 @@ async function upsertVod(
   };
   let vod;
   let mergedFlag = 0;
+  let contentChanged = false;
+  const now = new Date();
   if (existing) {
     const nextPic = vodData.pic || (isLocalImageUrl(existing.pic) ? "" : existing.pic);
     const nextLocalPic = vodData.localPic || existing.localPic || (isLocalImageUrl(existing.pic) ? existing.pic : "");
-    vod = await prisma.vod.update({
-      where: { id: existing.id },
-      data: {
-        pic: nextPic,
-        localPic: nextLocalPic,
-        blurb: existing.blurb || vodData.blurb,
-        remarks: vodData.remarks || existing.remarks,
-        // 分类：已映射(非未分类)则始终应用，否则保留原有
-        typeName: typeName !== "未分类" ? typeName : existing.typeName,
-        subType: subType || existing.subType, // 小类：有新值则更新，否则保留
-      },
-    });
+    const vodPatch: any = {};
+    if (nextPic !== existing.pic) vodPatch.pic = nextPic;
+    if (nextLocalPic !== existing.localPic) vodPatch.localPic = nextLocalPic;
+    if (!existing.blurb && vodData.blurb) vodPatch.blurb = vodData.blurb;
+    if (vodData.remarks && vodData.remarks !== existing.remarks) {
+      vodPatch.remarks = vodData.remarks;
+      contentChanged = true;
+    }
+    const nextTypeName = typeName !== "未分类" ? typeName : existing.typeName;
+    if (nextTypeName !== existing.typeName) vodPatch.typeName = nextTypeName;
+    if (subType && subType !== existing.subType) vodPatch.subType = subType;
+    vod = existing;
     mergedFlag = 1;
+    (vod as any).__pendingPatch = vodPatch;
   } else {
-    vod = await prisma.vod.create({ data: { fingerprint: fp, ...vodData } });
+    vod = await prisma.vod.create({ data: { fingerprint: fp, ...vodData, contentUpdatedAt: now } });
+    contentChanged = true;
   }
 
   // 存全部 flag 线路（不再只取 lines[0]），同源多通道并存，供探活后择优
@@ -354,7 +366,26 @@ async function upsertVod(
     };
     const before = await prisma.play.findUnique({ where: key });
     await prisma.play.upsert({ where: key, create: payload, update: payload });
-    if (before) updated++; else added++;
+    if (before) {
+      const changed = before.episodes !== payload.episodes
+        || before.epCount !== payload.epCount
+        || before.playKind !== payload.playKind;
+      if (changed) {
+        updated++;
+        contentChanged = true;
+      }
+    } else {
+      added++;
+      contentChanged = true;
+    }
+  }
+
+  if (existing) {
+    const vodPatch = (vod as any).__pendingPatch || {};
+    if (contentChanged) vodPatch.contentUpdatedAt = now;
+    if (Object.keys(vodPatch).length) {
+      vod = await prisma.vod.update({ where: { id: existing.id }, data: vodPatch });
+    }
   }
 
   return { vodId: vod.id, added, updated, merged: existing ? mergedFlag : 0 };

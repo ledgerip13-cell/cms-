@@ -5,20 +5,9 @@ import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
-import { normalizePlayConfig, normalizeShortsConfig } from "./site.js";
+import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function shanghaiDateKey(date: Date) {
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
 
 function recentShanghaiDates(days: number) {
   const now = new Date();
@@ -35,6 +24,13 @@ function recentShanghaiDates(days: number) {
 
 function shanghaiDow(dateKey: string) {
   return new Date(`${dateKey}T00:00:00+08:00`).getDay();
+}
+
+function shanghaiDateRange(dateKey: string) {
+  const start = new Date(`${dateKey}T00:00:00+08:00`);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
 }
 
 function heroImageCandidates(vod: any) {
@@ -591,25 +587,38 @@ export default async function vodRoutes(app: FastifyInstance) {
   // 每日更新：按最近7个自然日期分组，每天最多14部
   app.get("/api/weekly", async (req) => {
     const dates = recentShanghaiDates(7);
-    const since = new Date(Date.now() - 8 * DAY_MS);
     const viewer = await viewerFromRequest(req);
-    const publicTypes = await enabledTypeNames(viewer);
-    const rows = await prisma.vod.findMany({
-      where: { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(), updatedAt: { gte: since } },
-      orderBy: { updatedAt: "desc" },
-      take: 600,
-      include: { _count: { select: publicPlayCountSelect() } },
-    });
-    const byDate = new Map(dates.map((date) => [date, [] as any[]]));
-    for (const v of rows) {
-      const date = shanghaiDateKey(v.updatedAt);
-      const bucket = byDate.get(date);
-      if (bucket && bucket.length < 14) bucket.push(v);
-    }
-    return dates.map((date) => ({
+    const [publicTypes, site] = await Promise.all([
+      enabledTypeNames(viewer),
+      prisma.siteConfig.findUnique({ where: { id: 1 } }),
+    ]);
+    const homeConfig = normalizeHomeConfig((site as any)?.homeConfig);
+    const configuredTypes = homeConfig.dailyUpdateTypes.filter((type: string) => isPublicType(publicTypes, type));
+    const scopedTypes = configuredTypes.length ? configuredTypes : publicTypes;
+    const baseWhere = {
+      status: "online",
+      typeName: publicTypeFilter(scopedTypes),
+      ...publicPlayableFilter(),
+    };
+    return Promise.all(dates.map(async (date) => {
+      const { start, end } = shanghaiDateRange(date);
+      const items = await prisma.vod.findMany({
+        where: {
+          ...baseWhere,
+          OR: [
+            { contentUpdatedAt: { gte: start, lt: end } },
+            { contentUpdatedAt: null, createdAt: { gte: start, lt: end } },
+          ],
+        },
+        orderBy: [{ contentUpdatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+        take: 14,
+        include: { _count: { select: publicPlayCountSelect() } },
+      });
+      return {
       date,
       dow: shanghaiDow(date),
-      items: byDate.get(date) || [],
+        items,
+      };
     }));
   });
 

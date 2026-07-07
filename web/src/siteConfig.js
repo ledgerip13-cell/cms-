@@ -8,6 +8,7 @@ export const EMPTY_SITE = {
   footer: '',
   announcement: '',
   theme: {},
+  homeConfig: {},
   shortsConfig: {},
   playConfig: {},
   pwaConfig: {},
@@ -87,6 +88,10 @@ export const DEFAULT_SHORTS_CONFIG = {
 
 export const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
+}
+
+export const DEFAULT_HOME_CONFIG = {
+  dailyUpdateTypes: [],
 }
 
 export const DEFAULT_PWA_CONFIG = {
@@ -172,6 +177,22 @@ export function normalizePlayConfig(config) {
   }
 }
 
+export function normalizeHomeConfig(config) {
+  let raw = config
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
+  }
+  const cleanList = (value, limit = 20) => {
+    const rows = Array.isArray(value) ? value : String(value || '').split(',')
+    return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit)
+  }
+  return {
+    ...DEFAULT_HOME_CONFIG,
+    ...(raw || {}),
+    dailyUpdateTypes: cleanList(raw?.dailyUpdateTypes),
+  }
+}
+
 export function normalizePwaConfig(config) {
   let raw = config
   if (typeof raw === 'string') {
@@ -193,6 +214,7 @@ export function normalizePwaConfig(config) {
 export function normalizeSite(site) {
   const next = { ...EMPTY_SITE, ...(site || {}) }
   next.theme = normalizeTheme(next.theme)
+  next.homeConfig = normalizeHomeConfig(next.homeConfig)
   next.shortsConfig = normalizeShortsConfig(next.shortsConfig)
   next.playConfig = normalizePlayConfig(next.playConfig)
   next.pwaConfig = normalizePwaConfig(next.pwaConfig)

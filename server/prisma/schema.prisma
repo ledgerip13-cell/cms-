@@ -76,6 +76,7 @@ model SiteConfig {
   footer             String   @default("") // 页脚文字
   announcement       String   @default("") // 公告(可选)
   theme              String   @default("{}") // 前台主题配置 JSON
+  homeConfig         String   @default("{}") // 首页配置 JSON
   shortsConfig       String   @default("{}") // 刷短剧配置 JSON
   playConfig         String   @default("{}") // 播放策略配置 JSON
   pwaConfig          String   @default("{}") // PWA安装与更新配置 JSON
@@ -328,12 +329,14 @@ model Vod {
   images        VodImage[]
   follows       UserFollow[]
   histories     WatchHistory[]
+  contentUpdatedAt DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
   updatedAt     DateTime       @updatedAt
   createdAt     DateTime       @default(now())
 
   @@index([name])
   @@index([typeName])
   @@index([subType])
+  @@index([contentUpdatedAt])
 }
 
 // 人物（演员/导演等，供搜索与作品聚合）

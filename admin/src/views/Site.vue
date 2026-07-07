@@ -58,6 +58,26 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="首页设置" name="home">
+          <el-form :model="form.homeConfig" label-width="130px" class="site-form">
+            <el-form-item label="每日更新分类">
+              <el-select
+                v-model="form.homeConfig.dailyUpdateTypes"
+                multiple
+                filterable
+                collapse-tags
+                collapse-tags-tooltip
+                clearable
+                placeholder="不选则索引全部可展示分类"
+                style="width:420px"
+              >
+                <el-option v-for="item in categoryOptions" :key="item.name" :label="categoryLabel(item)" :value="item.name" />
+              </el-select>
+              <div class="hint inline">限制首页“每日更新”只展示这些分类的内容；不选则使用全部可展示分类。</div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="刷短剧" name="shorts">
           <el-form :model="form.shortsConfig" label-width="120px" class="site-form">
             <el-form-item label="显示入口">
@@ -457,7 +477,7 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { Check, Upload, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { api, DEFAULT_THEME, normalizePlayConfig, normalizePwaConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
+import { api, DEFAULT_THEME, normalizeHomeConfig, normalizePlayConfig, normalizePwaConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
 
 const form = ref(readCachedSite())
 const saving = ref(false)
@@ -748,12 +768,14 @@ const shortsScopePreview = computed(() => {
 })
 
 function ensureTheme() { form.value.theme = normalizeTheme(form.value.theme) }
+function ensureHomeConfig() { form.value.homeConfig = normalizeHomeConfig(form.value.homeConfig) }
 function ensureShortsConfig() { form.value.shortsConfig = normalizeShortsConfig(form.value.shortsConfig) }
 function ensurePlayConfig() { form.value.playConfig = normalizePlayConfig(form.value.playConfig) }
 function ensurePwaConfig() { form.value.pwaConfig = normalizePwaConfig(form.value.pwaConfig) }
 async function load() {
   form.value = writeCachedSite(await api.adminSite())
   ensureTheme()
+  ensureHomeConfig()
   ensureShortsConfig()
   ensurePlayConfig()
   ensurePwaConfig()
@@ -947,11 +969,13 @@ async function save() {
   saving.value = true
   try {
     ensureTheme()
+    ensureHomeConfig()
     ensureShortsConfig()
     ensurePlayConfig()
     ensurePwaConfig()
     form.value = writeCachedSite(await api.updateSite(form.value))
     ensureTheme()
+    ensureHomeConfig()
     ensureShortsConfig()
     ensurePlayConfig()
     ensurePwaConfig()
@@ -962,7 +986,7 @@ watch(activeThemeScope, () => {
   const keys = visibleThemeGroups.value.flatMap(g => g.fields.map(f => f.key))
   if (!keys.includes(activeFieldKey.value)) activeFieldKey.value = keys[0] || 'accent'
 })
-onMounted(() => { ensureTheme(); ensureShortsConfig(); ensurePlayConfig(); ensurePwaConfig(); load() })
+onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensurePlayConfig(); ensurePwaConfig(); load() })
 </script>
 
 <style scoped>
