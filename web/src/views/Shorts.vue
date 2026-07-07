@@ -523,6 +523,8 @@ const unitKeys = new Set()
 const unitVodIds = new Set()
 const resolveCache = new Map()
 const resolveInflight = new Map()
+const vodDetailCache = new Map()
+const playbackLineFailures = new Map()
 const MORE_THRESHOLD = 5
 
 let feedCursor = 0
@@ -759,31 +761,66 @@ function buildUnit(item) {
   }
 }
 
-function buildUnitFromVodDetail(vod, options = {}) {
+function normalizeLineChannel(line, channel = line) {
+  const episodes = Array.isArray(channel?.episodes) ? channel.episodes : Array.isArray(line?.episodes) ? line.episodes : []
+  return {
+    id: Number(channel?.id || line?.id) || 0,
+    sourceId: Number(channel?.sourceId || line?.sourceId) || 0,
+    sourceName: channel?.sourceName || line?.sourceName || '',
+    priority: Number(channel?.priority ?? line?.priority ?? 100),
+    flag: channel?.flag || line?.flag || '',
+    epCount: Number(channel?.epCount || line?.epCount) || episodes.length,
+    alive: channel?.alive !== false,
+    score: Number(channel?.score ?? line?.score ?? 0),
+    playKind: channel?.playKind || line?.playKind || '',
+    episodes,
+  }
+}
+
+function vodLineCandidates(vod) {
   const lines = Array.isArray(vod?.lines) ? vod.lines : []
-  const preferredLineId = Number(options?.lineId)
-  const line = lines.find(item => Number(item?.id) === preferredLineId) || lines[0]
-  if (!vod?.id || !line?.id) return null
-  const episodes = Array.isArray(line.episodes) ? line.episodes : []
-  const total = line.epCount || episodes.length || 1
+  return lines.flatMap(line => {
+    const channels = Array.isArray(line?.channels) && line.channels.length ? line.channels : [line]
+    return channels.map(channel => normalizeLineChannel(line, channel))
+  }).filter(channel => channel.id && channel.episodes.length)
+}
+
+function playableLineCandidates(vod, epIndex = 0) {
+  const index = Math.max(0, Number(epIndex) || 0)
+  return vodLineCandidates(vod).filter(channel => channel.alive !== false && channel.episodes[index])
+}
+
+function buildUnitFromChannel(vod, channel, options = {}) {
+  if (!vod?.id || !channel?.id) return null
+  const total = channel.epCount || channel.episodes?.length || 1
   const epIndex = clampIndex(options?.epIndex, total)
-  const ep = episodes[epIndex] || {}
+  const ep = channel.episodes?.[epIndex] || {}
   const unit = buildUnit({
     vod,
     play: {
-      id: line.id,
-      sourceName: line.sourceName || '',
-      epCount: line.epCount || line.episodes?.length || 1,
-      alive: line.alive !== false,
-      score: Number(line.score) || 0,
-      playKind: line.playKind || '',
+      id: channel.id,
+      sourceName: channel.sourceName || '',
+      epCount: channel.epCount || channel.episodes?.length || 1,
+      alive: channel.alive !== false,
+      score: Number(channel.score) || 0,
+      playKind: channel.playKind || '',
       epIndex,
       epName: ep.name || `第${epIndex + 1}集`,
-      episodes,
+      episodes: channel.episodes || [],
     },
   })
   unit.resumeHistory = normalizeHistoryRecord(options.resumeHistory)
   return unit
+}
+
+function buildUnitFromVodDetail(vod, options = {}) {
+  const preferredLineId = Number(options?.lineId)
+  const candidates = vodLineCandidates(vod)
+  const playable = playableLineCandidates(vod, options?.epIndex)
+  const preferred = preferredLineId ? playable.find(item => item.id === preferredLineId) : null
+  const fallbackPreferred = preferredLineId ? candidates.find(item => item.id === preferredLineId) : null
+  const channel = preferred || playable[0] || fallbackPreferred || candidates[0]
+  return buildUnitFromChannel(vod, channel, options)
 }
 
 function clampIndex(value, total) {
@@ -1243,6 +1280,118 @@ function pruneResolveCache() {
   }
 }
 
+async function loadVodPlaybackDetail(vodId) {
+  const id = Number(vodId) || 0
+  if (!id) return null
+  const cached = vodDetailCache.get(id)
+  if (cached) return cached
+  const detail = await api.vod(id)
+  vodDetailCache.set(id, detail)
+  if (vodDetailCache.size > 24) {
+    const first = vodDetailCache.keys().next().value
+    if (first) vodDetailCache.delete(first)
+  }
+  return detail
+}
+
+function applyShortsLineSwitch(unit) {
+  if (!unit?.vod?.id || !unit?.channel?.id) return false
+  const state = seriesState.value
+  if (feedMode.value === 'series' && state?.baseUnit?.vod?.id === unit.vod.id) {
+    const episodes = Array.isArray(unit.channel.episodes) ? unit.channel.episodes : []
+    const total = episodes.length || unit.total || 1
+    state.baseUnit = {
+      ...unit,
+      key: `${unit.vod.id}:${unit.channel.id}:base`,
+      epIndex: 0,
+      epName: episodes[0]?.name || '第1集',
+      total,
+    }
+    state.episodes = episodes
+    state.total = total
+    state.epIndex = clampIndex(unit.epIndex || 0, total)
+    units.value = buildSeriesWindow(state.epIndex)
+    const nextIndex = findSeriesUnitIndex(state.epIndex)
+    activeIndex.value = nextIndex >= 0 ? nextIndex : 0
+    syncShortsRoute()
+    return true
+  }
+  const index = activeIndex.value
+  if (units.value[index]?.vod?.id === unit.vod.id) {
+    units.value.splice(index, 1, unit)
+    return true
+  }
+  return false
+}
+
+function playbackFailureKey(unit) {
+  return `${unit?.vod?.id || 0}:${unit?.epIndex || 0}`
+}
+
+function failedLinesForUnit(unit) {
+  const key = playbackFailureKey(unit)
+  let failed = playbackLineFailures.get(key)
+  if (!failed) {
+    failed = new Set()
+    playbackLineFailures.set(key, failed)
+  }
+  return failed
+}
+
+function rememberLineFailure(unit) {
+  if (!unit?.channel?.id) return
+  failedLinesForUnit(unit).add(Number(unit.channel.id))
+  while (playbackLineFailures.size > 32) {
+    const first = playbackLineFailures.keys().next().value
+    if (!first) break
+    playbackLineFailures.delete(first)
+  }
+}
+
+function clearLineFailures(unit) {
+  const key = playbackFailureKey(unit)
+  if (key) playbackLineFailures.delete(key)
+}
+
+async function tryNextShortsLine(unit, triedLineIds = new Set()) {
+  if (!unit?.vod?.id) return null
+  const detail = await loadVodPlaybackDetail(unit.vod.id)
+  const failedLineIds = failedLinesForUnit(unit)
+  const candidates = playableLineCandidates(detail, unit.epIndex)
+  const next = candidates.find(channel => !triedLineIds.has(Number(channel.id)) && !failedLineIds.has(Number(channel.id)))
+  if (!next) return null
+  const nextUnit = buildUnitFromChannel(detail, next, {
+    epIndex: unit.epIndex,
+    resumeHistory: unit.resumeHistory,
+  })
+  if (!nextUnit) return null
+  applyShortsLineSwitch(nextUnit)
+  notifyWarning(`当前线路不可用，已切换到 ${nextUnit.channel.sourceName || '备用线路'}`)
+  await nextTick()
+  return activeUnit.value?.channel?.id === nextUnit.channel.id ? activeUnit.value : nextUnit
+}
+
+async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
+  const unit = activeUnit.value || playingUnit
+  if (!unit?.vod?.id || !unit?.channel?.id) return false
+  rememberLineFailure(unit)
+  const tried = new Set([Number(unit.channel.id)])
+  try {
+    const nextUnit = await tryNextShortsLine(unit, tried)
+    if (!nextUnit) {
+      notifyWarning(reason)
+      stopPlayback()
+      return false
+    }
+    schedulePlayActive(0)
+    return true
+  } catch {
+    notifyWarning(reason)
+    stopPlayback()
+    return false
+  }
+}
+
 async function resolveUnitPlayback(unit, options = {}) {
   const fresh = Boolean(options?.fresh)
   const key = resolveCacheKey(unit)
@@ -1337,7 +1486,7 @@ function applyPendingResumeSeek(video) {
 }
 
 async function playActive() {
-  const unit = activeUnit.value
+  let unit = activeUnit.value
   const seq = ++playSeq
   stopPlayback()
   historySaveAt = 0
@@ -1346,18 +1495,30 @@ async function playActive() {
   pendingResumeSeek = buildResumeSeek(unit)
   if (!unit?.vod?.id || !unit?.channel?.id) return
   resolving.value = true
+  const triedLineIds = new Set()
   try {
-    const result = await resolveUnitPlayback(unit)
-    if (seq !== playSeq) return
-    if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(result?.code)) {
-      showAccessBlock(result)
-      return
+    while (unit?.vod?.id && unit?.channel?.id) {
+      triedLineIds.add(Number(unit.channel.id))
+      const result = await resolveUnitPlayback(unit, { fresh: triedLineIds.size > 1 })
+      if (seq !== playSeq) return
+      if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(result?.code)) {
+        showAccessBlock(result)
+        return
+      }
+      if (result?.ok && result.url) {
+        await attachVideo(result.url, result.kind || '')
+        return
+      }
+      const nextUnit = await tryNextShortsLine(unit, triedLineIds)
+      if (seq !== playSeq) return
+      if (!nextUnit) {
+        notifyWarning(result?.error || '当前集暂时无法播放')
+        return
+      }
+      unit = nextUnit
+      playingUnit = unit
+      pendingResumeSeek = buildResumeSeek(unit)
     }
-    if (!result?.ok || !result.url) {
-      notifyWarning(result?.error || '当前集暂时无法播放')
-      return
-    }
-    await attachVideo(result.url, result.kind || '')
   } catch (error) {
     if (seq === playSeq) notifyError(apiErrorMessage(error, '播放解析失败'))
   } finally {
@@ -1366,6 +1527,7 @@ async function playActive() {
 }
 
 async function attachVideo(url, kind) {
+  const attachedUnit = activeUnit.value
   playingKey.value = activeUnit.value?.key || ''
   videoReady.value = false
   playUrl.value = url
@@ -1393,11 +1555,13 @@ async function attachVideo(url, kind) {
       })
       hls.loadSource(url)
       hls.attachMedia(video)
-      hls.on(Hls.Events.MANIFEST_PARSED, () => playNow({ mutedFallback: true }))
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        clearLineFailures(attachedUnit)
+        playNow({ mutedFallback: true })
+      })
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data?.fatal || !hls) return
-        notifyWarning('当前线路播放失败，已暂停')
-        stopPlayback()
+        void recoverShortsPlaybackLine('当前线路播放失败，已暂停')
       })
       return
     }
@@ -1405,6 +1569,7 @@ async function attachVideo(url, kind) {
   } else {
     video.src = url
   }
+  clearLineFailures(attachedUnit)
   playNow({ mutedFallback: true })
 }
 
@@ -1495,11 +1660,12 @@ function onVideoResize(event) {
 
 function onVideoCanPlay(event) {
   updateVideoFit(event?.target || getVideo())
+  clearLineFailures(activeUnit.value)
   videoReady.value = true
 }
 
 function onVideoError() {
-  notifyWarning('当前集播放失败')
+  void recoverShortsPlaybackLine('当前集播放失败')
   paused.value = true
   videoLandscape.value = false
   videoReady.value = false
