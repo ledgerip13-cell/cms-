@@ -1,6 +1,6 @@
 <template>
   <div class="site-wrap">
-    <div class="card">
+    <div class="card site-editor-card">
       <div class="toolbar">
         <div class="sec-title">站点设置</div>
         <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存设置</el-button>
@@ -990,16 +990,19 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 </script>
 
 <style scoped>
-.site-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.site-wrap { display: grid; grid-template-columns: minmax(560px, 1fr) minmax(320px, 420px); gap: 20px; align-items: start; }
+.site-editor-card { min-width: 0; }
 .site-tabs { margin-top: 8px; }
-.site-form { margin-top: 8px; max-width: 760px; }
+.site-form { margin-top: 8px; max-width: 820px; }
 .logo-row { display: flex; gap: 16px; align-items: flex-start; }
 .logo-preview { width: 64px; height: 64px; border-radius: 12px; border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fafbfc; flex-shrink: 0; }
 .logo-preview img { width: 100%; height: 100%; object-fit: cover; }
 .hint { font-size: 12px; color: var(--text-3); margin-top: 6px; }
 .hint.inline { margin: 0 0 0 12px; }
-.preview-card { position: sticky; top: 24px; }
+.preview-card { position: sticky; top: 84px; max-height: calc(100vh - 108px); overflow: auto; scrollbar-gutter: stable; }
+.preview-card::-webkit-scrollbar { width: 6px; }
+.preview-card::-webkit-scrollbar-thumb { background: #d9deea; border-radius: 999px; }
 .preview-nav { display: flex; align-items: center; justify-content: space-between;
   background: #0b0e14; border-radius: 10px; padding: 12px 14px; gap: 12px; }
 .pv-brand { display: flex; align-items: center; gap: 8px; color: #ff5c8a; font-weight: 800; font-size: 18px; min-width: 0; }
@@ -1031,7 +1034,7 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .pwa-icon img { width: 100%; height: 100%; object-fit: cover; }
 .pwa-preview b { color: var(--text-1); font-size: 15px; }
 .pwa-preview span { color: var(--text-3); font-size: 12px; }
-.theme-layout { max-width: 860px; }
+.theme-layout { max-width: none; }
 .theme-tabs { width: 100%; }
 .scope-note { margin: 2px 0 14px; color: var(--text-3); font-size: 12px; }
 .edit-status { display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -1054,7 +1057,8 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .percent { color: var(--text-3); font-size: 12px; }
 .raw-input { grid-column: 2 / -1; }
 .theme-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-.preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px;
+  position: sticky; top: -1px; z-index: 2; padding-bottom: 10px; background: var(--card-bg); }
 .preview-sub { margin-top: 4px; color: var(--text-3); font-size: 12px; }
 .impact-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
 .theme-preview { border-radius: 14px; overflow: hidden; background: var(--tp-bg); color: var(--tp-text);
@@ -1140,14 +1144,18 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .tp-list-card div { aspect-ratio: 2/3; border-radius: 10px; background: var(--tp-card); border: 1px solid rgba(255,255,255,.08); }
 .tp-list-card span { display: block; height: 8px; border-radius: 8px; background: var(--tp-muted); opacity: .35; margin-top: 8px; }
 @media (max-width: 1180px) {
-  .site-wrap { grid-template-columns: 1fr; }
-  .preview-card { position: static; }
+  .site-wrap { grid-template-columns: minmax(0, 1fr); }
+  .preview-card { position: static; order: -1; max-height: none; overflow: visible; }
 }
 @media (max-width: 760px) {
+  .site-wrap { gap: 14px; }
+  .logo-row, .edit-status, .theme-group-head, .policy-row, .preview-head { flex-direction: column; align-items: flex-start; }
+  .logo-actions, .logo-actions .el-input, .site-form :deep(.el-select), .site-form :deep(.el-cascader) { width: 100% !important; }
   .theme-grid { grid-template-columns: 1fr; }
   .theme-field, .theme-field.alpha { grid-template-columns: 1fr; }
   .raw-input { grid-column: auto; }
-  .hint.inline { margin-left: 0; }
+  .hint.inline { display: block; margin: 6px 0 0; }
+  .sp-phone { width: min(188px, 100%); }
   .tp-shell { grid-template-columns: 1fr; }
   .tp-side { display: none; }
 }
