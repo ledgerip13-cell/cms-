@@ -7,6 +7,7 @@ import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
 import { createHlsCleanTask } from "../collector/taskRunner.js";
 import { getDriver } from "../collector/drivers/index.js";
+import { isICloudShareUrl, resolveICloudDirect } from "../icloud.js";
 import { normalizeShortsConfig } from "./site.js";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
@@ -103,7 +104,11 @@ export default async function resolveRoutes(app: FastifyInstance) {
         let subtitles: Array<{ lang: string; label: string; url: string }> = [];
         try {
           const drv = getDriver((play.source as any).driver);
-          if (drv.fetchSubtitle) subtitles = await drv.fetchSubtitle((play.source as any).apiUrl, String(play.sourceVodId), epIndex + 1);
+          if (drv.fetchSubtitle) {
+            const tracks = await drv.fetchSubtitle((play.source as any).apiUrl, String(play.sourceVodId), epIndex + 1);
+            // 字幕走本站同源代理，避免跨域 <track> 被浏览器 CORS 拦截
+            subtitles = tracks.map((t, i) => ({ lang: t.lang, label: t.label, url: `/api/subtitle?playId=${playId}&epIndex=${epIndex}&i=${i}` }));
+          }
         } catch { /* 字幕失败不阻断播放 */ }
         return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client", subtitles };
       }
@@ -139,5 +144,36 @@ export default async function resolveRoutes(app: FastifyInstance) {
     }
 
     return { ok: false, error: "缺少播放参数" };
+  });
+
+  // iCloud 字幕同源代理：服务端解析 iCloud .vtt 后同源返回，前端 <track> 零跨域（字幕体积小、每集一次，无视频那种 IP 风险）
+  app.get("/api/subtitle", async (req, reply) => {
+    const q = req.query as any;
+    const playId = Number(q.playId);
+    const epIndex = Math.max(0, Number(q.epIndex) || 0);
+    const i = Math.max(0, Number(q.i) || 0);
+    if (!playId) return reply.code(400).send("missing playId");
+    const play = await prisma.play.findUnique({
+      where: { id: playId },
+      include: { source: { select: { enabled: true, apiUrl: true, driver: true } } },
+    });
+    if (!play || !play.source.enabled || play.flag !== "icloudm3u8") return reply.code(404).send("not found");
+    try {
+      const drv = getDriver((play.source as any).driver);
+      if (!drv.fetchSubtitle) return reply.code(404).send("no subtitle");
+      const tracks = await drv.fetchSubtitle((play.source as any).apiUrl, String(play.sourceVodId), epIndex + 1);
+      const sub = tracks[i];
+      if (!sub?.url) return reply.code(404).send("no subtitle");
+      const direct = isICloudShareUrl(sub.url) ? await resolveICloudDirect(sub.url) : sub.url;
+      const r = await fetch(direct, { signal: AbortSignal.timeout(12000) });
+      if (!r.ok) return reply.code(502).send("subtitle fetch failed");
+      let text = await r.text();
+      if (!/^\uFEFF?WEBVTT/.test(text)) text = "WEBVTT\n\n" + text; // 容错：缺头补 WEBVTT
+      reply.header("content-type", "text/vtt; charset=utf-8");
+      reply.header("cache-control", "public, max-age=3600");
+      return text;
+    } catch {
+      return reply.code(502).send("subtitle error");
+    }
   });
 }
