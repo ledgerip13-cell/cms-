@@ -306,17 +306,6 @@ function mergeWhere(...items: any[]) {
   return list.length === 1 ? list[0] : { AND: list };
 }
 
-const VOD_TEXT_FIELDS = ["name", "year", "typeName", "subType", "actor", "director", "area", "lang", "remarks", "genres", "blurb", "officialIntro"] as const;
-
-function cleanVodUpdate(row: any) {
-  const cleaned = cleanVodTextFields(row);
-  const data: any = {};
-  for (const field of VOD_TEXT_FIELDS) {
-    if (row[field] !== cleaned[field]) data[field] = cleaned[field];
-  }
-  return data;
-}
-
 function cleanupCategoryWhere(input: any) {
   const categoryName = String(input?.categoryName || "").trim();
   const subType = String(input?.subType || "").trim();
@@ -940,54 +929,6 @@ export default async function vodRoutes(app: FastifyInstance) {
       }
     });
 
-    secured.post("/api/admin/vods/text-cleanup", async (req, reply) => {
-      try {
-        const b = (req.body as any) || {};
-        const limit = Math.max(1, Math.min(5000, Number(b.limit) || 1000));
-        const status = String(b.status || "online").trim();
-        const dryRun = b.dryRun !== false;
-        const where = status === "all" ? {} : { status };
-        const rows = await prisma.vod.findMany({
-          where,
-          select: {
-            id: true,
-            name: true,
-            year: true,
-            typeName: true,
-            subType: true,
-            actor: true,
-            director: true,
-            area: true,
-            lang: true,
-            remarks: true,
-            genres: true,
-            blurb: true,
-            officialIntro: true,
-          },
-          take: limit,
-          orderBy: { id: "asc" },
-        });
-        const changed = rows
-          .map((row) => ({ id: row.id, data: cleanVodUpdate(row), before: row }))
-          .filter((row) => Object.keys(row.data).length);
-        if (!dryRun) {
-          for (const row of changed) {
-            await prisma.vod.update({ where: { id: row.id }, data: row.data });
-          }
-        }
-        return {
-          ok: true,
-          dryRun,
-          status,
-          scanned: rows.length,
-          changed: changed.length,
-          updated: dryRun ? 0 : changed.length,
-          samples: changed.slice(0, 12).map((row) => ({ id: row.id, name: row.before.name, fields: Object.keys(row.data) })),
-        };
-      } catch (e: any) {
-        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
-      }
-    });
   });
 
   // 编辑单片（需登录）：只更新允许的字段

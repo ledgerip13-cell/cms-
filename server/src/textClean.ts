@@ -20,18 +20,24 @@ const NAMED_ENTITIES: Record<string, string> = {
 };
 
 export function decodeHtmlEntities(value: unknown) {
-  return String(value ?? "").replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (entity, body: string) => {
-    const key = body.toLowerCase();
-    if (key.startsWith("#x")) {
-      const code = Number.parseInt(key.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
-    }
-    if (key.startsWith("#")) {
-      const code = Number.parseInt(key.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
-    }
-    return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, key) ? NAMED_ENTITIES[key] : entity;
-  });
+  let text = String(value ?? "");
+  for (let i = 0; i < 4; i++) {
+    const next = text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (entity, body: string) => {
+      const key = body.toLowerCase();
+      if (key.startsWith("#x")) {
+        const code = Number.parseInt(key.slice(2), 16);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
+      }
+      if (key.startsWith("#")) {
+        const code = Number.parseInt(key.slice(1), 10);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
+      }
+      return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, key) ? NAMED_ENTITIES[key] : entity;
+    });
+    if (next === text) break;
+    text = next;
+  }
+  return text;
 }
 
 export function cleanText(value: unknown, limit = 0) {
