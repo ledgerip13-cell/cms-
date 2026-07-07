@@ -110,7 +110,7 @@
               v-if="feedMode === 'series' && i === activeIndex && playingKey === unit.key && playUrl && !accessBlock"
               class="short-progress"
               :class="{ active: seeking || progressActive, 'controls-hidden': landscapeTheaterMode && !theaterControlsVisible }"
-              @click.stop
+              @click.stop="seekFromProgressClick"
             >
               <input
                 type="range"
@@ -1920,20 +1920,37 @@ function onSeekInput(event) {
 }
 
 function commitSeek(event) {
-  const video = getVideo()
   const next = Math.max(0, Math.min(1000, Number(event?.target?.value ?? seekValue.value) || 0))
-  seekValue.value = next
-  if (video && durationSec.value) {
-    const nextTime = (durationSec.value * next) / 1000
-    video.currentTime = nextTime
-    currentSec.value = Math.floor(nextTime)
-    if (!paused.value) playNow()
-  }
+  applySeekValue(next)
   seeking.value = false
   scheduleProgressIdle()
 }
 
 function cancelSeek() {
+  seeking.value = false
+  scheduleProgressIdle()
+}
+
+function applySeekValue(value) {
+  const video = getVideo()
+  const next = Math.max(0, Math.min(1000, Number(value) || 0))
+  seekValue.value = next
+  if (!video || !durationSec.value) return
+  const nextTime = (durationSec.value * next) / 1000
+  video.currentTime = nextTime
+  currentSec.value = Math.floor(nextTime)
+  if (!paused.value) playNow()
+}
+
+function seekFromProgressClick(event) {
+  const track = event.currentTarget?.querySelector?.('input')
+  const rect = track?.getBoundingClientRect?.()
+  if (!rect?.width) return
+  const clientX = Number(event.clientX ?? event.changedTouches?.[0]?.clientX)
+  if (!Number.isFinite(clientX)) return
+  showProgressControls()
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  applySeekValue(Math.round(ratio * 1000))
   seeking.value = false
   scheduleProgressIdle()
 }
@@ -2699,7 +2716,7 @@ onBeforeUnmount(() => {
 .shorts-spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(255,255,255,.24); border-top-color: #fff; animation: spin .8s linear infinite; }
 .shorts-spinner.small { width: 18px; height: 18px; border-width: 2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.short-actions { position: absolute; right: 10px; bottom: calc(128px + env(safe-area-inset-bottom)); z-index: 7; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.short-actions { position: absolute; right: 10px; bottom: calc(104px + env(safe-area-inset-bottom)); z-index: 7; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .short-actions.compact { bottom: calc(58px + env(safe-area-inset-bottom)); gap: 12px; }
 .action-btn { width: 54px; border: 0; background: transparent; color: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; text-shadow: 0 2px 10px rgba(0,0,0,.7); }
 .action-btn svg { width: 30px; height: 30px; fill: rgba(255,255,255,.12); stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 4px 10px rgba(0,0,0,.55)); }
@@ -2833,7 +2850,7 @@ onBeforeUnmount(() => {
   .shorts-shell { width: min(100vw, 430px); box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 0 60px rgba(0,0,0,.76); }
   .landscape-theater-mode .shorts-shell { width: 100vw; max-width: none; box-shadow: none; }
   .shorts-top { padding-top: calc(8px + env(safe-area-inset-top)); }
-  .short-actions { bottom: calc(104px + env(safe-area-inset-bottom)); gap: 10px; }
+  .short-actions { bottom: calc(92px + env(safe-area-inset-bottom)); gap: 10px; }
   .short-actions.compact { bottom: calc(52px + env(safe-area-inset-bottom)); }
   .short-card.locked .short-meta { display: none; }
   .short-meta h1 { font-size: 18px; -webkit-line-clamp: 1; }

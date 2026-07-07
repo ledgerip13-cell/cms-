@@ -422,18 +422,19 @@ function cacheSet(cache, key, data) {
   if (cache.size > 80) cache.delete(cache.keys().next().value)
 }
 function browseParams() {
+  const kw = String(route.query.kw || '')
   return {
     page: page.value,
     size,
-    type: String(route.query.type || ''),
-    kw: String(route.query.kw || ''),
-    year: year.value,
+    type: kw ? '' : String(route.query.type || ''),
+    kw,
+    year: kw ? '' : year.value,
     sort: sort.value,
-    sub: sub.value,
+    sub: kw ? '' : sub.value,
   }
 }
 function browseCacheKey() { return JSON.stringify(browseParams()) }
-function yearsCacheKey() { return JSON.stringify({ type: String(curType.value || ''), sub: sub.value }) }
+function yearsCacheKey() { return JSON.stringify({ type: isSearch.value ? '' : String(curType.value || ''), sub: isSearch.value ? '' : sub.value }) }
 
 function setSub(s) {
   sub.value = s
@@ -500,11 +501,18 @@ async function boot() {
   await ensureTypes()
   if (discover.value) { await loadDiscover(); startHeroLoop(); return }
   stopHeroLoop()
+  if (isSearch.value) {
+    sub.value = ''
+    subs.value = []
+    years.value = []
+    void load({ preferCache: true })
+    return
+  }
+  await loadSubs()
   void load({ preferCache: true })
-  void loadSubs()
   void loadYears({ preferCache: true })
 }
-watch(() => route.query, async () => { page.value = 1; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
+watch(() => route.query, async () => { page.value = 1; sub.value = ''; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
 onMounted(boot)
 onActivated(() => { if (discover.value && hero.value.length > 1) startHeroLoop() })
 onDeactivated(stopHeroLoop)
