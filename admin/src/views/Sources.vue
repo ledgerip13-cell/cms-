@@ -89,7 +89,7 @@
         </div>
       </el-form-item>
       <el-form-item label="播放标识"><el-input v-model="form.flag" placeholder="rym3u8（可留空）" /></el-form-item>
-      <el-form-item label="回源模式">
+      <el-form-item label="回源模式" v-if="form.driver !== 'nbflix'">
         <el-select v-model="form.proxyMode" style="width:260px">
           <el-option label="跟随全局（默认）" value="inherit" />
           <el-option label="direct 直连源站（不吃带宽）" value="direct" />
@@ -113,8 +113,8 @@
             <el-option label="每天凌晨2点" value="0 2 * * *" />
           </el-select>
         </el-form-item>
-        <el-form-item label="增量窗口"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
-        <el-form-item label="采集分类">
+        <el-form-item label="增量窗口" v-if="form.driver !== 'nbflix'"><el-input-number v-model="form.syncHours" :min="1" :max="720" /><small style="margin-left:8px;color:#9aa4b2">拉近N小时更新</small></el-form-item>
+        <el-form-item label="采集分类" v-if="form.driver !== 'nbflix'">
           <el-select v-model="form.autoTypeIds" multiple clearable collapse-tags collapse-tags-tooltip
             :placeholder="autoClassLoading ? '分类加载中...' : '全部分类'" style="width:360px"
             filterable :loading="autoClassLoading" :disabled="autoClassLoading || !form.id">
@@ -130,6 +130,7 @@
           </el-select>
           <small style="margin-left:8px;color:#9aa4b2">不选=全部；可多选；选父类会自动展开子类。新增源需保存后再选。</small>
         </el-form-item>
+        <div v-if="form.driver === 'nbflix'" style="font-size:12px;color:#9aa4b2;margin:-6px 0 6px 90px">iCloud 源目录小且无时间/分类筛选，自动采集每次均全量过一遍（靠去重），建议频率不低于6小时</div>
       </template>
     </el-form>
     <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
@@ -186,17 +187,20 @@
   <!-- 采集 -->
   <el-dialog v-model="syncDlg" title="执行采集" width="560">
     <el-form :model="syncForm" label-width="90px">
-      <el-form-item label="采集模式">
+      <div v-if="isNbflixSync" style="font-size:12px;color:#e6a23c;background:#fdf6ec;border:1px solid #f5dab1;border-radius:4px;padding:8px 12px;margin-bottom:12px">
+        iCloud 源：目录小且无服务端分页/时间过滤，每次均自动全量采集（靠去重，不会重复入库）。以下不适用项已隐藏/禁用。
+      </div>
+      <el-form-item label="采集模式" v-if="!isNbflixSync">
         <el-radio-group v-model="syncForm.mode">
           <el-radio value="incr">增量</el-radio>
           <el-radio value="full">全量</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="增量窗口" v-if="syncForm.mode==='incr'">
+      <el-form-item label="增量窗口" v-if="!isNbflixSync && syncForm.mode==='incr'">
         <el-input-number v-model="syncForm.hours" :min="1" :max="720" />
         <small style="margin-left:8px;color:#9aa4b2">只拉近N小时更新(不重复旧片)</small>
       </el-form-item>
-      <el-form-item label="采集分类">
+      <el-form-item label="采集分类" v-if="!isNbflixSync">
         <el-select v-model="syncForm.typeIds" multiple clearable collapse-tags collapse-tags-tooltip
           :placeholder="classLoading ? '分类加载中...' : '全部分类'" style="width:360px"
           filterable :loading="classLoading" :disabled="classLoading" @change="onTypeChange">
@@ -217,7 +221,7 @@
           <span v-if="estText" style="color:#67c23a">{{ estText }}</span>
         </div>
       </el-form-item>
-      <el-form-item label="年份筛选">
+      <el-form-item label="年份筛选" v-if="!isNbflixSync">
         <div class="year-filter">
           <el-select v-model="syncForm.yearMode" placeholder="不限" style="width:120px">
             <el-option label="不限" value="" />
@@ -239,7 +243,7 @@
           <span v-else class="muted">不过滤年份</span>
         </div>
       </el-form-item>
-      <el-form-item label="最大页数">
+      <el-form-item label="最大页数" v-if="!isNbflixSync">
         <el-input-number v-model="syncForm.maxPages" :min="1" :max="2000" />
         <small style="margin-left:8px;color:#9aa4b2">{{ syncForm.mode==='full' ? '全量建议调大' : '安全上限' }}</small>
       </el-form-item>
@@ -257,7 +261,7 @@
       <el-form-item label="后置动作">
         <div class="post-actions">
           <el-checkbox v-model="syncForm.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
-          <el-checkbox v-model="syncForm.cleanAfterCollect">采集后HLS清洗</el-checkbox>
+          <el-checkbox v-model="syncForm.cleanAfterCollect" :disabled="isNbflixSync" :title="isNbflixSync ? 'iCloud 客户端解析链无法清洗' : ''">采集后HLS清洗{{ isNbflixSync ? '（iCloud源不适用）' : '' }}</el-checkbox>
           <div class="form-help">HLS 清洗只在这里勾选时提交；全局自动清洗仅用于定时自动更新采集。</div>
         </div>
       </el-form-item>
@@ -297,6 +301,7 @@ const formRules = {
 }
 const syncDlg = ref(false); const syncing = ref(false)
 const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, typeIds: [] }); let syncTarget = null
+const isNbflixSync = computed(() => syncTarget?.driver === 'nbflix')
 const selectedSyncTypeIds = computed(() => {
   const ids = Array.isArray(syncForm.value.typeIds)
     ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
@@ -493,6 +498,7 @@ async function openSync(row) {
     metaAfterCollect: true,
     cleanAfterCollect: false,
   }
+  if (row.driver === 'nbflix') syncForm.value.mode = 'full' // iCloud 源无增量概念，固定全量
   estText.value = ''
   syncDlg.value = true
   // 实时拉上游分类树（含父子），失败则回退已发现的 srcTypes
