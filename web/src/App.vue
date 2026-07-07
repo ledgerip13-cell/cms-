@@ -11,7 +11,7 @@
         <span v-if="site.siteName">{{ site.siteName }}</span>
       </div>
       <nav class="sb-nav">
-        <div class="sb-item" :class="{on: !curType && !isSearch}" @click="pick('')">
+        <div class="sb-item" :class="{on: isHomeRoot}" @click="pick('')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z"/></svg>
           <span>全军出鸡</span>
         </div>
@@ -22,7 +22,7 @@
         <div class="sb-sep"></div>
         <div class="sb-label">分类</div>
         <div v-for="t in types" :key="t.name" class="sb-item"
-          :class="{on: curType===t.name}" @click="pick(t.name)">
+          :class="{on: isHomeRoute && curType===t.name}" @click="pick(t.name)">
           <span>{{ t.name || '未分类' }}</span>
         </div>
       </nav>
@@ -32,9 +32,9 @@
     <div class="main">
       <header class="topbar">
         <div class="mobile-tabs" aria-label="移动端分类导航">
-          <button class="mobile-tab" :class="{on: !curType && !isSearch}" @click="pick('')">全军出鸡</button>
+          <button class="mobile-tab" :class="{on: isHomeRoot}" @click="pick('')">全军出鸡</button>
           <button v-if="shortsEnabled" class="mobile-tab" @click="goShorts">刷短剧</button>
-          <button v-for="t in types" :key="t.name" class="mobile-tab" :class="{on: curType===t.name}" @click="pick(t.name)">
+          <button v-for="t in types" :key="t.name" class="mobile-tab" :class="{on: isHomeRoute && curType===t.name}" @click="pick(t.name)">
             {{ t.name || '未分类' }}
           </button>
         </div>
@@ -154,6 +154,8 @@ const pwaUpdateReady = ref(false)
 
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
+const isHomeRoute = computed(() => route.path === '/')
+const isHomeRoot = computed(() => isHomeRoute.value && !curType.value && !isSearch.value)
 const isShortsRoute = computed(() => route.path === '/shorts')
 const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
 
