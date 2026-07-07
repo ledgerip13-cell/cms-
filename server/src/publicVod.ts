@@ -185,12 +185,24 @@ export function publicTypeFilter(types: string[]) {
   return { in: publicTypeList(types) };
 }
 
-export function publicPlayableFilter() {
-  return { plays: { some: { source: { enabled: true } } } };
+export async function enabledPlayableSourceIds() {
+  const rows = await prisma.source.findMany({
+    where: { enabled: true },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
 }
 
-export function publicPlayCountSelect() {
-  return { plays: { where: { source: { enabled: true } } } };
+export function publicPlayableFilter(sourceIds?: number[]) {
+  return sourceIds
+    ? { plays: { some: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } }
+    : { plays: { some: { source: { enabled: true } } } };
+}
+
+export function publicPlayCountSelect(sourceIds?: number[]) {
+  return sourceIds
+    ? { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } }
+    : { plays: { where: { source: { enabled: true } } } };
 }
 
 export function requestedPublicType(types: string[], type: string) {

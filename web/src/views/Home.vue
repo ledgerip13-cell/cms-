@@ -390,6 +390,11 @@ const subs = ref([]); const sub = ref('')
 const list = ref([]); const total = ref(0); const page = ref(1); const size = 30; const loading = ref(true)
 const title = ref(''); const years = ref([]); const year = ref(''); const sort = ref('recent')
 const mobileFiltersOpen = ref(false)
+const BROWSE_CACHE_TTL = 5 * 60 * 1000
+const browseCache = new Map()
+const subsCache = new Map()
+const yearsCache = new Map()
+let browseRequestId = 0
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
 const filterSummary = computed(() => {
@@ -404,34 +409,100 @@ const browseTitleIcon = computed(() => {
   return categoryIconSvg(cat?.icon, curType.value)
 })
 
-function setSub(s) { sub.value = s; year.value = ''; page.value = 1; loadYears(); load(); mobileFiltersOpen.value = false }
+function cacheGet(cache, key) {
+  const hit = cache.get(key)
+  if (!hit || Date.now() - hit.ts > BROWSE_CACHE_TTL) {
+    cache.delete(key)
+    return null
+  }
+  return hit.data
+}
+function cacheSet(cache, key, data) {
+  cache.set(key, { ts: Date.now(), data })
+  if (cache.size > 80) cache.delete(cache.keys().next().value)
+}
+function browseParams() {
+  return {
+    page: page.value,
+    size,
+    type: String(route.query.type || ''),
+    kw: String(route.query.kw || ''),
+    year: year.value,
+    sort: sort.value,
+    sub: sub.value,
+  }
+}
+function browseCacheKey() { return JSON.stringify(browseParams()) }
+function yearsCacheKey() { return JSON.stringify({ type: String(curType.value || ''), sub: sub.value }) }
+
+function setSub(s) {
+  sub.value = s
+  year.value = ''
+  page.value = 1
+  void load({ preferCache: true })
+  void loadYears({ preferCache: true })
+  mobileFiltersOpen.value = false
+}
 async function loadSubs() {
   sub.value = ''
   if (!curType.value) { subs.value = []; return }
-  try { subs.value = (await api.subtypes(curType.value)).filter(s => s.count > 0) } catch { subs.value = [] }
+  const key = String(curType.value)
+  const cached = cacheGet(subsCache, key)
+  if (cached) { subs.value = cached; return }
+  try {
+    const data = (await api.subtypes(curType.value)).filter(s => s.count > 0)
+    subs.value = data
+    cacheSet(subsCache, key, data)
+  } catch { subs.value = [] }
 }
-async function loadYears() {
-  try { years.value = await api.years({ type: curType.value, sub: sub.value }) } catch { years.value = [] }
+async function loadYears({ preferCache = true } = {}) {
+  const key = yearsCacheKey()
+  const cached = preferCache ? cacheGet(yearsCache, key) : null
+  if (cached) { years.value = cached; return }
+  try {
+    const data = await api.years({ type: curType.value, sub: sub.value })
+    if (key !== yearsCacheKey()) return
+    years.value = data
+    cacheSet(yearsCache, key, data)
+  } catch { years.value = [] }
 }
-async function load() {
-  loading.value = true
-  const type = route.query.type || ''
-  const kw = route.query.kw || ''
+async function load({ preferCache = true } = {}) {
+  const params = browseParams()
+  const key = browseCacheKey()
+  const cached = preferCache ? cacheGet(browseCache, key) : null
+  const requestId = ++browseRequestId
+  const type = params.type
+  const kw = params.kw
   title.value = kw ? `搜索“${kw}”` : (type || '全部影片')
-  const r = await api.vods({ page: page.value, size, type, kw, year: year.value, sort: sort.value, sub: sub.value })
-  list.value = r.list; total.value = r.total; loading.value = false
+  if (cached) {
+    list.value = cached.list
+    total.value = cached.total
+    loading.value = false
+    return
+  }
+  loading.value = true
+  try {
+    const r = await api.vods(params)
+    if (requestId !== browseRequestId || key !== browseCacheKey()) return
+    const data = { list: r.list || [], total: r.total || 0 }
+    list.value = data.list
+    total.value = data.total
+    cacheSet(browseCache, key, data)
+  } finally {
+    if (requestId === browseRequestId) loading.value = false
+  }
 }
-function go(p) { page.value = p; load(); window.scrollTo({top:0,behavior:'smooth'}) }
-function setSort(v) { sort.value = v; page.value = 1; load(); mobileFiltersOpen.value = false }
-function setYear(y) { year.value = y; page.value = 1; load(); mobileFiltersOpen.value = false }
+function go(p) { page.value = p; load({ preferCache: true }); window.scrollTo({top:0,behavior:'smooth'}) }
+function setSort(v) { sort.value = v; page.value = 1; load({ preferCache: true }); mobileFiltersOpen.value = false }
+function setYear(y) { year.value = y; page.value = 1; load({ preferCache: true }); mobileFiltersOpen.value = false }
 
 async function boot() {
   await ensureTypes()
   if (discover.value) { await loadDiscover(); startHeroLoop(); return }
   stopHeroLoop()
-  await loadSubs()
-  await loadYears()
-  load()
+  void load({ preferCache: true })
+  void loadSubs()
+  void loadYears({ preferCache: true })
 }
 watch(() => route.query, async () => { page.value = 1; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
 onMounted(boot)
