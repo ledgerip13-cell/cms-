@@ -9,12 +9,31 @@
           <span class="brand-sub">采集聚合后台</span>
         </div>
       </div>
-      <el-menu :default-active="$route.path" router class="menu" :collapse="false">
-        <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
-          <el-icon><component :is="m.icon" /></el-icon>
-          <span>{{ m.label }}</span>
-          <el-badge v-if="m.path==='/tasks' && activeTasks" :value="activeTasks" class="menu-badge" />
-        </el-menu-item>
+      <el-menu
+        :default-active="$route.path"
+        :default-openeds="defaultOpeneds"
+        router
+        unique-opened
+        class="menu"
+        :collapse="false"
+      >
+        <template v-for="section in menuSections" :key="section.index">
+          <el-sub-menu v-if="section.children" :index="section.index">
+            <template #title>
+              <el-icon><component :is="section.icon" /></el-icon>
+              <span>{{ section.label }}</span>
+            </template>
+            <el-menu-item v-for="m in section.children" :key="m.path" :index="m.path">
+              <el-icon><component :is="m.icon" /></el-icon>
+              <span>{{ m.label }}</span>
+              <el-badge v-if="m.path==='/tasks' && activeTasks" :value="activeTasks" class="menu-badge" />
+            </el-menu-item>
+          </el-sub-menu>
+          <el-menu-item v-else :index="section.path">
+            <el-icon><component :is="section.icon" /></el-icon>
+            <span>{{ section.label }}</span>
+          </el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
 
@@ -67,20 +86,43 @@ const user = ref(JSON.parse(localStorage.getItem('user') || '{"username":"—"}'
 const pwdDlg = ref(false); const pwd = ref({ oldPassword:'', newPassword:'' })
 let activeTimer = null
 
-const menus = [
-  { path: '/dashboard', label: '概览', icon: DataLine },
-  { path: '/sources', label: '采集源管理', icon: Connection },
-  { path: '/tasks', label: '采集任务', icon: List },
-  { path: '/categories', label: '分类映射', icon: Files },
-  { path: '/vods', label: '影片库', icon: Film },
-  { path: '/hot', label: '热门推荐', icon: StarFilled },
-  { path: '/hls-clean', label: 'HLS清洗', icon: VideoPlay },
-  { path: '/users', label: '用户管理', icon: UserFilled },
-  { path: '/access', label: '权限管理', icon: Key },
-  { path: '/meta', label: '元数据', icon: MagicStick },
-  { path: '/site', label: '站点设置', icon: Setting },
+const menuSections = [
+  { index: 'dashboard', path: '/dashboard', label: '运行概览', icon: DataLine },
+  {
+    index: 'collect',
+    label: '采集引擎',
+    icon: Connection,
+    children: [
+      { path: '/sources', label: '采集源管理', icon: Connection },
+      { path: '/tasks', label: '采集任务进度', icon: List },
+      { path: '/categories', label: '分类映射面板', icon: Files },
+    ],
+  },
+  {
+    index: 'content',
+    label: '内容运营',
+    icon: Film,
+    children: [
+      { path: '/vods', label: '影片库管理', icon: Film },
+      { path: '/meta', label: '豆瓣元数据', icon: MagicStick },
+      { path: '/hot', label: '热门推荐', icon: StarFilled },
+    ],
+  },
+  { index: 'playback', path: '/hls-clean', label: '播放治理', icon: VideoPlay },
+  {
+    index: 'users-security',
+    label: '用户与权限',
+    icon: UserFilled,
+    children: [
+      { path: '/users', label: '用户管理', icon: UserFilled },
+      { path: '/access', label: '权限访问', icon: Key },
+    ],
+  },
+  { index: 'settings', path: '/site', label: '系统设置', icon: Setting },
 ]
-const currentIcon = computed(() => (menus.find(m => m.path === route.path) || menus[0]).icon)
+const flatMenus = computed(() => menuSections.flatMap(s => s.children || [s]))
+const currentIcon = computed(() => (flatMenus.value.find(m => m.path === route.path) || flatMenus.value[0]).icon)
+const defaultOpeneds = computed(() => menuSections.filter(s => s.children?.some(m => m.path === route.path)).map(s => s.index))
 
 const activeTasks = ref(0)
 async function pollActive() { try { activeTasks.value = (await api.taskActiveCount()).active } catch {} }
@@ -126,12 +168,20 @@ async function doPwd() {
   color: var(--side-text); height: 44px; line-height: 44px; border-radius: 8px;
   margin-bottom: 4px; font-size: 14px;
 }
+.menu :deep(.el-sub-menu__title) {
+  color: var(--side-text); height: 44px; line-height: 44px; border-radius: 8px;
+  margin-bottom: 4px; font-size: 14px;
+}
 .menu :deep(.el-menu-item:hover) { background: var(--side-bg-hover); color: #fff; }
+.menu :deep(.el-sub-menu__title:hover) { background: var(--side-bg-hover); color: #fff; }
 .menu :deep(.el-menu-item.is-active) {
   background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
   color: #fff; font-weight: 600;
 }
 .menu :deep(.el-menu-item.is-active .el-icon) { color: #fff; }
+.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) { color: #fff; font-weight: 600; }
+.menu :deep(.el-sub-menu .el-menu) { background: transparent; }
+.menu :deep(.el-sub-menu .el-menu-item) { height: 38px; line-height: 38px; margin-left: 10px; padding-left: 18px !important; font-size: 13px; }
 .menu-badge { margin-left: auto; }
 
 /* 顶栏 */
