@@ -775,8 +775,8 @@ button { font-family: inherit; }
   .home .row-scroll {
     grid-auto-columns: 42vw;
     gap: 12px;
-    margin: 0 -12px;
-    padding: 0 12px 10px;
+    margin: 0;
+    padding: 0 0 10px;
     scrollbar-width: none;
   }
   .home .row-scroll::-webkit-scrollbar { display: none; }
