@@ -645,6 +645,8 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
     include: { vod: { select: { id: true, typeName: true } }, source: { select: { id: true, name: true } } },
   });
   if (!play) throw new Error("播放线路不存在");
+  // iCloud 客户端解析链路无法也不需服务端清洗（分片每个都是短签名 iCloud 链，服务端拉不到 m3u8 内容），直接早退
+  if (play.flag === "icloudm3u8") throw new Error("iCloud 客户端解析源不适用 HLS 清洗");
   const decision = await decideHlsClean({ id: play.id, sourceId: play.sourceId, vod: play.vod });
   const strategyIds = normalizeHlsStrategyIds(opts.strategyIds ?? opts.strategyId ?? decision.strategyIds);
   const strategyId = strategyIds.join(",");

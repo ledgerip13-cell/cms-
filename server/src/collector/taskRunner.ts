@@ -83,7 +83,7 @@ async function queueHlsCleanForVods(vodIds: unknown[] | undefined, opts: { prior
   const ids = uniqueVodIds(vodIds);
   if (!ids.length) return 0;
   const plays = await prisma.play.findMany({
-    where: { vodId: { in: ids } },
+    where: { vodId: { in: ids }, flag: { not: "icloudm3u8" } }, // 跳过 iCloud 客户端解析源，无需也无法服务端清洗
     select: { id: true },
     take: 500,
     orderBy: { id: "asc" },
@@ -390,6 +390,7 @@ async function runHlsCleanTask(taskId: number, opts: {
     if (opts.sourceId) where.sourceId = Number(opts.sourceId);
     if (!playIds.length && opts.vodId) where.vodId = Number(opts.vodId);
     if (opts.categoryName) where.vod = { typeName: String(opts.categoryName) };
+    where.flag = { not: "icloudm3u8" }; // 排除 iCloud 客户端解析链路
     const plays = await prisma.play.findMany({
       where,
       include: { vod: { select: { id: true, name: true, typeName: true } }, source: { select: { id: true, name: true } } },
