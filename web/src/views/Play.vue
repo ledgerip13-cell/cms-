@@ -12,7 +12,7 @@
           <div class="play-lock-desc">{{ accessBlock.desc }}</div>
           <button class="play-lock-btn" type="button" @click="handleAccessAction">{{ accessBlock.actionText }}</button>
         </div>
-        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
+        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
         <iframe v-if="!accessBlock && mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
         <div v-if="!accessBlock && mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
@@ -540,7 +540,25 @@ async function toggleFollow() {
   }
 }
 
-onMounted(() => loadVod(route.params.id))
+// 键盘快捷键（桌面/平板）：仅在非输入态 + 视频已加载时生效，不影响手机触控
+function onPlayerKeydown(e) {
+  const video = videoEl.value
+  if (!video || mode.value !== 'hls' || accessBlock.value) return
+  const el = document.activeElement
+  const tag = (el?.tagName || '').toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return
+  switch (e.key) {
+    case ' ': case 'k': e.preventDefault(); video.paused ? video.play().catch(()=>{}) : video.pause(); break
+    case 'f': e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen?.(); else (video.closest('.player-box') || video).requestFullscreen?.(); break
+    case 'ArrowLeft': e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); break
+    case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration || 1e9, video.currentTime + 5); break
+    case 'ArrowUp': e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); break
+    case 'ArrowDown': e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); break
+    case 'm': e.preventDefault(); video.muted = !video.muted; break
+  }
+}
+
+onMounted(() => { loadVod(route.params.id); window.addEventListener('keydown', onPlayerKeydown) })
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
@@ -549,6 +567,7 @@ onBeforeUnmount(() => {
   if (curUrl.value) saveWatchHistory(epIdx.value)
   if (hls) hls.destroy()
   clearPlayWatchdog()
+  window.removeEventListener('keydown', onPlayerKeydown)
 })
 </script>
 
@@ -557,7 +576,7 @@ onBeforeUnmount(() => {
 .player-col { min-width: 0; }
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
-.video { width: 100%; height: 100%; background: #000; }
+.video { width: 100%; height: 100%; background: #000; object-fit: contain; }
 .video-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #667; pointer-events: none; }
 .play-lock-bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: blur(16px) brightness(.42) saturate(1.08);
