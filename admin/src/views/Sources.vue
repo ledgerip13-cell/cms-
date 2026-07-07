@@ -300,8 +300,9 @@ const formRules = {
   }, trigger: 'blur' }],
 }
 const syncDlg = ref(false); const syncing = ref(false)
-const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, typeIds: [] }); let syncTarget = null
-const isNbflixSync = computed(() => syncTarget?.driver === 'nbflix')
+const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, typeIds: [] })
+const syncTarget = ref(null)
+const isNbflixSync = computed(() => syncTarget.value?.driver === 'nbflix')
 const selectedSyncTypeIds = computed(() => {
   const ids = Array.isArray(syncForm.value.typeIds)
     ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
@@ -479,7 +480,7 @@ const classLoading = ref(false)
 const counting = ref(false)
 const estText = ref('')
 async function openSync(row) {
-  syncTarget = row
+  syncTarget.value = row
   srcTypes.value = []
   classTree.value = []
   // 首次建库默认全量 + 大页数，避免增量窗口把全量过滤成个位数
@@ -525,7 +526,7 @@ async function estimate() {
   counting.value = true; estText.value = ''
   try {
     const hours = syncForm.value.mode === 'incr' ? syncForm.value.hours : 0
-    const r = await api.sourceTypeCount(syncTarget.id, typeIds, hours)
+    const r = await api.sourceTypeCount(syncTarget.value.id, typeIds, hours)
     if (r?.ok) {
       const parts = []
       if (r.selected > 1) parts.push(`已选${r.selected}类`)
@@ -541,7 +542,7 @@ async function doSync() {
   try {
     const payload = { ...syncForm.value, typeIds: selectedSyncTypeIds.value }
     delete payload.typeId
-    const r = await api.syncSource(syncTarget.id, payload)
+    const r = await api.syncSource(syncTarget.value.id, payload)
     ElMessage.success('采集任务已提交，可去「采集任务」查看进度')
     syncDlg.value = false
     // 提示跳转任务页
