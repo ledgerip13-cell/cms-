@@ -23,7 +23,6 @@
         <div class="sb-label">分类</div>
         <div v-for="t in types" :key="t.name" class="sb-item"
           :class="{on: curType===t.name}" @click="pick(t.name)">
-          <span v-html="categoryIconSvg(t.icon, t.name)"></span>
           <span>{{ t.name || '未分类' }}</span>
         </div>
       </nav>
@@ -134,7 +133,6 @@ import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writ
 import { openAuthDialog } from './authDialog'
 import { currentUser, refreshUser } from './userStore'
 import { levelTagStyle } from './levelTag'
-import { categoryIconSvg } from './categoryIcons'
 import { applyPwaUpdate, setupPwaUpdates } from './pwa'
 
 const router = useRouter()
