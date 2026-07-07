@@ -118,26 +118,22 @@ async function fetchList(
   _typeId?: string | number,
   _keyword?: string
 ): Promise<ListResult> {
-  // 源站 classId 筛选不生效，统一全量采集（sort=1 按更新倒序），靠详情 videoClass 回填分类
+  // 源站 classId 筛选不生效，统一全量采集，靠详情 videoClass 回填分类。
+  // ⚠️ 实测（2026-07-07）：分页参数是 pageNum（非 page）；count 是当页条数非总数；
+  //    列表按更新时间实时排序，pageNum 分页跨请求会漂移导致漏采（实测 5 页只覆盖 176/195）。
+  //    而大 pageSize 单次能稳定拿全量，故一次性全量拉取作单页返回（pagecount=1）。
   const origin = baseOf(apiUrl);
-  const pageSize = 20;
+  const PAGE_CAP = 5000;
   const j = await req(
     origin,
-    `/api/video/listFormMobile?sort=1&page=${page}&pageSize=${pageSize}`,
+    `/api/video/listFormMobile?sort=1&pageNum=1&pageSize=${PAGE_CAP}`,
     { method: "GET" },
     timeoutMs
   );
-  const data = j?.data || {};
-  const list: any[] = Array.isArray(data.list) ? data.list : [];
-  const total = Number(data.count || 0);
-  const pagecount = total > 0 ? Math.ceil(total / pageSize) : (list.length ? page + 1 : page);
-  return {
-    page,
-    pagecount,
-    total,
-    list: list.map((it) => toRawVod(it)),
-    format: "json",
-  };
+  const list: any[] = Array.isArray(j?.data?.list) ? j.data.list : [];
+  // 全部已在第1页；runSync 若请求 page>1 返回空使循环安全终止
+  const pageItems = page === 1 ? list : [];
+  return { page, pagecount: 1, total: list.length, list: pageItems.map((it) => toRawVod(it)), format: "json" };
 }
 
 async function fetchDetail(
