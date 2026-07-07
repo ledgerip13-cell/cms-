@@ -1051,6 +1051,33 @@ function ensureMoreAhead() {
   if (next?.vod?.id) void loadFollowState(next.vod.id)
   preloadPoster(prev)
   preloadPoster(next)
+  prefetchUnitPlayback(next)
+}
+
+// 预解析下一集播放地址（结果进 resolveCache LRU）+ 预热 m3u8 manifest 的 HTTP 缓存，
+// 切集时省掉解析往返与 manifest 拉取。fire-and-forget，失败静默。
+const warmedManifests = new Set()
+function warmupManifest(url, kind) {
+  if (!url || warmedManifests.has(url)) return
+  if (kind !== 'm3u8' && !isDirectM3u8(url)) return
+  warmedManifests.add(url)
+  if (warmedManifests.size > 60) {
+    const first = warmedManifests.values().next().value
+    warmedManifests.delete(first)
+  }
+  try {
+    fetch(url, { mode: 'cors', credentials: 'omit' }).catch(() => {})
+  } catch {}
+}
+
+function prefetchUnitPlayback(unit) {
+  if (!unit?.vod?.id || !unit?.channel?.id) return
+  if (accessBlock.value) return
+  void resolveUnitPlayback(unit)
+    .then((result) => {
+      if (result?.ok && result.url) warmupManifest(result.url, result.kind || '')
+    })
+    .catch(() => {})
 }
 
 const preloadedPosters = new Set()
