@@ -27,15 +27,30 @@ const ICLOUD_CK = { ckjsBuildVersion: '1954c05c4f41058728b542451db280c466a18f51'
 function icloudUUID() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){var r=Math.random()*16|0,v=c=='x'?r:(r&0x3|0x8);return v.toString(16);}); }
 function icloudShortGUID(u) { if(!u.includes('/iclouddrive/')) return u; var m=u.match(/\\/iclouddrive\\/([a-zA-Z0-9_-]+)(?:[#\\/].*|$)/); if(!m||m.length<2) throw new Error('bad iCloud link'); return m[1]; }
 async function icloudDownloadURL(shortGUID) {
-  var cid = icloudUUID().toLowerCase();
-  var api = 'https://ckdatabasews.icloud.com/database/1/com.apple.cloudkit/production/public/records/resolve?ckjsBuildVersion=' + ICLOUD_CK.ckjsBuildVersion + '&ckjsVersion=' + ICLOUD_CK.ckjsVersion + '&clientId=' + cid + '&clientBuildNumber=' + ICLOUD_CK.clientBuildNumber + '&clientMasteringNumber=' + ICLOUD_CK.clientMasteringNumber;
-  var resp = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ shortGUIDs: [{ value: shortGUID }] }) });
-  if(!resp.ok) throw new Error('CK HTTP ' + resp.status);
-  var data = await resp.json();
-  var rec = data && data.results && data.results[0] && data.results[0].rootRecord;
-  var fc = rec && rec.fields && rec.fields.fileContent;
-  if(!fc || fc.type !== 'ASSETID' || !fc.value || !fc.value.downloadURL) throw new Error('resolve failed');
-  return fc.value.downloadURL;
+  var lastErr;
+  // CloudKit 边缘偶发 5xx/网络抖动（服务端采集驱动实测过），每个分片都要走一次解析，
+  // 一部剧数百个分片不重试就会概率性“偶尔播放失败”，无边际退避重试 3 次。
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      var cid = icloudUUID().toLowerCase();
+      var api = 'https://ckdatabasews.icloud.com/database/1/com.apple.cloudkit/production/public/records/resolve?ckjsBuildVersion=' + ICLOUD_CK.ckjsBuildVersion + '&ckjsVersion=' + ICLOUD_CK.ckjsVersion + '&clientId=' + cid + '&clientBuildNumber=' + ICLOUD_CK.clientBuildNumber + '&clientMasteringNumber=' + ICLOUD_CK.clientMasteringNumber;
+      var resp = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ shortGUIDs: [{ value: shortGUID }] }) });
+      if (!resp.ok) {
+        if (resp.status >= 500 && attempt < 2) { lastErr = new Error('CK HTTP ' + resp.status); await new Promise(function(r){setTimeout(r, 300*(attempt+1));}); continue; }
+        throw new Error('CK HTTP ' + resp.status);
+      }
+      var data = await resp.json();
+      var rec = data && data.results && data.results[0] && data.results[0].rootRecord;
+      var fc = rec && rec.fields && rec.fields.fileContent;
+      if (!fc || fc.type !== 'ASSETID' || !fc.value || !fc.value.downloadURL) throw new Error('resolve failed');
+      return fc.value.downloadURL;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2) { await new Promise(function(r){setTimeout(r, 300*(attempt+1));}); continue; }
+      throw lastErr;
+    }
+  }
+  throw lastErr;
 }
 var icloudCache = { map: new Map(), maxAge: 5*60*1000, maxSize: 200,
   set: function(directUrl, icloudUrl){ try{ var k=new URL(directUrl).href, now=Date.now(); this.map.set(k,{icloudUrl:icloudUrl,lastAccess:now}); this.cleanup(now);}catch(e){} },
@@ -50,7 +65,12 @@ async function handleICloud(url, req) {
     else { var parts = urlObj.pathname.split('/'), last = parts[parts.length-1]; if(last && last !== shortGUID) filename = last; }
     if(directUrl.includes('\${f}') && filename) directUrl = directUrl.replace('\${f}', encodeURIComponent(filename));
     icloudCache.set(directUrl, url);
-    var resp = await fetch(directUrl, { method: req.method, headers: new Headers(req.headers), mode: 'cors', credentials: 'omit' });
+    var resp;
+    for (var a = 0; a < 2; a++) {
+      resp = await fetch(directUrl, { method: req.method, headers: new Headers(req.headers), mode: 'cors', credentials: 'omit' });
+      if (resp.ok || resp.status === 206 || a === 1) break;
+      await new Promise(function(r){setTimeout(r, 300);});
+    }
     if(url.includes('.m3u8')) { var h = new Headers(resp.headers); h.set('Cache-Control','no-cache, no-store, must-revalidate'); return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: h }); }
     return resp;
   } catch (e) {

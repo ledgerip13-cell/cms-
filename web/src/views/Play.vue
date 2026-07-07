@@ -15,7 +15,7 @@
         <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError">
           <track v-for="(s,i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i===0" />
         </video>
-        <div v-if="!accessBlock && mode==='hls' && subtitles.length" class="sub-sync">
+        <div v-if="!accessBlock && mode==='hls' && subtitles.length && subtitleShowing" class="sub-sync">
           <span class="ss-tag">字幕</span>
           <button class="ss-btn" @click="adjustSubtitle(-0.5)" title="字幕提前0.5秒">−0.5s</button>
           <span class="ss-val">{{ (subtitleOffset>0?'+':'') + subtitleOffset.toFixed(1) }}s</span>
@@ -211,7 +211,7 @@ const videoEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
-const subtitles = ref([]); const subtitleOffset = ref(0)
+const subtitles = ref([]); const subtitleOffset = ref(0); const subtitleShowing = ref(false)
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
@@ -406,6 +406,15 @@ function playDirectUrl(url, kind = '') {
 }
 
 // 字幕轨（iCloud 系源经 resolve 返回同源代理地址）
+// 同步条只在用户真正通过原生 video 控件的 CC 开关打开字幕时才显示，而不是只要有字幕轨就一直悬浮在播放器上
+function watchSubtitleTrackState() {
+  const video = videoEl.value; if (!video) return
+  const tracks = video.textTracks; if (!tracks) return
+  const sync = () => { subtitleShowing.value = Array.from(tracks).some(t => t.mode === 'showing') }
+  tracks.addEventListener('change', sync)
+  sync()
+}
+
 function applySubtitleOffset() {
   const video = videoEl.value; if (!video) return
   const tracks = video.textTracks || []
@@ -441,6 +450,8 @@ async function playResolvedEp(i, opts = {}) {
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
+      subtitleShowing.value = false
+      if (subtitles.value.length) nextTick(() => watchSubtitleTrackState())
       // iCloud 链必须等 Service Worker 接管页面后才能发起请求（否则请求会绕过 SW 直接打到 iCloud 拿到网页而非视频）；
       // 首次访问时 App.vue 的 SW 注册与本组件加载存在竞态，实测确认过这个时序问题。
       if (isIcloudUrl(r.url)) await waitForServiceWorker()
