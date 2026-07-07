@@ -36,30 +36,40 @@ function siteOrigin(apiOrigin: string): string {
 }
 
 async function req(apiOrigin: string, path: string, init: RequestInit, timeoutMs: number): Promise<any> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   const site = siteOrigin(apiOrigin);
-  try {
-    const res = await fetch(apiOrigin + path, {
-      ...init,
-      signal: ctrl.signal,
-      headers: {
-        "User-Agent": UA,
-        Accept: "application/json,*/*",
-        Origin: site,
-        Referer: site + "/",
-        ...(init.headers || {}),
-      },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const j = await res.json();
-    if (j && typeof j === "object" && "code" in j && j.code !== 0) {
-      throw new Error(`API code=${j.code} ${j.message || ""}`);
+  const headers = { "User-Agent": UA, Accept: "application/json,*/*", Origin: site, Referer: site + "/", ...(init.headers || {}) };
+  // Cloudflare 边缘偶发 5xx（实测过 502），驱动内指数退避重试，让采集/测活不因偷发不可用而失败
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(apiOrigin + path, { ...init, headers, signal: ctrl.signal });
+      if (!res.ok) {
+        if (res.status >= 500 && res.status < 600 && attempt < 2) {
+          lastErr = new Error(`HTTP ${res.status}`);
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); // 0.4s / 0.8s
+          continue;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const j = await res.json();
+      if (j && typeof j === "object" && "code" in j && j.code !== 0) {
+        throw new Error(`API code=${j.code} ${j.message || ""}`);
+      }
+      return j;
+    } catch (e: any) {
+      lastErr = e;
+      // 网络层错误（非 HTTP 非超时）也重试
+      const msg = String(e?.message || e);
+      const shouldRetry = attempt < 2 && !msg.startsWith("API code=") && !msg.includes("AbortError");
+      if (!shouldRetry) throw e;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    } finally {
+      clearTimeout(t);
     }
-    return j;
-  } finally {
-    clearTimeout(t);
   }
+  throw lastErr || new Error("req failed");
 }
 
 // 单条源站记录 -> 本站 RawVod（列表项无 dramaList，详情项才拼播放地址）
