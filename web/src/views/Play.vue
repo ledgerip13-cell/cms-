@@ -51,7 +51,7 @@
             <span class="t" v-if="vod.area">{{ vod.area }}</span>
             <span class="t accent">{{ vod.lines.length }} 条线路</span>
           </div>
-          <p class="pv-line" v-if="vod.remarks">更新：{{ vod.remarks }}</p>
+          <p class="pv-line update-line" v-if="vod.remarks">更新：{{ vod.remarks }}</p>
           <div class="people-line" v-if="directors.length">
             <span class="people-label">导演</span>
             <button v-for="p in directors" :key="'d'+p.id" class="person-chip" @click="searchPerson(p.person.name)">
@@ -59,7 +59,7 @@
               {{ p.person.name }}
             </button>
           </div>
-          <p class="pv-line" v-else-if="vod.director">导演：{{ vod.director }}</p>
+          <p class="pv-line credit-line" v-else-if="vod.director">导演：{{ vod.director }}</p>
           <div class="people-line" v-if="actors.length">
             <span class="people-label">主演</span>
             <button v-for="p in actors" :key="'a'+p.id" class="person-chip" @click="searchPerson(p.person.name)">
@@ -67,7 +67,7 @@
               {{ p.person.name }}
             </button>
           </div>
-          <p class="pv-line" v-else-if="vod.actor">主演：{{ vod.actor }}</p>
+          <p class="pv-line credit-line" v-else-if="vod.actor">主演：{{ vod.actor }}</p>
           <div class="pv-intro" v-if="vod.officialIntro || vod.blurb">
             <p :class="{fold: !introOpen}">{{ vod.officialIntro || vod.blurb }}</p>
             <span class="intro-toggle" @click="introOpen=!introOpen">{{ introOpen ? '收起' : '展开' }}</span>
@@ -781,6 +781,8 @@ onBeforeUnmount(() => {
   .rec-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 @media (max-width: 480px) {
+  .play-wrap { gap: 14px; }
+  .player-box { border-radius: 12px; margin: 0 -12px; }
   .play-lock { gap: 10px; padding: 18px; }
   .play-lock-icon { width: 44px; height: 44px; }
   .play-lock-icon svg { width: 23px; height: 23px; }
@@ -789,38 +791,65 @@ onBeforeUnmount(() => {
   .play-lock-btn { height: 38px; padding: 0 18px; }
   .pv-head {
     display: grid;
-    grid-template-columns: 86px minmax(0, 1fr);
-    gap: 10px 12px;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 10px 13px;
+    margin: 14px 0 12px;
     padding: 12px;
+    border-radius: 13px;
     overflow: hidden;
   }
   .pv-poster {
-    width: 86px;
+    width: 92px;
     grid-column: 1;
-    grid-row: 1 / span 3;
-    max-height: 129px;
+    grid-row: 1 / span 4;
+    max-height: 138px;
+    border-radius: 9px;
   }
   .pv-meta { display: contents; }
   .pv-title {
     grid-column: 2;
     min-width: 0;
     margin: 0;
-    font-size: 20px;
-    line-height: 1.25;
+    font-size: 19px;
+    line-height: 1.26;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .db-rating { margin-left: 6px; font-size: 14px; }
   .pv-tags {
     grid-column: 2;
-    gap: 6px;
+    align-content: start;
+    gap: 6px 7px;
     margin: 0;
   }
-  .pv-tags .t { padding: 3px 8px; }
+  .pv-tags .t {
+    max-width: 100%;
+    padding: 3px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .pv-line {
-    grid-column: 2;
+    margin: 0;
+    line-height: 1.55;
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+  .update-line {
+    grid-column: 2;
+    align-self: start;
+  }
+  .credit-line {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,.045);
+    color: var(--muted2);
+    -webkit-line-clamp: 2;
   }
   .people-line,
   .pv-intro,
@@ -828,8 +857,71 @@ onBeforeUnmount(() => {
   .pv-actions {
     grid-column: 1 / -1;
   }
-  .people-line { margin: 4px 0 0; }
-  .person-chip { max-width: 104px; }
+  .people-line {
+    align-items: flex-start;
+    gap: 7px;
+    margin: 2px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,.045);
+  }
+  .people-label {
+    flex: 0 0 auto;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .person-chip {
+    max-width: calc(50vw - 34px);
+    min-height: 26px;
+  }
+  .pv-intro {
+    margin-top: 0;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,.045);
+  }
+  .pv-intro p {
+    font-size: 13px;
+    line-height: 1.68;
+  }
+  .pv-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .pv-actions .mini-btn {
+    width: 100%;
+    height: 40px;
+    border-radius: 11px;
+  }
+  .now-playing {
+    margin: 14px 0 12px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .lines-bar,
+  .channels-bar,
+  .eps-box {
+    border-radius: 12px;
+  }
+  .lines-bar {
+    align-items: flex-start;
+    gap: 9px;
+    margin: 12px 0;
+    padding: 12px;
+  }
+  .lines-bar .lbl,
+  .channels-bar .lbl {
+    width: 38px;
+    padding-top: 7px;
+  }
+  .line-btn,
+  .chan-btn {
+    max-width: calc(100% - 48px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .still { flex-basis: 164px; }
   .gallery-viewer { padding: 62px 44px 54px; }
   .gv-close { top: 16px; right: 16px; width: 38px; height: 38px; }

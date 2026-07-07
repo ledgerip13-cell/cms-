@@ -568,20 +568,24 @@ button { font-family: inherit; }
   .cnt { font-size: 13px; }
 }
 @media (max-width: 480px) {
-  :root { --topbar-h: 116px; }
+  :root { --topbar-h: 108px; }
   .topbar {
-    gap: 8px;
-    padding: 8px 12px 10px;
+    gap: 7px;
+    padding: 7px 12px 9px;
     background: linear-gradient(180deg, rgba(10,11,15,.95) 0%, rgba(10,11,15,.78) 78%, transparent 100%);
   }
   .mobile-tabs {
-    height: 40px;
-    gap: 17px;
+    height: 36px;
+    gap: 16px;
     margin: 0 -12px;
     padding: 0 12px 2px;
   }
-  .mobile-tab { height: 38px; font-size: 18px; }
-  .mobile-tab.on { font-size: 20px; }
+  .mobile-tab { height: 34px; font-size: 17px; }
+  .mobile-tab.on { font-size: 18px; }
+  .mobile-tab.on::after {
+    width: 16px;
+    height: 2px;
+  }
   .search-box {
     flex: 1 1 auto;
     min-width: 0;
@@ -602,16 +606,16 @@ button { font-family: inherit; }
   .search {
     position: relative;
     gap: 7px;
-    height: 44px;
+    height: 42px;
     padding: 0 13px;
-    border-radius: 22px;
+    border-radius: 21px;
     border-color: rgba(255,255,255,.18);
   }
   .search > svg { width: 17px; height: 17px; }
   .search input {
     min-width: 0;
-    height: 42px;
-    font-size: 16px;
+    height: 40px;
+    font-size: 15px;
   }
   .search input:placeholder-shown {
     text-overflow: ellipsis;
