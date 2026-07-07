@@ -12,7 +12,16 @@
           <div class="play-lock-desc">{{ accessBlock.desc }}</div>
           <button class="play-lock-btn" type="button" @click="handleAccessAction">{{ accessBlock.actionText }}</button>
         </div>
-        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError"></video>
+        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError">
+          <track v-for="(s,i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i===0" />
+        </video>
+        <div v-if="!accessBlock && mode==='hls' && subtitles.length" class="sub-sync">
+          <span class="ss-tag">字幕</span>
+          <button class="ss-btn" @click="adjustSubtitle(-0.5)" title="字幕提前0.5秒">−0.5s</button>
+          <span class="ss-val">{{ (subtitleOffset>0?'+':'') + subtitleOffset.toFixed(1) }}s</span>
+          <button class="ss-btn" @click="adjustSubtitle(0.5)" title="字幕延后0.5秒">+0.5s</button>
+          <button class="ss-reset" v-if="subtitleOffset!==0" @click="resetSubtitle">复位</button>
+        </div>
         <iframe v-if="!accessBlock && mode==='iframe'" :src="curUrl" class="video" frameborder="0"
           allowfullscreen allow="autoplay; fullscreen"></iframe>
         <div v-if="!accessBlock && mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
@@ -202,6 +211,7 @@ const videoEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
+const subtitles = ref([]); const subtitleOffset = ref(0)
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
@@ -382,6 +392,23 @@ function playDirectUrl(url, kind = '') {
   video.play().catch(()=>{})
 }
 
+// 字幕轨（iCloud 系源经 resolve 返回同源代理地址）
+function applySubtitleOffset() {
+  const video = videoEl.value; if (!video) return
+  const tracks = video.textTracks || []
+  for (let i = 0; i < tracks.length; i++) {
+    const tr = tracks[i]; if (tr.kind !== 'subtitles' || !tr.cues) continue
+    for (let j = 0; j < tr.cues.length; j++) {
+      const cue = tr.cues[j]
+      if (cue._o0 === undefined) { cue._o0 = cue.startTime; cue._o1 = cue.endTime }
+      cue.startTime = Math.max(0, cue._o0 + subtitleOffset.value)
+      cue.endTime = Math.max(0, cue._o1 + subtitleOffset.value)
+    }
+  }
+}
+function adjustSubtitle(d) { subtitleOffset.value = Math.round((subtitleOffset.value + d) * 10) / 10; applySubtitleOffset() }
+function resetSubtitle() { subtitleOffset.value = 0; applySubtitleOffset() }
+
 function trySelfHeal() {
   if (selfHealTried) return false
   selfHealTried = true
@@ -394,11 +421,13 @@ async function playResolvedEp(i, opts = {}) {
   if (!channel?.id || !vod.value?.id) return
   if (!opts.fresh) selfHealTried = false // 正常起播重置自愈标记
   accessBlock.value = null
+  subtitles.value = []; subtitleOffset.value = 0
   resolving.value = true
   try {
     const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i, ...(opts.fresh ? { fresh: 1 } : {}) })
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
+      subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
       playDirectUrl(r.url, r.kind)
       saveWatchHistory(i, pendingSeekSec || 0)
       return
@@ -577,6 +606,11 @@ onBeforeUnmount(() => {
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
 .video { width: 100%; height: 100%; background: #000; object-fit: contain; }
+.sub-sync { position: absolute; right: 12px; bottom: 56px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: rgba(0,0,0,.62); backdrop-filter: blur(8px); border-radius: 18px; font-size: 12px; z-index: 6; }
+.sub-sync .ss-tag { color: rgba(255,255,255,.72); margin-right: 2px; }
+.sub-sync .ss-val { color: #fff; min-width: 40px; text-align: center; }
+.sub-sync .ss-btn, .sub-sync .ss-reset { border: 1px solid rgba(255,255,255,.28); background: transparent; color: #fff; border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.sub-sync .ss-btn:hover, .sub-sync .ss-reset:hover { background: rgba(255,255,255,.16); }
 .video-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: #667; pointer-events: none; }
 .play-lock-bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: blur(16px) brightness(.42) saturate(1.08);
