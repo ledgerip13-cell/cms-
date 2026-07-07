@@ -120,12 +120,13 @@
                 :value="seekValue"
                 :style="{ '--progress': `${progressPercent}%` }"
                 aria-label="播放进度"
-                @pointerdown.stop="startSeek"
-                @pointermove.stop="touchProgressControls"
+                @pointerdown.stop.prevent="startSeek"
+                @pointermove.stop.prevent="moveSeek"
                 @pointerup.stop="commitSeek"
                 @pointercancel.stop="cancelSeek"
-                @touchstart.stop="startSeek"
-                @touchend.stop="commitSeek"
+                @touchstart.stop.prevent="startSeek"
+                @touchmove.stop.prevent="moveSeek"
+                @touchend.stop.prevent="commitSeek"
                 @input.stop="onSeekInput"
                 @change.stop="commitSeek"
               />
@@ -1901,14 +1902,35 @@ function scheduleProgressIdle() {
   }, 1200)
 }
 
-function touchProgressControls() {
-  showProgressControls()
-  if (!seeking.value) scheduleProgressIdle()
+function seekValueFromPointer(event) {
+  const track = event.currentTarget?.matches?.('input')
+    ? event.currentTarget
+    : event.currentTarget?.querySelector?.('input')
+  const rect = track?.getBoundingClientRect?.()
+  if (!rect?.width) return null
+  const point = event.touches?.[0] || event.changedTouches?.[0] || event
+  const clientX = Number(point?.clientX)
+  if (!Number.isFinite(clientX)) return null
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  return Math.round(ratio * 1000)
 }
 
-function startSeek() {
+function startSeek(event) {
   showProgressControls()
   seeking.value = true
+  event?.currentTarget?.setPointerCapture?.(event.pointerId)
+  const next = seekValueFromPointer(event)
+  if (next !== null) applySeekValue(next, { resume: false })
+}
+
+function moveSeek(event) {
+  showProgressControls()
+  if (!seeking.value) {
+    scheduleProgressIdle()
+    return
+  }
+  const next = seekValueFromPointer(event)
+  if (next !== null) applySeekValue(next, { resume: false })
 }
 
 function onSeekInput(event) {
@@ -1920,8 +1942,9 @@ function onSeekInput(event) {
 }
 
 function commitSeek(event) {
-  const next = Math.max(0, Math.min(1000, Number(event?.target?.value ?? seekValue.value) || 0))
-  applySeekValue(next)
+  const pointerValue = seekValueFromPointer(event)
+  const next = pointerValue ?? Math.max(0, Math.min(1000, Number(event?.target?.value ?? seekValue.value) || 0))
+  applySeekValue(next, { resume: true })
   seeking.value = false
   scheduleProgressIdle()
 }
@@ -1931,7 +1954,7 @@ function cancelSeek() {
   scheduleProgressIdle()
 }
 
-function applySeekValue(value) {
+function applySeekValue(value, options = {}) {
   const video = getVideo()
   const next = Math.max(0, Math.min(1000, Number(value) || 0))
   seekValue.value = next
@@ -1939,18 +1962,15 @@ function applySeekValue(value) {
   const nextTime = (durationSec.value * next) / 1000
   video.currentTime = nextTime
   currentSec.value = Math.floor(nextTime)
-  if (!paused.value) playNow()
+  if (options.resume !== false && !paused.value) playNow()
 }
 
 function seekFromProgressClick(event) {
-  const track = event.currentTarget?.querySelector?.('input')
-  const rect = track?.getBoundingClientRect?.()
-  if (!rect?.width) return
-  const clientX = Number(event.clientX ?? event.changedTouches?.[0]?.clientX)
-  if (!Number.isFinite(clientX)) return
+  if (seeking.value) return
   showProgressControls()
-  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
-  applySeekValue(Math.round(ratio * 1000))
+  const next = seekValueFromPointer(event)
+  if (next === null) return
+  applySeekValue(next, { resume: true })
   seeking.value = false
   scheduleProgressIdle()
 }
