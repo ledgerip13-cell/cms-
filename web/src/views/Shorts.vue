@@ -5,7 +5,7 @@
       'immersive-mode': immersiveMode,
       'portrait-locked': portraitLockVisible,
       'landscape-theater-mode': landscapeTheaterMode,
-      'theater-rotated': landscapeTheaterMode && !viewportLandscape,
+      'theater-rotated': landscapeTheaterMode && viewportPortrait,
     }"
   >
     <div class="shorts-bg"></div>
@@ -107,7 +107,7 @@
             <div
               v-if="feedMode === 'series' && i === activeIndex && playingKey === unit.key && playUrl && !accessBlock"
               class="short-progress"
-              :class="{ active: seeking || progressActive }"
+              :class="{ active: seeking || progressActive, 'controls-hidden': landscapeTheaterMode && !theaterControlsVisible }"
               @click.stop
             >
               <input
@@ -133,7 +133,7 @@
               </div>
             </div>
 
-            <div v-if="i === activeIndex && landscapeTheaterMode && !accessBlock" class="theater-controls" @click.stop>
+            <div v-if="i === activeIndex && landscapeTheaterMode && !accessBlock" class="theater-controls" :class="{ 'controls-hidden': !theaterControlsVisible }" @click.stop="showTheaterControls">
               <div class="theater-topbar">
                 <button class="theater-icon-btn" type="button" aria-label="退出横屏" @click="exitLandscapeTheater">
                   <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
@@ -515,6 +515,9 @@ const seeking = ref(false)
 const progressActive = ref(false)
 const seriesState = ref(null)
 const viewportLandscape = ref(false)
+const viewportPortrait = ref(true)
+const theaterControlsVisible = ref(true)
+let theaterControlsTimer = 0
 const landscapeTheaterMode = ref(false)
 const followState = reactive({})
 const vodHistoryState = reactive({})
@@ -551,6 +554,7 @@ let lastSavedHistoryAt = 0
 let restoringShortsRoute = false
 let pendingResumeSeek = null
 let orientationQuery = null
+let portraitQuery = null
 
 const user = currentUser
 const activeUnit = computed(() => units.value[activeIndex.value] || null)
@@ -1626,7 +1630,40 @@ function pauseCurrentVideo() {
 }
 
 function onMediaClick() {
+  if (landscapeTheaterMode.value) {
+    // 剧场模式：点画面切换控件显隐，播放/暂停交给中央按钮
+    if (theaterControlsVisible.value) hideTheaterControls()
+    else showTheaterControls()
+    return
+  }
   togglePause()
+}
+
+function clearTheaterControlsTimer() {
+  if (theaterControlsTimer) {
+    window.clearTimeout(theaterControlsTimer)
+    theaterControlsTimer = 0
+  }
+}
+
+function hideTheaterControls() {
+  clearTheaterControlsTimer()
+  if (paused.value || seeking.value) return
+  theaterControlsVisible.value = false
+}
+
+function showTheaterControls() {
+  clearTheaterControlsTimer()
+  theaterControlsVisible.value = true
+  if (!landscapeTheaterMode.value) return
+  theaterControlsTimer = window.setTimeout(() => {
+    theaterControlsTimer = 0
+    if (paused.value || seeking.value) {
+      showTheaterControls()
+      return
+    }
+    theaterControlsVisible.value = false
+  }, 3000)
 }
 
 function toggleMute() {
@@ -2179,6 +2216,7 @@ async function enterLandscapeTheater() {
   }
   void lockShortsPortrait()
   landscapeTheaterMode.value = true
+  showTheaterControls()
   immersiveMode.value = false
   detailSheetOpen.value = false
   searchSheetOpen.value = false
@@ -2198,6 +2236,8 @@ async function enterLandscapeTheater() {
 
 function exitLandscapeTheater() {
   landscapeTheaterMode.value = false
+  clearTheaterControlsTimer()
+  theaterControlsVisible.value = true
   updateViewportOrientation()
   window.setTimeout(() => keepActiveCardInView(), 300)
 }
@@ -2279,26 +2319,39 @@ function setupOrientationWatcher() {
     return
   }
   orientationQuery = window.matchMedia('(orientation: landscape) and (max-height: 520px)')
+  portraitQuery = window.matchMedia('(orientation: portrait)')
   updateViewportOrientation()
   if (orientationQuery.addEventListener) orientationQuery.addEventListener('change', keepActiveCardInView)
   else if (orientationQuery.addListener) orientationQuery.addListener(keepActiveCardInView)
+  if (portraitQuery.addEventListener) portraitQuery.addEventListener('change', keepActiveCardInView)
+  else if (portraitQuery.addListener) portraitQuery.addListener(keepActiveCardInView)
 }
 
 function cleanupOrientationWatcher() {
-  if (!orientationQuery) return
-  if (orientationQuery.removeEventListener) orientationQuery.removeEventListener('change', keepActiveCardInView)
-  else if (orientationQuery.removeListener) orientationQuery.removeListener(keepActiveCardInView)
-  orientationQuery = null
+  if (orientationQuery) {
+    if (orientationQuery.removeEventListener) orientationQuery.removeEventListener('change', keepActiveCardInView)
+    else if (orientationQuery.removeListener) orientationQuery.removeListener(keepActiveCardInView)
+    orientationQuery = null
+  }
+  if (portraitQuery) {
+    if (portraitQuery.removeEventListener) portraitQuery.removeEventListener('change', keepActiveCardInView)
+    else if (portraitQuery.removeListener) portraitQuery.removeListener(keepActiveCardInView)
+    portraitQuery = null
+  }
 }
 
 function updateViewportOrientation() {
+  // viewportLandscape：手机横屏信号（驱动竖屏遮罩），保持原判定不动
+  // viewportPortrait：纯方向信号（驱动剧场 rotate 分支），桌面/平板横屏不再误旋转
   if (orientationQuery) {
     viewportLandscape.value = Boolean(orientationQuery.matches)
+    viewportPortrait.value = portraitQuery ? Boolean(portraitQuery.matches) : !viewportLandscape.value
     return
   }
   const width = Number(window.innerWidth || document.documentElement.clientWidth || 0)
   const height = Number(window.innerHeight || document.documentElement.clientHeight || 0)
   viewportLandscape.value = width > height && height <= 520
+  viewportPortrait.value = height >= width
 }
 
 function keepActiveCardInView() {
@@ -2355,6 +2408,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
+  clearTheaterControlsTimer()
   clearPlaySettleTimer()
   clearSeriesCommitTimer()
   clearSeriesScrollSettleTimer()
@@ -2458,7 +2512,13 @@ onBeforeUnmount(() => {
 .short-card.theater .progress-time span:first-child { grid-column: 1; grid-row: 1; text-align: left; }
 .short-card.theater .progress-time span:last-child { grid-column: 3; grid-row: 1; text-align: right; }
 .short-card.theater .short-lock { position: fixed; z-index: 60; }
-.theater-controls { position: absolute; inset: 0; z-index: 61; pointer-events: none; color: #fff; }
+.theater-controls { position: absolute; inset: 0; z-index: 61; pointer-events: none; color: #fff; opacity: 1; transition: opacity .28s ease; }
+.theater-controls.controls-hidden { opacity: 0; }
+.theater-controls.controls-hidden .theater-icon-btn,
+.theater-controls.controls-hidden .theater-skip-btn,
+.theater-controls.controls-hidden .theater-play-btn { pointer-events: none; }
+.short-card.theater .short-progress { transition: opacity .28s ease; }
+.short-card.theater .short-progress.controls-hidden { opacity: 0; pointer-events: none; }
 .theater-topbar {
   position: absolute;
   left: var(--theater-safe-x);
@@ -2534,6 +2594,14 @@ onBeforeUnmount(() => {
   width: 100dvh;
   height: 100dvw;
   transform: translate(-50%, -50%) rotate(90deg);
+}
+/* rotate(90deg) 后 UI 坐标系与物理安全区映射：
+   局部 left→物理 top(刘海)、局部 right→物理 bottom(手势条)、
+   局部 top→物理 right、局部 bottom→物理 left */
+.landscape-theater-mode.theater-rotated {
+  --theater-safe-x: max(14px, env(safe-area-inset-top), env(safe-area-inset-bottom));
+  --theater-safe-top: max(10px, env(safe-area-inset-right));
+  --theater-safe-bottom: max(12px, env(safe-area-inset-left));
 }
 .landscape-theater-mode .episode-sheet-panel {
   width: min(340px, 42%);
