@@ -5,6 +5,7 @@ import { fetchList, fetchDetail, parsePlay, fetchClasses, searchByKeyword, resol
 import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
 import { downloadImageToLocal, isLocalImageUrl } from "../localImages.js";
+import { cleanText } from "../textClean.js";
 
 export interface SyncOptions {
   mode?: "full" | "incr";
@@ -167,7 +168,7 @@ export async function backfillSubTypes(
         const byId = new Map(details.map((d) => [String(d.vod_id), d]));
         for (const b of batch) {
           const raw = byId.get(b.svid);
-          const st = (raw?.type_name || "").trim();
+          const st = cleanText(raw?.type_name);
           if (st) {
             await prisma.vod.update({ where: { id: b.vodId }, data: { subType: st } });
             filled++;
@@ -199,9 +200,9 @@ export async function refreshVod(vodId: number) {
       const details = await fetchDetail(p.source.apiUrl, [p.sourceVodId]);
       const raw = details.find((d) => String(d.vod_id) === p.sourceVodId) || details[0];
       if (!raw) { results.push({ source: p.source.name, ok: false, msg: "源无返回" }); continue; }
-      if (raw.vod_remarks) latestRemarks = raw.vod_remarks;
+      if (raw.vod_remarks) latestRemarks = cleanText(raw.vod_remarks);
       if (raw.vod_pic) sourcePics.push(raw.vod_pic);
-      if (raw.type_name && !latestSubType) latestSubType = raw.type_name.trim();
+      if (raw.type_name && !latestSubType) latestSubType = cleanText(raw.type_name);
       const lines = parsePlay(raw);
       const line = lines.find((l) => l.flag === p.flag) || lines[0];
       if (!line || !line.episodes.length) { results.push({ source: p.source.name, ok: false, msg: "无播放地址" }); continue; }
@@ -298,7 +299,7 @@ async function upsertVod(
   );
 
   const existing = await prisma.vod.findUnique({ where: { fingerprint: fp } });
-  const subType = (raw.type_name || "").trim(); // 原始小类
+  const subType = cleanText(raw.type_name); // 原始小类
   const rawPic = raw.vod_pic || "";
   let localPic = "";
   if (opts.localizeImages && rawPic) {
@@ -309,18 +310,18 @@ async function upsertVod(
     }
   }
   const vodData = {
-    name: raw.vod_name,
-    year: raw.vod_year || "",
+    name: cleanText(raw.vod_name),
+    year: cleanText(raw.vod_year),
     typeName,
     subType,
     pic: rawPic,
     localPic,
-    actor: raw.vod_actor || "",
-    director: raw.vod_director || "",
-    area: raw.vod_area || "",
-    lang: raw.vod_lang || "",
-    remarks: raw.vod_remarks || "",
-    blurb: (raw.vod_content || "").replace(/<[^>]+>/g, "").slice(0, 2000),
+    actor: cleanText(raw.vod_actor),
+    director: cleanText(raw.vod_director),
+    area: cleanText(raw.vod_area),
+    lang: cleanText(raw.vod_lang),
+    remarks: cleanText(raw.vod_remarks),
+    blurb: cleanText(raw.vod_content, 2000),
   };
   let vod;
   let mergedFlag = 0;

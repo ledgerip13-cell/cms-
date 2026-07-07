@@ -6,6 +6,7 @@ import { normalizeName } from "../collector/dedupe.js";
 import { enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
+import { cleanText, cleanVodTextFields } from "../textClean.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -67,7 +68,7 @@ function withHeroImage(vod: any) {
   const { images, ...rest } = vod;
   const heroImages = heroImageCandidates(vod);
   const heroImage = heroImages[0] || { url: "", wide: false };
-  return { ...rest, heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
+  return { ...cleanVodTextFields(rest), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
 }
 
 function publicVodCard(vod: any) {
@@ -305,6 +306,17 @@ function mergeWhere(...items: any[]) {
   return list.length === 1 ? list[0] : { AND: list };
 }
 
+const VOD_TEXT_FIELDS = ["name", "year", "typeName", "subType", "actor", "director", "area", "lang", "remarks", "genres", "blurb", "officialIntro"] as const;
+
+function cleanVodUpdate(row: any) {
+  const cleaned = cleanVodTextFields(row);
+  const data: any = {};
+  for (const field of VOD_TEXT_FIELDS) {
+    if (row[field] !== cleaned[field]) data[field] = cleaned[field];
+  }
+  return data;
+}
+
 function cleanupCategoryWhere(input: any) {
   const categoryName = String(input?.categoryName || "").trim();
   const subType = String(input?.subType || "").trim();
@@ -413,7 +425,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         include: { _count: { select: publicPlayCountSelect() } },
       }),
     ]);
-    return { total, page, size, list };
+    return { total, page, size, list: list.map(publicVodCard) };
   });
 
   // 年份索引（聚合，降序）：支持按 type/sub 联动，只返回该分类下实际存在的年份
@@ -617,7 +629,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       return {
       date,
       dow: shanghaiDow(date),
-        items,
+        items: items.map(publicVodCard),
       };
     }));
   });
@@ -677,7 +689,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         take: take - picks.length, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
-    return picks.slice(0, take);
+    return picks.slice(0, take).map(publicVodCard);
   });
 
   // 影片详情 + 所有线路（按源优先级排序）
@@ -741,7 +753,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         };
       })
       .sort(byHealth);
-    return { ...vod, plays: undefined, lines };
+    return { ...cleanVodTextFields(vod), plays: undefined, lines };
   });
 
   // 大类下的小类标签聚合（下钻用）
@@ -927,6 +939,55 @@ export default async function vodRoutes(app: FastifyInstance) {
         return reply.code(400).send({ ok: false, error: e?.message || String(e) });
       }
     });
+
+    secured.post("/api/admin/vods/text-cleanup", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const limit = Math.max(1, Math.min(5000, Number(b.limit) || 1000));
+        const status = String(b.status || "online").trim();
+        const dryRun = b.dryRun !== false;
+        const where = status === "all" ? {} : { status };
+        const rows = await prisma.vod.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            year: true,
+            typeName: true,
+            subType: true,
+            actor: true,
+            director: true,
+            area: true,
+            lang: true,
+            remarks: true,
+            genres: true,
+            blurb: true,
+            officialIntro: true,
+          },
+          take: limit,
+          orderBy: { id: "asc" },
+        });
+        const changed = rows
+          .map((row) => ({ id: row.id, data: cleanVodUpdate(row), before: row }))
+          .filter((row) => Object.keys(row.data).length);
+        if (!dryRun) {
+          for (const row of changed) {
+            await prisma.vod.update({ where: { id: row.id }, data: row.data });
+          }
+        }
+        return {
+          ok: true,
+          dryRun,
+          status,
+          scanned: rows.length,
+          changed: changed.length,
+          updated: dryRun ? 0 : changed.length,
+          samples: changed.slice(0, 12).map((row) => ({ id: row.id, name: row.before.name, fields: Object.keys(row.data) })),
+        };
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
+    });
   });
 
   // 编辑单片（需登录）：只更新允许的字段
@@ -935,7 +996,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const b = (req.body as any) || {};
     const data: any = {};
     const fields = ["name", "year", "typeName", "pic", "heroPic", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "officialPic", "genres"];
-    for (const f of fields) if (b[f] !== undefined) data[f] = b[f];
+    const textFields = new Set(["name", "year", "typeName", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "genres"]);
+    for (const f of fields) if (b[f] !== undefined) data[f] = textFields.has(f) ? cleanText(b[f], f === "blurb" || f === "officialIntro" ? 2000 : 0) : b[f];
     if (b.rating !== undefined) data.rating = b.rating === null || b.rating === "" ? null : Number(b.rating);
     if (!data.name || !String(data.name).trim()) {
       // 防空名：名字未传则不改；传了但为空则拒绝

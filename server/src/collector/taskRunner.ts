@@ -4,6 +4,7 @@ import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, 
 import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
 import { applyDoubanAssets } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
+import { cleanText } from "../textClean.js";
 
 import { EventEmitter } from "node:events";
 
@@ -711,8 +712,8 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
       officialPic: r.meta.pic,
-      officialIntro: r.meta.intro,
-      genres: r.meta.genres.join(","),
+      officialIntro: cleanText(r.meta.intro, 2000),
+      genres: cleanText(r.meta.genres.join(",")),
     } : {}),
     metaMatched: status,
     metaScore: r.score,

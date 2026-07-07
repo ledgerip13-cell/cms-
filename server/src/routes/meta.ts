@@ -12,6 +12,7 @@ import {
   type DoubanMatchResult,
 } from "../collector/douban.js";
 import { applyDoubanAssets } from "../collector/metaAssets.js";
+import { cleanText } from "../textClean.js";
 
 function candidateSnapshot(candidates: DoubanCandidate[]) {
   return candidates.slice(0, 5).map((c) => ({
@@ -45,8 +46,8 @@ function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
       officialPic: r.meta.pic,
-      officialIntro: r.meta.intro,
-      genres: r.meta.genres.join(","),
+      officialIntro: cleanText(r.meta.intro, 2000),
+      genres: cleanText(r.meta.genres.join(",")),
     } : {}),
     metaMatched: status,
     metaScore: r.score,
@@ -166,8 +167,8 @@ export default async function metaRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         doubanId: meta.doubanId, rating: meta.rating, ratingCount: meta.ratingCount,
-        officialPic: meta.pic, officialIntro: meta.intro,
-        genres: meta.genres.join(","), metaMatched: "manual", metaScore: 100,
+        officialPic: meta.pic, officialIntro: cleanText(meta.intro, 2000),
+        genres: cleanText(meta.genres.join(",")), metaMatched: "manual", metaScore: 100,
         metaReason: JSON.stringify({ score: 100, reasons: ["manual"], candidates: [{ id: meta.doubanId, title: meta.title, year: meta.year, score: 100, reasons: ["manual"] }] }),
         matchedTitle: meta.title, matchedYear: meta.year, metaAt: new Date(),
       },
