@@ -19,11 +19,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="3" width="12" height="18" rx="3"/><path d="M11 9l4 3-4 3z"/></svg>
           <span>刷短剧</span>
         </div>
-        <div class="sb-item" :class="{on: route.path==='/me' && route.hash==='#history'}" @click="goProfileSection('history')">
+        <div class="sb-item" :class="{on: route.path==='/me' && (!route.query.tab || route.query.tab==='history')}" @click="goProfileSection('history')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>
           <span>最近观看</span>
         </div>
-        <div class="sb-item" :class="{on: route.path==='/me' && route.hash==='#follows'}" @click="goProfileSection('follows')">
+        <div class="sb-item" :class="{on: route.path==='/me' && route.query.tab==='follows'}" @click="goProfileSection('follows')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.35-9.2-8.18C.75 9.25 2.7 5 6.7 5c2.05 0 3.35 1.12 4.05 2.08C11.45 6.12 12.75 5 14.8 5c4 0 5.95 4.25 3.9 7.82C16.5 16.65 12 21 12 21z"/></svg>
           <span>我的追剧</span>
         </div>
@@ -194,7 +194,9 @@ function goShorts() {
   kw.value=''; drawer.value=false; searchOpen.value=false; router.push('/shorts')
 }
 function goProfileSection(section) {
-  kw.value=''; drawer.value=false; searchOpen.value=false; router.push({ path: '/me', hash: `#${section}` })
+  kw.value=''; drawer.value=false; searchOpen.value=false
+  router.push({ path: '/me', query: { tab: section } }).catch?.(() => {})
+  window.dispatchEvent(new CustomEvent('profile-tab', { detail: section }))
 }
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }

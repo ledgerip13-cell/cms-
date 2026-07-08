@@ -42,29 +42,48 @@
       </div>
     </section>
 
-    <section id="follows" class="row">
-      <div class="row-head"><div class="row-title">我的追剧</div></div>
-      <div v-if="follows.length" class="row-scroll follow-row">
-        <VodCard v-for="x in follows" :key="x.id" :vod="x.vod" @click="goPlay(x.vod.id)" />
+    <section ref="libraryPanel" class="profile-library">
+      <div class="profile-tabs">
+        <button type="button" :class="{on: activeTab==='history'}" @click="selectTab('history')">
+          最近观看 <span>{{ histories.length }}</span>
+        </button>
+        <button type="button" :class="{on: activeTab==='follows'}" @click="selectTab('follows')">
+          我的追剧 <span>{{ follows.length }}</span>
+        </button>
       </div>
-      <div v-else class="empty small">暂无追剧</div>
-    </section>
 
-    <section id="history" class="row">
-      <div class="row-head"><div class="row-title">观看历史</div></div>
-      <div v-if="histories.length" class="history-list">
-        <div v-for="h in histories" :key="h.id" class="history-item" @click="goPlay(h.vod.id)">
-          <div class="history-name">{{ h.vod.name }}</div>
-          <div class="history-sub">{{ h.epName || ('第' + (h.epIndex + 1) + '集') }} · {{ h.vod.typeName || '未分类' }} · {{ fmt(h.updatedAt) }}</div>
+      <div v-if="activeTab==='history'" class="profile-tab-panel">
+        <div v-if="pagedHistories.length" class="history-list">
+          <div v-for="h in pagedHistories" :key="h.id" class="history-item" @click="goPlay(h.vod.id)">
+            <div class="history-name">{{ h.vod.name }}</div>
+            <div class="history-sub">{{ h.epName || ('第' + (h.epIndex + 1) + '集') }} · {{ h.vod.typeName || '未分类' }} · {{ fmt(h.updatedAt) }}</div>
+          </div>
+        </div>
+        <div v-else class="empty small">暂无观看历史</div>
+        <div v-if="historyPageCount > 1" class="pager">
+          <button type="button" :disabled="historyPage===1" @click="historyPage--">上一页</button>
+          <span>{{ historyPage }} / {{ historyPageCount }}</span>
+          <button type="button" :disabled="historyPage===historyPageCount" @click="historyPage++">下一页</button>
         </div>
       </div>
-      <div v-else class="empty small">暂无观看历史</div>
+
+      <div v-else class="profile-tab-panel">
+        <div v-if="pagedFollows.length" class="profile-card-grid">
+          <VodCard v-for="x in pagedFollows" :key="x.id" :vod="x.vod" @click="goPlay(x.vod.id)" />
+        </div>
+        <div v-else class="empty small">暂无追剧</div>
+        <div v-if="followPageCount > 1" class="pager">
+          <button type="button" :disabled="followPage===1" @click="followPage--">上一页</button>
+          <span>{{ followPage }} / {{ followPageCount }}</span>
+          <button type="button" :disabled="followPage===followPageCount" @click="followPage++">下一页</button>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
@@ -83,6 +102,12 @@ const recs = ref([])
 const recMeta = ref({ source: '', types: [] })
 const saving = ref(false)
 const msg = ref('')
+const activeTab = ref(normalizeTab(route.query.tab))
+const historyPage = ref(1)
+const followPage = ref(1)
+const libraryPanel = ref(null)
+const HISTORY_PAGE_SIZE = 8
+const FOLLOW_PAGE_SIZE = 12
 const isNewUser = computed(() => route.query.new === '1')
 const nextPath = computed(() => {
   const raw = Array.isArray(route.query.next) ? route.query.next[0] : route.query.next
@@ -94,6 +119,10 @@ const recSource = computed(() => {
   if (recMeta.value.types?.length) return recMeta.value.types.join(' / ')
   return recMeta.value.source === 'hot' ? '热门内容' : '根据行为推荐'
 })
+const historyPageCount = computed(() => Math.max(1, Math.ceil(histories.value.length / HISTORY_PAGE_SIZE)))
+const followPageCount = computed(() => Math.max(1, Math.ceil(follows.value.length / FOLLOW_PAGE_SIZE)))
+const pagedHistories = computed(() => paginate(histories.value, historyPage.value, HISTORY_PAGE_SIZE))
+const pagedFollows = computed(() => paginate(follows.value, followPage.value, FOLLOW_PAGE_SIZE))
 
 const VodCard = defineComponent({
   props: { vod: { type: Object, required: true } },
@@ -133,6 +162,33 @@ function toggleType(name) {
   if (!name) return
   prefs.value = prefs.value.includes(name) ? prefs.value.filter(x => x !== name) : [...prefs.value, name]
 }
+function normalizeTab(tab) {
+  const value = Array.isArray(tab) ? tab[0] : tab
+  return value === 'follows' ? 'follows' : 'history'
+}
+function paginate(list, page, size) {
+  const start = (Math.max(1, page) - 1) * size
+  return list.slice(start, start + size)
+}
+function scrollToLibrary() {
+  nextTick(() => {
+    const el = libraryPanel.value
+    if (!el) return
+    const offset = window.matchMedia?.('(max-width: 860px)').matches ? 132 : 86
+    const top = el.getBoundingClientRect().top + window.scrollY - offset
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  })
+}
+function selectTab(tab, opts = {}) {
+  activeTab.value = normalizeTab(tab)
+  if (activeTab.value === 'history') historyPage.value = 1
+  if (activeTab.value === 'follows') followPage.value = 1
+  if (!opts.fromRoute) router.replace({ path: '/me', query: { ...route.query, tab: activeTab.value } })
+  if (opts.scroll !== false) scrollToLibrary()
+}
+function onProfileTab(e) {
+  selectTab(e?.detail, { scroll: true })
+}
 function goPlay(id) { router.push('/play/' + id) }
 function goNext() { if (nextPath.value) router.replace(nextPath.value) }
 function fmt(s) { return new Date(s).toLocaleString('zh-CN', { hour12: false }) }
@@ -166,27 +222,51 @@ async function load() {
     return
   }
   prefs.value = user.value?.favoriteTypes || []
-  const [ts, fs, hs] = await Promise.all([api.categories(), api.follows(50), api.history(50)])
+  const [ts, fs, hs] = await Promise.all([api.categories(), api.follows(100), api.history(100)])
   types.value = ts
   follows.value = fs
   histories.value = hs
   await loadRecommendations()
-  await scrollToHash()
 }
-async function scrollToHash() {
-  const id = String(route.hash || '').replace(/^#/, '')
-  if (!id) return
-  await nextTick()
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-onMounted(load)
-watch(() => route.hash, () => { void scrollToHash() })
+onMounted(() => {
+  window.addEventListener('profile-tab', onProfileTab)
+  load()
+  if (route.query.tab) scrollToLibrary()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('profile-tab', onProfileTab)
+})
+watch(() => route.query.tab, (tab) => {
+  selectTab(tab, { fromRoute: true, scroll: true })
+})
+watch([historyPageCount, followPageCount], () => {
+  historyPage.value = Math.min(historyPage.value, historyPageCount.value)
+  followPage.value = Math.min(followPage.value, followPageCount.value)
+})
 </script>
 
 <style scoped>
-.follow-row { grid-auto-columns: 176px; }
+.profile-library { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.profile-tabs { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.profile-tabs button { height: 36px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 800; }
+.profile-tabs button:hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
+.profile-tabs button.on { border-color: transparent; background: var(--btn-primary-bg); color: var(--btn-primary-text); }
+.profile-tabs span { margin-left: 5px; opacity: .72; font-size: 12px; }
+.profile-tab-panel { min-height: 180px; }
+.profile-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 14px; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+.pager button { height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: 800; }
+.pager button:not(:disabled):hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
+.pager button:disabled { opacity: .42; cursor: not-allowed; }
+.pager span { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
 
 @media (max-width: 640px) {
-  .follow-row { grid-auto-columns: 128px; }
+  .profile-library { padding: 12px; border-radius: 14px; }
+  .profile-tabs { gap: 8px; }
+  .profile-tabs button { flex: 1; padding: 0 10px; }
+  .profile-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .pager { margin-top: 14px; }
 }
 </style>
