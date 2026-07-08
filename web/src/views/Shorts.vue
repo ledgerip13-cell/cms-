@@ -2537,15 +2537,16 @@ onBeforeUnmount(() => {
   linear-gradient(135deg, #05060a, #0e1017 58%, #05060a); }
 .shorts-shell { position: relative; width: min(100vw, 430px); height: 100%; margin: 0 auto; overflow: hidden;
   background: #05060a; box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 70px rgba(0,0,0,.72); }
-.shorts-top { position: absolute; top: 0; left: 0; right: 0; z-index: 9; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center; gap: 10px; padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+.shorts-top { position: absolute; top: 0; left: 0; right: 0; z-index: 9; display: flex; align-items: center; justify-content: space-between;
+  min-height: calc(50px + env(safe-area-inset-top)); padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
   background: linear-gradient(180deg, rgba(0,0,0,.58), rgba(0,0,0,0)); pointer-events: none; }
 .shorts-top > * { pointer-events: auto; }
 .shorts-top-actions { display: flex; justify-content: flex-end; gap: 8px; min-width: 38px; }
 .icon-btn { width: 38px; height: 38px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(14,16,22,.42);
   color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(12px); }
 .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.shorts-title { min-width: 0; text-align: center; line-height: 1.15; }
+.shorts-title { position: absolute; left: 50%; top: calc(12px + env(safe-area-inset-top)); width: min(180px, calc(100% - 156px));
+  transform: translateX(-50%); min-width: 0; text-align: center; line-height: 1.15; pointer-events: none; }
 .shorts-title strong { display: block; font-size: 17px; font-weight: 900; letter-spacing: 0; }
 .shorts-title span { display: block; margin-top: 3px; font-size: 11px; color: rgba(255,255,255,.62); }
 .shorts-feed { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; }
