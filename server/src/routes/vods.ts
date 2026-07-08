@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
@@ -7,27 +8,9 @@ import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayabl
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
+import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const AGG_CACHE_TTL_MS = 5 * 60 * 1000;
-const aggCache = new Map<string, { ts: number; data: any }>();
-
-function aggCacheGet<T>(key: string): T | null {
-  const hit = aggCache.get(key);
-  if (!hit || Date.now() - hit.ts > AGG_CACHE_TTL_MS) {
-    aggCache.delete(key);
-    return null;
-  }
-  return hit.data as T;
-}
-
-function aggCacheSet(key: string, data: any) {
-  aggCache.set(key, { ts: Date.now(), data });
-  if (aggCache.size > 300) {
-    const oldest = aggCache.keys().next().value;
-    if (oldest) aggCache.delete(oldest);
-  }
-}
 
 function recentShanghaiDates(days: number) {
   const now = new Date();
@@ -387,6 +370,111 @@ function cleanupRuleWhere(input: any): any {
   throw new Error("不支持的清理规则");
 }
 
+async function mergeVods(targetId: number, sourceIds: number[]) {
+  const ids = [...new Set(sourceIds.filter((id) => Number.isInteger(id) && id > 0 && id !== targetId))];
+  if (!Number.isInteger(targetId) || targetId <= 0) throw new Error("主影片无效");
+  if (!ids.length) throw new Error("请选择要合并的重复影片");
+  if (ids.length > 50) throw new Error("一次最多合并50部影片");
+
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.vod.findMany({
+      where: { id: { in: [targetId, ...ids] } },
+      include: { aliases: true, people: true, images: true },
+    });
+    const target = rows.find((row) => row.id === targetId);
+    const sources = rows.filter((row) => ids.includes(row.id));
+    if (!target) throw new Error("主影片不存在");
+    if (sources.length !== ids.length) throw new Error("部分重复影片不存在");
+
+    const sourceIdList = sources.map((row) => row.id);
+    const aliases = new Set<string>();
+    for (const row of sources) {
+      aliases.add(row.fingerprint);
+      for (const alias of row.aliases) aliases.add(alias.fingerprint);
+    }
+    aliases.delete(target.fingerprint);
+
+    for (const row of sources) {
+      const people = row.people.map((p) => ({
+        vodId: targetId,
+        personId: p.personId,
+        role: p.role,
+        character: p.character,
+        sort: p.sort,
+      }));
+      if (people.length) await tx.vodPerson.createMany({ data: people, skipDuplicates: true });
+
+      const images = row.images.map((img) => ({
+        vodId: targetId,
+        url: img.url,
+        type: img.type,
+        source: img.source,
+        width: img.width,
+        height: img.height,
+        score: img.score,
+        isHero: img.isHero,
+      }));
+      if (images.length) await tx.vodImage.createMany({ data: images, skipDuplicates: true });
+    }
+
+    await tx.play.updateMany({ where: { vodId: { in: sourceIdList } }, data: { vodId: targetId } });
+    await tx.hlsCleanResult.updateMany({ where: { vodId: { in: sourceIdList } }, data: { vodId: targetId } });
+
+    await tx.$executeRaw`
+      INSERT INTO "UserFollow" ("userId", "vodId", "createdAt")
+      SELECT "userId", ${targetId}, MIN("createdAt")
+      FROM "UserFollow"
+      WHERE "vodId" IN (${Prisma.join(sourceIdList)})
+      GROUP BY "userId"
+      ON CONFLICT ("userId", "vodId") DO NOTHING
+    `;
+    await tx.$executeRaw`
+      INSERT INTO "WatchHistory" ("userId", "vodId", "lineId", "epIndex", "epName", "progressSec", "durationSec", "createdAt", "updatedAt")
+      SELECT DISTINCT ON ("userId")
+        "userId", ${targetId}, "lineId", "epIndex", "epName", "progressSec", "durationSec", "createdAt", "updatedAt"
+      FROM "WatchHistory"
+      WHERE "vodId" IN (${Prisma.join(sourceIdList)})
+      ORDER BY "userId", "updatedAt" DESC
+      ON CONFLICT ("userId", "vodId") DO UPDATE SET
+        "lineId" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."lineId" ELSE "WatchHistory"."lineId" END,
+        "epIndex" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."epIndex" ELSE "WatchHistory"."epIndex" END,
+        "epName" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."epName" ELSE "WatchHistory"."epName" END,
+        "progressSec" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."progressSec" ELSE "WatchHistory"."progressSec" END,
+        "durationSec" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."durationSec" ELSE "WatchHistory"."durationSec" END,
+        "updatedAt" = GREATEST("WatchHistory"."updatedAt", EXCLUDED."updatedAt")
+    `;
+    await tx.userFollow.deleteMany({ where: { vodId: { in: sourceIdList } } });
+    await tx.watchHistory.deleteMany({ where: { vodId: { in: sourceIdList } } });
+
+    for (const fingerprint of aliases) {
+      await tx.vodAlias.upsert({
+        where: { fingerprint },
+        create: { fingerprint, vodId: targetId, note: "manual_merge" },
+        update: { vodId: targetId, note: "manual_merge" },
+      });
+    }
+
+    const patch: any = {};
+    const pickRemarks = sources.find((row) => row.remarks)?.remarks;
+    const pickPic = sources.find((row) => row.pic)?.pic;
+    const pickLocalPic = sources.find((row) => row.localPic)?.localPic;
+    const pickBlurb = sources.find((row) => row.blurb)?.blurb;
+    const newest = sources
+      .filter((row) => row.contentUpdatedAt)
+      .sort((a, b) => Number(b.contentUpdatedAt) - Number(a.contentUpdatedAt))[0];
+    if (!target.remarks && pickRemarks) patch.remarks = pickRemarks;
+    if (!target.pic && pickPic) patch.pic = pickPic;
+    if (!target.localPic && pickLocalPic) patch.localPic = pickLocalPic;
+    if (!target.blurb && pickBlurb) patch.blurb = pickBlurb;
+    if (newest?.contentUpdatedAt && (!target.contentUpdatedAt || newest.contentUpdatedAt > target.contentUpdatedAt)) patch.contentUpdatedAt = newest.contentUpdatedAt;
+    if (Object.keys(patch).length) await tx.vod.update({ where: { id: targetId }, data: patch });
+
+    const deleted = await tx.vod.deleteMany({ where: { id: { in: sourceIdList } } });
+    const lineCount = await tx.play.count({ where: { vodId: targetId } });
+    return { ok: true, targetId, merged: deleted.count, aliases: aliases.size, lines: lineCount };
+  }, { timeout: 30_000 });
+}
+
 export default async function vodRoutes(app: FastifyInstance) {
   // 影片列表（分页 + 搜索 + 分类 + 年份 + 排序）
   app.get("/api/vods", async (req) => {
@@ -453,7 +541,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       sub: String(q.sub || ""),
       kw: String(q.kw || ""),
     });
-    const cached = aggCacheGet<{ year: string; count: number }[]>(cacheKey);
+    const cached = aggregateCacheGet<{ year: string; count: number }[]>(cacheKey);
     if (cached) return cached;
     const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
     const and: any[] = [];
@@ -495,7 +583,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     }
     recent.sort((a, b) => Number(b.year) - Number(a.year));
     if (earlierCount > 0) recent.push({ year: `${OLDEST_YEAR}年以前`, count: earlierCount });
-    aggCacheSet(cacheKey, recent);
+    aggregateCacheSet(cacheKey, recent);
     return recent;
   });
 
@@ -799,7 +887,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (!isPublicType(publicTypes, type)) return [];
     const sourceIds = await enabledPlayableSourceIds();
     const cacheKey = JSON.stringify({ scope: "subtypes", type, publicTypes, sourceIds });
-    const cached = aggCacheGet<{ name: string; count: number }[]>(cacheKey);
+    const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
@@ -808,7 +896,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: { _count: { subType: "desc" } },
     });
     const data = rows.map((r) => ({ name: r.subType, count: r._count._all }));
-    aggCacheSet(cacheKey, data);
+    aggregateCacheSet(cacheKey, data);
     return data;
   });
 
@@ -817,7 +905,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
     const cacheKey = JSON.stringify({ scope: "types", publicTypes, sourceIds });
-    const cached = aggCacheGet<{ name: string; count: number }[]>(cacheKey);
+    const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
@@ -826,7 +914,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: { _count: { typeName: "desc" } },
     });
     const data = rows.map((r) => ({ name: r.typeName, count: r._count._all }));
-    aggCacheSet(cacheKey, data);
+    aggregateCacheSet(cacheKey, data);
     return data;
   });
 
@@ -921,19 +1009,37 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (!ids.length) return { ok: false, error: "未选择任何影片" };
       if (action === "offline") {
         const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "offline" } });
+        invalidateAggregateCache();
         return { ok: true, count: r.count };
       }
       if (action === "online") {
         const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "online" } });
+        invalidateAggregateCache();
         return { ok: true, count: r.count };
       }
       if (action === "delete") {
         // 先删关联的播放线路再删影片，避免外键约束报错
         await prisma.play.deleteMany({ where: { vodId: { in: ids } } });
         const r = await prisma.vod.deleteMany({ where: { id: { in: ids } } });
+        invalidateAggregateCache();
         return { ok: true, count: r.count };
       }
       return { ok: false, error: "不支持的操作类型" };
+    });
+
+    secured.post("/api/admin/vods/merge", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const targetId = Number(b.targetId);
+        const sourceIds = Array.isArray(b.sourceIds)
+          ? b.sourceIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+          : [];
+        const r = await mergeVods(targetId, sourceIds);
+        invalidateAggregateCache();
+        return r;
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
     });
 
     secured.post("/api/admin/vods/cleanup/preview", async (req, reply) => {
@@ -1002,6 +1108,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       delete data.name;
     }
     const vod = await prisma.vod.update({ where: { id }, data });
+    if ("typeName" in data || "status" in data || "year" in data) invalidateAggregateCache();
     return { ok: true, vod };
   });
 
@@ -1020,10 +1127,12 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.patch("/api/vods/:id", { preHandler: authGuard }, async (req) => {
     const id = Number((req.params as any).id);
     const b = req.body as any;
-    return prisma.vod.update({
+    const vod = await prisma.vod.update({
       where: { id },
       data: { status: b.status, pinned: b.pinned },
     });
+    if (b.status !== undefined) invalidateAggregateCache();
+    return vod;
   });
 
   // 概览统计（后台首页）

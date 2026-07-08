@@ -4,20 +4,21 @@ import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
 import { inferCategoryIcon, normalizeCategoryIcon } from "../categoryIcons.js";
 import { categoryAllowed, invalidatePublicVodCaches, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
+import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
 
 const CATEGORY_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
-let categoryCountCache: { ts: number; counts: Map<string, number> } | null = null;
 
 async function categoryCounts() {
-  if (categoryCountCache && Date.now() - categoryCountCache.ts < CATEGORY_COUNT_CACHE_TTL_MS) return categoryCountCache.counts;
+  const cached = aggregateCacheGet<[string, number][]>("categoryCounts");
+  if (cached) return new Map(cached);
   const rows = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
   const counts = new Map(rows.map((c) => [c.typeName, c._count._all]));
-  categoryCountCache = { ts: Date.now(), counts };
+  aggregateCacheSet("categoryCounts", [...counts.entries()], CATEGORY_COUNT_CACHE_TTL_MS);
   return counts;
 }
 
 function invalidateCategoryCountCache() {
-  categoryCountCache = null;
+  invalidateAggregateCache("categoryCounts");
 }
 
 async function backfillMapToVods(mapId: number) {

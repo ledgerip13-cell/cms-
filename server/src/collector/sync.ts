@@ -7,6 +7,7 @@ import { makeFingerprint } from "./dedupe.js";
 import { classifyType } from "./classify.js";
 import { downloadImageToLocal, isLocalImageUrl } from "../localImages.js";
 import { cleanText } from "../textClean.js";
+import { invalidateAggregateCache } from "../aggregateCache.js";
 
 export interface SyncOptions {
   mode?: "full" | "incr";
@@ -299,7 +300,12 @@ async function upsertVod(
     raw.type_name || ""
   );
 
-  const existing = await prisma.vod.findUnique({ where: { fingerprint: fp } });
+  const direct = await prisma.vod.findUnique({ where: { fingerprint: fp } });
+  const alias = direct ? null : await prisma.vodAlias.findUnique({
+    where: { fingerprint: fp },
+    include: { vod: true },
+  });
+  const existing = direct || alias?.vod || null;
   const subType = cleanText(raw.type_name); // 原始小类
   const rawPic = raw.vod_pic || "";
   let localPic = "";
@@ -488,7 +494,10 @@ export async function collectKeywordCandidates(
     } catch (e: any) {
       perSource.push({ source: src.name, ok: false, added: sAdded, updated: sUpdated, msg: e?.message || String(e) });
     }
-    if (sAdded || sUpdated) await refreshSourcePlayDomains(sourceId).catch(() => {});
+    if (sAdded || sUpdated) {
+      invalidateAggregateCache();
+      await refreshSourcePlayDomains(sourceId).catch(() => {});
+    }
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sourceIds.length, sourceName: src.name, added, updated, merged });
   }
 
@@ -539,7 +548,10 @@ export async function syncByKeyword(
     } catch (e: any) {
       perSource.push({ source: src.name, hits: 0, added: 0, updated: 0, ok: false, msg: e?.message || String(e) });
     }
-    if (sAdded || sUpdated) await refreshSourcePlayDomains(src.id).catch(() => {});
+    if (sAdded || sUpdated) {
+      invalidateAggregateCache();
+      await refreshSourcePlayDomains(src.id).catch(() => {});
+    }
     if (onProgress) await onProgress({ sourceNow: i + 1, sourceTotal: sources.length, sourceName: src.name, added, updated, merged, hits });
   }
 
@@ -700,7 +712,10 @@ export async function syncSource(sourceId: number, opts: SyncOptions = {}, onPro
   await prisma.syncLog.create({
     data: { sourceId, mode, added, updated, merged, ok, message, ms },
   });
-  if (added || updated) await refreshSourcePlayDomains(sourceId).catch(() => {});
+  if (added || updated) {
+    invalidateAggregateCache();
+    await refreshSourcePlayDomains(sourceId).catch(() => {});
+  }
 
   return { ok, added, updated, merged, vodIds: [...vodIds], ms, message };
 }

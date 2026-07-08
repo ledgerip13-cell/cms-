@@ -47,6 +47,7 @@ export const api = {
   vods: (params) => http.get('/vods', { params }),
   adminVods: (params) => http.get('/admin/vods', { params }),
   batchVods: (ids, action) => http.post('/admin/vods/batch', { ids, action }),
+  mergeVods: (targetId, sourceIds) => http.post('/admin/vods/merge', { targetId, sourceIds }),
   previewVodCleanup: (d) => http.post('/admin/vods/cleanup/preview', d),
   executeVodCleanup: (d) => http.post('/admin/vods/cleanup/execute', d),
   vod: (id) => http.get(`/admin/vods/${id}`),

@@ -326,6 +326,7 @@ model Vod {
   matchedYear   String         @default("") // 实际命中的豆瓣年份
   metaAt        DateTime? // 元数据抓取时间
   plays         Play[]
+  aliases       VodAlias[]
   people        VodPerson[]
   images        VodImage[]
   follows       UserFollow[]
@@ -346,6 +347,18 @@ model Vod {
   @@index([status, typeName, ratingCount, rating, updatedAt, id])
   @@index([status, typeName, rating, ratingCount, updatedAt, id])
   @@index([status, typeName, year, updatedAt, id])
+}
+
+// 手动合并后的去重别名：采集遇到旧指纹时继续归并到主影片
+model VodAlias {
+  id          Int      @id @default(autoincrement())
+  fingerprint String   @unique
+  vod         Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId       Int
+  note        String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([vodId])
 }
 
 // 人物（演员/导演等，供搜索与作品聚合）

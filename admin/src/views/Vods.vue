@@ -79,6 +79,7 @@
     <div v-if="selected.length" class="batch-bar">
       <span>已选 {{ selected.length }} 项</span>
       <el-button size="small" type="primary" plain @click="batchMetaMatch">批量匹配豆瓣</el-button>
+      <el-button size="small" type="primary" :disabled="selected.length < 2" @click="openMergeDlg">合并片源</el-button>
       <el-button size="small" type="warning" @click="batchAction('offline')">批量下架</el-button>
       <el-button size="small" type="success" @click="batchAction('online')">批量上架</el-button>
       <el-button size="small" type="danger" @click="batchAction('delete')">批量删除</el-button>
@@ -241,6 +242,30 @@
       </el-collapse>
     </div>
   </el-drawer>
+
+  <el-dialog v-model="mergeDlg" title="合并片源" width="620">
+    <el-alert type="warning" :closable="false" show-icon
+      title="合并会把其他影片的播放线路、追剧、观看历史、人物和图片资产移动到主影片，并记录旧指纹，后续采集会继续归并到主影片。" />
+    <div class="merge-list">
+      <label v-for="row in selected" :key="row.id" class="merge-item" :class="{on: mergeTargetId === row.id}">
+        <el-radio v-model="mergeTargetId" :value="row.id" />
+        <el-image v-if="row.officialPic || row.pic || row.localPic" :src="coverUrl(row)" fit="cover" class="merge-cover">
+          <template #error><div class="noimg">无图</div></template>
+        </el-image>
+        <div class="merge-info">
+          <b>{{ row.name }}</b>
+          <span>{{ row.year || '—' }} · {{ row.typeName || '未分类' }} · {{ row._count?.plays || 0 }} 条线路</span>
+          <code>{{ row.fingerprint }}</code>
+        </div>
+      </label>
+    </div>
+    <template #footer>
+      <el-button @click="mergeDlg=false">取消</el-button>
+      <el-button type="primary" :disabled="selected.length < 2 || !mergeTargetId" :loading="mergeSaving" @click="confirmMerge">
+        合并到选中主影片
+      </el-button>
+    </template>
+  </el-dialog>
 
   <!-- 编辑影片资料 -->
   <el-dialog v-model="editDlg" title="编辑影片资料" width="600">
@@ -481,6 +506,7 @@ async function metaBatch() {
 const q = reactive({ page: 1, size: 20, kw: String(route.query.kw || ''), type: '', status: '', sourceId: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
+const mergeDlg = ref(false); const mergeTargetId = ref(null); const mergeSaving = ref(false)
 const expandedEpisodes = ref({})
 const vodMenuOpenedAt = ref({})
 const diagOpen = ref(false)
@@ -548,6 +574,36 @@ async function batchMetaMatch() {
     ElMessage.success(r.message || `已提交任务 #${r.taskId}`)
     tableRef.value?.clearSelection()
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+function openMergeDlg() {
+  if (selected.value.length < 2) return ElMessage.warning('至少选择两部影片')
+  mergeTargetId.value = selected.value[0]?.id || null
+  mergeDlg.value = true
+}
+async function confirmMerge() {
+  if (!mergeTargetId.value) return
+  const sources = selected.value.map(row => row.id).filter(id => id !== mergeTargetId.value)
+  if (!sources.length) return
+  const target = selected.value.find(row => row.id === mergeTargetId.value)
+  const ok = await ElMessageBox.confirm(
+    `确认将 ${sources.length} 部重复影片合并到「${target?.name || mergeTargetId.value}」？此操作会删除重复影片，只保留一条主影片。`,
+    '确认合并片源',
+    { type: 'warning' }
+  ).then(() => true).catch(() => false)
+  if (!ok) return
+  mergeSaving.value = true
+  try {
+    const r = await api.mergeVods(mergeTargetId.value, sources)
+    if (!r.ok) return ElMessage.error(r.error || '合并失败')
+    ElMessage.success(`已合并 ${r.merged} 部，当前线路 ${r.lines} 条，别名 ${r.aliases} 个`)
+    mergeDlg.value = false
+    tableRef.value?.clearSelection()
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '合并失败')
+  } finally {
+    mergeSaving.value = false
+  }
 }
 function openCleanup() {
   cleanupDlg.value = true
@@ -819,6 +875,13 @@ watch(() => route.query.kw, (kw) => {
   background: #fdf6ec; border: 1px solid #f5dab1; border-radius: 8px;
   font-size: 13px; color: #b88230;
 }
+.merge-list { display: grid; gap: 10px; margin-top: 14px; }
+.merge-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #e4e7ed; border-radius: 8px; cursor: pointer; }
+.merge-item.on { border-color: #409eff; background: #ecf5ff; }
+.merge-cover { width: 44px; height: 60px; border-radius: 4px; flex-shrink: 0; }
+.merge-info { min-width: 0; display: grid; gap: 3px; font-size: 12px; color: #8a94a7; }
+.merge-info b { color: #303133; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merge-info code { color: #409eff; background: #f0f2f5; border-radius: 4px; padding: 1px 5px; word-break: break-all; }
 .cleanup-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 6px 0 12px; }
 .kw-post-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .kw-post-actions :deep(.el-checkbox) { margin-right: 0; }
