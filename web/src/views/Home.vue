@@ -394,7 +394,7 @@ const browseCache = new Map()
 const subsCache = new Map()
 const yearsCache = new Map()
 let browseRequestId = 0
-const sorts = [{ v:'recent', t:'最近更新' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
+const sorts = [{ v:'recent', t:'最近更新' }, { v:'year', t:'按年份' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
 const filterSummary = computed(() => {
   const items = [sub.value || curType.value || '全部', currentSortLabel.value]
@@ -427,13 +427,19 @@ function browseParams() {
     size,
     type: kw ? '' : String(route.query.type || ''),
     kw,
-    year: kw ? '' : year.value,
+    year: year.value,
     sort: sort.value,
     sub: kw ? '' : sub.value,
   }
 }
 function browseCacheKey() { return JSON.stringify(browseParams()) }
-function yearsCacheKey() { return JSON.stringify({ type: isSearch.value ? '' : String(curType.value || ''), sub: isSearch.value ? '' : sub.value }) }
+function yearsCacheKey() {
+  return JSON.stringify({
+    type: isSearch.value ? '' : String(curType.value || ''),
+    sub: isSearch.value ? '' : sub.value,
+    kw: String(route.query.kw || ''),
+  })
+}
 
 function setSub(s) {
   sub.value = s
@@ -461,7 +467,8 @@ async function loadYears({ preferCache = true } = {}) {
   const cached = preferCache ? cacheGet(yearsCache, key) : null
   if (cached) { years.value = cached; return }
   try {
-    const data = await api.years({ type: curType.value, sub: sub.value })
+    const kw = String(route.query.kw || '')
+    const data = await api.years({ type: kw ? '' : curType.value, sub: kw ? '' : sub.value, kw })
     if (key !== yearsCacheKey()) return
     years.value = data
     cacheSet(yearsCache, key, data)
@@ -504,8 +511,8 @@ async function boot() {
   if (isSearch.value) {
     sub.value = ''
     subs.value = []
-    years.value = []
     void load({ preferCache: true })
+    void loadYears({ preferCache: true })
     return
   }
   void load({ preferCache: true })

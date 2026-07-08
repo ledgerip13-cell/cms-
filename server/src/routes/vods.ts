@@ -400,10 +400,11 @@ export default async function vodRoutes(app: FastifyInstance) {
     } else if (q.year) {
       where.year = { contains: q.year };
     }
-    // 排序：recent 最近更新 / hot 热门(评分) / rating 高分
+    // 排序：recent 最近更新 / hot 热门(评分) / rating 高分 / year 年份新到旧
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
     if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
     else if (q.sort === "rating") orderBy = [{ rating: "desc" }, { ratingCount: "desc" }];
+    else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     const [total, list] = await Promise.all([
       prisma.vod.count({ where }),
       prisma.vod.findMany({
@@ -417,14 +418,25 @@ export default async function vodRoutes(app: FastifyInstance) {
     return { total, page, size, list: list.map(publicVodCard) };
   });
 
-  // 年份索引（聚合，降序）：支持按 type/sub 联动，只返回该分类下实际存在的年份
+  // 年份索引（聚合，降序）：支持按 type/sub/kw 联动，只返回当前结果集实际存在的年份
   app.get("/api/years", async (req) => {
     const q = req.query as any;
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
-    const where: any = { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
+    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
+    const and: any[] = [];
+    if (q.kw) {
+      const kw = String(q.kw);
+      and.push({ OR: [
+        { name: { contains: kw } },
+        { actor: { contains: kw } },
+        { director: { contains: kw } },
+        { people: { some: { person: { name: { contains: kw } } } } },
+      ] });
+    }
     if (q.type) where.typeName = requestedPublicType(publicTypes, String(q.type));
     if (q.sub) where.subType = q.sub;
+    if (and.length) where.AND = and;
     const rows = await prisma.vod.groupBy({
       by: ["year"],
       where,
