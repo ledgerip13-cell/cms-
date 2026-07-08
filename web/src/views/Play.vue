@@ -119,10 +119,18 @@
 
       <!-- 剧集列表 -->
       <div class="eps-box" v-if="curChannel">
-        <div class="eps-head">选集 <span>{{ curChannel.episodes.length }} 集</span></div>
+        <div class="eps-head">
+          <span>选集 <em>{{ curChannel.episodes.length }} 集</em></span>
+          <div v-if="episodeGroups.length > 1" class="eps-groups">
+            <button v-for="(g, i) in episodeGroups" :key="g.start" type="button"
+              :class="{on: activeEpGroupIndex===i}" @click="activeEpGroupIndex=i">
+              {{ g.start + 1 }}-{{ g.end }}
+            </button>
+          </div>
+        </div>
         <div class="eps-grid">
-          <span v-for="(e,i) in curChannel.episodes" :key="i" class="ep"
-            :class="{on: epIdx===i}" @click="playEp(i)">{{ e.name }}</span>
+          <span v-for="item in visibleEpisodes" :key="item.index" class="ep"
+            :class="{on: epIdx===item.index}" @click="playEp(item.index)">{{ item.episode.name }}</span>
         </div>
       </div>
     </div>
@@ -296,6 +304,23 @@ const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || cu
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
 const canPlayPrevEp = computed(() => epIdx.value > 0)
 const canPlayNextEp = computed(() => epIdx.value < (curChannel.value?.episodes?.length || 0) - 1)
+const EPISODE_GROUP_SIZE = 50
+const activeEpGroupIndex = ref(0)
+const episodeGroups = computed(() => {
+  const total = curChannel.value?.episodes?.length || 0
+  const groups = []
+  for (let start = 0; start < total; start += EPISODE_GROUP_SIZE) {
+    groups.push({ start, end: Math.min(start + EPISODE_GROUP_SIZE, total) })
+  }
+  return groups
+})
+const visibleEpisodes = computed(() => {
+  const group = episodeGroups.value[activeEpGroupIndex.value] || episodeGroups.value[0]
+  if (!group) return []
+  return (curChannel.value?.episodes || [])
+    .slice(group.start, group.end)
+    .map((episode, offset) => ({ episode, index: group.start + offset }))
+})
 const playerBackdropStyle = computed(() => {
   const url = pic(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
@@ -632,6 +657,9 @@ watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
 })
+watch([epIdx, curChannel], () => {
+  activeEpGroupIndex.value = Math.floor(epIdx.value / EPISODE_GROUP_SIZE)
+})
 onBeforeUnmount(() => {
   if (curUrl.value) saveWatchHistory(epIdx.value)
   if (hls) hls.destroy()
@@ -642,7 +670,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.play-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 316px; gap: 26px; }
+.play-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; }
 .player-col { min-width: 0; }
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
@@ -769,8 +797,15 @@ onBeforeUnmount(() => {
 .line-btn.on { background: var(--play-line-active-bg); border-color: transparent; color: var(--play-line-active-text); }
 .line-btn.on em { color: rgba(255,255,255,.8); }
 .eps-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.eps-head { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
-.eps-head span { color: var(--muted); font-size: 13px; font-weight: 400; margin-left: 8px; }
+.eps-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.eps-head > span { flex: 0 0 auto; font-size: 15px; font-weight: 700; }
+.eps-head em { color: var(--muted); font-style: normal; font-size: 13px; font-weight: 400; margin-left: 8px; }
+.eps-groups { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.eps-groups::-webkit-scrollbar { display: none; }
+.eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; }
+.eps-groups button:hover { border-color: var(--play-episode-active-bg); color: var(--text); }
+.eps-groups button.on { border-color: transparent; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px;
   max-height: 360px; overflow-y: auto; }
 .ep { text-align: center; padding: 9px 4px; background: var(--bg2); border: 1px solid var(--line);
@@ -786,7 +821,7 @@ onBeforeUnmount(() => {
 .rec-list { display: flex; flex-direction: column; gap: 12px; }
 .rec-item { display: flex; gap: 11px; cursor: pointer; padding: 6px; border-radius: 10px; transition: .15s; }
 .rec-item:hover { background: var(--card); }
-.rec-poster { width: 68px; flex-shrink: 0; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden; position: relative; background: #0f1420; }
+.rec-poster { width: 60px; flex-shrink: 0; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden; position: relative; background: #0f1420; }
 .rec-poster img { width: 100%; height: 100%; object-fit: cover; }
 .rec-poster .noimg { width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#455068;font-size:11px; }
 .rec-score { position: absolute; right: 3px; bottom: 3px; background: linear-gradient(90deg,#ff8a00,#ff5c8a);
@@ -930,6 +965,14 @@ onBeforeUnmount(() => {
   .channels-bar,
   .eps-box {
     border-radius: 12px;
+  }
+  .eps-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .eps-groups {
+    width: 100%;
+    justify-content: flex-start;
   }
   .lines-bar {
     align-items: flex-start;
