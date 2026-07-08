@@ -222,7 +222,7 @@
               <el-tabs v-model="activeThemeScope" class="theme-tabs">
                 <el-tab-pane v-for="s in themeScopes" :key="s.key" :label="s.label" :name="s.key">
                   <div class="scope-note" v-if="s.key !== 'global'">
-                    当前页面默认继承全局颜色；修改任意字段后只覆盖该页面。
+                    页面主题只覆盖强调色、按钮、语义色和榜单色；底板、文字阶梯等基础色统一走全局。
                   </div>
                   <div class="edit-status">
                     <div>
@@ -297,7 +297,7 @@
                   <div class="theme-actions">
                     <el-button size="small" @click="resetTheme(s.key)">恢复{{ s.label }}默认</el-button>
                     <el-button v-if="s.key !== 'global'" size="small" @click="clearScope(s.key)">清空页面覆盖</el-button>
-                    <span class="hint">品牌主色修改后，按钮/导航/chip/Hero/搜索/播放页全部自动跟随。</span>
+                    <span class="hint">全局控制基础观感；页面主题只处理该页面的强调与组件角色覆盖。</span>
                   </div>
                 </el-tab-pane>
               </el-tabs>
@@ -516,11 +516,22 @@ const themeGroups = [
   {
     key: 'brand',
     label: '品牌强调',
-    desc: '统管按钮、导航、Hero、chip、搜索聚焦、播放线路的选中态',
+    desc: '导航、chip、搜索聚焦、播放线路等选中态',
     fields: [
       { key: 'accent', label: '品牌主色' },
       { key: 'accentLight', label: '品牌浅色' },
       { key: 'accentSoft', label: '透明底(%)', type: 'alpha' },
+    ],
+  },
+  {
+    key: 'action',
+    label: '操作按钮',
+    desc: '主按钮与白底按钮分开，避免按钮文字色影响其他选中态',
+    fields: [
+      { key: 'buttonBg', label: '主按钮背景' },
+      { key: 'buttonText', label: '主按钮文字' },
+      { key: 'surfaceButtonBg', label: '白底按钮背景' },
+      { key: 'surfaceButtonText', label: '白底按钮文字' },
     ],
   },
   {
@@ -534,11 +545,21 @@ const themeGroups = [
     ],
   },
   {
+    key: 'rank',
+    label: '榜单',
+    desc: '搜索榜单前三名独立设色，不再绑评分/标签/品牌色',
+    fields: [
+      { key: 'rankFirst', label: '第 1 名' },
+      { key: 'rankSecond', label: '第 2 名' },
+      { key: 'rankThird', label: '第 3 名' },
+    ],
+  },
+  {
     key: 'fixed',
     label: '固定色',
     desc: '深浅底上的文字色',
     fields: [
-      { key: 'onBrand', label: '品牌底文字' },
+      { key: 'onBrand', label: '强调底文字' },
       { key: 'onDark', label: '白底深字' },
       { key: 'surfaceDim', label: '最暗表面' },
     ],
@@ -546,10 +567,12 @@ const themeGroups = [
 ]
 
 const groupScopes = {
-  base: ['global', 'home', 'play', 'list'],
+  base: ['global'],
   brand: ['global', 'home', 'play', 'list'],
+  action: ['global', 'home', 'play', 'list'],
   semantic: ['global', 'home', 'play', 'list'],
-  fixed: ['global', 'home', 'play', 'list'],
+  rank: ['global', 'home', 'play', 'list'],
+  fixed: ['global'],
 }
 
 const fieldMeta = {
@@ -559,13 +582,20 @@ const fieldMeta = {
   text:       { impacts: ['正文/标题'], previews: ['surface'] },
   textDim:    { impacts: ['次要信息/导航常态'], previews: ['surface', 'nav'] },
   textSub:    { impacts: ['三级文字/placeholder'], previews: ['surface'] },
-  accent:     { impacts: ['按钮/导航选中/chip/搜索聚焦/播放通道/剧集/剧照/Hero徽标/榜单第一 — 全自动联动'], previews: ['button', 'nav', 'chip', 'search', 'hero', 'rank', 'play'] },
+  accent:     { impacts: ['导航选中/chip/搜索聚焦/播放通道/剧集/剧照/Hero徽标'], previews: ['nav', 'chip', 'search', 'hero', 'play'] },
   accentLight:{ impacts: ['按钮hover/渐变终点'], previews: ['button', 'section'] },
   accentSoft: { impacts: ['导航选中背景/Hero徽标底/引导面板 — 全自动联动'], previews: ['nav', 'hero'] },
-  rating:     { impacts: ['评分角标背景/榜单第二'], previews: ['poster', 'rank'] },
+  buttonBg:   { impacts: ['登录/个人中心/PWA/锁定态等主操作按钮背景'], previews: ['button'] },
+  buttonText: { impacts: ['主操作按钮文字'], previews: ['button'] },
+  surfaceButtonBg:   { impacts: ['搜索按钮/Hero主按钮背景'], previews: ['search', 'hero'] },
+  surfaceButtonText: { impacts: ['搜索按钮/Hero主按钮文字'], previews: ['search', 'hero'] },
+  rating:     { impacts: ['评分角标背景/评分文字'], previews: ['poster'] },
   ratingText: { impacts: ['评分角标文字'], previews: ['poster'] },
-  tag:        { impacts: ['标签/榜单第三'], previews: ['rank'] },
-  onBrand:    { impacts: ['品牌底白字(按钮/chip)'], previews: ['button', 'chip'] },
+  tag:        { impacts: ['标签/玫瑰强调'], previews: ['rank'] },
+  rankFirst:  { impacts: ['搜索榜单第 1 名'], previews: ['rank'] },
+  rankSecond: { impacts: ['搜索榜单第 2 名'], previews: ['rank'] },
+  rankThird:  { impacts: ['搜索榜单第 3 名'], previews: ['rank'] },
+  onBrand:    { impacts: ['强调底文字(chip/播放选中态)'], previews: ['chip', 'play'] },
   onDark:     { impacts: ['白按钮/搜索按钮深字'], previews: ['search'] },
   surfaceDim: { impacts: ['海报占位/缩略图底'], previews: ['poster'] },
 }
@@ -606,25 +636,33 @@ const previewVars = computed(() => {
   const c = previewColors.value
   const acc_soft = rgba(c.accent, alphaPercent(c.accentSoft, .12))
   const acc_grad = `linear-gradient(120deg, ${c.accent}, ${c.accentLight})`
-  const ratingSoft = rgba(c.rating, .7)
   const gh = rgbaColor('#ffffff', .06)
   return {
     '--tp-bg': c.bg, '--tp-card': c.card, '--tp-text': c.text,
     '--tp-muted2': c.textDim, '--tp-muted': c.textSub,
     '--tp-accent': c.accent, '--tp-accent-lt': c.accentLight, '--tp-accent-soft': acc_soft, '--tp-grad': acc_grad,
     '--tp-rating': c.rating, '--tp-rating-text': c.ratingText, '--tp-tag': c.tag,
+    '--tp-gold': c.rating,
     '--tp-on-brand': c.onBrand, '--tp-on-dark': c.onDark, '--tp-surface-dim': c.surfaceDim,
-    '--tp-search-button-bg': '#ffffff', '--tp-search-button-text': c.onDark,
+    '--tp-card-hi': c.surfaceDim,
+    '--tp-soft': rgba(c.accentLight, .18),
+    '--tp-rose-soft': rgba(c.tag, .22),
+    '--tp-nav-active-bg': acc_soft, '--tp-nav-active-text': c.accent,
+    '--tp-search-button-bg': c.surfaceButtonBg, '--tp-search-button-text': c.surfaceButtonText,
     '--tp-search-bg': rgbaColor(c.card, .5),
-    '--tp-rank-first-text': c.accent, '--tp-rank-second-text': ratingSoft, '--tp-rank-third-text': c.tag,
-    '--tp-btn-primary-bg': c.accent, '--tp-btn-primary-text': c.onBrand,
+    '--tp-rank-first-text': c.rankFirst, '--tp-rank-second-text': c.rankSecond, '--tp-rank-third-text': c.rankThird,
+    '--tp-btn-primary-bg': c.buttonBg, '--tp-btn-primary-text': c.buttonText,
     '--tp-btn-ghost-bg': gh, '--tp-btn-ghost-text': c.text,
     '--tp-btn-hover-text': c.accent, '--tp-btn-hover-border': c.accent,
     '--tp-section-accent-bg': acc_grad,
     '--tp-poster-overlay-bg': `linear-gradient(0deg, ${rgba(c.bg, .82)} 0%, transparent 55%)`,
     '--tp-badge-score-bg': c.rating, '--tp-badge-score-text': c.ratingText,
+    '--tp-hero-badge-bg': acc_soft, '--tp-hero-badge-text': c.accent,
+    '--tp-hero-primary-button-bg': c.surfaceButtonBg, '--tp-hero-primary-button-text': c.surfaceButtonText,
+    '--tp-chip-active-bg': c.accent, '--tp-chip-active-text': c.onBrand,
     '--tp-play-line-active-bg': acc_grad, '--tp-play-line-active-text': c.onBrand,
     '--tp-play-channel-active-bg': c.accent, '--tp-play-channel-active-text': c.onBrand,
+    '--tp-play-episode-active-bg': c.accent, '--tp-play-episode-active-text': c.onBrand,
     '--tp-gallery-active-border': c.accent,
     '--tp-onboarding-bg': `linear-gradient(135deg, ${acc_soft}, rgba(32,36,52,.78))`,
   }

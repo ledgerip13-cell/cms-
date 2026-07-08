@@ -12,7 +12,7 @@
   --accent-soft: rgba(229,160,13,.12);
   --gold: #ffc233;
   --rose: #e88db0;
-  --btn-primary-bg: var(--accent);
+  --btn-primary-bg: #e5a00d;
   --btn-primary-text: #fff;
   --btn-ghost-bg: rgba(255,255,255,.06);
   --btn-ghost-text: var(--text);
@@ -25,9 +25,9 @@
   --search-focus-shadow: rgba(229,160,13,.15);
   --search-button-bg: #fff;
   --search-button-text: #16181d;
-  --rank-first-text: var(--accent);
-  --rank-second-text: rgba(255,194,51,.7);
-  --rank-third-text: var(--rose);
+  --rank-first-text: #e5a00d;
+  --rank-second-text: #ffc233;
+  --rank-third-text: #e88db0;
   --hero-badge-bg: var(--accent-soft);
   --hero-badge-text: var(--accent);
   --hero-primary-button-bg: #fff;

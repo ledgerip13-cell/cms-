@@ -26,9 +26,16 @@ export const DEFAULT_THEME = {
     accent: '#e5a00d',
     accentLight: '#f5c842',
     accentSoft: 12,
+    buttonBg: '#e5a00d',
+    buttonText: '#ffffff',
+    surfaceButtonBg: '#ffffff',
+    surfaceButtonText: '#16181d',
     rating: '#ffc233',
     ratingText: '#1a1204',
     tag: '#e88db0',
+    rankFirst: '#e5a00d',
+    rankSecond: '#ffc233',
+    rankThird: '#e88db0',
     onBrand: '#ffffff',
     onDark: '#16181d',
     surfaceDim: '#0f111a',
@@ -84,6 +91,14 @@ function normalizeTheme(theme) {
     if (scopeTheme.muted != null && scopeTheme.textSub == null) scopeTheme.textSub = scopeTheme.muted
     if (scopeTheme.badgeScoreText != null && scopeTheme.ratingText == null) scopeTheme.ratingText = scopeTheme.badgeScoreText
     if (scopeTheme.rose != null && scopeTheme.tag == null) scopeTheme.tag = scopeTheme.rose
+    if (scopeTheme.primaryButtonBg != null && scopeTheme.buttonBg == null) scopeTheme.buttonBg = scopeTheme.primaryButtonBg
+    if (scopeTheme.primaryButtonText != null && scopeTheme.buttonText == null) scopeTheme.buttonText = scopeTheme.primaryButtonText
+    if (scopeTheme.buttonBg == null && scopeTheme.accent != null) scopeTheme.buttonBg = scopeTheme.accent
+    if (scopeTheme.buttonText == null && scopeTheme.onBrand != null) scopeTheme.buttonText = scopeTheme.onBrand
+    if (scopeTheme.surfaceButtonText == null && scopeTheme.onDark != null) scopeTheme.surfaceButtonText = scopeTheme.onDark
+    if (scopeTheme.rankFirst == null && scopeTheme.accent != null) scopeTheme.rankFirst = scopeTheme.accent
+    if (scopeTheme.rankSecond == null && scopeTheme.rating != null) scopeTheme.rankSecond = scopeTheme.rating
+    if (scopeTheme.rankThird == null && scopeTheme.tag != null) scopeTheme.rankThird = scopeTheme.tag
     out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...scopeTheme }
   }
   return out
@@ -362,7 +377,7 @@ export function applySiteTheme(site, page = 'home') {
   s('accent-soft', acc_soft)
   s('grad', acc_grad)
   // 按钮
-  s('btn-primary-bg', c.accent); s('btn-primary-text', c.onBrand)
+  s('btn-primary-bg', c.buttonBg); s('btn-primary-text', c.buttonText)
   s('btn-ghost-bg', rgbaColor('#ffffff', .06)); s('btn-ghost-text', c.text)
   s('btn-hover-border', c.accent); s('btn-hover-text', c.accent)
   // 导航
@@ -371,14 +386,14 @@ export function applySiteTheme(site, page = 'home') {
   s('search-bg', rgbaColor(c.card, .5))
   s('search-focus-border', rgba(c.accent, .6))
   s('search-focus-shadow', rgba(c.accent, .15))
-  s('search-button-bg', '#ffffff'); s('search-button-text', c.onDark)
+  s('search-button-bg', c.surfaceButtonBg); s('search-button-text', c.surfaceButtonText)
   // 排行榜
-  s('rank-first-text', c.accent)
-  s('rank-second-text', rgba(c.rating, .7))
-  s('rank-third-text', c.tag)
+  s('rank-first-text', c.rankFirst)
+  s('rank-second-text', c.rankSecond)
+  s('rank-third-text', c.rankThird)
   // Hero
   s('hero-badge-bg', acc_soft); s('hero-badge-text', c.accent)
-  s('hero-primary-button-bg', '#ffffff'); s('hero-primary-button-text', c.onDark)
+  s('hero-primary-button-bg', c.surfaceButtonBg); s('hero-primary-button-text', c.surfaceButtonText)
   s('hero-secondary-button-bg', rgbaColor('#ffffff', .12)); s('hero-secondary-button-text', '#ffffff')
   // Chip
   s('chip-active-bg', c.accent); s('chip-active-text', c.onBrand)
@@ -396,6 +411,7 @@ export function applySiteTheme(site, page = 'home') {
   s('onboarding-bg', `linear-gradient(135deg, ${acc_soft}, rgba(32,36,52,.78))`)
   // 标签
   s('rose', c.tag)
+  s('gold', c.rating)
   // 暗面
   s('card-hi', c.surfaceDim)
 }

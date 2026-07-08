@@ -153,9 +153,16 @@ export const DEFAULT_THEME = {
     accent: '#e5a00d',
     accentLight: '#f5c842',
     accentSoft: 12,
+    buttonBg: '#e5a00d',
+    buttonText: '#ffffff',
+    surfaceButtonBg: '#ffffff',
+    surfaceButtonText: '#16181d',
     rating: '#ffc233',
     ratingText: '#1a1204',
     tag: '#e88db0',
+    rankFirst: '#e5a00d',
+    rankSecond: '#ffc233',
+    rankThird: '#e88db0',
     onBrand: '#ffffff',
     onDark: '#16181d',
     surfaceDim: '#0f111a',
@@ -212,6 +219,14 @@ export function normalizeTheme(theme) {
     if (scopeTheme.muted != null && scopeTheme.textSub == null) scopeTheme.textSub = scopeTheme.muted
     if (scopeTheme.badgeScoreText != null && scopeTheme.ratingText == null) scopeTheme.ratingText = scopeTheme.badgeScoreText
     if (scopeTheme.rose != null && scopeTheme.tag == null) scopeTheme.tag = scopeTheme.rose
+    if (scopeTheme.primaryButtonBg != null && scopeTheme.buttonBg == null) scopeTheme.buttonBg = scopeTheme.primaryButtonBg
+    if (scopeTheme.primaryButtonText != null && scopeTheme.buttonText == null) scopeTheme.buttonText = scopeTheme.primaryButtonText
+    if (scopeTheme.buttonBg == null && scopeTheme.accent != null) scopeTheme.buttonBg = scopeTheme.accent
+    if (scopeTheme.buttonText == null && scopeTheme.onBrand != null) scopeTheme.buttonText = scopeTheme.onBrand
+    if (scopeTheme.surfaceButtonText == null && scopeTheme.onDark != null) scopeTheme.surfaceButtonText = scopeTheme.onDark
+    if (scopeTheme.rankFirst == null && scopeTheme.accent != null) scopeTheme.rankFirst = scopeTheme.accent
+    if (scopeTheme.rankSecond == null && scopeTheme.rating != null) scopeTheme.rankSecond = scopeTheme.rating
+    if (scopeTheme.rankThird == null && scopeTheme.tag != null) scopeTheme.rankThird = scopeTheme.tag
     out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...scopeTheme }
   }
   return out
