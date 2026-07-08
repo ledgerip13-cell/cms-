@@ -175,7 +175,7 @@ button { font-family: inherit; }
 
 /* ============ Hero 全屏贯穿 ============ */
 .home-hero { position: relative; margin: calc(-1 * (var(--topbar-h) + 12px)) -32px 46px; height: 560px; overflow: hidden; }
-.hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center center;
+.hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center 58%;
   filter: brightness(.72) saturate(1.08); transform: none; transition: background-image .7s, filter .35s, transform .35s; }
 .hero-bg.fallback { filter: blur(18px) brightness(.6) saturate(1.25); transform: scale(1.2); }
 .hero-mask { position: absolute; inset: 0;
@@ -345,7 +345,7 @@ button { font-family: inherit; }
   .layout.home-cover-sidebar .sidebar {
     background: linear-gradient(90deg, var(--hero-mask-side-strong) 0%, var(--hero-mask-side-mid) 72%, transparent 100%);
     border-right-color: rgba(255,255,255,.05);
-    backdrop-filter: blur(2px);
+    backdrop-filter: blur(6px);
   }
   .layout.home-cover-sidebar .home-hero {
     margin-left: calc(-1 * (var(--sidebar-w) + 32px));
