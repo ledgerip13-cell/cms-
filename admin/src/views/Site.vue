@@ -219,88 +219,80 @@
         <el-tab-pane label="主题设置" name="theme">
           <div class="theme-layout">
             <div class="theme-panel">
-              <el-tabs v-model="activeThemeScope" class="theme-tabs">
-                <el-tab-pane v-for="s in themeScopes" :key="s.key" :label="s.label" :name="s.key">
-                  <div class="scope-note" v-if="s.key !== 'global'">
-                    页面主题只覆盖强调色、按钮、语义色和榜单色；底板、文字阶梯等基础色统一走全局。
-                  </div>
-                  <div class="edit-status">
-                    <div>
-                      <b>正在编辑：{{ s.label }}主题</b>
-                      <span>{{ s.key === 'global' ? '全站默认颜色' : '只覆盖当前页面，不影响其他页面' }}</span>
+              <div class="scope-note">
+                这里只配置全站通用主题；首页、播放页、列表页的结构和内容项回到各自设置里处理。
+              </div>
+              <div class="edit-status">
+                <div>
+                  <b>正在编辑：全局主题</b>
+                  <span>全站默认设计系统，按钮/榜单/评分等组件角色色统一从这里生效。</span>
+                </div>
+                <el-tag size="small" type="info" effect="plain">全局基准</el-tag>
+              </div>
+
+              <div v-for="group in visibleThemeGroups" :key="group.key" class="theme-group">
+                <div class="theme-group-head">
+                  <span>{{ group.label }}</span>
+                  <em>{{ group.desc }}</em>
+                </div>
+                <div class="theme-grid">
+                  <div v-for="f in group.fields" :key="f.key" class="theme-field"
+                    :class="{alpha: f.type === 'alpha', active: activeFieldKey === f.key}"
+                    @click="setActiveField(f.key)">
+                    <div class="field-label">
+                      <span>{{ f.label }}</span>
+                      <em>{{ (f.impacts || []).join(' / ') }}</em>
                     </div>
-                    <el-tag size="small" :type="overrideCount(s.key) ? 'success' : 'info'" effect="plain">
-                      {{ s.key === 'global' ? '全局基准' : (overrideCount(s.key) ? `已覆盖 ${overrideCount(s.key)} 项` : '继承全局') }}
-                    </el-tag>
+
+                    <template v-if="f.type === 'alpha'">
+                      <el-slider
+                        :model-value="themeValue(f.key)"
+                        :min="0"
+                        :max="100"
+                        :step="1"
+                        @update:model-value="setThemeValue(f.key, $event)"
+                      />
+                      <el-input-number
+                        :model-value="themeValue(f.key)"
+                        :min="0"
+                        :max="100"
+                        :step="1"
+                        size="small"
+                        controls-position="right"
+                        @update:model-value="setThemeValue(f.key, $event)"
+                      />
+                      <span class="percent">%</span>
+                    </template>
+
+                    <template v-else-if="f.type === 'raw'">
+                      <el-input
+                        class="raw-input"
+                        :model-value="themeValue(f.key)"
+                        size="small"
+                        @update:model-value="setThemeValue(f.key, $event)"
+                      />
+                    </template>
+
+                    <template v-else>
+                      <el-color-picker
+                        :model-value="themeValue(f.key)"
+                        :show-alpha="!!f.alpha"
+                        :color-format="f.alpha ? 'rgb' : 'hex'"
+                        @update:model-value="setThemeValue(f.key, $event)"
+                      />
+                      <el-input
+                        :model-value="themeValue(f.key)"
+                        size="small"
+                        @update:model-value="setThemeValue(f.key, $event)"
+                      />
+                    </template>
                   </div>
-
-                  <div v-for="group in visibleThemeGroups" :key="group.key" class="theme-group">
-                    <div class="theme-group-head">
-                      <span>{{ group.label }}</span>
-                      <em>{{ group.desc }}</em>
-                    </div>
-                    <div class="theme-grid">
-                      <div v-for="f in group.fields" :key="f.key" class="theme-field"
-                        :class="{alpha: f.type === 'alpha', active: activeFieldKey === f.key}"
-                        @click="setActiveField(f.key)">
-                        <div class="field-label">
-                          <span>{{ f.label }}</span>
-                          <em v-if="isInherited(s.key, f.key)">继承全局</em>
-                          <em v-else>{{ (f.impacts || []).join(' / ') }}</em>
-                        </div>
-
-                        <template v-if="f.type === 'alpha'">
-                          <el-slider
-                            :model-value="themeValue(s.key, f.key)"
-                            :min="0"
-                            :max="100"
-                            :step="1"
-                            @update:model-value="setThemeValue(s.key, f.key, $event)"
-                          />
-                          <el-input-number
-                            :model-value="themeValue(s.key, f.key)"
-                            :min="0"
-                            :max="100"
-                            :step="1"
-                            size="small"
-                            controls-position="right"
-                            @update:model-value="setThemeValue(s.key, f.key, $event)"
-                          />
-                          <span class="percent">%</span>
-                        </template>
-
-                        <template v-else-if="f.type === 'raw'">
-                          <el-input
-                            class="raw-input"
-                            :model-value="themeValue(s.key, f.key)"
-                            size="small"
-                            @update:model-value="setThemeValue(s.key, f.key, $event)"
-                          />
-                        </template>
-
-                        <template v-else>
-                          <el-color-picker
-                            :model-value="themeValue(s.key, f.key)"
-                            :show-alpha="!!f.alpha"
-                            :color-format="f.alpha ? 'rgb' : 'hex'"
-                            @update:model-value="setThemeValue(s.key, f.key, $event)"
-                          />
-                          <el-input
-                            :model-value="themeValue(s.key, f.key)"
-                            size="small"
-                            @update:model-value="setThemeValue(s.key, f.key, $event)"
-                          />
-                        </template>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="theme-actions">
-                    <el-button size="small" @click="resetTheme(s.key)">恢复{{ s.label }}默认</el-button>
-                    <el-button v-if="s.key !== 'global'" size="small" @click="clearScope(s.key)">清空页面覆盖</el-button>
-                    <span class="hint">全局控制基础观感；页面主题只处理该页面的强调与组件角色覆盖。</span>
-                  </div>
-                </el-tab-pane>
-              </el-tabs>
+                </div>
+              </div>
+              <div class="theme-actions">
+                <el-button size="small" @click="resetTheme">恢复全局默认</el-button>
+                <span class="hint">页面级颜色覆盖入口已收口，避免全局主题和页面设置混在一起。</span>
+              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -377,95 +369,70 @@
           <div>
             <div class="sec-title">影响预览</div>
             <div class="preview-sub">
-              {{ currentThemeLabel }} · 当前字段：{{ currentField.label }}
+              全局主题 · 当前字段：{{ currentField.label }}
             </div>
           </div>
-          <el-tag v-if="scopeInherited" size="small" effect="plain">继承全局</el-tag>
+          <el-tag size="small" effect="plain">高亮影响区域</el-tag>
         </div>
         <div class="impact-tags">
           <el-tag v-for="x in currentImpacts" :key="x" size="small" effect="plain">{{ x }}</el-tag>
         </div>
 
         <div class="theme-preview" :style="previewVars">
-          <div class="focus-grid">
-            <div v-for="block in currentPreviewBlocks" :key="block" class="focus-card">
-              <div class="focus-label">{{ previewBlockLabel(block) }}</div>
-
-              <div v-if="block === 'surface'" class="pv-surface">
-                <div class="pv-surface-card">
-                  <b>页面与卡片</b>
-                  <span>正文文字 / 次级文字 / 弱文字</span>
-                </div>
-              </div>
-
-              <div v-else-if="block === 'nav'" class="pv-nav-demo">
-                <div class="tp-nav on">精选</div>
-                <div class="tp-nav">动漫</div>
-                <div class="tp-nav">电影</div>
-              </div>
-
-              <div v-else-if="block === 'search'" class="pv-search-demo">
-                <div class="tp-search">搜索影片</div>
+          <div class="tp-shell">
+            <aside class="tp-side" :class="{hl: previewActive('nav') || previewActive('surface')}">
+              <div class="tp-brand"><span>●</span><span>Video CMS</span></div>
+              <div class="tp-nav on">精选</div>
+              <div class="tp-nav">电影</div>
+              <div class="tp-nav">动漫</div>
+            </aside>
+            <main class="tp-main">
+              <div class="tp-bar" :class="{hl: previewActive('search')}">
+                <div class="tp-search">搜索影片、演员</div>
                 <button class="tp-search-button">搜索</button>
+                <div class="tp-user"></div>
               </div>
 
-              <div v-else-if="block === 'rank'" class="pv-rank-demo">
-                <span class="r1">1</span><span class="r2">2</span><span class="r3">3</span>
-              </div>
-
-              <div v-else-if="block === 'button'" class="pv-button-demo">
-                <button class="tp-primary">主按钮</button>
-                <button class="tp-ghost">次按钮</button>
-                <button class="tp-hover">悬停态</button>
-              </div>
-
-              <div v-else-if="block === 'hero'" class="tp-hero">
+              <section class="tp-hero" :class="{hl: previewActive('hero') || previewActive('surface')}">
                 <div class="tp-badge">热门推荐</div>
-                <div class="tp-title">首页推荐</div>
+                <div class="tp-title">斗破苍穹 第五季</div>
                 <div class="tp-meta"><span>2026</span><span>动漫</span><b>8.7</b></div>
                 <button>立即播放</button>
-              </div>
+              </section>
 
-              <div v-else-if="block === 'chip'" class="tp-filters compact">
-                <span class="on">全部</span>
-                <span>热播</span>
-                <span>新番</span>
-              </div>
-
-              <div v-else-if="block === 'section'" class="pv-section-demo">
-                <div class="section-line"></div>
-                <b>每日更新</b>
-              </div>
-
-              <div v-else-if="block === 'poster'" class="tp-row compact">
-                <div class="tp-poster score-poster">
-                  <em>8.7</em>
-                  <span></span>
+              <div class="tp-preview-row">
+                <div class="tp-preview-left">
+                  <div class="tp-filters" :class="{hl: previewActive('chip')}">
+                    <span class="on">全部</span><span>热播</span><span>新番</span>
+                  </div>
+                  <div class="pv-section-demo" :class="{hl: previewActive('section')}">
+                    <div class="section-line"></div><b>每日更新</b>
+                  </div>
+                  <div class="tp-row compact" :class="{hl: previewActive('poster') || previewActive('surface')}">
+                    <div class="tp-poster score-poster"><em>8.7</em><span></span></div>
+                    <div class="tp-poster"><span></span></div>
+                  </div>
                 </div>
-                <div class="tp-poster"><span></span></div>
-              </div>
-
-              <div v-else-if="block === 'play'" class="pv-play-demo">
-                <div class="tp-line-tabs">
-                  <span class="on">线路一</span><span>线路二</span>
-                </div>
-                <div class="tp-channel-tabs">
-                  <span class="on">推荐</span><span>备用</span>
-                </div>
-                <div class="tp-eps">
-                  <span v-for="i in 5" :key="i" :class="{on: i === 1}">{{ i }}</span>
+                <div class="tp-preview-right">
+                  <div class="pv-rank-demo" :class="{hl: previewActive('rank')}">
+                    <span class="r1">1</span><span class="r2">2</span><span class="r3">3</span>
+                  </div>
+                  <div class="pv-button-demo" :class="{hl: previewActive('button')}">
+                    <button class="tp-primary">主按钮</button>
+                    <button class="tp-ghost">次按钮</button>
+                  </div>
                 </div>
               </div>
 
-              <div v-else-if="block === 'gallery'" class="pv-gallery-demo">
-                <div class="still on"></div><div class="still"></div><div class="still"></div>
-              </div>
-
-              <div v-else-if="block === 'user'" class="pv-user-demo">
-                <b>注册成功</b>
-                <span>选择喜欢的类型，推荐会马上变化。</span>
-              </div>
-            </div>
+              <section class="pv-play-demo tp-play-info" :class="{hl: previewActive('play') || previewActive('surface')}">
+                <div class="tp-cover"></div>
+                <div class="tp-copy">
+                  <div class="tp-line-tabs"><span class="on">线路一</span><span>线路二</span></div>
+                  <div class="tp-channel-tabs"><span class="on">推荐</span><span>备用</span></div>
+                  <div class="tp-eps"><span v-for="i in 5" :key="i" :class="{on: i === 1}">{{ i }}</span></div>
+                </div>
+              </section>
+            </main>
           </div>
         </div>
       </template>
@@ -474,7 +441,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { Check, Upload, Picture } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api, DEFAULT_THEME, normalizeHomeConfig, normalizePlayConfig, normalizePwaConfig, normalizeShortsConfig, normalizeTheme, readCachedSite, writeCachedSite } from '../api'
@@ -482,7 +449,6 @@ import { api, DEFAULT_THEME, normalizeHomeConfig, normalizePlayConfig, normalize
 const form = ref(readCachedSite())
 const saving = ref(false)
 const activeSettingTab = ref('basic')
-const activeThemeScope = ref('global')
 const activeFieldKey = ref('accent')
 const categoryOptions = ref([])
 const subtypeGroups = ref([])
@@ -492,12 +458,6 @@ const shortsSortOptions = [
   { value: 'hot', label: '热度' },
   { value: 'recent', label: '最新' },
   { value: 'rating', label: '评分' },
-]
-const themeScopes = [
-  { key: 'global', label: '全局' },
-  { key: 'home', label: '首页' },
-  { key: 'play', label: '播放页' },
-  { key: 'list', label: '列表页' },
 ]
 const themeGroups = [
   {
@@ -566,15 +526,6 @@ const themeGroups = [
   },
 ]
 
-const groupScopes = {
-  base: ['global'],
-  brand: ['global', 'home', 'play', 'list'],
-  action: ['global', 'home', 'play', 'list'],
-  semantic: ['global', 'home', 'play', 'list'],
-  rank: ['global', 'home', 'play', 'list'],
-  fixed: ['global'],
-}
-
 const fieldMeta = {
   bg:         { impacts: ['页面底色'], previews: ['surface'] },
   card:       { impacts: ['卡片/面板/弹窗'], previews: ['surface'] },
@@ -600,34 +551,11 @@ const fieldMeta = {
   surfaceDim: { impacts: ['海报占位/缩略图底'], previews: ['poster'] },
 }
 
-const previewLabels = {
-  surface: '页面/卡片底色',
-  nav: '侧边导航',
-  search: '搜索',
-  button: '按钮',
-  hero: 'Hero横幅',
-  chip: '分类筛选',
-  rank: '榜单',
-  section: '分区标题',
-  poster: '影片卡片',
-  play: '播放页',
-}
-
-const currentThemeLabel = computed(() => themeScopes.find(s => s.key === activeThemeScope.value)?.label || '全局')
-const scopeInherited = computed(() => activeThemeScope.value !== 'global' && !Object.keys(form.value.theme?.[activeThemeScope.value] || {}).length)
-const previewColors = computed(() => effectiveTheme(activeThemeScope.value))
-const visibleThemeGroups = computed(() => {
-  const scope = activeThemeScope.value
-  return themeGroups
-    .filter(group => (groupScopes[group.key] || ['global']).includes(scope))
-    .map(group => ({
-      ...group,
-      fields: group.fields
-        .map(f => ({ ...f, ...(fieldMeta[f.key] || {}) }))
-        .filter(f => (f.scopes || groupScopes[group.key] || ['global']).includes(scope)),
-    }))
-    .filter(group => group.fields.length)
-})
+const previewColors = computed(() => effectiveTheme())
+const visibleThemeGroups = computed(() => themeGroups.map(group => ({
+  ...group,
+  fields: group.fields.map(f => ({ ...f, ...(fieldMeta[f.key] || {}) })),
+})))
 const allThemeFields = computed(() => themeGroups.flatMap(group => group.fields.map(f => ({ ...f, ...(fieldMeta[f.key] || {}) }))))
 const currentField = computed(() => allThemeFields.value.find(f => f.key === activeFieldKey.value) || allThemeFields.value[0] || { label: '主题字段', impacts: [], previews: ['surface'] })
 const currentImpacts = computed(() => currentField.value.impacts?.length ? currentField.value.impacts : ['当前字段影响的组件'])
@@ -701,7 +629,12 @@ const shortsScopePreview = computed(() => {
   return rows.length ? rows.join('；') : `默认 ${form.value.shortsConfig?.defaultType || '短剧'}`
 })
 
-function ensureTheme() { form.value.theme = normalizeTheme(form.value.theme) }
+function ensureTheme() {
+  form.value.theme = normalizeTheme(form.value.theme)
+  form.value.theme.home = {}
+  form.value.theme.play = {}
+  form.value.theme.list = {}
+}
 function ensureHomeConfig() { form.value.homeConfig = normalizeHomeConfig(form.value.homeConfig) }
 function ensureShortsConfig() { form.value.shortsConfig = normalizeShortsConfig(form.value.shortsConfig) }
 function ensurePlayConfig() { form.value.playConfig = normalizePlayConfig(form.value.playConfig) }
@@ -755,53 +688,39 @@ function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj || {}, key)
 }
 
-function effectiveTheme(scope) {
+function effectiveTheme() {
   const theme = form.value.theme || {}
   return {
     ...DEFAULT_THEME.global,
     ...(theme.global || {}),
-    ...(scope !== 'global' ? (theme[scope] || {}) : {}),
   }
 }
 
-function themeValue(scope, key) {
-  if (hasOwn(form.value.theme?.[scope], key)) return form.value.theme[scope][key]
-  if (scope !== 'global' && hasOwn(form.value.theme?.global, key)) return form.value.theme.global[key]
+function themeValue(key) {
+  if (hasOwn(form.value.theme?.global, key)) return form.value.theme.global[key]
   return DEFAULT_THEME.global[key]
 }
 
-function setThemeValue(scope, key, value) {
+function setThemeValue(key, value) {
   setActiveField(key)
-  if (!form.value.theme[scope]) form.value.theme[scope] = {}
-  form.value.theme[scope][key] = normalizeThemeValue(scope, key, value)
+  if (!form.value.theme.global) form.value.theme.global = {}
+  form.value.theme.global[key] = normalizeThemeValue(key, value)
 }
 
 function setActiveField(key) {
   activeFieldKey.value = key
 }
 
-function previewBlockLabel(block) {
-  return previewLabels[block] || block
+function previewActive(block) {
+  return currentPreviewBlocks.value.includes(block)
 }
 
 function shortsSortLabel(value) {
   return shortsSortOptions.find(x => x.value === value)?.label || '智能'
 }
 
-function isInherited(scope, key) {
-  return scope !== 'global' && !hasOwn(form.value.theme?.[scope], key)
-}
-
-function resetTheme(scope) {
-  form.value.theme[scope] = scope === 'global' ? { ...DEFAULT_THEME.global } : {}
-}
-
-function clearScope(scope) {
-  if (scope !== 'global') form.value.theme[scope] = {}
-}
-
-function overrideCount(scope) {
-  return Object.keys(form.value.theme?.[scope] || {}).length
+function resetTheme() {
+  form.value.theme.global = { ...DEFAULT_THEME.global }
 }
 
 function cssVarName(key) {
@@ -853,11 +772,11 @@ function colorToRgba(color, fallbackAlpha = 1) {
   return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${fmtAlpha(color.hasAlpha ? color.a : fallbackAlpha)})`
 }
 
-function normalizeThemeValue(scope, key, value) {
+function normalizeThemeValue(key, value) {
   if (!alphaColorField(key)) return value
   const color = parseCssColor(value)
   if (!color) return value
-  const oldColor = parseCssColor(themeValue(scope, key))
+  const oldColor = parseCssColor(themeValue(key))
   const fallbackAlpha = oldColor?.a ?? 1
   return colorToRgba(color, fallbackAlpha)
 }
@@ -921,10 +840,6 @@ async function save() {
     ElMessage.success('站点设置已保存，前端刷新后生效')
   } catch (e) { ElMessage.error(e.message || '保存失败') } finally { saving.value = false }
 }
-watch(activeThemeScope, () => {
-  const keys = visibleThemeGroups.value.flatMap(g => g.fields.map(f => f.key))
-  if (!keys.includes(activeFieldKey.value)) activeFieldKey.value = keys[0] || 'accent'
-})
 onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensurePlayConfig(); ensurePwaConfig(); load() })
 </script>
 
@@ -1002,6 +917,8 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .impact-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
 .theme-preview { border-radius: 14px; overflow: hidden; background: var(--tp-bg); color: var(--tp-text);
   border: 1px solid rgba(255,255,255,.1); box-shadow: 0 12px 32px rgba(0,0,0,.12); padding: 14px; }
+.theme-preview .hl { position: relative; outline: 2px solid #4f6ef7; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(79,110,247,.18); }
+.theme-preview .hl::after { content: ''; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none; border: 1px solid rgba(255,255,255,.42); }
 .focus-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .focus-card { border-radius: 12px; background: color-mix(in srgb, var(--tp-bg) 78%, #fff); border: 1px solid rgba(255,255,255,.09); padding: 12px; }
 .focus-label { color: var(--tp-muted2); font-size: 12px; font-weight: 800; margin-bottom: 10px; }
@@ -1082,6 +999,12 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .tp-list-card { min-width: 0; }
 .tp-list-card div { aspect-ratio: 2/3; border-radius: 10px; background: var(--tp-card); border: 1px solid rgba(255,255,255,.08); }
 .tp-list-card span { display: block; height: 8px; border-radius: 8px; background: var(--tp-muted); opacity: .35; margin-top: 8px; }
+.tp-preview-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(110px, .8fr); gap: 12px; margin-top: 12px; }
+.tp-preview-left, .tp-preview-right { min-width: 0; display: grid; gap: 12px; align-content: start; }
+.tp-preview-right { background: var(--tp-card); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 12px; }
+.tp-preview-right .pv-rank-demo { justify-content: center; }
+.tp-preview-right .pv-button-demo { justify-content: center; }
+.tp-play-info.pv-play-demo { margin-top: 12px; }
 @media (max-width: 1180px) {
   .site-wrap { grid-template-columns: minmax(0, 1fr); }
   .preview-card { position: static; order: -1; max-height: none; overflow: visible; }

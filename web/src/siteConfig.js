@@ -356,7 +356,7 @@ export function themePageFromRoute(route) {
 
 export function applySiteTheme(site, page = 'home') {
   const theme = normalizeTheme(site?.theme)
-  const c = { ...theme.global, ...(theme[page] || {}) }
+  const c = theme.global
   const root = document.documentElement
   const s = (k, v) => { if (v != null && v !== '') root.style.setProperty(cssVarName(k), v) }
 
