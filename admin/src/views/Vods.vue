@@ -126,8 +126,9 @@
         <template #default="{ row }">
           <div class="vod-actions">
             <el-button size="small" @click.stop="openDetail(row)">线路</el-button>
-            <el-dropdown trigger="click" @command="cmd => handleVodCommand(cmd, row)" @click.stop>
-              <el-button size="small" plain :icon="MoreFilled" />
+            <el-dropdown trigger="click" @visible-change="visible => noteVodMenuVisibility(row, visible)"
+              @command="cmd => handleVodCommand(cmd, row)" @click.stop>
+              <el-button size="small" plain :icon="MoreFilled" @click.stop />
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
@@ -481,6 +482,7 @@ const q = reactive({ page: 1, size: 20, kw: String(route.query.kw || ''), type: 
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
 const expandedEpisodes = ref({})
+const vodMenuOpenedAt = ref({})
 const diagOpen = ref(false)
 const diag = ref({ loading: false, line: null, ep: null, epIndex: 0, result: null, probe: '' })
 const cleanupDlg = ref(false)
@@ -649,9 +651,15 @@ async function toggleStatus(row) {
   await api.patchVod(row.id, { status: s }); ElMessage.success('已更新'); load()
 }
 function handleVodCommand(cmd, row) {
+  const openedAt = vodMenuOpenedAt.value[row.id] || 0
+  if (Date.now() - openedAt < 250) return
   if (cmd === 'edit') return openEdit(row)
   if (cmd === 'refresh') return refreshOne(row)
   if (cmd === 'status') return toggleStatus(row)
+}
+function noteVodMenuVisibility(row, visible) {
+  if (!row?.id || !visible) return
+  vodMenuOpenedAt.value = { ...vodMenuOpenedAt.value, [row.id]: Date.now() }
 }
 function isEpisodesExpanded(line) {
   return Boolean(expandedEpisodes.value[line.id])
