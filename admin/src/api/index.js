@@ -145,56 +145,20 @@ export const EMPTY_SITE = {
 export const DEFAULT_THEME = {
   global: {
     bg: '#0a0b0f',
-    bgSoft: '#12141b',
     card: '#14161d',
-    cardHi: '#1a1d26',
+    border: 'rgba(255,255,255,.06)',
     text: '#eceef3',
-    muted: '#79818f',
-    muted2: '#9aa2b1',
-    accent: '#ff5e6c',
-    accentLt: '#ff8a94',
-    accent2: '#7aa7ff',
-    gold: '#ffc233',
-    rose: '#e88db0',
-    accentSoftAlpha: 15,
-    roseSoftAlpha: 16,
-    btnPrimaryBg: '#ff5e6c',
-    btnPrimaryText: '#ffffff',
-    btnGhostBg: 'rgba(255,255,255,.06)',
-    btnGhostText: '#eceef3',
-    btnHoverBorder: '#ff5e6c',
-    btnHoverText: '#ff8a94',
-    navActiveBg: 'rgba(255,94,108,.15)',
-    navActiveText: '#ff5e6c',
-    searchBg: 'rgba(20,22,29,.6)',
-    searchFocusBorder: 'rgba(255,94,108,.6)',
-    searchFocusShadow: 'rgba(255,94,108,.15)',
-    searchButtonBg: '#ffffff',
-    searchButtonText: '#16181d',
-    rankFirstText: '#ff5e6c',
-    rankSecondText: '#ffc233',
-    rankThirdText: '#e88db0',
-    heroBadgeBg: 'rgba(255,94,108,.15)',
-    heroBadgeText: '#ff5e6c',
-    heroPrimaryButtonBg: '#ffffff',
-    heroPrimaryButtonText: '#16181d',
-    heroSecondaryButtonBg: 'rgba(255,255,255,.12)',
-    heroSecondaryButtonText: '#ffffff',
-    chipActiveBg: '#ff5e6c',
-    chipActiveText: '#ffffff',
-    sectionAccentBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
-    badgeScoreBg: '#ffc233',
-    badgeScoreText: '#1a1204',
-    posterOverlayBg: 'linear-gradient(0deg, rgba(8,9,13,.82) 0%, transparent 55%)',
-    playLineActiveBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
-    playLineActiveText: '#ffffff',
-    playChannelActiveBg: '#ff5e6c',
-    playChannelActiveText: '#ffffff',
-    playEpisodeActiveBg: '#7aa7ff',
-    playEpisodeActiveText: '#ffffff',
-    playLinkText: '#7aa7ff',
-    galleryActiveBorder: '#ff5e6c',
-    onboardingBg: 'linear-gradient(135deg, rgba(255,94,108,.14), rgba(32,36,52,.78))',
+    textDim: '#9aa2b1',
+    textSub: '#79818f',
+    accent: '#e5a00d',
+    accentLight: '#f5c842',
+    accentSoft: 12,
+    rating: '#ffc233',
+    ratingText: '#1a1204',
+    tag: '#e88db0',
+    onBrand: '#ffffff',
+    onDark: '#16181d',
+    surfaceDim: '#0f111a',
   },
   home: {},
   play: {},
@@ -238,7 +202,18 @@ export function normalizeTheme(theme) {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
   const out = { global: {}, home: {}, play: {}, list: {} }
-  for (const scope of Object.keys(out)) out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+  for (const scope of Object.keys(out)) {
+    const merged = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+    // 迁移旧字段名 → 新字段名
+    if (merged.gold != null && merged.rating == null) merged.rating = merged.gold
+    if (merged.accentLt != null && merged.accentLight == null) merged.accentLight = merged.accentLt
+    if (merged.accentSoftAlpha != null && merged.accentSoft == null) merged.accentSoft = merged.accentSoftAlpha
+    if (merged.muted2 != null && merged.textDim == null) merged.textDim = merged.muted2
+    if (merged.muted != null && merged.textSub == null) merged.textSub = merged.muted
+    if (merged.badgeScoreText != null && merged.ratingText == null) merged.ratingText = merged.badgeScoreText
+    if (merged.rose != null && merged.tag == null) merged.tag = merged.rose
+    out[scope] = merged
+  }
   return out
 }
 

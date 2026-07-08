@@ -33,7 +33,7 @@ import { dismissToast, toasts } from '../feedback'
 .toast-item.success .toast-icon { color: #5be0a5; }
 .toast-item.error .toast-icon { color: #ff7a88; }
 .toast-item.warning .toast-icon { color: #ffd166; }
-.toast-item.info .toast-icon { color: var(--accent2); }
+.toast-item.info .toast-icon { color: var(--accent); }
 .toast-enter-active, .toast-leave-active { transition: opacity .18s, transform .18s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-8px); }
 @media (max-width: 640px) {

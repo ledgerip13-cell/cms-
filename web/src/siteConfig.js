@@ -18,56 +18,20 @@ export const EMPTY_SITE = {
 export const DEFAULT_THEME = {
   global: {
     bg: '#0a0b0f',
-    bgSoft: '#12141b',
     card: '#14161d',
-    cardHi: '#1a1d26',
+    border: 'rgba(255,255,255,.06)',
     text: '#eceef3',
-    muted: '#79818f',
-    muted2: '#9aa2b1',
-    accent: '#ff5e6c',
-    accentLt: '#ff8a94',
-    accent2: '#7aa7ff',
-    gold: '#ffc233',
-    rose: '#e88db0',
-    accentSoftAlpha: 15,
-    roseSoftAlpha: 16,
-    btnPrimaryBg: '#ff5e6c',
-    btnPrimaryText: '#ffffff',
-    btnGhostBg: 'rgba(255,255,255,.06)',
-    btnGhostText: '#eceef3',
-    btnHoverBorder: '#ff5e6c',
-    btnHoverText: '#ff8a94',
-    navActiveBg: 'rgba(255,94,108,.15)',
-    navActiveText: '#ff5e6c',
-    searchBg: 'rgba(20,22,29,.6)',
-    searchFocusBorder: 'rgba(255,94,108,.6)',
-    searchFocusShadow: 'rgba(255,94,108,.15)',
-    searchButtonBg: '#ffffff',
-    searchButtonText: '#16181d',
-    rankFirstText: '#ff5e6c',
-    rankSecondText: '#ffc233',
-    rankThirdText: '#e88db0',
-    heroBadgeBg: 'rgba(255,94,108,.15)',
-    heroBadgeText: '#ff5e6c',
-    heroPrimaryButtonBg: '#ffffff',
-    heroPrimaryButtonText: '#16181d',
-    heroSecondaryButtonBg: 'rgba(255,255,255,.12)',
-    heroSecondaryButtonText: '#ffffff',
-    chipActiveBg: '#ff5e6c',
-    chipActiveText: '#ffffff',
-    sectionAccentBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
-    badgeScoreBg: '#ffc233',
-    badgeScoreText: '#1a1204',
-    posterOverlayBg: 'linear-gradient(0deg, rgba(8,9,13,.82) 0%, transparent 55%)',
-    playLineActiveBg: 'linear-gradient(120deg, #ff5e6c, #ff8a94)',
-    playLineActiveText: '#ffffff',
-    playChannelActiveBg: '#ff5e6c',
-    playChannelActiveText: '#ffffff',
-    playEpisodeActiveBg: '#7aa7ff',
-    playEpisodeActiveText: '#ffffff',
-    playLinkText: '#7aa7ff',
-    galleryActiveBorder: '#ff5e6c',
-    onboardingBg: 'linear-gradient(135deg, rgba(255,94,108,.14), rgba(32,36,52,.78))',
+    textDim: '#9aa2b1',
+    textSub: '#79818f',
+    accent: '#e5a00d',
+    accentLight: '#f5c842',
+    accentSoft: 12,
+    rating: '#ffc233',
+    ratingText: '#1a1204',
+    tag: '#e88db0',
+    onBrand: '#ffffff',
+    onDark: '#16181d',
+    surfaceDim: '#0f111a',
   },
   home: {},
   play: {},
@@ -110,7 +74,18 @@ function normalizeTheme(theme) {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
   const out = { global: {}, home: {}, play: {}, list: {} }
-  for (const scope of Object.keys(out)) out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+  for (const scope of Object.keys(out)) {
+    const merged = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+    // 迁移旧字段名 → 新字段名
+    if (merged.gold != null && merged.rating == null) merged.rating = merged.gold
+    if (merged.accentLt != null && merged.accentLight == null) merged.accentLight = merged.accentLt
+    if (merged.accentSoftAlpha != null && merged.accentSoft == null) merged.accentSoft = merged.accentSoftAlpha
+    if (merged.muted2 != null && merged.textDim == null) merged.textDim = merged.muted2
+    if (merged.muted != null && merged.textSub == null) merged.textSub = merged.muted
+    if (merged.badgeScoreText != null && merged.ratingText == null) merged.ratingText = merged.badgeScoreText
+    if (merged.rose != null && merged.tag == null) merged.tag = merged.rose
+    out[scope] = merged
+  }
   return out
 }
 
@@ -366,12 +341,67 @@ export function themePageFromRoute(route) {
 
 export function applySiteTheme(site, page = 'home') {
   const theme = normalizeTheme(site?.theme)
-  const colors = { ...theme.global, ...(theme[page] || {}) }
+  const c = { ...theme.global, ...(theme[page] || {}) }
   const root = document.documentElement
-  for (const [key, value] of Object.entries(colors)) {
-    if (value !== undefined && value !== null && value !== '') root.style.setProperty(cssVarName(key), value)
-  }
-  if (colors.accent) root.style.setProperty('--accent-soft', rgba(colors.accent, alphaPercent(colors.accentSoftAlpha, .15)))
-  if (colors.rose) root.style.setProperty('--rose-soft', rgba(colors.rose, alphaPercent(colors.roseSoftAlpha, .16)))
-  if (colors.accent && colors.accentLt) root.style.setProperty('--grad', `linear-gradient(120deg, ${colors.accent}, ${colors.accentLt})`)
+  const s = (k, v) => { if (v != null && v !== '') root.style.setProperty(cssVarName(k), v) }
+
+  // ── 底板 (可直接消费) ──
+  s('bg', c.bg)
+  s('card', c.card)
+  s('line', c.border)
+  s('line-hi', rgbaColor(c.border, .16))
+  s('text', c.text)
+  s('muted', c.textSub)
+  s('muted2', c.textDim)
+
+  // ── 品牌 → 展开所有别名 ──
+  const acc_soft = rgba(c.accent, alphaPercent(c.accentSoft, .12))
+  const acc_grad = `linear-gradient(120deg, ${c.accent}, ${c.accentLight})`
+  s('accent', c.accent)
+  s('accent-lt', c.accentLight)
+  s('accent-soft', acc_soft)
+  s('grad', acc_grad)
+  // 按钮
+  s('btn-primary-bg', c.accent); s('btn-primary-text', c.onBrand)
+  s('btn-ghost-bg', rgbaColor('#ffffff', .06)); s('btn-ghost-text', c.text)
+  s('btn-hover-border', c.accent); s('btn-hover-text', c.accent)
+  // 导航
+  s('nav-active-bg', acc_soft); s('nav-active-text', c.accent)
+  // 搜索
+  s('search-bg', rgbaColor(c.card, .5))
+  s('search-focus-border', rgba(c.accent, .6))
+  s('search-focus-shadow', rgba(c.accent, .15))
+  s('search-button-bg', '#ffffff'); s('search-button-text', c.onDark)
+  // 排行榜
+  s('rank-first-text', c.accent)
+  s('rank-second-text', rgba(c.rating, .7))
+  s('rank-third-text', c.tag)
+  // Hero
+  s('hero-badge-bg', acc_soft); s('hero-badge-text', c.accent)
+  s('hero-primary-button-bg', '#ffffff'); s('hero-primary-button-text', c.onDark)
+  s('hero-secondary-button-bg', rgbaColor('#ffffff', .12)); s('hero-secondary-button-text', '#ffffff')
+  // Chip
+  s('chip-active-bg', c.accent); s('chip-active-text', c.onBrand)
+  s('section-accent-bg', acc_grad)
+  // 卡片
+  s('badge-score-bg', c.rating); s('badge-score-text', c.ratingText)
+  s('poster-overlay-bg', `linear-gradient(0deg, ${rgba(c.bg, .82)} 0%, transparent 55%)`)
+  // 播放页
+  s('play-line-active-bg', acc_grad); s('play-line-active-text', c.onBrand)
+  s('play-channel-active-bg', c.accent); s('play-channel-active-text', c.onBrand)
+  s('play-episode-active-bg', c.accent); s('play-episode-active-text', c.onBrand)
+  s('play-link-text', c.accent)
+  s('gallery-active-border', c.accent)
+  // 引导面板
+  s('onboarding-bg', `linear-gradient(135deg, ${acc_soft}, rgba(32,36,52,.78))`)
+  // 标签
+  s('rose', c.tag)
+  // 暗面
+  s('card-hi', c.surfaceDim)
+}
+
+function rgbaColor(value, alpha) {
+  const c = hexToRgb(value)
+  if (!c) { const p = parseCssColor(value); return p ? `rgba(${p.r},${p.g},${p.b},${alpha})` : value }
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`
 }

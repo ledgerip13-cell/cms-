@@ -695,7 +695,7 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.14); color: #fff; backdrop-filter: blur(8px); }
 .play-lock-icon svg { width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .play-lock-title { max-width: 680px; color: #fff; font-size: 22px; line-height: 1.35; font-weight: 900; overflow-wrap: anywhere; }
-.play-lock-desc { max-width: 520px; color: #c4cad6; font-size: 13.5px; line-height: 1.7; }
+.play-lock-desc { max-width: 520px; color: var(--muted2); font-size: 13.5px; line-height: 1.7; }
 .play-lock-btn { height: 42px; padding: 0 24px; border: 0; border-radius: 11px; background: var(--btn-primary-bg);
   color: var(--btn-primary-text); cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
 .play-lock-btn:hover { filter: brightness(1.06); }
@@ -703,7 +703,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(8,10,15,.82);
   color: #f6d7db; font-size: 13px; line-height: 1.45; padding: 9px 12px; backdrop-filter: blur(10px);
   pointer-events: none; }
-.iframe-note { position: absolute; left: 0; right: 0; bottom: 0; font-size: 12px; color: #cbd3e0;
+.iframe-note { position: absolute; left: 0; right: 0; bottom: 0; font-size: 12px; color: var(--muted2);
   background: rgba(0,0,0,.6); padding: 6px 12px; text-align: center; pointer-events: none; }
 
 /* 影片不存在 */
