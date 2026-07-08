@@ -108,6 +108,7 @@ const followPage = ref(1)
 const libraryPanel = ref(null)
 const HISTORY_PAGE_SIZE = 8
 const FOLLOW_PAGE_SIZE = 12
+let suppressRouteScroll = false
 const isNewUser = computed(() => route.query.new === '1')
 const nextPath = computed(() => {
   const raw = Array.isArray(route.query.next) ? route.query.next[0] : route.query.next
@@ -183,7 +184,10 @@ function selectTab(tab, opts = {}) {
   activeTab.value = normalizeTab(tab)
   if (activeTab.value === 'history') historyPage.value = 1
   if (activeTab.value === 'follows') followPage.value = 1
-  if (!opts.fromRoute) router.replace({ path: '/me', query: { ...route.query, tab: activeTab.value } })
+  if (!opts.fromRoute) {
+    suppressRouteScroll = opts.scroll === false
+    router.replace({ path: '/me', query: { ...route.query, tab: activeTab.value } })
+  }
   if (opts.scroll !== false) scrollToLibrary()
 }
 function onProfileTab(e) {
@@ -237,7 +241,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('profile-tab', onProfileTab)
 })
 watch(() => route.query.tab, (tab) => {
-  selectTab(tab, { fromRoute: true, scroll: true })
+  const shouldScroll = !suppressRouteScroll
+  suppressRouteScroll = false
+  selectTab(tab, { fromRoute: true, scroll: shouldScroll })
 })
 watch([historyPageCount, followPageCount], () => {
   historyPage.value = Math.min(historyPage.value, historyPageCount.value)
