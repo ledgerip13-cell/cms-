@@ -86,8 +86,8 @@
             <div class="poster">
               <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
-              <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
-              <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
               <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
             </div>
             <div class="c-info">
@@ -117,8 +117,8 @@
             <div class="poster">
               <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
-              <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
-              <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
               <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
             </div>
             <div class="c-info">
@@ -146,8 +146,8 @@
             <div class="poster">
               <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
               <div v-else class="noimg">暂无封面</div>
-              <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
-              <span v-else-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
+              <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
               <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
             </div>
             <div class="c-info">
@@ -221,8 +221,8 @@
           <div class="poster">
             <img v-if="v.officialPic || v.pic || v.localPic" :src="pic(v)" :alt="v.name" loading="lazy" @error="onErr($event, fallbackPic(v))" />
             <div v-else class="noimg">暂无封面</div>
-            <span v-if="v.rating" class="badge score">{{ v.rating }}</span>
-            <span v-else class="badge">{{ v.remarks || v.year }}</span>
+            <span v-if="v.remarks || v.year" class="badge">{{ v.remarks || v.year }}</span>
+            <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
             <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
           </div>
           <div class="c-info">
