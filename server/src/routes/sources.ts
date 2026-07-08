@@ -13,6 +13,7 @@ import { authGuard } from "../auth.js";
 import { normalizeOrigin, readPlayDomains, refreshSourcePlayDomains } from "../playDomains.js";
 import { writeAudit } from "./access.js";
 import { parseAutoTypeIds, serializeAutoTypeIds } from "../sourceAutoTypes.js";
+import { invalidatePublicVodCaches } from "../publicVod.js";
 
 export default async function sourceRoutes(app: FastifyInstance) {
   // 采集源管理全部需要登录（含列表，避免泄露源站）
@@ -47,6 +48,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       },
     });
     await reloadSchedules();
+    invalidatePublicVodCaches("source");
     return s;
   });
 
@@ -77,6 +79,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
     if (b.apiUrl !== undefined && !data.apiUrls && !String(b.apiUrl).trim()) return reply.code(400).send({ error: "采集API地址不能为空" });
     const s = await prisma.source.update({ where: { id }, data });
     await reloadSchedules();
+    if (b.enabled !== undefined) invalidatePublicVodCaches("source");
     return s;
   });
 
@@ -88,6 +91,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     await prisma.source.delete({ where: { id } });
     await reloadSchedules();
+    invalidatePublicVodCaches("source");
     return { ok: true };
   });
 

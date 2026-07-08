@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { CATEGORIES, classifyType } from "../collector/classify.js";
 import { inferCategoryIcon, normalizeCategoryIcon } from "../categoryIcons.js";
-import { categoryAllowed, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
+import { categoryAllowed, invalidatePublicVodCaches, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
 
 async function backfillMapToVods(mapId: number) {
   const map = await prisma.sourceTypeMap.findUnique({
@@ -119,6 +119,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         backfilled += res.count;
       }
     }
+    invalidatePublicVodCaches("category");
     return { ok: true, categories: CATEGORIES.length, mapped, backfilled };
   });
 
@@ -129,9 +130,11 @@ export default async function categoryRoutes(app: FastifyInstance) {
     // 分类 CRUD
     admin.post("/api/admin/categories", async (req) => {
       const b = req.body as any;
-      return prisma.category.create({
+      const row = await prisma.category.create({
         data: categoryWriteData(b, true),
       });
+      invalidatePublicVodCaches("category");
+      return row;
     });
     admin.put("/api/admin/categories/:id", async (req) => {
       const id = Number((req.params as any).id);
@@ -143,6 +146,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         data,
       });
       const backfilled = before && b.name && b.name !== before.name ? await backfillCategoryMaps(id) : 0;
+      invalidatePublicVodCaches("category");
       return { ...row, backfilled };
     });
     admin.delete("/api/admin/categories/:id", async (req) => {
@@ -151,6 +155,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       await prisma.category.delete({ where: { id } });
       let backfilled = 0;
       for (const m of maps) backfilled += await backfillMapToVods(m.id);
+      invalidatePublicVodCaches("category");
       return { ok: true, backfilled };
     });
 

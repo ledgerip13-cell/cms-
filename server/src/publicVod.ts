@@ -6,10 +6,13 @@ import { isVipLevelActive } from "./vipLevels.js";
 const NO_PUBLIC_TYPE = "__NO_PUBLIC_TYPE__";
 const DISPLAY_ACCESS_MODES = new Set(["public", "login", "vip", "level", "vip_or_level", "hidden"]);
 const WATCH_ACCESS_MODES = new Set(["inherit", "public", "login", "vip", "level", "vip_or_level"]);
+const STATIC_POLICY_CACHE_TTL_MS = 30_000;
 const LEGACY_ACCESS_MODE_MAP: Record<string, string> = {
   group: "level",
   vip_or_group: "vip_or_level",
 };
+let categoryCache: { ts: number; rows: any[] } | null = null;
+let enabledSourceIdCache: { ts: number; ids: number[] } | null = null;
 
 export type AccessAction = "display" | "watch";
 export type AccessViewer = {
@@ -50,6 +53,24 @@ export function normalizeWatchAccessMode(value: unknown, fallback = "inherit") {
 
 export function normalizeAccessLevelIds(value: unknown) {
   return parseLevelIds(value).slice(0, 100);
+}
+
+function fresh(ts: number) {
+  return Date.now() - ts < STATIC_POLICY_CACHE_TTL_MS;
+}
+
+async function cachedCategories() {
+  if (categoryCache && fresh(categoryCache.ts)) return categoryCache.rows;
+  const rows = await prisma.category.findMany({
+    orderBy: { sort: "asc" },
+  });
+  categoryCache = { ts: Date.now(), rows };
+  return rows;
+}
+
+export function invalidatePublicVodCaches(scope: "category" | "source" | "all" = "all") {
+  if (scope === "category" || scope === "all") categoryCache = null;
+  if (scope === "source" || scope === "all") enabledSourceIdCache = null;
 }
 
 function toViewer(user: any): AccessViewer {
@@ -136,10 +157,7 @@ export function categoryAllowed(category: any, action: AccessAction, viewer: Acc
 }
 
 async function typeNamesForAction(action: AccessAction, viewer: AccessViewer) {
-  const cats = await prisma.category.findMany({
-    where: { enabled: true },
-    orderBy: { sort: "asc" },
-  });
+  const cats = await cachedCategories();
   return cats.filter((c: any) => categoryAllowed(c, action, viewer).allowed).map((c) => c.name).filter(Boolean);
 }
 
@@ -156,7 +174,7 @@ export async function enabledTypeNames(viewer: AccessViewer = null) {
 }
 
 export async function accessForType(typeName: string, action: AccessAction, viewer: AccessViewer = null) {
-  const category = await prisma.category.findFirst({ where: { name: typeName } });
+  const category = (await cachedCategories()).find((c) => c.name === typeName);
   if (!category) return { allowed: false, code: "category_missing", message: "分类不存在或不可用" };
   const access: any = categoryAllowed(category, action, viewer);
   const levelIds = access.requirement?.levelIds;
@@ -186,11 +204,14 @@ export function publicTypeFilter(types: string[]) {
 }
 
 export async function enabledPlayableSourceIds() {
+  if (enabledSourceIdCache && fresh(enabledSourceIdCache.ts)) return enabledSourceIdCache.ids;
   const rows = await prisma.source.findMany({
     where: { enabled: true },
     select: { id: true },
   });
-  return rows.map((r) => r.id);
+  const ids = rows.map((r) => r.id);
+  enabledSourceIdCache = { ts: Date.now(), ids };
+  return ids;
 }
 
 export function publicPlayableFilter(sourceIds?: number[]) {

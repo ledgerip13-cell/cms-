@@ -338,6 +338,14 @@ model Vod {
   @@index([typeName])
   @@index([subType])
   @@index([contentUpdatedAt])
+  @@index([status, pinned, updatedAt, id])
+  @@index([status, ratingCount, rating, updatedAt, id])
+  @@index([status, rating, ratingCount, updatedAt, id])
+  @@index([status, year, updatedAt, id])
+  @@index([status, typeName, pinned, updatedAt, id])
+  @@index([status, typeName, ratingCount, rating, updatedAt, id])
+  @@index([status, typeName, rating, ratingCount, updatedAt, id])
+  @@index([status, typeName, year, updatedAt, id])
 }
 
 // 人物（演员/导演等，供搜索与作品聚合）
@@ -446,6 +454,7 @@ model Play {
   @@unique([sourceId, sourceVodId, flag]) // 同源同片同 flag 唯一，允许同源多 flag 并存
   @@index([vodId])
   @@index([sourceId, sourceVodId])
+  @@index([sourceId, vodId])
 }
 
 // 采集任务（异步执行，前端点击后立即返回，去任务页看进度）
