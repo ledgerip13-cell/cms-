@@ -1,15 +1,23 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { checkPassword, hashPassword, signToken, authGuard } from "../auth.js";
+import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
 
 export default async function authRoutes(app: FastifyInstance) {
   // 登录
   app.post("/api/auth/login", async (req, reply) => {
     const { username, password } = (req.body as any) || {};
+    if (rejectLimitedLogin(req, reply, "admin", username || "")) return reply;
     const u = await prisma.user.findUnique({ where: { username: username || "" } });
-    if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
-    if (!(await checkPassword(password || "", u.password)))
+    if (!u || !u.enabled) {
+      recordLoginFailure(req, "admin", username || "");
+      return reply.code(401).send({ error: "账号不存在或已禁用" });
+    }
+    if (!(await checkPassword(password || "", u.password))) {
+      recordLoginFailure(req, "admin", username || "");
       return reply.code(401).send({ error: "密码错误" });
+    }
+    clearLoginFailures(req, "admin", username || "");
     await prisma.user.update({ where: { id: u.id }, data: { lastLogin: new Date() } });
     const token = signToken({ uid: u.id, username: u.username, role: u.role });
     return { token, user: { id: u.id, username: u.username, role: u.role } };

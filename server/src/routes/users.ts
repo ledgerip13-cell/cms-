@@ -3,6 +3,39 @@ import { prisma } from "../db.js";
 import { authGuard, checkPassword, hashPassword, signWebToken, webUserGuard } from "../auth.js";
 import { enabledTypeNames, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
 import { ensureDefaultVipLevel, isVipLevelActive, publicVipLevel } from "../vipLevels.js";
+import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
+
+const RECOMMENDATION_CACHE_TTL_MS = 60_000;
+const recommendationCache = new Map<string, { ts: number; data: any }>();
+
+function recommendationCacheKey(userId: number, take: number) {
+  return `${userId}:${take}`;
+}
+
+function getRecommendationCache(userId: number, take: number) {
+  const key = recommendationCacheKey(userId, take);
+  const hit = recommendationCache.get(key);
+  if (!hit || Date.now() - hit.ts > RECOMMENDATION_CACHE_TTL_MS) {
+    recommendationCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function setRecommendationCache(userId: number, take: number, data: any) {
+  recommendationCache.set(recommendationCacheKey(userId, take), { ts: Date.now(), data });
+  if (recommendationCache.size > 500) {
+    const oldest = recommendationCache.keys().next().value;
+    if (oldest) recommendationCache.delete(oldest);
+  }
+}
+
+function invalidateUserRecommendation(userId: number) {
+  const prefix = `${userId}:`;
+  for (const key of recommendationCache.keys()) {
+    if (key.startsWith(prefix)) recommendationCache.delete(key);
+  }
+}
 
 function parseJsonArray(value: string | null | undefined): string[] {
   try {
@@ -183,6 +216,7 @@ export default async function userRoutes(app: FastifyInstance) {
         data,
         include: { _count: { select: { follows: true, histories: true } }, vipLevel: true },
       });
+      invalidateUserRecommendation(id);
       return adminUser(u);
     } catch {
       return reply.code(404).send({ error: "用户不存在" });
@@ -245,9 +279,17 @@ export default async function userRoutes(app: FastifyInstance) {
     const password = String(b.password || "");
     if (!username) return reply.code(400).send({ error: "请输入账号" });
     if (!password) return reply.code(400).send({ error: "请输入密码" });
+    if (rejectLimitedLogin(req, reply, "web", username)) return reply;
     const u = await prisma.webUser.findUnique({ where: { username }, include: { vipLevel: true } });
-    if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
-    if (!(await checkPassword(password, u.password))) return reply.code(401).send({ error: "密码错误" });
+    if (!u || !u.enabled) {
+      recordLoginFailure(req, "web", username);
+      return reply.code(401).send({ error: "账号不存在或已禁用" });
+    }
+    if (!(await checkPassword(password, u.password))) {
+      recordLoginFailure(req, "web", username);
+      return reply.code(401).send({ error: "密码错误" });
+    }
+    clearLoginFailures(req, "web", username);
     await prisma.webUser.update({ where: { id: u.id }, data: { lastLogin: new Date() } });
     const token = signWebToken({ mid: u.id, username: u.username });
     return { token, user: publicUser(u) };
@@ -270,6 +312,7 @@ export default async function userRoutes(app: FastifyInstance) {
       data: { nickname, favoriteTypes: JSON.stringify(favoriteTypes) },
       include: { vipLevel: true },
     });
+    invalidateUserRecommendation(mid);
     return publicUser(u);
   });
 
@@ -309,6 +352,7 @@ export default async function userRoutes(app: FastifyInstance) {
       create: { userId: mid, vodId },
       update: {},
     });
+    invalidateUserRecommendation(mid);
     return { followed: true };
   });
 
@@ -316,6 +360,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const mid = (req as any).webUser.mid;
     const vodId = Number((req.params as any).vodId);
     await prisma.userFollow.deleteMany({ where: { userId: mid, vodId } });
+    invalidateUserRecommendation(mid);
     return { followed: false };
   });
 
@@ -351,6 +396,7 @@ export default async function userRoutes(app: FastifyInstance) {
       create: { userId: mid, vodId, epIndex, epName, lineId, progressSec, durationSec },
       update: { epIndex, epName, lineId, progressSec, durationSec },
     });
+    invalidateUserRecommendation(mid);
     return { ok: true, history };
   });
 
@@ -358,23 +404,31 @@ export default async function userRoutes(app: FastifyInstance) {
     const mid = (req as any).webUser.mid;
     const q = req.query as any;
     const take = Math.min(48, Number(q.limit) || 24);
+    const cached = getRecommendationCache(mid, take);
+    if (cached) return cached;
     const u = await prisma.webUser.findUnique({ where: { id: mid } });
     const picked = await pickRecommendationTypes(mid, parseJsonArray(u?.favoriteTypes));
     const where: any = { status: "online", typeName: publicTypeFilter(picked.publicTypes), ...publicPlayableFilter() };
     if (picked.types.length) where.typeName = { in: picked.types };
     const list = await prisma.vod.findMany({
       where,
-      orderBy: [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }],
+      orderBy: [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],
       take,
       include: { _count: { select: publicPlayCountSelect() } },
     });
-    if (list.length >= take) return { ...picked, list };
+    if (list.length >= take) {
+      const data = { ...picked, list };
+      setRecommendationCache(mid, take, data);
+      return data;
+    }
     const more = await prisma.vod.findMany({
       where: { status: "online", typeName: publicTypeFilter(picked.publicTypes), ...publicPlayableFilter(), id: { notIn: list.map((v) => v.id) } },
       orderBy: { updatedAt: "desc" },
       take: take - list.length,
       include: { _count: { select: publicPlayCountSelect() } },
     });
-    return { ...picked, list: [...list, ...more] };
+    const data = { ...picked, list: [...list, ...more] };
+    setRecommendationCache(mid, take, data);
+    return data;
   });
 }

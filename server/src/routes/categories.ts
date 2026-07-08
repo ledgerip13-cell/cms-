@@ -5,6 +5,21 @@ import { CATEGORIES, classifyType } from "../collector/classify.js";
 import { inferCategoryIcon, normalizeCategoryIcon } from "../categoryIcons.js";
 import { categoryAllowed, invalidatePublicVodCaches, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
 
+const CATEGORY_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+let categoryCountCache: { ts: number; counts: Map<string, number> } | null = null;
+
+async function categoryCounts() {
+  if (categoryCountCache && Date.now() - categoryCountCache.ts < CATEGORY_COUNT_CACHE_TTL_MS) return categoryCountCache.counts;
+  const rows = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
+  const counts = new Map(rows.map((c) => [c.typeName, c._count._all]));
+  categoryCountCache = { ts: Date.now(), counts };
+  return counts;
+}
+
+function invalidateCategoryCountCache() {
+  categoryCountCache = null;
+}
+
 async function backfillMapToVods(mapId: number) {
   const map = await prisma.sourceTypeMap.findUnique({
     where: { id: mapId },
@@ -74,8 +89,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       orderBy: { sort: "asc" },
     });
     // 回填后 Vod.typeName == 大类名，直接按 typeName 聚合计数
-    const counts = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
-    const cmap = new Map(counts.map((c) => [c.typeName, c._count._all]));
+    const cmap = await categoryCounts();
     return cats
       .filter((c: any) => categoryAllowed(c, "display", viewer).allowed)
       .map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
@@ -84,8 +98,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
   // 后台管理：列出全部大类(含已禁用的)，用于后台开关管理页面（新增/编辑/删除 CRUD 复用下方已有的 admin 作用域，不重复定义）
   app.get("/api/admin/categories", { preHandler: authGuard }, async () => {
     const cats = await prisma.category.findMany({ orderBy: { sort: "asc" } });
-    const counts = await prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } });
-    const cmap = new Map(counts.map((c) => [c.typeName, c._count._all]));
+    const cmap = await categoryCounts();
     return cats.map((c) => ({ ...c, count: cmap.get(c.name) || 0 }));
   });
 
@@ -120,6 +133,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       }
     }
     invalidatePublicVodCaches("category");
+    invalidateCategoryCountCache();
     return { ok: true, categories: CATEGORIES.length, mapped, backfilled };
   });
 
@@ -134,6 +148,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         data: categoryWriteData(b, true),
       });
       invalidatePublicVodCaches("category");
+      invalidateCategoryCountCache();
       return row;
     });
     admin.put("/api/admin/categories/:id", async (req) => {
@@ -147,6 +162,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
       const backfilled = before && b.name && b.name !== before.name ? await backfillCategoryMaps(id) : 0;
       invalidatePublicVodCaches("category");
+      invalidateCategoryCountCache();
       return { ...row, backfilled };
     });
     admin.delete("/api/admin/categories/:id", async (req) => {
@@ -156,6 +172,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       let backfilled = 0;
       for (const m of maps) backfilled += await backfillMapToVods(m.id);
       invalidatePublicVodCaches("category");
+      invalidateCategoryCountCache();
       return { ok: true, backfilled };
     });
 
@@ -189,6 +206,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
       let backfilled = 0;
       for (const row of rows) backfilled += await backfillMapToVods(row.id);
+      invalidateCategoryCountCache();
       return { ok: true, updated: rows.length, backfilled };
     });
 
@@ -202,6 +220,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         include: { category: true, source: { select: { name: true } } },
       });
       const backfilled = await backfillMapToVods(id);
+      invalidateCategoryCountCache();
       return { ...row, backfilled };
     });
 

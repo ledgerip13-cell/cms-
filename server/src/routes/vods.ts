@@ -9,6 +9,25 @@ import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from 
 import { cleanText, cleanVodTextFields } from "../textClean.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const AGG_CACHE_TTL_MS = 5 * 60 * 1000;
+const aggCache = new Map<string, { ts: number; data: any }>();
+
+function aggCacheGet<T>(key: string): T | null {
+  const hit = aggCache.get(key);
+  if (!hit || Date.now() - hit.ts > AGG_CACHE_TTL_MS) {
+    aggCache.delete(key);
+    return null;
+  }
+  return hit.data as T;
+}
+
+function aggCacheSet(key: string, data: any) {
+  aggCache.set(key, { ts: Date.now(), data });
+  if (aggCache.size > 300) {
+    const oldest = aggCache.keys().next().value;
+    if (oldest) aggCache.delete(oldest);
+  }
+}
 
 function recentShanghaiDates(days: number) {
   const now = new Date();
@@ -168,8 +187,8 @@ function vodListTypeWhere(publicTypes: string[], q: any) {
 function shortsOrderBy(sortMode: string) {
   if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { ratingCount: "desc" as const }, { id: "desc" as const }];
   if (sortMode === "rating") return [{ rating: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
-  if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
-  return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
 }
 
 async function siteShortsConfig() {
@@ -402,7 +421,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     }
     // 排序：recent 最近更新 / hot 热门(评分) / rating 高分 / year 年份新到旧
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
-    if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
+    if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     const withTotal = q.withTotal === "1" || q.withTotal === "true";
@@ -426,6 +445,16 @@ export default async function vodRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
+    const cacheKey = JSON.stringify({
+      scope: "years",
+      publicTypes,
+      sourceIds,
+      type: String(q.type || ""),
+      sub: String(q.sub || ""),
+      kw: String(q.kw || ""),
+    });
+    const cached = aggCacheGet<{ year: string; count: number }[]>(cacheKey);
+    if (cached) return cached;
     const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
     const and: any[] = [];
     if (q.kw) {
@@ -466,6 +495,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     }
     recent.sort((a, b) => Number(b.year) - Number(a.year));
     if (earlierCount > 0) recent.push({ year: `${OLDEST_YEAR}年以前`, count: earlierCount });
+    aggCacheSet(cacheKey, recent);
     return recent;
   });
 
@@ -768,26 +798,36 @@ export default async function vodRoutes(app: FastifyInstance) {
     const publicTypes = await enabledTypeNames(viewer);
     if (!isPublicType(publicTypes, type)) return [];
     const sourceIds = await enabledPlayableSourceIds();
+    const cacheKey = JSON.stringify({ scope: "subtypes", type, publicTypes, sourceIds });
+    const cached = aggCacheGet<{ name: string; count: number }[]>(cacheKey);
+    if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
       where: { typeName: type, subType: { not: "" }, ...publicPlayableFilter(sourceIds) },
       _count: { _all: true },
       orderBy: { _count: { subType: "desc" } },
     });
-    return rows.map((r) => ({ name: r.subType, count: r._count._all }));
+    const data = rows.map((r) => ({ name: r.subType, count: r._count._all }));
+    aggCacheSet(cacheKey, data);
+    return data;
   });
 
   // 分类聚合
   app.get("/api/types", async (req) => {
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
+    const cacheKey = JSON.stringify({ scope: "types", publicTypes, sourceIds });
+    const cached = aggCacheGet<{ name: string; count: number }[]>(cacheKey);
+    if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
       where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) },
       _count: { _all: true },
       orderBy: { _count: { typeName: "desc" } },
     });
-    return rows.map((r) => ({ name: r.typeName, count: r._count._all }));
+    const data = rows.map((r) => ({ name: r.typeName, count: r._count._all }));
+    aggCacheSet(cacheKey, data);
+    return data;
   });
 
   // ============ 以下需登录（admin 后台管理专用，可看到全部状态+支持批量操作）============

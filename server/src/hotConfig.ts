@@ -84,11 +84,12 @@ export async function updateHotConfig(input: any) {
 }
 
 function orderByFor(sortMode: HotSortMode): any[] {
-  if (sortMode === "rating") return [{ rating: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }];
-  if (sortMode === "recent") return [{ updatedAt: "desc" }, { ratingCount: "desc" }, { rating: "desc" }];
-  if (sortMode === "created") return [{ createdAt: "desc" }, { ratingCount: "desc" }, { rating: "desc" }];
-  if (sortMode === "pinned") return [{ pinned: "desc" }, { ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
-  return [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
+  const ratingDesc = { rating: { sort: "desc", nulls: "last" } };
+  if (sortMode === "rating") return [ratingDesc, { ratingCount: "desc" }, { updatedAt: "desc" }];
+  if (sortMode === "recent") return [{ updatedAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
+  if (sortMode === "created") return [{ createdAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
+  if (sortMode === "pinned") return [{ pinned: "desc" }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
+  return [{ ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
 }
 
 export async function hotVodQuery(cat = "hot", limit?: number, viewer: AccessViewer = null) {
