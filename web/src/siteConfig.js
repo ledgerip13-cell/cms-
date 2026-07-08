@@ -75,16 +75,16 @@ function normalizeTheme(theme) {
   }
   const out = { global: {}, home: {}, play: {}, list: {} }
   for (const scope of Object.keys(out)) {
-    const merged = { ...(DEFAULT_THEME[scope] || {}), ...(raw?.[scope] || {}) }
+    const scopeTheme = { ...(raw?.[scope] || {}) }
     // 迁移旧字段名 → 新字段名
-    if (merged.gold != null && merged.rating == null) merged.rating = merged.gold
-    if (merged.accentLt != null && merged.accentLight == null) merged.accentLight = merged.accentLt
-    if (merged.accentSoftAlpha != null && merged.accentSoft == null) merged.accentSoft = merged.accentSoftAlpha
-    if (merged.muted2 != null && merged.textDim == null) merged.textDim = merged.muted2
-    if (merged.muted != null && merged.textSub == null) merged.textSub = merged.muted
-    if (merged.badgeScoreText != null && merged.ratingText == null) merged.ratingText = merged.badgeScoreText
-    if (merged.rose != null && merged.tag == null) merged.tag = merged.rose
-    out[scope] = merged
+    if (scopeTheme.gold != null && scopeTheme.rating == null) scopeTheme.rating = scopeTheme.gold
+    if (scopeTheme.accentLt != null && scopeTheme.accentLight == null) scopeTheme.accentLight = scopeTheme.accentLt
+    if (scopeTheme.accentSoftAlpha != null && scopeTheme.accentSoft == null) scopeTheme.accentSoft = scopeTheme.accentSoftAlpha
+    if (scopeTheme.muted2 != null && scopeTheme.textDim == null) scopeTheme.textDim = scopeTheme.muted2
+    if (scopeTheme.muted != null && scopeTheme.textSub == null) scopeTheme.textSub = scopeTheme.muted
+    if (scopeTheme.badgeScoreText != null && scopeTheme.ratingText == null) scopeTheme.ratingText = scopeTheme.badgeScoreText
+    if (scopeTheme.rose != null && scopeTheme.tag == null) scopeTheme.tag = scopeTheme.rose
+    out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...scopeTheme }
   }
   return out
 }

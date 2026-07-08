@@ -839,6 +839,11 @@ function rgba(hex, alpha) {
   return c ? `rgba(${c.r},${c.g},${c.b},${alpha})` : hex
 }
 
+function rgbaColor(value, alpha) {
+  const color = parseCssColor(value)
+  return color ? `rgba(${Math.round(color.r)},${Math.round(color.g)},${Math.round(color.b)},${fmtAlpha(alpha)})` : value
+}
+
 function alphaPercent(value, fallback) {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
