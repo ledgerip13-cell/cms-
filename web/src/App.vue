@@ -1,6 +1,6 @@
 <template>
   <router-view v-if="isShortsRoute" />
-  <div v-else class="layout">
+  <div v-else class="layout" :class="{'home-cover-sidebar': isHomeRoot}">
     <!-- 移动端遮罩 -->
     <div v-if="drawer" class="sb-backdrop" @click="drawer=false"></div>
 
