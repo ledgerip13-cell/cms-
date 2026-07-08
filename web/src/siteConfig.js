@@ -1,4 +1,5 @@
 export const SITE_CACHE_KEY = 'vcms.site'
+export const CATEGORY_CACHE_KEY = 'vcms.categories'
 
 export const EMPTY_SITE = {
   siteName: '',
@@ -232,6 +233,33 @@ export function readCachedSite() {
 export function writeCachedSite(site) {
   const next = normalizeSite(site)
   localStorage.setItem(SITE_CACHE_KEY, JSON.stringify(next))
+  return next
+}
+
+function normalizeCategories(rows) {
+  return Array.isArray(rows)
+    ? rows
+      .map(row => ({
+        ...row,
+        name: String(row?.name || '').trim(),
+        icon: String(row?.icon || '').trim(),
+        count: Number.isFinite(Number(row?.count)) ? Number(row.count) : 0,
+      }))
+      .filter(row => row.name)
+    : []
+}
+
+export function readCachedCategories() {
+  try {
+    return normalizeCategories(JSON.parse(localStorage.getItem(CATEGORY_CACHE_KEY) || '[]'))
+  } catch {
+    return []
+  }
+}
+
+export function writeCachedCategories(rows) {
+  const next = normalizeCategories(rows)
+  localStorage.setItem(CATEGORY_CACHE_KEY, JSON.stringify(next))
   return next
 }
 

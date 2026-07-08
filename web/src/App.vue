@@ -138,7 +138,7 @@ import { useRouter, useRoute } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import ToastStack from './components/ToastStack.vue'
 import { api, imgUrl } from './api'
-import { applySiteHead, applySiteTheme, readCachedSite, themePageFromRoute, writeCachedSite } from './siteConfig'
+import { applySiteHead, applySiteTheme, readCachedCategories, readCachedSite, themePageFromRoute, writeCachedCategories, writeCachedSite } from './siteConfig'
 import { openAuthDialog } from './authDialog'
 import { currentUser, refreshUser } from './userStore'
 import { levelTagStyle } from './levelTag'
@@ -147,7 +147,7 @@ import { categoryIconSvg } from './categoryIcons'
 
 const router = useRouter()
 const route = useRoute()
-const types = ref([]); const kw = ref('')
+const types = ref(readCachedCategories()); const kw = ref('')
 const searchOpen = ref(false); const drawer = ref(false); const hot = ref([])
 const rankTabs = [
   { cat: 'hot', label: '热搜榜' },
@@ -237,15 +237,18 @@ onMounted(async () => {
   setupPwaViewportLock()
   applySiteHead(site.value)
   applySiteTheme(site.value, themePageFromRoute(route))
-  refreshUser()
-  try {
-    site.value = writeCachedSite(await api.site())
+  void refreshUser()
+  const sitePromise = api.site().then(data => {
+    site.value = writeCachedSite(data)
     applySiteHead(site.value)
     applySiteTheme(site.value, themePageFromRoute(route))
-  } catch {}
-  try {
-    types.value = await api.categories()
-  } catch { types.value = [] }
+  }).catch(() => {})
+  const categoriesPromise = api.categories().then(data => {
+    types.value = writeCachedCategories(data)
+  }).catch(() => {
+    if (!types.value.length) types.value = []
+  })
+  await Promise.allSettled([sitePromise, categoriesPromise])
   if (site.value?.pwaConfig?.enabled !== false) setupPwaUpdates(() => { pwaUpdateReady.value = true })
 })
 </script>
