@@ -163,6 +163,8 @@ export const DEFAULT_THEME = {
     rankFirst: '#e5a00d',
     rankSecond: '#ffc233',
     rankThird: '#e88db0',
+    heroOverlayColor: '#0a0b0f',
+    heroOverlayStrength: 88,
     onBrand: '#ffffff',
     onDark: '#16181d',
     surfaceDim: '#0f111a',
@@ -227,6 +229,7 @@ export function normalizeTheme(theme) {
     if (scopeTheme.rankFirst == null && scopeTheme.accent != null) scopeTheme.rankFirst = scopeTheme.accent
     if (scopeTheme.rankSecond == null && scopeTheme.rating != null) scopeTheme.rankSecond = scopeTheme.rating
     if (scopeTheme.rankThird == null && scopeTheme.tag != null) scopeTheme.rankThird = scopeTheme.tag
+    if (scopeTheme.heroOverlayColor == null && scopeTheme.bg != null) scopeTheme.heroOverlayColor = scopeTheme.bg
     out[scope] = { ...(DEFAULT_THEME[scope] || {}), ...scopeTheme }
   }
   return out

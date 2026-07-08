@@ -515,6 +515,15 @@ const themeGroups = [
     ],
   },
   {
+    key: 'hero',
+    label: 'Hero',
+    desc: '首页大图遮罩和背景融合',
+    fields: [
+      { key: 'heroOverlayColor', label: 'Hero遮罩色' },
+      { key: 'heroOverlayStrength', label: '融合强度(%)', type: 'alpha' },
+    ],
+  },
+  {
     key: 'fixed',
     label: '固定色',
     desc: '深浅底上的文字色',
@@ -546,6 +555,8 @@ const fieldMeta = {
   rankFirst:  { impacts: ['搜索榜单第 1 名'], previews: ['rank'] },
   rankSecond: { impacts: ['搜索榜单第 2 名'], previews: ['rank'] },
   rankThird:  { impacts: ['搜索榜单第 3 名'], previews: ['rank'] },
+  heroOverlayColor:    { impacts: ['Hero大图遮罩色/底部融合色'], previews: ['hero'] },
+  heroOverlayStrength: { impacts: ['Hero大图遮罩强度/底部融合强度'], previews: ['hero'] },
   onBrand:    { impacts: ['强调底文字(chip/播放选中态)'], previews: ['chip', 'play'] },
   onDark:     { impacts: ['白按钮/搜索按钮深字'], previews: ['search'] },
   surfaceDim: { impacts: ['海报占位/缩略图底'], previews: ['poster'] },
@@ -564,6 +575,8 @@ const previewVars = computed(() => {
   const c = previewColors.value
   const acc_soft = rgba(c.accent, alphaPercent(c.accentSoft, .12))
   const acc_grad = `linear-gradient(120deg, ${c.accent}, ${c.accentLight})`
+  const heroOverlay = c.heroOverlayColor || c.bg
+  const heroStrength = alphaPercent(c.heroOverlayStrength, .88)
   const gh = rgbaColor('#ffffff', .06)
   return {
     '--tp-bg': c.bg, '--tp-card': c.card, '--tp-text': c.text,
@@ -575,6 +588,9 @@ const previewVars = computed(() => {
     '--tp-card-hi': c.surfaceDim,
     '--tp-soft': rgba(c.accentLight, .18),
     '--tp-rose-soft': rgba(c.tag, .22),
+    '--tp-hero-overlay-strong': rgba(heroOverlay, heroStrength),
+    '--tp-hero-overlay-mid': rgba(heroOverlay, Math.max(.18, heroStrength * .72)),
+    '--tp-hero-overlay-soft': rgba(heroOverlay, Math.max(.08, heroStrength * .32)),
     '--tp-nav-active-bg': acc_soft, '--tp-nav-active-text': c.accent,
     '--tp-search-button-bg': c.surfaceButtonBg, '--tp-search-button-text': c.surfaceButtonText,
     '--tp-search-bg': rgbaColor(c.card, .5),
@@ -970,6 +986,9 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .tp-hero { min-height: 160px; border-radius: 12px; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
   background: linear-gradient(135deg, var(--tp-card-hi), var(--tp-soft)); position: relative; overflow: hidden; }
 .tp-hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 72% 18%, var(--tp-rose-soft), transparent 34%); pointer-events: none; }
+.tp-hero::after { content: ''; position: absolute; inset: 0; background:
+  linear-gradient(90deg, var(--tp-hero-overlay-strong) 0%, var(--tp-hero-overlay-mid) 44%, var(--tp-hero-overlay-soft) 100%),
+  linear-gradient(0deg, var(--tp-hero-overlay-strong) 0%, transparent 58%); pointer-events: none; }
 .tp-hero > * { position: relative; }
 .tp-badge { display: inline-flex; color: var(--tp-hero-badge-text); background: var(--tp-hero-badge-bg);
   border-radius: 7px; padding: 4px 9px; font-size: 12px; font-weight: 800; margin-bottom: 9px; }
