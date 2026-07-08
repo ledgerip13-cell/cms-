@@ -717,7 +717,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line); background: var(--card); color: var(--text); transition: .15s; }
 .nf-btn:hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
 .nf-btn.primary { background: var(--btn-primary-bg); border-color: transparent; color: var(--btn-primary-text); }
-.nf-btn.primary:hover { opacity: .9; color: #fff; }
+.nf-btn.primary:hover { opacity: .9; color: var(--btn-primary-text); }
 
 /* 标题信息条 */
 .pv-head { display: flex; align-items: flex-start; gap: 16px; margin: 18px 0; padding: 16px; background: var(--card);

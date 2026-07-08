@@ -489,7 +489,7 @@ const themeGroups = [
     desc: '主按钮与白底按钮分开，避免按钮文字色影响其他选中态',
     fields: [
       { key: 'buttonBg', label: '主按钮背景' },
-      { key: 'buttonText', label: '主按钮文字' },
+      { key: 'buttonText', label: '全局主按钮文字' },
       { key: 'surfaceButtonBg', label: '白底按钮背景' },
       { key: 'surfaceButtonText', label: '白底按钮文字' },
     ],
@@ -537,7 +537,7 @@ const fieldMeta = {
   accentLight:{ impacts: ['按钮hover/渐变终点'], previews: ['button', 'section'] },
   accentSoft: { impacts: ['导航选中背景/Hero徽标底/引导面板 — 全自动联动'], previews: ['nav', 'hero'] },
   buttonBg:   { impacts: ['登录/个人中心/PWA/锁定态等主操作按钮背景'], previews: ['button'] },
-  buttonText: { impacts: ['主操作按钮文字'], previews: ['button'] },
+  buttonText: { impacts: ['全局主操作按钮文字'], previews: ['button'] },
   surfaceButtonBg:   { impacts: ['搜索按钮/Hero主按钮背景'], previews: ['search', 'hero'] },
   surfaceButtonText: { impacts: ['搜索按钮/Hero主按钮文字'], previews: ['search', 'hero'] },
   rating:     { impacts: ['评分角标背景/评分文字'], previews: ['poster'] },
