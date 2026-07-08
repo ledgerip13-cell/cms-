@@ -2568,6 +2568,7 @@ onBeforeUnmount(() => {
 .short-poster { z-index: 1; object-fit: cover; }
 .short-video { z-index: 2; opacity: 0; object-fit: contain; object-position: center center; transition: opacity .16s ease; }
 .short-video.ready { opacity: 1; }
+.short-video.contain { object-position: center 42%; }
 .short-video.portrait { object-fit: cover; }
 .short-dim { position: absolute; inset: 0; z-index: 3; pointer-events: none; background:
   linear-gradient(180deg, rgba(0,0,0,.6), transparent 22%, transparent 54%, rgba(0,0,0,.82)),
@@ -2596,7 +2597,7 @@ onBeforeUnmount(() => {
 .short-card.theater .short-poster-bg,
 .short-card.theater .short-poster,
 .short-card.theater .short-dim { display: none; }
-.short-card.theater .short-video { inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; opacity: 1; transform: none; }
+.short-card.theater .short-video { inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; object-position: center center; opacity: 1; transform: none; }
 .short-card.theater .center-state.play-state { display: none; }
 .short-card.theater .short-progress {
   position: absolute;
