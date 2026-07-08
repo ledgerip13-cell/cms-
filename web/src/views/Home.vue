@@ -391,9 +391,11 @@ const title = ref(''); const years = ref([]); const year = ref(''); const sort =
 const mobileFiltersOpen = ref(false)
 const BROWSE_CACHE_TTL = 5 * 60 * 1000
 const browseCache = new Map()
+const totalCache = new Map()
 const subsCache = new Map()
 const yearsCache = new Map()
 let browseRequestId = 0
+let totalRequestId = 0
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'year', t:'按年份' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
 const totalKnown = computed(() => total.value !== null && total.value !== undefined && Number.isFinite(Number(total.value)))
@@ -434,6 +436,15 @@ function browseParams() {
   }
 }
 function browseCacheKey() { return JSON.stringify(browseParams()) }
+function browseTotalKey() {
+  const params = browseParams()
+  return JSON.stringify({
+    type: params.type,
+    kw: params.kw,
+    year: params.year,
+    sub: params.sub,
+  })
+}
 function yearsCacheKey() {
   return JSON.stringify({
     type: isSearch.value ? '' : String(curType.value || ''),
@@ -483,11 +494,14 @@ async function load({ preferCache = true } = {}) {
   const type = params.type
   const kw = params.kw
   title.value = kw ? `搜索“${kw}”` : (type || '全部影片')
+  const cachedTotal = cacheGet(totalCache, browseTotalKey())
+  if (cachedTotal === null) total.value = null
   if (cached) {
     list.value = cached.list
     total.value = cached.total
     hasMore.value = cached.hasMore
     loading.value = false
+    void loadTotal({ preferCache: true })
     return
   }
   loading.value = true
@@ -499,9 +513,25 @@ async function load({ preferCache = true } = {}) {
     total.value = data.total
     hasMore.value = data.hasMore
     cacheSet(browseCache, key, data)
+    void loadTotal({ preferCache: true })
   } finally {
     if (requestId === browseRequestId) loading.value = false
   }
+}
+async function loadTotal({ preferCache = true } = {}) {
+  const key = browseTotalKey()
+  const cached = preferCache ? cacheGet(totalCache, key) : null
+  if (cached !== null) { total.value = cached; return }
+  const requestId = ++totalRequestId
+  const params = { ...browseParams(), page: 1, size: 1, withTotal: 1 }
+  try {
+    const r = await api.vods(params)
+    if (requestId !== totalRequestId || key !== browseTotalKey()) return
+    const nextTotal = Number.isFinite(Number(r.total)) ? Number(r.total) : null
+    if (nextTotal === null) return
+    total.value = nextTotal
+    cacheSet(totalCache, key, nextTotal)
+  } catch {}
 }
 function go(p) { page.value = p; load({ preferCache: true }); window.scrollTo({top:0,behavior:'smooth'}) }
 function setSort(v) { sort.value = v; page.value = 1; load({ preferCache: true }); mobileFiltersOpen.value = false }
