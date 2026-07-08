@@ -405,17 +405,20 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: "desc" }, { updatedAt: "desc" }];
     else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
-    const [total, list] = await Promise.all([
-      prisma.vod.count({ where }),
+    const withTotal = q.withTotal === "1" || q.withTotal === "true";
+    const [total, rows] = await Promise.all([
+      withTotal ? prisma.vod.count({ where }) : Promise.resolve(null),
       prisma.vod.findMany({
         where,
         orderBy,
         skip: (page - 1) * size,
-        take: size,
+        take: size + 1,
         include: { _count: { select: publicPlayCountSelect(sourceIds) } },
       }),
     ]);
-    return { total, page, size, list: list.map(publicVodCard) };
+    const hasMore = rows.length > size;
+    const list = hasMore ? rows.slice(0, size) : rows;
+    return { total, hasMore, page, size, list: list.map(publicVodCard) };
   });
 
   // 年份索引（聚合，降序）：支持按 type/sub/kw 联动，只返回当前结果集实际存在的年份

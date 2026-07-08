@@ -209,7 +209,7 @@
       <div class="section-title">
         <span class="section-title-icon" v-html="browseTitleIcon"></span>
         <span>{{ title }}</span>
-        <span class="cnt">共 {{ total }} 部</span>
+        <span class="cnt">{{ totalKnown ? `共 ${total} 部` : `第 ${page} 页` }}</span>
       </div>
 
       <div v-if="loading" class="grid">
@@ -232,10 +232,10 @@
         </div>
       </div>
 
-      <div class="pager" v-if="total > size">
+      <div class="pager" v-if="page > 1 || hasMore">
         <button :disabled="page<=1" @click="go(page-1)">上一页</button>
-        <button disabled>{{ page }} / {{ Math.ceil(total/size) }}</button>
-        <button :disabled="page>=Math.ceil(total/size)" @click="go(page+1)">下一页</button>
+        <button disabled>{{ page }}</button>
+        <button :disabled="!hasMore" @click="go(page+1)">下一页</button>
       </div>
     </template>
   </div>
@@ -386,7 +386,7 @@ function selectHero(i) {
 
 /* ---------- 浏览模式 ---------- */
 const subs = ref([]); const sub = ref('')
-const list = ref([]); const total = ref(0); const page = ref(1); const size = 30; const loading = ref(true)
+const list = ref([]); const total = ref(null); const hasMore = ref(false); const page = ref(1); const size = 30; const loading = ref(true)
 const title = ref(''); const years = ref([]); const year = ref(''); const sort = ref('recent')
 const mobileFiltersOpen = ref(false)
 const BROWSE_CACHE_TTL = 5 * 60 * 1000
@@ -396,6 +396,7 @@ const yearsCache = new Map()
 let browseRequestId = 0
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'year', t:'按年份' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
+const totalKnown = computed(() => total.value !== null && total.value !== undefined && Number.isFinite(Number(total.value)))
 const filterSummary = computed(() => {
   const items = [sub.value || curType.value || '全部', currentSortLabel.value]
   if (year.value) items.push(year.value)
@@ -485,6 +486,7 @@ async function load({ preferCache = true } = {}) {
   if (cached) {
     list.value = cached.list
     total.value = cached.total
+    hasMore.value = cached.hasMore
     loading.value = false
     return
   }
@@ -492,9 +494,10 @@ async function load({ preferCache = true } = {}) {
   try {
     const r = await api.vods(params)
     if (requestId !== browseRequestId || key !== browseCacheKey()) return
-    const data = { list: r.list || [], total: r.total || 0 }
+    const data = { list: r.list || [], total: Number.isFinite(Number(r.total)) ? Number(r.total) : null, hasMore: Boolean(r.hasMore) }
     list.value = data.list
     total.value = data.total
+    hasMore.value = data.hasMore
     cacheSet(browseCache, key, data)
   } finally {
     if (requestId === browseRequestId) loading.value = false

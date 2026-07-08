@@ -19,6 +19,7 @@ import { seedAdmin } from "./auth.js";
 import { seedVipLevels } from "./vipLevels.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
+import { ensurePerformanceIndexes } from "./db.js";
 
 const app = Fastify({ logger: { level: "info" } });
 const corsOrigins = (process.env.CORS_ORIGINS || "http://127.0.0.1:5151,http://localhost:5151,http://127.0.0.1:5152,http://localhost:5152")
@@ -51,6 +52,7 @@ await app.register(hlsProxyRoutes);
 
 await seedAdmin();
 await seedVipLevels();
+await ensurePerformanceIndexes();
 // 服务启动回收上一进程遗留的僵尸任务（重启后内存执行器已丢失）
 const orphans = await recoverOrphanTasks();
 if (orphans.resumed || orphans.failed || orphans.canceled)
