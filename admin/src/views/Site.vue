@@ -591,6 +591,9 @@ const previewVars = computed(() => {
     '--tp-hero-overlay-strong': rgba(heroOverlay, heroStrength),
     '--tp-hero-overlay-mid': rgba(heroOverlay, Math.max(.18, heroStrength * .72)),
     '--tp-hero-overlay-soft': rgba(heroOverlay, Math.max(.08, heroStrength * .32)),
+    '--tp-hero-bottom': c.bg,
+    '--tp-hero-bottom-mid': rgba(c.bg, .82),
+    '--tp-hero-bottom-soft': rgba(c.bg, .36),
     '--tp-nav-active-bg': acc_soft, '--tp-nav-active-text': c.accent,
     '--tp-search-button-bg': c.surfaceButtonBg, '--tp-search-button-text': c.surfaceButtonText,
     '--tp-search-bg': rgbaColor(c.card, .5),
@@ -988,7 +991,7 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .tp-hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 72% 18%, var(--tp-rose-soft), transparent 34%); pointer-events: none; }
 .tp-hero::after { content: ''; position: absolute; inset: 0; background:
   linear-gradient(90deg, var(--tp-hero-overlay-strong) 0%, var(--tp-hero-overlay-mid) 44%, var(--tp-hero-overlay-soft) 100%),
-  linear-gradient(0deg, var(--tp-hero-overlay-strong) 0%, transparent 58%); pointer-events: none; }
+  linear-gradient(0deg, var(--tp-hero-bottom) 0%, var(--tp-hero-bottom-mid) 30%, var(--tp-hero-bottom-soft) 52%, transparent 72%); pointer-events: none; }
 .tp-hero > * { position: relative; }
 .tp-badge { display: inline-flex; color: var(--tp-hero-badge-text); background: var(--tp-hero-badge-bg);
   border-radius: 7px; padding: 4px 9px; font-size: 12px; font-weight: 800; margin-bottom: 9px; }

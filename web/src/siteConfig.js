@@ -406,8 +406,9 @@ export function applySiteTheme(site, page = 'home') {
   s('hero-mask-side-strong', heroStrong)
   s('hero-mask-side-mid', heroMid)
   s('hero-mask-side-soft', heroSoft)
-  s('hero-mask-bottom', rgba(heroOverlay, Math.min(.98, heroStrength + .08)))
-  s('hero-mask-bottom-mid', heroMid)
+  s('hero-mask-bottom', c.bg)
+  s('hero-mask-bottom-mid', rgba(c.bg, .82))
+  s('hero-mask-bottom-soft', rgba(c.bg, .36))
   s('hero-mask-top', rgba(heroOverlay, Math.max(.18, heroStrength * .52)))
   // Chip
   s('chip-active-bg', c.accent); s('chip-active-text', c.onBrand)
