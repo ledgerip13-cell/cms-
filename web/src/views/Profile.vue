@@ -42,14 +42,15 @@
       </div>
     </section>
 
-    <section class="row" v-if="follows.length">
+    <section id="follows" class="row">
       <div class="row-head"><div class="row-title">我的追剧</div></div>
-      <div class="row-scroll follow-row">
+      <div v-if="follows.length" class="row-scroll follow-row">
         <VodCard v-for="x in follows" :key="x.id" :vod="x.vod" @click="goPlay(x.vod.id)" />
       </div>
+      <div v-else class="empty small">暂无追剧</div>
     </section>
 
-    <section class="row">
+    <section id="history" class="row">
       <div class="row-head"><div class="row-title">观看历史</div></div>
       <div v-if="histories.length" class="history-list">
         <div v-for="h in histories" :key="h.id" class="history-item" @click="goPlay(h.vod.id)">
@@ -63,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
@@ -170,8 +171,16 @@ async function load() {
   follows.value = fs
   histories.value = hs
   await loadRecommendations()
+  await scrollToHash()
+}
+async function scrollToHash() {
+  const id = String(route.hash || '').replace(/^#/, '')
+  if (!id) return
+  await nextTick()
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 onMounted(load)
+watch(() => route.hash, () => { void scrollToHash() })
 </script>
 
 <style scoped>

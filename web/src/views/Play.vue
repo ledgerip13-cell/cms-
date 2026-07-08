@@ -33,6 +33,16 @@
         <div v-if="!accessBlock && resolving" class="video-ph">正在解析播放地址...</div>
       </div>
 
+      <div class="now-playing" v-if="curEp">
+        <div class="now-playing-text">
+          正在播放：<b>{{ vod.name }}</b> · {{ curLine?.sourceName }}<span v-if="curLine?.channels?.length>1"> · {{ chanIdx===0?'推荐通道':'线路'+(chanIdx+1) }}</span> · {{ curEp.name }}
+        </div>
+        <div class="episode-nav">
+          <button type="button" :disabled="!canPlayPrevEp" @click="playPrevEp">上一集</button>
+          <button type="button" :disabled="!canPlayNextEp" @click="playNextEp">下一集</button>
+        </div>
+      </div>
+
       <!-- 标题信息条 -->
       <div class="pv-head">
         <div class="pv-poster" v-if="vod.officialPic || vod.pic || vod.localPic">
@@ -88,10 +98,6 @@
             <button class="mini-btn" v-if="user" @click="router.push('/me')">我的片单</button>
           </div>
         </div>
-      </div>
-
-      <div class="now-playing" v-if="curEp">
-        正在播放：<b>{{ vod.name }}</b> · {{ curLine?.sourceName }}<span v-if="curLine?.channels?.length>1"> · {{ chanIdx===0?'推荐通道':'线路'+(chanIdx+1) }}</span> · {{ curEp.name }}
       </div>
 
       <!-- 线路切换（按源分组，不因多channel而膨胀） -->
@@ -288,6 +294,8 @@ const activeGallery = computed(() => gallery.value[galleryIdx.value])
 // 当前选中的具体通道(flag)：有channels则取chanIdx对应项，否则回退用line本身(兼容旧数据)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
+const canPlayPrevEp = computed(() => epIdx.value > 0)
+const canPlayNextEp = computed(() => epIdx.value < (curChannel.value?.episodes?.length || 0) - 1)
 const playerBackdropStyle = computed(() => {
   const url = pic(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
@@ -516,6 +524,14 @@ function playEp(i, opts = {}) {
   if (!opts.keepResume) pendingSeekSec = 0
   playResolvedEp(i)
 }
+function playPrevEp() {
+  if (!canPlayPrevEp.value) return
+  playEp(epIdx.value - 1)
+}
+function playNextEp() {
+  if (!canPlayNextEp.value) return
+  playEp(epIdx.value + 1)
+}
 function switchLine(i) {
   lineIdx.value = i; chanIdx.value = 0
   const n = Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1)
@@ -726,8 +742,15 @@ onBeforeUnmount(() => {
 .gv-count { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); color: #dfe5ef;
   font-size: 13px; background: rgba(20,22,29,.72); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 7px 14px; }
 
-.now-playing { margin: 14px 0; font-size: 14px; color: var(--muted); }
+.now-playing { min-height: 42px; margin: 12px 0 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 14px; color: var(--muted); }
+.now-playing-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now-playing b { color: var(--text); }
+.episode-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.episode-nav button { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: 700; transition: .15s; }
+.episode-nav button:not(:disabled):hover { border-color: var(--play-episode-active-bg); color: #fff; }
+.episode-nav button:disabled { opacity: .38; cursor: not-allowed; }
 .lines-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 16px 0;
   padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
 .channels-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; padding: 10px 14px;
@@ -888,9 +911,20 @@ onBeforeUnmount(() => {
     border-radius: 11px;
   }
   .now-playing {
-    margin: 14px 0 12px;
+    margin: 10px 0 12px;
+    align-items: flex-start;
     font-size: 13px;
     line-height: 1.6;
+  }
+  .now-playing-text {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .episode-nav button {
+    height: 30px;
+    padding: 0 10px;
   }
   .lines-bar,
   .channels-bar,

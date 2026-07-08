@@ -134,7 +134,6 @@
       <section v-for="row in rows" :key="row.type" class="row">
         <div class="row-head">
           <div class="row-title">
-            <span class="row-title-icon" v-html="categoryIconSvg(row.icon, row.type)"></span>
             <span>{{ row.type || '推荐' }}</span>
           </div>
           <div class="row-more" @click="$router.push({path:'/',query:{type:row.type}})">
