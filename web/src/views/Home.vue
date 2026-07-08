@@ -451,6 +451,7 @@ async function loadSubs() {
   if (cached) { subs.value = cached; return }
   try {
     const data = (await api.subtypes(curType.value)).filter(s => s.count > 0)
+    if (key !== String(curType.value)) return
     subs.value = data
     cacheSet(subsCache, key, data)
   } catch { subs.value = [] }
@@ -497,9 +498,9 @@ function setSort(v) { sort.value = v; page.value = 1; load({ preferCache: true }
 function setYear(y) { year.value = y; page.value = 1; load({ preferCache: true }); mobileFiltersOpen.value = false }
 
 async function boot() {
-  await ensureTypes()
-  if (discover.value) { await loadDiscover(); startHeroLoop(); return }
+  if (discover.value) { await ensureTypes(); await loadDiscover(); startHeroLoop(); return }
   stopHeroLoop()
+  void ensureTypes()
   if (isSearch.value) {
     sub.value = ''
     subs.value = []
@@ -507,8 +508,8 @@ async function boot() {
     void load({ preferCache: true })
     return
   }
-  await loadSubs()
   void load({ preferCache: true })
+  void loadSubs()
   void loadYears({ preferCache: true })
 }
 watch(() => route.query, async () => { page.value = 1; sub.value = ''; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
