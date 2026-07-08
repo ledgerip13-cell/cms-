@@ -32,22 +32,12 @@
       </div>
     </section>
 
-    <section class="row" v-if="recs.length">
-      <div class="row-head">
-        <div class="row-title">为你推荐</div>
-        <div class="row-more">{{ recSource }}</div>
-      </div>
-      <div class="row-scroll">
-        <VodCard v-for="v in recs" :key="v.id" :vod="v" @click="goPlay(v.id)" />
-      </div>
-    </section>
-
     <section ref="libraryPanel" class="profile-library">
       <div class="profile-tabs">
-        <button type="button" :class="{on: activeTab==='history'}" @click="selectTab('history')">
+        <button type="button" :class="{on: activeTab==='history'}" @click="selectTab('history', { scroll: false })">
           最近观看 <span>{{ histories.length }}</span>
         </button>
-        <button type="button" :class="{on: activeTab==='follows'}" @click="selectTab('follows')">
+        <button type="button" :class="{on: activeTab==='follows'}" @click="selectTab('follows', { scroll: false })">
           我的追剧 <span>{{ follows.length }}</span>
         </button>
       </div>
@@ -77,6 +67,16 @@
           <span>{{ followPage }} / {{ followPageCount }}</span>
           <button type="button" :disabled="followPage===followPageCount" @click="followPage++">下一页</button>
         </div>
+      </div>
+    </section>
+
+    <section class="row" v-if="recs.length">
+      <div class="row-head">
+        <div class="row-title">为你推荐</div>
+        <div class="row-more">{{ recSource }}</div>
+      </div>
+      <div class="row-scroll">
+        <VodCard v-for="v in recs" :key="v.id" :vod="v" @click="goPlay(v.id)" />
       </div>
     </section>
   </div>
