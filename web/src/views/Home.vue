@@ -307,7 +307,10 @@ const activeUpdateLabel = computed(() => activeUpdateDay.value ? updateDateLabel
 
 async function ensureTypes() {
   if (types.value.length) return
-  try { types.value = await api.categories() } catch { types.value = [] }
+  try {
+    types.value = await api.categories()
+    applyKnownAggregateTotal()
+  } catch { types.value = [] }
 }
 
 function localDateKey(d) {
@@ -445,6 +448,28 @@ function browseTotalKey() {
     sub: params.sub,
   })
 }
+function knownAggregateTotal() {
+  const params = browseParams()
+  if (params.kw || params.year) return null
+  if (params.sub) {
+    const row = subs.value.find(s => s.name === params.sub)
+    const n = Number(row?.count)
+    return Number.isFinite(n) ? n : null
+  }
+  if (params.type) {
+    const row = types.value.find(t => t.name === params.type)
+    const n = Number(row?.count)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+function applyKnownAggregateTotal() {
+  const known = knownAggregateTotal()
+  if (known === null) return false
+  total.value = known
+  cacheSet(totalCache, browseTotalKey(), known)
+  return true
+}
 function yearsCacheKey() {
   return JSON.stringify({
     type: isSearch.value ? '' : String(curType.value || ''),
@@ -472,6 +497,7 @@ async function loadSubs() {
     if (key !== String(curType.value)) return
     subs.value = data
     cacheSet(subsCache, key, data)
+    applyKnownAggregateTotal()
   } catch { subs.value = [] }
 }
 async function loadYears({ preferCache = true } = {}) {
@@ -494,14 +520,15 @@ async function load({ preferCache = true } = {}) {
   const type = params.type
   const kw = params.kw
   title.value = kw ? `搜索“${kw}”` : (type || '全部影片')
+  const hasKnownTotal = applyKnownAggregateTotal()
   const cachedTotal = cacheGet(totalCache, browseTotalKey())
-  if (cachedTotal === null) total.value = null
+  if (!hasKnownTotal) total.value = cachedTotal === null ? null : cachedTotal
   if (cached) {
     list.value = cached.list
-    total.value = cached.total
+    if (!hasKnownTotal && cached.total !== null) total.value = cached.total
     hasMore.value = cached.hasMore
     loading.value = false
-    void loadTotal({ preferCache: true })
+    if (!hasKnownTotal) void loadTotal({ preferCache: true })
     return
   }
   loading.value = true
@@ -510,15 +537,16 @@ async function load({ preferCache = true } = {}) {
     if (requestId !== browseRequestId || key !== browseCacheKey()) return
     const data = { list: r.list || [], total: Number.isFinite(Number(r.total)) ? Number(r.total) : null, hasMore: Boolean(r.hasMore) }
     list.value = data.list
-    total.value = data.total
+    if (!hasKnownTotal && data.total !== null) total.value = data.total
     hasMore.value = data.hasMore
     cacheSet(browseCache, key, data)
-    void loadTotal({ preferCache: true })
+    if (!hasKnownTotal) void loadTotal({ preferCache: true })
   } finally {
     if (requestId === browseRequestId) loading.value = false
   }
 }
 async function loadTotal({ preferCache = true } = {}) {
+  if (applyKnownAggregateTotal()) return
   const key = browseTotalKey()
   const cached = preferCache ? cacheGet(totalCache, key) : null
   if (cached !== null) { total.value = cached; return }
