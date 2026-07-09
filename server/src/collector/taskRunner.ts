@@ -1,5 +1,6 @@
 // 异步采集任务执行器：前端点击后立即返回 taskId，任务在后台跑并更新进度
 import { prisma } from "../db.js";
+import { invalidateAggregateCache } from "../aggregateCache.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
 import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
 import { applyDoubanAssets } from "./metaAssets.js";
@@ -705,6 +706,11 @@ function metaReason(r: DoubanMatchResult) {
   });
 }
 
+function syncYearFromDouban(metaYear = "") {
+  const year = String(metaYear || "").match(/(19|20)\d{2}/)?.[0] || "";
+  return year ? { year } : {};
+}
+
 function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
   const best = r.candidates[0];
   return {
@@ -712,6 +718,7 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
       doubanId: r.meta.doubanId,
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
+      ...syncYearFromDouban(r.meta.year),
       ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
@@ -844,6 +851,7 @@ async function runMetaTask(
             where: { id: v.id },
             data: matchedMetaData(r, "matched"),
           });
+          if (syncYearFromDouban(r.meta.year).year) invalidateAggregateCache();
           await applyDoubanAssets(v.id, r.meta);
           matched++;
         } else if (r.status === "pending") {

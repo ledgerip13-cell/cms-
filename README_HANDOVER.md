@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-10 07:08 (GMT+8)｜**对应提交**：本提交（移动端模板收口）
+> **最后更新**：2026-07-10 07:45 (GMT+8)｜**对应提交**：本提交（豆瓣匹配置信分与年份同步）
 
 ---
 
@@ -178,7 +178,7 @@ docker compose up -d --build
 - **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater/Me）。
 
 ### 🟡 正在进行
-- **豆瓣元数据画质**：最新提交 `2acd7ff` 引入 `sharp` 对豆瓣海报做画质探针，强制高清封面（`collector/douban.ts:267`）。
+- **豆瓣元数据匹配**：豆瓣封面已做高清探针；本轮修复置信分阈值不直观的问题，`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存。
 - **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）

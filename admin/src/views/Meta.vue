@@ -26,7 +26,7 @@
             重刷失败/全部（{{ stat.failed || 0 }} 失败）
           </el-button>
         </div>
-        <p class="tip">任务在后台运行，进度见「采集任务」页。低置信会进入待确认，不会自动写入豆瓣 ID。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部，自动通过 {{ cfg.autoMatchScore }} 分，待确认 {{ cfg.pendingMatchScore }} 分。</p>
+        <p class="tip">任务在后台运行，进度见「采集任务」页。达到自动通过分会写入豆瓣数据；低于自动通过但达到待确认分会进入候选确认。当前限速 {{ cfg.intervalMs }}ms/条、每批 {{ cfg.batchLimit }} 部，自动通过 {{ cfg.autoMatchScore }} 分，待确认 {{ cfg.pendingMatchScore }} 分。</p>
       </div>
 
       <!-- 参数设置 -->
@@ -47,7 +47,7 @@
           <el-divider>置信分设置</el-divider>
           <el-form-item label="自动通过分">
             <el-input-number v-model="cfg.autoMatchScore" :min="0" :max="100" :step="1" />
-            <span class="unit">达到该分且满足标题/年份等强证据时自动写入</span>
+            <span class="unit">达到该分即自动写入豆瓣元数据</span>
           </el-form-item>
           <el-form-item label="待确认分">
             <el-input-number v-model="cfg.pendingMatchScore" :min="0" :max="cfg.autoMatchScore || 100" :step="1" />
@@ -215,7 +215,8 @@ async function load() {
 }
 async function run(redo) {
   try {
-    const r = redo ? await api.metaBatchRedo() : await api.metaBatch({ limit: cfg.value.batchLimit, intervalMs: cfg.value.intervalMs })
+    const payload = metaTaskPayload({ redo })
+    const r = await api.metaBatch(payload)
     ElMessage.success(r.message || '任务已提交，去「采集任务」看进度')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
 }
@@ -237,6 +238,7 @@ async function runFiltered() {
   if (!ok) return
   try {
     const r = await api.metaBatch({
+      ...metaTaskPayload(),
       limit: cfg.value.batchLimit,
       intervalMs: cfg.value.intervalMs,
       status: q.value.status,
@@ -246,6 +248,17 @@ async function runFiltered() {
     })
     ElMessage.success(r.message || '任务已提交')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+function metaTaskPayload(extra = {}) {
+  const autoMatchScore = Math.max(0, Math.min(100, Math.round(Number(cfg.value.autoMatchScore) || 0)))
+  const pendingMatchScore = Math.max(0, Math.min(autoMatchScore, Math.round(Number(cfg.value.pendingMatchScore) || 0)))
+  return {
+    limit: cfg.value.batchLimit,
+    intervalMs: cfg.value.intervalMs,
+    autoMatchScore,
+    pendingMatchScore,
+    ...extra,
+  }
 }
 function parseReason(row) {
   try { return JSON.parse(row?.metaReason || '{}') } catch { return {} }

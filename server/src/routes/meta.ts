@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
+import { invalidateAggregateCache } from "../aggregateCache.js";
 import { createMetaTask } from "../collector/taskRunner.js";
 import {
   AUTO_MATCH_SCORE,
@@ -39,6 +40,11 @@ function metaReason(r: DoubanMatchResult) {
   });
 }
 
+function syncYearFromDouban(metaYear = "") {
+  const year = String(metaYear || "").match(/(19|20)\d{2}/)?.[0] || "";
+  return year ? { year } : {};
+}
+
 function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
   const best = r.candidates[0];
   return {
@@ -46,6 +52,7 @@ function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
       doubanId: r.meta.doubanId,
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
+      ...syncYearFromDouban(r.meta.year),
       ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
@@ -136,6 +143,7 @@ export default async function metaRoutes(app: FastifyInstance) {
         where: { id },
         data: matchedData(r, "matched"),
       });
+      if (syncYearFromDouban(r.meta.year).year) invalidateAggregateCache();
       await applyDoubanAssets(id, r.meta);
     } else if (r.status === "pending") {
       await prisma.vod.update({
@@ -171,6 +179,7 @@ export default async function metaRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         doubanId: meta.doubanId, rating: meta.rating, ratingCount: meta.ratingCount,
+        ...syncYearFromDouban(meta.year),
         ...(meta.pic ? { officialPic: meta.pic } : {}),
         officialIntro: cleanText(meta.intro, 2000),
         genres: cleanText(meta.genres.join(",")), metaMatched: "manual", metaScore: 100,
@@ -178,6 +187,7 @@ export default async function metaRoutes(app: FastifyInstance) {
         matchedTitle: meta.title, matchedYear: meta.year, metaAt: new Date(),
       },
     });
+    if (syncYearFromDouban(meta.year).year) invalidateAggregateCache();
     await applyDoubanAssets(id, meta);
     return { ok: true, meta };
   });

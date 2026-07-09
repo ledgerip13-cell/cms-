@@ -727,7 +727,7 @@ export async function matchDouban(
       candidates,
     };
   }
-  if (best.score >= autoMatchScore && autoEligible(best)) {
+  if (best.score >= autoMatchScore) {
     return { ok: true, status: "matched", meta: best.meta, suggest, score: best.score, reasons: best.reasons, candidates };
   }
   if (best.score >= pendingMatchScore) {
