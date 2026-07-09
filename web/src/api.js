@@ -15,6 +15,7 @@ export const api = {
   years: (params) => http.get('/years', { params }),
   hot: (limit, cat) => http.get('/hot', { params: { limit, cat } }),
   shortFeed: (params) => http.get('/short-feed', { params }),
+  shortFeedOptions: () => http.get('/short-feed/options'),
   related: (params) => http.get('/related', { params }),
   weekly: () => http.get('/weekly'),
   resolvePlay: (d) => http.get('/resolve', { params: d }),

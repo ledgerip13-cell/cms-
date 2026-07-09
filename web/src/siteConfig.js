@@ -25,11 +25,16 @@ export const DEFAULT_THEME = {
     textSub: '#79818f',
     accent: '#e5a00d',
     accentLight: '#f5c842',
+    accentBg: '#e5a00d',
+    accentBgStart: '#e5a00d',
+    accentBgEnd: '#f5c842',
     accentSoft: 12,
     buttonBg: '#e5a00d',
     buttonText: '#ffffff',
     surfaceButtonBg: '#ffffff',
     surfaceButtonText: '#16181d',
+    searchBg: 'rgba(20,22,29,.5)',
+    searchPanelBg: 'rgba(20,22,29,.82)',
     rating: '#ffc233',
     ratingText: '#1a1204',
     tag: '#e88db0',
@@ -88,6 +93,14 @@ function normalizeTheme(theme) {
     // 迁移旧字段名 → 新字段名
     if (scopeTheme.gold != null && scopeTheme.rating == null) scopeTheme.rating = scopeTheme.gold
     if (scopeTheme.accentLt != null && scopeTheme.accentLight == null) scopeTheme.accentLight = scopeTheme.accentLt
+    if (scopeTheme.accentBg == null && scopeTheme.accent != null) {
+      scopeTheme.accentBg = scopeTheme.accent
+    }
+    if (typeof scopeTheme.accentBg === 'string' && /^linear-gradient/i.test(scopeTheme.accentBg.trim())) {
+      scopeTheme.accentBg = scopeTheme.accent || DEFAULT_THEME.global.accentBg
+    }
+    if (scopeTheme.accentBgStart == null) scopeTheme.accentBgStart = scopeTheme.accentBg || scopeTheme.accent || DEFAULT_THEME.global.accentBgStart
+    if (scopeTheme.accentBgEnd == null) scopeTheme.accentBgEnd = scopeTheme.accentLight || scopeTheme.accentBgStart || DEFAULT_THEME.global.accentBgEnd
     if (scopeTheme.accentSoftAlpha != null && scopeTheme.accentSoft == null) scopeTheme.accentSoft = scopeTheme.accentSoftAlpha
     if (scopeTheme.muted2 != null && scopeTheme.textDim == null) scopeTheme.textDim = scopeTheme.muted2
     if (scopeTheme.muted != null && scopeTheme.textSub == null) scopeTheme.textSub = scopeTheme.muted
@@ -98,6 +111,8 @@ function normalizeTheme(theme) {
     if (scopeTheme.buttonBg == null && scopeTheme.accent != null) scopeTheme.buttonBg = scopeTheme.accent
     if (scopeTheme.buttonText == null && scopeTheme.onBrand != null) scopeTheme.buttonText = scopeTheme.onBrand
     if (scopeTheme.surfaceButtonText == null && scopeTheme.onDark != null) scopeTheme.surfaceButtonText = scopeTheme.onDark
+    if (scopeTheme.searchBg == null && scopeTheme.card != null) scopeTheme.searchBg = rgbaColor(scopeTheme.card, .5)
+    if (scopeTheme.searchPanelBg == null && scopeTheme.card != null) scopeTheme.searchPanelBg = rgbaColor(scopeTheme.card, .82)
     if (scopeTheme.rankFirst == null && scopeTheme.accent != null) scopeTheme.rankFirst = scopeTheme.accent
     if (scopeTheme.rankSecond == null && scopeTheme.rating != null) scopeTheme.rankSecond = scopeTheme.rating
     if (scopeTheme.rankThird == null && scopeTheme.tag != null) scopeTheme.rankThird = scopeTheme.tag
@@ -176,13 +191,15 @@ export function normalizeHomeConfig(config) {
   if (typeof raw === 'string') {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
+  const rest = { ...(raw || {}) }
+  delete rest.mobileTemplate
   const cleanList = (value, limit = 20) => {
     const rows = Array.isArray(value) ? value : String(value || '').split(',')
     return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit)
   }
   return {
     ...DEFAULT_HOME_CONFIG,
-    ...(raw || {}),
+    ...rest,
     dailyUpdateTypes: cleanList(raw?.dailyUpdateTypes),
   }
 }
@@ -374,19 +391,20 @@ export function applySiteTheme(site, page = 'home') {
 
   // ── 品牌 → 展开所有别名 ──
   const acc_soft = rgba(c.accent, alphaPercent(c.accentSoft, .12))
-  const acc_grad = `linear-gradient(120deg, ${c.accent}, ${c.accentLight})`
+  const brandBg = `linear-gradient(120deg, ${c.accentBgStart || c.accentBg || c.accent}, ${c.accentBgEnd || c.accentBgStart || c.accentBg || c.accent})`
   s('accent', c.accent)
   s('accent-lt', c.accentLight)
   s('accent-soft', acc_soft)
-  s('grad', acc_grad)
+  s('grad', brandBg)
   // 按钮
-  s('btn-primary-bg', c.buttonBg); s('btn-primary-text', c.buttonText)
+  s('btn-primary-bg', brandBg); s('btn-primary-text', c.onBrand)
   s('btn-ghost-bg', rgbaColor('#ffffff', .06)); s('btn-ghost-text', c.text)
   s('btn-hover-border', c.accent); s('btn-hover-text', c.accent)
   // 导航
   s('nav-active-bg', acc_soft); s('nav-active-text', c.accent)
   // 搜索
-  s('search-bg', rgbaColor(c.card, .5))
+  s('search-bg', c.searchBg || rgbaColor(c.card, .5))
+  s('search-panel-bg', c.searchPanelBg || rgbaColor(c.card, .82))
   s('search-focus-border', rgba(c.accent, .6))
   s('search-focus-shadow', rgba(c.accent, .15))
   s('search-button-bg', c.surfaceButtonBg); s('search-button-text', c.surfaceButtonText)
@@ -412,14 +430,14 @@ export function applySiteTheme(site, page = 'home') {
   s('hero-mask-top', rgba(heroOverlay, Math.max(.18, heroStrength * .52)))
   // Chip
   s('chip-active-bg', c.accent); s('chip-active-text', c.onBrand)
-  s('section-accent-bg', acc_grad)
+  s('section-accent-bg', brandBg)
   // 卡片
   s('badge-score-bg', c.rating); s('badge-score-text', c.ratingText)
   s('poster-overlay-bg', `linear-gradient(0deg, ${rgba(c.bg, .82)} 0%, transparent 55%)`)
   // 播放页
-  s('play-line-active-bg', acc_grad); s('play-line-active-text', c.onBrand)
-  s('play-channel-active-bg', c.accent); s('play-channel-active-text', c.onBrand)
-  s('play-episode-active-bg', c.accent); s('play-episode-active-text', c.onBrand)
+  s('play-line-active-bg', brandBg); s('play-line-active-text', c.onBrand)
+  s('play-channel-active-bg', brandBg); s('play-channel-active-text', c.onBrand)
+  s('play-episode-active-bg', brandBg); s('play-episode-active-text', c.onBrand)
   s('play-link-text', c.accent)
   s('gallery-active-border', c.accent)
   // 引导面板

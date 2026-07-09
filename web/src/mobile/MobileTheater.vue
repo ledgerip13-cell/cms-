@@ -1,0 +1,742 @@
+<template>
+  <main class="mt">
+    <header class="mt-head">
+      <form class="mt-search" @submit.prevent="submitSearch">
+        <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
+        <input v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" @focus="openSearch" />
+        <button v-if="draftKw" type="submit">搜索</button>
+      </form>
+    </header>
+
+    <nav class="mt-types" aria-label="影片大类">
+      <button type="button" :class="{ on: !type }" @click="pickType('')">全部</button>
+      <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: type === cat.name }" @click="pickType(cat.name)">
+        {{ cat.name }}
+      </button>
+    </nav>
+
+    <nav class="mt-sortbar" aria-label="排序入口">
+      <button v-for="item in quickSorts" :key="item.value" type="button" :class="{ on: sort === item.value }" @click="pickSort(item.value)">
+        <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
+        {{ item.label }}
+      </button>
+    </nav>
+
+    <section v-if="subtypes.length && !kw" class="mt-section">
+      <div class="mt-section-head">
+        <h2>热门分类</h2>
+      </div>
+      <div class="mt-subgrid">
+        <button v-for="sub in topSubtypes" :key="sub.name" type="button" :class="{ on: subtype === sub.name }" @click="pickSubtype(sub.name)">
+          <span>{{ sub.name }}</span>
+          <i>{{ compactCount(sub.count) }}</i>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="rankItems.length" class="mt-section">
+      <div class="mt-section-head">
+        <h2>{{ rankTitle }}</h2>
+        <button type="button" @click="pickSort('hot')">更多</button>
+      </div>
+      <div class="mt-rank">
+        <article v-for="(vod, index) in rankItems" :key="vod.id" @click="goPlay(vod.id)">
+          <div class="mt-rank-poster">
+            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <b>{{ index + 1 }}</b>
+          </div>
+          <strong>{{ vod.name }}</strong>
+          <span>{{ compactCount(vod.ratingCount || vod._count?.plays || 0) }}热度</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="mt-section mt-list-section">
+      <div class="mt-section-head">
+        <h2>{{ listTitle }}</h2>
+        <button type="button" @click="filterOpen = true">
+          <svg viewBox="0 0 24 24" v-html="icon('filter')"></svg>
+          筛选
+        </button>
+      </div>
+      <div v-if="loading" class="mt-grid">
+        <div v-for="i in 8" :key="i" class="mt-card mt-sk">
+          <div></div>
+          <b></b>
+          <p></p>
+        </div>
+      </div>
+      <div v-else-if="!items.length" class="mt-empty">没有找到相关影片</div>
+      <div v-else class="mt-grid">
+        <article v-for="vod in items" :key="vod.id" class="mt-card" @click="goPlay(vod.id)">
+          <div class="mt-poster">
+            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <span v-if="vod.remarks">{{ vod.remarks }}</span>
+          </div>
+          <strong>{{ vod.name }}</strong>
+          <p>{{ vod.typeName || '未分类' }}<template v-if="vod.year"> · {{ vod.year }}</template></p>
+        </article>
+      </div>
+      <button v-if="hasMore && !loading" class="mt-more" type="button" @click="loadMore">加载更多</button>
+    </section>
+
+    <div v-if="filterOpen" class="mt-filter-mask" @click="filterOpen = false"></div>
+    <aside class="mt-filter" :class="{ open: filterOpen }">
+      <div class="mt-filter-head">
+        <h3>筛选影片</h3>
+        <button type="button" aria-label="关闭筛选" @click="filterOpen = false">
+          <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
+        </button>
+      </div>
+      <div class="mt-filter-group">
+        <label>类型</label>
+        <div>
+          <button type="button" :class="{ on: !type }" @click="pickType('', false)">全部</button>
+          <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: type === cat.name }" @click="pickType(cat.name, false)">
+            {{ cat.name }}
+          </button>
+        </div>
+      </div>
+      <div v-if="subtypes.length" class="mt-filter-group">
+        <label>分类</label>
+        <div>
+          <button type="button" :class="{ on: !subtype }" @click="pickSubtype('', false)">全部</button>
+          <button v-for="sub in subtypes.slice(0, 18)" :key="sub.name" type="button" :class="{ on: subtype === sub.name }" @click="pickSubtype(sub.name, false)">
+            {{ sub.name }}
+          </button>
+        </div>
+      </div>
+      <div class="mt-filter-group">
+        <label>年份</label>
+        <div>
+          <button type="button" :class="{ on: !year }" @click="pickYear('')">全部</button>
+          <button v-for="row in years.slice(0, 12)" :key="row.year" type="button" :class="{ on: year === row.year }" @click="pickYear(row.year)">
+            {{ row.year }}
+          </button>
+        </div>
+      </div>
+      <div class="mt-filter-group">
+        <label>排序</label>
+        <div>
+          <button v-for="item in filterSorts" :key="item.value" type="button" :class="{ on: sort === item.value }" @click="pickSort(item.value, false)">
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
+      <div class="mt-filter-actions">
+        <button type="button" @click="resetFilter">重置</button>
+        <button type="button" @click="applyFilter">查看结果</button>
+      </div>
+    </aside>
+  </main>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { api, imgUrl } from '../api'
+import { readCachedCategories, writeCachedCategories } from '../siteConfig'
+import { icon } from './icons'
+
+const route = useRoute()
+const router = useRouter()
+const categories = ref(readCachedCategories())
+const subtypes = ref([])
+const years = ref([])
+const rankItems = ref([])
+const items = ref([])
+const loading = ref(false)
+const filterOpen = ref(false)
+const draftKw = ref('')
+const page = ref(1)
+const hasMore = ref(false)
+
+const type = computed(() => String(route.query.type || ''))
+const subtype = computed(() => String(route.query.sub || ''))
+const sort = computed(() => String(route.query.sort || 'recent'))
+const year = computed(() => String(route.query.year || ''))
+const kw = computed(() => String(route.query.kw || ''))
+const topSubtypes = computed(() => subtypes.value.slice(0, 8))
+const rankTitle = computed(() => type.value ? `${type.value}热播榜` : '全站热播榜')
+const listTitle = computed(() => {
+  if (kw.value) return `搜索“${kw.value}”`
+  if (subtype.value) return subtype.value
+  if (type.value) return `${type.value}片库`
+  return '全部影片'
+})
+const quickSorts = [
+  { value: 'hot', label: '热播', icon: 'hot' },
+  { value: 'recent', label: '新片', icon: 'calendar' },
+  { value: 'rating', label: '高分', icon: 'rank' },
+]
+const filterSorts = [
+  { value: 'recent', label: '最近更新' },
+  { value: 'hot', label: '热门优先' },
+  { value: 'rating', label: '高分优先' },
+  { value: 'year', label: '年份新到旧' },
+]
+
+function poster(vod) {
+  return imgUrl(vod?.officialPic || vod?.pic || vod?.localPic || vod?.heroImage || '')
+}
+
+function onImgError(event) {
+  const img = event?.target
+  if (img) img.style.visibility = 'hidden'
+}
+
+function compactCount(value) {
+  const n = Number(value) || 0
+  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
+  return String(n)
+}
+
+function queryPatch(patch) {
+  return { ...route.query, ...patch }
+}
+
+function cleanQuery(query) {
+  const out = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== '' && value !== null && typeof value !== 'undefined') out[key] = value
+  }
+  return out
+}
+
+function pushQuery(patch) {
+  router.push({ path: '/m/theater', query: cleanQuery(queryPatch(patch)) })
+}
+
+function pickType(next, close = true) {
+  pushQuery({ type: next, sub: '', year: '', kw: '' })
+  if (close) filterOpen.value = false
+}
+
+function pickSubtype(next, close = true) {
+  pushQuery({ sub: next, year: '', kw: '' })
+  if (close) filterOpen.value = false
+}
+
+function pickSort(next, close = true) {
+  pushQuery({ sort: next })
+  if (close) filterOpen.value = false
+}
+
+function pickYear(next) {
+  pushQuery({ year: next })
+}
+
+function submitSearch() {
+  router.push({ path: '/m/search', query: cleanQuery({ kw: draftKw.value }) })
+}
+
+function openSearch() {
+  router.push({ path: '/m/search', query: cleanQuery({ kw: draftKw.value }) })
+}
+
+function resetFilter() {
+  router.push('/m/theater')
+}
+
+function applyFilter() {
+  filterOpen.value = false
+}
+
+function goPlay(id) {
+  if (!id) return
+  router.push(`/play/${id}`)
+}
+
+function vodParams(extra = {}) {
+  return cleanQuery({
+    page: page.value,
+    size: 24,
+    type: kw.value ? '' : type.value,
+    sub: kw.value ? '' : subtype.value,
+    kw: kw.value,
+    year: year.value,
+    sort: sort.value,
+    ...extra,
+  })
+}
+
+async function loadCategories() {
+  try {
+    categories.value = writeCachedCategories(await api.categories())
+  } catch {}
+}
+
+async function loadSubtypes() {
+  if (!type.value || kw.value) {
+    subtypes.value = []
+    return
+  }
+  try {
+    subtypes.value = (await api.subtypes(type.value)).filter(row => Number(row.count) > 0)
+  } catch {
+    subtypes.value = []
+  }
+}
+
+async function loadYears() {
+  try {
+    years.value = await api.years(cleanQuery({ type: kw.value ? '' : type.value, sub: kw.value ? '' : subtype.value, kw: kw.value }))
+  } catch {
+    years.value = []
+  }
+}
+
+async function loadRank() {
+  try {
+    const res = await api.vods(cleanQuery({ page: 1, size: 6, type: type.value, sort: 'hot' }))
+    rankItems.value = res.list || []
+  } catch {
+    rankItems.value = []
+  }
+}
+
+async function loadList({ append = false } = {}) {
+  loading.value = !append
+  try {
+    const res = await api.vods(vodParams())
+    const next = res.list || []
+    items.value = append ? [...items.value, ...next] : next
+    hasMore.value = Boolean(res.hasMore)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadMore() {
+  page.value += 1
+  await loadList({ append: true })
+}
+
+async function reload() {
+  draftKw.value = kw.value
+  page.value = 1
+  await Promise.allSettled([loadSubtypes(), loadYears(), loadRank(), loadList()])
+}
+
+watch(() => route.fullPath, reload)
+onMounted(async () => {
+  await loadCategories()
+  await reload()
+})
+</script>
+
+<style scoped>
+.mt {
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px calc(90px + env(safe-area-inset-bottom));
+  background:
+    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 180px, #f7f7f8 100%);
+  color: #191a20;
+}
+.mt-head {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  margin: 0 -14px;
+  padding: 0 14px 10px;
+  background: linear-gradient(180deg, #fff4f1 0%, rgba(255, 244, 241, .92) 72%, rgba(255, 244, 241, 0) 100%);
+}
+.mt-search {
+  height: 42px;
+  border-radius: 999px;
+  padding: 0 10px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 10px 26px rgba(43, 20, 18, .06);
+}
+.mt-search svg,
+.mt-sortbar svg,
+.mt-section-head svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mt-search svg {
+  color: #9aa0aa;
+}
+.mt-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1f232b;
+  font-size: 14px;
+}
+.mt button:focus-visible,
+.mt input:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(240, 68, 56, .18);
+}
+.mt-search input::placeholder {
+  color: #9aa0aa;
+}
+.mt-search button {
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #f04438;
+  background: #fff0ed;
+  font-size: 12px;
+  font-weight: 900;
+}
+.mt-types,
+.mt-sortbar {
+  margin: 2px -14px 0;
+  padding: 0 14px 2px;
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mt-types::-webkit-scrollbar,
+.mt-sortbar::-webkit-scrollbar,
+.mt-rank::-webkit-scrollbar {
+  display: none;
+}
+.mt-types button {
+  flex: 0 0 auto;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  color: #3d414a;
+  background: #fff;
+  font-weight: 800;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
+}
+.mt-types button.on {
+  color: #fff;
+  background: linear-gradient(135deg, #ff6a4f, #f04438);
+}
+.mt-sortbar {
+  margin-top: 12px;
+}
+.mt-sortbar button {
+  flex: 0 0 auto;
+  height: 34px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #616773;
+  background: #fff;
+  font-weight: 800;
+}
+.mt-sortbar button.on {
+  color: #f04438;
+}
+.mt-section {
+  margin-top: 20px;
+}
+.mt-section-head {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.mt-section-head h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.mt-section-head button {
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9a9fa8;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+.mt-subgrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.mt-subgrid button {
+  min-width: 0;
+  height: 54px;
+  border: 0;
+  border-radius: 13px;
+  padding: 7px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
+}
+.mt-subgrid span {
+  max-width: 100%;
+  color: #262a33;
+  font-size: 13px;
+  font-weight: 900;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mt-subgrid i {
+  color: #a1a6af;
+  font-size: 10px;
+  font-style: normal;
+}
+.mt-subgrid button.on {
+  background: #fff0ed;
+}
+.mt-subgrid button.on span,
+.mt-subgrid button.on i {
+  color: #f04438;
+}
+.mt-rank {
+  margin: 0 -14px;
+  padding: 0 14px 2px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mt-rank article {
+  width: 104px;
+  flex: 0 0 auto;
+}
+.mt-rank-poster,
+.mt-poster {
+  position: relative;
+  overflow: hidden;
+  background: #e9eaee;
+}
+.mt-rank-poster {
+  aspect-ratio: 3 / 4.15;
+  border-radius: 10px;
+}
+.mt-rank-poster img,
+.mt-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mt-rank-poster b {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, #ff7b4c, #f04438);
+  font-size: 12px;
+}
+.mt-rank strong,
+.mt-card strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 7px;
+  color: #1f232b;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.mt-rank span,
+.mt-card p {
+  margin: 4px 0 0;
+  color: #8b9098;
+  font-size: 11px;
+}
+.mt-list-section {
+  margin-top: 22px;
+}
+.mt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 10px;
+}
+.mt-poster {
+  aspect-ratio: 3 / 4.1;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
+}
+.mt-poster span {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  max-width: calc(100% - 14px);
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(0, 0, 0, .54);
+  font-size: 10px;
+  font-weight: 800;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mt-more {
+  width: 100%;
+  height: 42px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 999px;
+  color: #f04438;
+  background: #fff;
+  font-weight: 900;
+}
+.mt-empty {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  color: #9a9fa8;
+  background: #fff;
+  border-radius: 16px;
+}
+.mt-sk div,
+.mt-sk b,
+.mt-sk p {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #eceef2, #f7f7f9, #eceef2);
+  background-size: 200% 100%;
+  animation: mt-sk 1.1s infinite linear;
+}
+.mt-sk div {
+  aspect-ratio: 3 / 4.1;
+}
+.mt-sk b {
+  width: 82%;
+  height: 14px;
+  margin-top: 8px;
+}
+.mt-sk p {
+  width: 48%;
+  height: 11px;
+}
+.mt-filter-mask {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  background: rgba(0, 0, 0, .28);
+}
+.mt-filter {
+  position: fixed;
+  z-index: 81;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 78dvh;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  background: #fff;
+  transform: translateY(108%);
+  transition: transform .22s ease;
+  overflow-y: auto;
+}
+.mt-filter.open {
+  transform: translateY(0);
+}
+.mt-filter-head,
+.mt-filter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mt-filter-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.mt-filter-head button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.mt-filter-head button svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mt-filter-group {
+  margin-top: 18px;
+}
+.mt-filter-group label {
+  display: block;
+  margin-bottom: 10px;
+  color: #252933;
+  font-size: 14px;
+  font-weight: 900;
+}
+.mt-filter-group div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mt-filter-group button {
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: #5f6570;
+  background: #f4f5f7;
+  font-weight: 800;
+}
+.mt-filter-group button.on {
+  color: #f04438;
+  background: #fff0ed;
+}
+.mt-filter-actions {
+  gap: 10px;
+  margin-top: 22px;
+}
+.mt-filter-actions button {
+  flex: 1;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 900;
+}
+.mt-filter-actions button:first-child {
+  color: #5f6570;
+  background: #f4f5f7;
+}
+.mt-filter-actions button:last-child {
+  color: #fff;
+  background: linear-gradient(135deg, #ff6a4f, #f04438);
+}
+@keyframes mt-sk {
+  to { background-position: -200% 0; }
+}
+@media (max-width: 360px) {
+  .mt-subgrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+</style>

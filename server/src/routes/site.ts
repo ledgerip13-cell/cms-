@@ -156,9 +156,11 @@ export function normalizeHomeConfig(value: any) {
       raw = {};
     }
   }
+  const rest = { ...(raw || {}) };
+  delete (rest as any).mobileTemplate;
   return {
     ...DEFAULT_HOME_CONFIG,
-    ...(raw || {}),
+    ...rest,
     dailyUpdateTypes: cleanStringList(raw?.dailyUpdateTypes, 20),
   };
 }
@@ -223,22 +225,25 @@ export default async function siteRoutes(app: FastifyInstance) {
   // 后台更新（鉴权）
   app.put("/api/site", { preHandler: authGuard }, async (req) => {
     const b = (req.body as any) || {};
-    await ensureSite();
+    const current = await ensureSite();
+    const keepString = (key: keyof typeof current) => (
+      Object.prototype.hasOwnProperty.call(b, key) ? String(b[key] ?? "") : String((current as any)[key] ?? "")
+    );
     const updated = await prisma.siteConfig.update({
       where: { id: 1 },
       data: {
-        siteName: b.siteName,
-        logo: b.logo,
-        description: b.description,
-        keywords: b.keywords,
-        footer: b.footer,
-        announcement: b.announcement,
-        theme: normalizeJsonField(b.theme),
-        homeConfig: JSON.stringify(normalizeHomeConfig(b.homeConfig)),
-        shortsConfig: JSON.stringify(normalizeShortsConfig(b.shortsConfig)),
-        playConfig: JSON.stringify(normalizePlayConfig(b.playConfig)),
-        pwaConfig: JSON.stringify(normalizePwaConfig(b.pwaConfig)),
-        allowRegister: Boolean(b.allowRegister),
+        siteName: keepString("siteName"),
+        logo: keepString("logo"),
+        description: keepString("description"),
+        keywords: keepString("keywords"),
+        footer: keepString("footer"),
+        announcement: keepString("announcement"),
+        theme: Object.prototype.hasOwnProperty.call(b, "theme") ? normalizeJsonField(b.theme) : (current as any).theme,
+        homeConfig: Object.prototype.hasOwnProperty.call(b, "homeConfig") ? JSON.stringify(normalizeHomeConfig(b.homeConfig)) : (current as any).homeConfig,
+        shortsConfig: Object.prototype.hasOwnProperty.call(b, "shortsConfig") ? JSON.stringify(normalizeShortsConfig(b.shortsConfig)) : (current as any).shortsConfig,
+        playConfig: Object.prototype.hasOwnProperty.call(b, "playConfig") ? JSON.stringify(normalizePlayConfig(b.playConfig)) : (current as any).playConfig,
+        pwaConfig: Object.prototype.hasOwnProperty.call(b, "pwaConfig") ? JSON.stringify(normalizePwaConfig(b.pwaConfig)) : (current as any).pwaConfig,
+        allowRegister: Object.prototype.hasOwnProperty.call(b, "allowRegister") ? Boolean(b.allowRegister) : (current as any).allowRegister,
       },
     });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });

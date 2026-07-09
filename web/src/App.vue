@@ -1,5 +1,5 @@
 <template>
-  <router-view v-if="isShortsRoute" />
+  <router-view v-if="isShortsRoute || isMobileTemplateRoute" />
   <div v-else class="layout" :class="{'home-cover-sidebar': isHomeRoot}">
     <!-- 移动端遮罩 -->
     <div v-if="drawer" class="sb-backdrop" @click="drawer=false"></div>
@@ -167,6 +167,7 @@ const isSearch = computed(() => !!route.query.kw)
 const isHomeRoute = computed(() => route.path === '/')
 const isHomeRoot = computed(() => isHomeRoute.value && !curType.value && !isSearch.value)
 const isShortsRoute = computed(() => route.path === '/shorts')
+const isMobileTemplateRoute = computed(() => route.path === '/m' || route.path.startsWith('/m/'))
 const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
 
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容

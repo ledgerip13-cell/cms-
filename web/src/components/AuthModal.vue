@@ -420,10 +420,10 @@ onBeforeUnmount(unlockPageScroll)
 .auth-close:hover { color: var(--text); background: rgba(255,255,255,.1); }
 .auth-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 42px 22px 0; }
-.auth-tabs button { height: 44px; border-radius: 11px; border: 1px solid rgba(255,255,255,.085);
+.auth-tabs button { height: 44px; border-radius: 11px; border: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.085);
   background: rgba(255,255,255,.06); color: var(--muted2); cursor: pointer; font-size: 16px; font-weight: 900;
   backdrop-filter: blur(10px); }
-.auth-tabs button.on { background: var(--btn-primary-bg); border-color: transparent; color: var(--btn-primary-text); }
+.auth-tabs button.on { background: var(--btn-primary-bg); background-clip: border-box; box-shadow: none; color: var(--btn-primary-text); }
 .auth-tabs button:disabled { opacity: .42; cursor: not-allowed; }
 .auth-title { font-size: 25px; font-weight: 900; letter-spacing: 0; margin-bottom: 8px; color: var(--text); }
 .auth-sub { min-height: 22px; color: #d3d8e3; font-size: 13px; line-height: 1.7; margin-bottom: 20px; }
@@ -439,7 +439,7 @@ onBeforeUnmount(unlockPageScroll)
 .auth-server-error { border: 1px solid rgba(255,94,108,.25); background: rgba(255,94,108,.1); color: #ffd5da;
   border-radius: 10px; padding: 9px 11px; font-size: 13px; line-height: 1.45; }
 .auth-submit { height: 44px; margin-top: 2px; border: 0; border-radius: 11px; background: var(--btn-primary-bg);
-  color: var(--btn-primary-text); cursor: pointer; font-size: 15px; font-weight: 900; }
+  background-clip: border-box; box-shadow: none; color: var(--btn-primary-text); cursor: pointer; font-size: 15px; font-weight: 900; }
 .auth-submit:disabled { opacity: .58; cursor: not-allowed; }
 .auth-fade-enter-active, .auth-fade-leave-active { transition: opacity .18s; }
 .auth-fade-enter-from, .auth-fade-leave-to { opacity: 0; }

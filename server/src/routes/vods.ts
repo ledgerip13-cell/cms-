@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
-import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest } from "../publicVod.js";
+import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
@@ -111,7 +111,7 @@ function parseSubtypeRules(value: unknown, limit = 120) {
     try {
       rows = JSON.parse(rows || "[]");
     } catch {
-      rows = rows.split(",");
+      rows = rows.split(/[|,]/);
     }
   }
   if (!Array.isArray(rows)) rows = [];
@@ -136,19 +136,35 @@ function shortFeedTypeWhere(publicTypes: string[], q: any, cfg: any) {
     const typeName = requestedPublicType(publicTypes, String(q.type));
     return q.sub ? { typeName, subType: String(q.sub) } : { typeName };
   }
+  const hasQueryScope = typeof q.types !== "undefined" || typeof q.subKeys !== "undefined" || typeof q.subs !== "undefined";
   const queryTypes = parseStringList(q.types);
-  const preferredTypes = queryTypes.length ? queryTypes : parseStringList(cfg?.preferredTypes);
+  const preferredTypes = hasQueryScope ? queryTypes : parseStringList(cfg?.preferredTypes);
   const typeNames = preferredTypes.filter((type) => isPublicType(publicTypes, type));
-  const querySubtypes = parseSubtypeRules(q.subs);
-  const preferredSubtypes = querySubtypes.length ? querySubtypes : parseSubtypeRules(cfg?.preferredSubtypes);
+  const querySubtypes = parseSubtypeRules(q.subKeys || q.subs);
+  const preferredSubtypes = hasQueryScope ? querySubtypes : parseSubtypeRules(cfg?.preferredSubtypes);
   const subtypeFilters = preferredSubtypes
     .filter((item) => isPublicType(publicTypes, item.type))
     .map((item) => ({ typeName: item.type, subType: item.name }));
   const filters: any[] = [];
   if (typeNames.length) filters.push({ typeName: { in: typeNames } });
   filters.push(...subtypeFilters);
+  if (!filters.length && hasQueryScope) return { typeName: "__NO_PUBLIC_TYPE__" };
   if (!filters.length) return { typeName: requestedPublicType(publicTypes, String(cfg?.defaultType || "短剧")) };
   return filters.length === 1 ? filters[0] : { OR: filters };
+}
+
+function shortsConfiguredTypeNames(cfg: any, publicTypes: string[]) {
+  const preferredTypes = parseStringList(cfg?.preferredTypes).filter((type) => isPublicType(publicTypes, type));
+  const preferredSubtypes = parseSubtypeRules(cfg?.preferredSubtypes).filter((item) => isPublicType(publicTypes, item.type));
+  const names = [...preferredTypes, ...preferredSubtypes.map((item) => item.type)];
+  if (!names.length && cfg?.defaultType && isPublicType(publicTypes, String(cfg.defaultType))) names.push(String(cfg.defaultType));
+  return [...new Set(names)];
+}
+
+function shortsSubtypeScopeForType(cfg: any, type: string) {
+  const preferredTypes = parseStringList(cfg?.preferredTypes);
+  if (preferredTypes.includes(type)) return null;
+  return parseSubtypeRules(cfg?.preferredSubtypes).filter((item) => item.type === type).map((item) => item.name);
 }
 
 function vodListTypeWhere(publicTypes: string[], q: any) {
@@ -172,6 +188,78 @@ function shortsOrderBy(sortMode: string) {
   if (sortMode === "rating") return [{ rating: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
   if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
   return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+}
+
+function seededUnit(seed: number, id: number, salt = 0) {
+  let x = (Math.imul((seed || 1) ^ 0x9e3779b9, 2654435761) ^ Math.imul((id || 1) + salt, 1597334677)) >>> 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 2246822507) >>> 0;
+  x ^= x >>> 13;
+  x = Math.imul(x, 3266489909) >>> 0;
+  x ^= x >>> 16;
+  return x / 0xffffffff;
+}
+
+function shortFeedSeriesKey(vod: any) {
+  const name = String(vod?.name || "");
+  const compact = name.replace(/[\s\u3000]+/g, "").replace(/[·・.\-_/|]+/g, "");
+  const explicit = compact.split(/[：:]/)[0];
+  if (explicit.length >= 3 && explicit.length < compact.length) {
+    const stripped = explicit.replace(/[0-9一二三四五六七八九十百千万]+$/g, "");
+    return normalizeName(stripped.length >= 3 ? stripped : explicit);
+  }
+  const marker = compact.match(/^(.*?)(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)/i);
+  if (marker?.[1] && marker[1].length >= 3) return normalizeName(marker[1]);
+  const digit = compact.match(/^(.{3,}?)[0-9]+(?:[：:]|[\u4e00-\u9fa5]{2,})/);
+  if (digit?.[1]) return normalizeName(digit[1]);
+  const zhSeries = compact.match(/^(.{3,}?)(?:之|：|:).+/);
+  if (zhSeries?.[1]) return normalizeName(zhSeries[1]);
+  const key = seriesKey(name);
+  return key || normalizeName(name);
+}
+
+function isSameShortFeedSeries(a: string, b: string) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const min = Math.min(a.length, b.length);
+  if (min >= 3 && (a.startsWith(b) || b.startsWith(a))) return true;
+  if (min >= 2 && (a.startsWith(b) || b.startsWith(a))) {
+    const longer = a.length > b.length ? a : b;
+    return /(剧场版|第[一二三四五六七八九十百千万0-9]+|season|s[0-9]+|前传|后传|特别篇|总集篇)/i.test(longer);
+  }
+  return false;
+}
+
+function diversifyShortFeedRows(rows: any[], limit: number, seed: number, followedIds: Set<number>, historyIds: Set<number>) {
+  const scored = rows
+    .map((vod: any, index: number) => {
+      let score = Math.max(0, 24 - index * 0.24);
+      if (followedIds.has(vod.id)) score += 80;
+      if (historyIds.has(vod.id)) score -= 55;
+      score += Math.min(34, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 10);
+      if (Number(vod.rating) > 0) score += Math.min(10, Number(vod.rating));
+      score += seededUnit(seed, Number(vod.id) || index, index) * 42;
+      return { vod, score, series: shortFeedSeriesKey(vod) };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const picked: any[] = [];
+  const usedSeries: string[] = [];
+  const usedIds = new Set<number>();
+  for (const item of scored) {
+    if (picked.length >= limit) break;
+    if (usedSeries.some((series) => isSameShortFeedSeries(series, item.series))) continue;
+    picked.push(item.vod);
+    usedSeries.push(item.series);
+    usedIds.add(item.vod.id);
+  }
+  for (const item of scored) {
+    if (picked.length >= limit) break;
+    if (usedIds.has(item.vod.id)) continue;
+    picked.push(item.vod);
+    usedIds.add(item.vod.id);
+  }
+  return picked;
 }
 
 async function siteShortsConfig() {
@@ -238,6 +326,7 @@ function bestPublicPlay(vod: any, playConfig: any = null) {
   rows.sort((a: any, b: any) => {
     if (a.alive !== b.alive) return a.alive ? -1 : 1;
     if (b.score !== a.score) return b.score - a.score;
+    if (b.epCount !== a.epCount) return b.epCount - a.epCount;
     return a.priority - b.priority;
   });
   return rows[0] || null;
@@ -607,12 +696,47 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 短剧漫游流：每条只代表一部不同短剧，前端向下刷时不会连续刷同一部剧的多集。
+  app.get("/api/short-feed/options", async (req) => {
+    const cfg = await siteShortsConfig();
+    if (!cfg.enabled) return { types: [], subtypes: {} };
+    const viewer = await viewerFromRequest(req);
+    const [watchableTypes, sourceIds] = await Promise.all([watchableTypeNames(viewer), enabledPlayableSourceIds()]);
+    const typeNames = shortsConfiguredTypeNames(cfg, watchableTypes);
+    if (!typeNames.length) return { types: [], subtypes: {} };
+    const counts = await prisma.vod.groupBy({
+      by: ["typeName"],
+      where: { status: "online", typeName: { in: typeNames }, ...publicPlayableFilter(sourceIds) },
+      _count: { _all: true },
+    });
+    const countMap = new Map(counts.map((row) => [row.typeName, row._count._all]));
+    const types = typeNames
+      .map((name) => ({ name, count: countMap.get(name) || 0 }))
+      .filter((item) => item.count > 0);
+    const subtypes: Record<string, Array<{ name: string; count: number }>> = {};
+    await Promise.all(types.map(async (type) => {
+      const allowedNames = shortsSubtypeScopeForType(cfg, type.name);
+      const rows = await prisma.vod.groupBy({
+        by: ["subType"],
+        where: {
+          status: "online",
+          typeName: type.name,
+          subType: allowedNames ? { in: allowedNames.length ? allowedNames : ["__NO_SUBTYPE__"] } : { not: "" },
+          ...publicPlayableFilter(sourceIds),
+        },
+        _count: { _all: true },
+        orderBy: { _count: { subType: "desc" } },
+      });
+      subtypes[type.name] = rows.map((row) => ({ name: row.subType, count: row._count._all })).filter((row) => row.name);
+    }));
+    return { types, subtypes };
+  });
+
   app.get("/api/short-feed", async (req) => {
     const q = req.query as any;
     const cfg = await siteShortsConfig();
     if (!cfg.enabled) return { list: [], nextCursor: 0, hasMore: false, disabled: true };
     const viewer = await viewerFromRequest(req);
-    const publicTypes = await enabledTypeNames(viewer);
+    const publicTypes = await watchableTypeNames(viewer);
     const typeWhere = shortFeedTypeWhere(publicTypes, q, cfg);
     const sortMode = ["smart", "hot", "recent", "rating"].includes(String(q.sort || "")) ? String(q.sort) : cfg.sortMode;
     const limit = Math.max(1, Math.min(20, Number(q.limit) || cfg.feedLimit || 10));
@@ -626,9 +750,6 @@ export default async function vodRoutes(app: FastifyInstance) {
       ...publicPlayableFilter(),
     };
     if (excludeIds.length) where.id = { notIn: excludeIds };
-    const total = await prisma.vod.count({ where });
-    if (!total) return { list: [], nextCursor: cursor, hasMore: false };
-
     const orderBy = shortsOrderBy(sortMode);
     const playConfig = await sitePlayConfig();
     const include = {
@@ -639,26 +760,15 @@ export default async function vodRoutes(app: FastifyInstance) {
         include: { source: true },
       },
     };
-    const take = Math.min(Math.max(limit * 3, limit), total);
-    const normalizedCursor = cursor % total;
-    const start = (seed % total + normalizedCursor) % total;
-    const firstTake = Math.min(take, total - start);
-    const rows = await prisma.vod.findMany({ where, orderBy, skip: start, take: firstTake, include });
-    if (rows.length < take) {
-      rows.push(
-        ...(await prisma.vod.findMany({
-          where,
-          orderBy,
-          skip: 0,
-          take: take - rows.length,
-          include,
-        })),
-      );
-    }
+    const isSmart = sortMode === "smart";
+    const take = isSmart ? Math.max(limit * 12, 80) : Math.max(limit * 3, limit);
+    const start = cursor + (cursor === 0 ? seed % (isSmart ? 40 : 7) : 0);
+    let rows = await prisma.vod.findMany({ where, orderBy, skip: start, take, include });
+    if (!rows.length && cursor > 0) rows = await prisma.vod.findMany({ where, orderBy, skip: 0, take, include });
 
     let followedIds = new Set<number>();
     let historyIds = new Set<number>();
-    if (viewer?.id && sortMode === "smart") {
+    if (viewer?.id && isSmart) {
       const [follows, histories] = await Promise.all([
         prisma.userFollow.findMany({
           where: { userId: viewer.id, vod: { status: "online", ...typeWhere } },
@@ -677,17 +787,17 @@ export default async function vodRoutes(app: FastifyInstance) {
       historyIds = new Set(histories.map((x) => x.vodId));
     }
 
-    const scoredRows = rows
-      .map((vod: any, index: number) => {
-        let score = rows.length - index;
-        if (followedIds.has(vod.id)) score += 120;
-        if (historyIds.has(vod.id)) score -= 45;
-        score += Math.min(40, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 12);
-        if (Number(vod.rating) > 0) score += Number(vod.rating);
-        return { vod, score };
-      })
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x.vod);
+    const scoredRows = isSmart
+      ? diversifyShortFeedRows(rows, limit, seed, followedIds, historyIds)
+      : rows
+        .map((vod: any, index: number) => {
+          let score = rows.length - index;
+          score += Math.min(40, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 12);
+          if (Number(vod.rating) > 0) score += Number(vod.rating);
+          return { vod, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.vod);
 
     const list = scoredRows
       .map((vod: any) => {
@@ -714,7 +824,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     return {
       list,
       nextCursor: cursor + rows.length,
-      hasMore: total > list.length,
+      hasMore: rows.length >= take,
     };
   });
 

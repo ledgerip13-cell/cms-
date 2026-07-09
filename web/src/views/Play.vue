@@ -88,7 +88,7 @@
               <em>{{ gallery.length }} 张</em>
             </div>
             <div class="still-strip">
-              <div v-for="(img, i) in gallery" :key="img.id" class="still" :class="{hero: img.isHero}" @click="openGallery(i)">
+              <div v-for="(img, i) in gallery" :key="img.id" class="still" @click="openGallery(i)">
                 <img :src="imgUrl(img.url)" :alt="vod.name" loading="lazy" @error="onErr" />
               </div>
             </div>
@@ -752,7 +752,6 @@ onBeforeUnmount(() => {
   padding: 0 2px 8px; scrollbar-width: thin; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
 .still { flex: 0 0 148px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #0f1420;
   border: 1px solid var(--line); cursor: zoom-in; scroll-snap-align: start; }
-.still.hero { border-color: var(--gallery-active-border); }
 .still img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gallery-viewer { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.86);
   display: flex; align-items: center; justify-content: center; padding: 54px 70px; }
@@ -783,18 +782,20 @@ onBeforeUnmount(() => {
   padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
 .channels-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px; padding: 10px 14px;
   background: rgba(255,255,255,.02); border: 1px dashed var(--line); border-radius: 10px; }
-.chan-btn { padding: 5px 12px; border-radius: 7px; background: var(--bg2); border: 1px solid var(--line);
-  font-size: 12.5px; cursor: pointer; transition: .15s; }
-.chan-btn:hover { border-color: var(--play-channel-active-bg); }
-.chan-btn.on { background: var(--play-channel-active-bg); border-color: transparent; color: var(--play-channel-active-text); font-weight: 600; }
+.chan-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 5px 12px;
+  border-radius: 7px; border: 0; background: var(--bg2); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px; line-height: 1; cursor: pointer; transition: .15s; }
+.chan-btn:hover { box-shadow: inset 0 0 0 1px var(--play-channel-active-bg); }
+.chan-btn.on { background: var(--play-channel-active-bg); box-shadow: none; color: var(--play-channel-active-text); font-weight: 600; }
 .chan-btn.dead { opacity: .4; cursor: not-allowed; text-decoration: line-through; }
 .chan-btn em { font-style: normal; font-size: 11px; margin-left: 4px; opacity: .8; }
 .lbl { color: var(--muted); font-size: 14px; }
-.line-btn { padding: 6px 14px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
-  font-size: 13px; cursor: pointer; transition: .2s; }
+.line-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 6px 14px;
+  border-radius: 8px; border: 0; background: var(--bg2); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px; line-height: 1; cursor: pointer; transition: .2s; }
 .line-btn em { color: var(--muted); font-style: normal; font-size: 12px; }
-.line-btn:hover { border-color: var(--play-link-text); }
-.line-btn.on { background: var(--play-line-active-bg); border-color: transparent; color: var(--play-line-active-text); }
+.line-btn:hover { box-shadow: inset 0 0 0 1px var(--play-link-text); }
+.line-btn.on { background: var(--play-line-active-bg); box-shadow: none; color: var(--play-line-active-text); }
 .line-btn.on em { color: rgba(255,255,255,.8); }
 .eps-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
 .eps-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -802,17 +803,17 @@ onBeforeUnmount(() => {
 .eps-head em { color: var(--muted); font-style: normal; font-size: 13px; font-weight: 400; margin-left: 8px; }
 .eps-groups { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
 .eps-groups::-webkit-scrollbar { display: none; }
-.eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line);
+.eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line);
   background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; }
-.eps-groups button:hover { border-color: var(--play-episode-active-bg); color: var(--text); }
-.eps-groups button.on { border-color: transparent; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
+.eps-groups button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }
+.eps-groups button.on { box-shadow: none; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px;
   max-height: 360px; overflow-y: auto; }
-.ep { text-align: center; padding: 9px 4px; background: var(--bg2); border: 1px solid var(--line);
+.ep { text-align: center; padding: 9px 4px; background: var(--bg2); border: 0; box-shadow: inset 0 0 0 1px var(--line);
   border-radius: 7px; font-size: 13px; cursor: pointer; transition: .15s; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
-.ep:hover { border-color: var(--play-episode-active-bg); color: #fff; }
-.ep.on { background: var(--play-episode-active-bg); border-color: transparent; color: var(--play-episode-active-text); }
+.ep:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: #fff; }
+.ep.on { background: var(--play-episode-active-bg); box-shadow: none; color: var(--play-episode-active-text); }
 
 /* 相关推荐 */
 .rec-col { min-width: 0; }

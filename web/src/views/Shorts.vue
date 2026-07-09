@@ -628,11 +628,11 @@ function shortsPreferredSubtypes(config = shortsConfig.value) {
 
 function shortsScopeParams(config = shortsConfig.value) {
   const types = shortsPreferredTypes(config)
-  const subtypes = shortsPreferredSubtypes(config)
+  const subtypes = shortsPreferredSubtypes(config).filter(item => !types.includes(item.type))
   if (types.length || subtypes.length) {
     return {
       ...(types.length ? { types: types.join(',') } : {}),
-      ...(subtypes.length ? { subs: JSON.stringify(subtypes) } : {}),
+      ...(subtypes.length ? { subKeys: subtypes.map(item => `${item.type}::${item.name}`).join('|') } : {}),
     }
   }
   return { type: config.defaultType }

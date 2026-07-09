@@ -3,7 +3,7 @@
     <div class="card site-editor-card">
       <div class="toolbar">
         <div class="sec-title">站点设置</div>
-        <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存设置</el-button>
+        <el-button type="primary" :icon="Check" :loading="saving" :disabled="!siteLoaded" @click="save">保存设置</el-button>
       </div>
 
       <el-tabs v-model="activeSettingTab" class="site-tabs">
@@ -92,34 +92,19 @@
               <div class="hint inline">没有设置偏好时，刷短剧默认只取这个分类。</div>
             </el-form-item>
 
-            <el-form-item label="偏好大类">
-              <el-select
-                v-model="form.shortsConfig.preferredTypes"
-                multiple
-                filterable
-                collapse-tags
-                collapse-tags-tooltip
-                placeholder="不选则使用默认分类"
-                style="width:360px"
-              >
-                <el-option v-for="item in categoryOptions" :key="item.name" :label="categoryLabel(item)" :value="item.name" />
-              </el-select>
-              <div class="hint inline">设置后，刷短剧漫游会在这些大类中混合推荐。</div>
-            </el-form-item>
-
-            <el-form-item label="偏好小类">
+            <el-form-item label="偏好范围">
               <el-cascader
-                v-model="preferredSubtypeKeys"
+                v-model="shortsScopeKeys"
                 :options="shortsSubtypeOptions"
                 :props="subtypeCascaderProps"
                 filterable
                 clearable
                 collapse-tags
                 collapse-tags-tooltip
-                placeholder="选择大类下的小类"
+                placeholder="选择大类或大类下的小类"
                 style="width:420px"
               />
-              <div class="hint inline">可和偏好大类一起使用；不选则不限制小类。</div>
+              <div class="hint inline">可直接选大类，也可展开选择小类；不选则使用默认分类。</div>
             </el-form-item>
 
             <el-form-item label="推荐排序">
@@ -262,15 +247,6 @@
                         @update:model-value="setThemeValue(f.key, $event)"
                       />
                       <span class="percent">%</span>
-                    </template>
-
-                    <template v-else-if="f.type === 'raw'">
-                      <el-input
-                        class="raw-input"
-                        :model-value="themeValue(f.key)"
-                        size="small"
-                        @update:model-value="setThemeValue(f.key, $event)"
-                      />
                     </template>
 
                     <template v-else>
@@ -448,11 +424,12 @@ import { api, DEFAULT_THEME, normalizeHomeConfig, normalizePlayConfig, normalize
 
 const form = ref(readCachedSite())
 const saving = ref(false)
+const siteLoaded = ref(false)
 const activeSettingTab = ref('basic')
 const activeFieldKey = ref('accent')
 const categoryOptions = ref([])
 const subtypeGroups = ref([])
-const subtypeCascaderProps = { multiple: true, emitPath: false }
+const subtypeCascaderProps = { multiple: true, emitPath: false, checkStrictly: true }
 const shortsSortOptions = [
   { value: 'smart', label: '智能' },
   { value: 'hot', label: '热度' },
@@ -478,20 +455,29 @@ const themeGroups = [
     label: '品牌强调',
     desc: '导航、chip、搜索聚焦、播放线路等选中态',
     fields: [
-      { key: 'accent', label: '品牌主色' },
-      { key: 'accentLight', label: '品牌浅色' },
+      { key: 'accent', label: '品牌边框色', alpha: true },
+      { key: 'accentBgStart', label: '渐变起点', alpha: true },
+      { key: 'accentBgEnd', label: '渐变终点', alpha: true },
+      { key: 'onBrand', label: '品牌主色文字' },
       { key: 'accentSoft', label: '透明底(%)', type: 'alpha' },
     ],
   },
   {
     key: 'action',
     label: '操作按钮',
-    desc: '主按钮与白底按钮分开，避免按钮文字色影响其他选中态',
+    desc: '白底按钮单独设置；主按钮跟随品牌主色',
     fields: [
-      { key: 'buttonBg', label: '主按钮背景' },
-      { key: 'buttonText', label: '全局主按钮文字' },
       { key: 'surfaceButtonBg', label: '白底按钮背景' },
       { key: 'surfaceButtonText', label: '白底按钮文字' },
+    ],
+  },
+  {
+    key: 'search',
+    label: '搜索',
+    desc: '搜索框底色与搜索榜单弹层背景',
+    fields: [
+      { key: 'searchBg', label: '搜索框底色', alpha: true },
+      { key: 'searchPanelBg', label: '榜单背景', alpha: true },
     ],
   },
   {
@@ -528,7 +514,6 @@ const themeGroups = [
     label: '固定色',
     desc: '深浅底上的文字色',
     fields: [
-      { key: 'onBrand', label: '强调底文字' },
       { key: 'onDark', label: '白底深字' },
       { key: 'surfaceDim', label: '最暗表面' },
     ],
@@ -542,13 +527,14 @@ const fieldMeta = {
   text:       { impacts: ['正文/标题'], previews: ['surface'] },
   textDim:    { impacts: ['次要信息/导航常态'], previews: ['surface', 'nav'] },
   textSub:    { impacts: ['三级文字/placeholder'], previews: ['surface'] },
-  accent:     { impacts: ['导航选中/chip/搜索聚焦/播放通道/剧集/剧照/Hero徽标'], previews: ['nav', 'chip', 'search', 'hero', 'play'] },
-  accentLight:{ impacts: ['按钮hover/渐变终点'], previews: ['button', 'section'] },
+  accent:     { impacts: ['hover边框/搜索聚焦/透明底计算'], previews: ['nav', 'search', 'hero', 'play'] },
+  accentBgStart: { impacts: ['品牌渐变起始色，支持透明度'], previews: ['chip', 'section', 'play'] },
+  accentBgEnd:   { impacts: ['品牌渐变结束色，支持透明度'], previews: ['chip', 'section', 'play'] },
   accentSoft: { impacts: ['导航选中背景/Hero徽标底/引导面板 — 全自动联动'], previews: ['nav', 'hero'] },
-  buttonBg:   { impacts: ['登录/个人中心/PWA/锁定态等主操作按钮背景'], previews: ['button'] },
-  buttonText: { impacts: ['全局主操作按钮文字'], previews: ['button'] },
   surfaceButtonBg:   { impacts: ['搜索按钮/Hero主按钮背景'], previews: ['search', 'hero'] },
   surfaceButtonText: { impacts: ['搜索按钮/Hero主按钮文字'], previews: ['search', 'hero'] },
+  searchBg:   { impacts: ['顶部搜索框底色'], previews: ['search'] },
+  searchPanelBg: { impacts: ['搜索弹层/热门榜单背景透明度'], previews: ['search', 'rank'] },
   rating:     { impacts: ['评分角标背景/评分文字'], previews: ['poster'] },
   ratingText: { impacts: ['评分角标文字'], previews: ['poster'] },
   tag:        { impacts: ['标签/玫瑰强调'], previews: ['rank'] },
@@ -557,7 +543,7 @@ const fieldMeta = {
   rankThird:  { impacts: ['搜索榜单第 3 名'], previews: ['rank'] },
   heroOverlayColor:    { impacts: ['Hero大图遮罩色/底部融合色'], previews: ['hero'] },
   heroOverlayStrength: { impacts: ['Hero大图遮罩强度/底部融合强度'], previews: ['hero'] },
-  onBrand:    { impacts: ['强调底文字(chip/播放选中态)'], previews: ['chip', 'play'] },
+  onBrand:    { impacts: ['品牌底文字(chip/播放选中态)'], previews: ['chip', 'play'] },
   onDark:     { impacts: ['白按钮/搜索按钮深字'], previews: ['search'] },
   surfaceDim: { impacts: ['海报占位/缩略图底'], previews: ['poster'] },
 }
@@ -574,19 +560,19 @@ const currentPreviewBlocks = computed(() => currentField.value.previews?.length 
 const previewVars = computed(() => {
   const c = previewColors.value
   const acc_soft = rgba(c.accent, alphaPercent(c.accentSoft, .12))
-  const acc_grad = `linear-gradient(120deg, ${c.accent}, ${c.accentLight})`
+  const brandBg = `linear-gradient(120deg, ${c.accentBgStart || c.accentBg || c.accent}, ${c.accentBgEnd || c.accentBgStart || c.accentBg || c.accent})`
   const heroOverlay = c.heroOverlayColor || c.bg
   const heroStrength = alphaPercent(c.heroOverlayStrength, .88)
   const gh = rgbaColor('#ffffff', .06)
   return {
     '--tp-bg': c.bg, '--tp-card': c.card, '--tp-text': c.text,
     '--tp-muted2': c.textDim, '--tp-muted': c.textSub,
-    '--tp-accent': c.accent, '--tp-accent-lt': c.accentLight, '--tp-accent-soft': acc_soft, '--tp-grad': acc_grad,
+    '--tp-accent': c.accent, '--tp-accent-lt': c.accent, '--tp-accent-soft': acc_soft, '--tp-grad': brandBg,
     '--tp-rating': c.rating, '--tp-rating-text': c.ratingText, '--tp-tag': c.tag,
     '--tp-gold': c.rating,
     '--tp-on-brand': c.onBrand, '--tp-on-dark': c.onDark, '--tp-surface-dim': c.surfaceDim,
     '--tp-card-hi': c.surfaceDim,
-    '--tp-soft': rgba(c.accentLight, .18),
+    '--tp-soft': rgba(c.accent, .18),
     '--tp-rose-soft': rgba(c.tag, .22),
     '--tp-hero-overlay-strong': rgba(heroOverlay, heroStrength),
     '--tp-hero-overlay-mid': rgba(heroOverlay, Math.max(.18, heroStrength * .72)),
@@ -596,46 +582,62 @@ const previewVars = computed(() => {
     '--tp-hero-bottom-soft': rgba(c.bg, .36),
     '--tp-nav-active-bg': acc_soft, '--tp-nav-active-text': c.accent,
     '--tp-search-button-bg': c.surfaceButtonBg, '--tp-search-button-text': c.surfaceButtonText,
-    '--tp-search-bg': rgbaColor(c.card, .5),
+    '--tp-search-bg': c.searchBg || rgbaColor(c.card, .5),
+    '--tp-search-panel-bg': c.searchPanelBg || rgbaColor(c.card, .82),
     '--tp-rank-first-text': c.rankFirst, '--tp-rank-second-text': c.rankSecond, '--tp-rank-third-text': c.rankThird,
-    '--tp-btn-primary-bg': c.buttonBg, '--tp-btn-primary-text': c.buttonText,
+    '--tp-btn-primary-bg': brandBg, '--tp-btn-primary-text': c.onBrand,
     '--tp-btn-ghost-bg': gh, '--tp-btn-ghost-text': c.text,
     '--tp-btn-hover-text': c.accent, '--tp-btn-hover-border': c.accent,
-    '--tp-section-accent-bg': acc_grad,
+    '--tp-section-accent-bg': brandBg,
     '--tp-poster-overlay-bg': `linear-gradient(0deg, ${rgba(c.bg, .82)} 0%, transparent 55%)`,
     '--tp-badge-score-bg': c.rating, '--tp-badge-score-text': c.ratingText,
     '--tp-hero-badge-bg': acc_soft, '--tp-hero-badge-text': c.accent,
     '--tp-hero-primary-button-bg': c.surfaceButtonBg, '--tp-hero-primary-button-text': c.surfaceButtonText,
-    '--tp-chip-active-bg': c.accent, '--tp-chip-active-text': c.onBrand,
-    '--tp-play-line-active-bg': acc_grad, '--tp-play-line-active-text': c.onBrand,
-    '--tp-play-channel-active-bg': c.accent, '--tp-play-channel-active-text': c.onBrand,
-    '--tp-play-episode-active-bg': c.accent, '--tp-play-episode-active-text': c.onBrand,
+    '--tp-chip-active-bg': brandBg, '--tp-chip-active-text': c.onBrand,
+    '--tp-play-line-active-bg': brandBg, '--tp-play-line-active-text': c.onBrand,
+    '--tp-play-channel-active-bg': brandBg, '--tp-play-channel-active-text': c.onBrand,
+    '--tp-play-episode-active-bg': brandBg, '--tp-play-episode-active-text': c.onBrand,
     '--tp-gallery-active-border': c.accent,
     '--tp-onboarding-bg': `linear-gradient(135deg, ${acc_soft}, rgba(32,36,52,.78))`,
   }
 })
 
 const shortsSubtypeOptions = computed(() => subtypeGroups.value.map(group => ({
-  value: `type:${group.type}`,
+  value: typeScopeKey(group.type),
   label: group.type,
-  disabled: !group.children.length,
   children: group.children.map(item => ({
     value: subtypeKey(group.type, item.name),
     label: `${item.name} (${item.count || 0})`,
   })),
 })))
 
-const preferredSubtypeKeys = computed({
+const shortsScopeKeys = computed({
   get() {
-    const rows = Array.isArray(form.value.shortsConfig?.preferredSubtypes) ? form.value.shortsConfig.preferredSubtypes : []
-    return rows
+    const types = Array.isArray(form.value.shortsConfig?.preferredTypes) ? form.value.shortsConfig.preferredTypes : []
+    const subtypes = Array.isArray(form.value.shortsConfig?.preferredSubtypes) ? form.value.shortsConfig.preferredSubtypes : []
+    return [
+      ...types.map(typeScopeKey).filter(Boolean),
+      ...subtypes
       .map(item => subtypeKey(item?.type, item?.name || item?.subType || item?.sub))
-      .filter(Boolean)
+        .filter(Boolean),
+    ]
   },
   set(keys) {
-    form.value.shortsConfig.preferredSubtypes = (Array.isArray(keys) ? keys : [])
-      .map(parseSubtypeKey)
-      .filter(Boolean)
+    const types = []
+    const subtypes = []
+    ;(Array.isArray(keys) ? keys : []).forEach(key => {
+      const type = parseTypeScopeKey(key)
+      if (type) {
+        if (!types.includes(type)) types.push(type)
+        return
+      }
+      const subtype = parseSubtypeKey(key)
+      if (subtype && !subtypes.some(item => item.type === subtype.type && item.name === subtype.name)) {
+        subtypes.push(subtype)
+      }
+    })
+    form.value.shortsConfig.preferredTypes = types
+    form.value.shortsConfig.preferredSubtypes = subtypes
   },
 })
 
@@ -660,6 +662,7 @@ function ensurePlayConfig() { form.value.playConfig = normalizePlayConfig(form.v
 function ensurePwaConfig() { form.value.pwaConfig = normalizePwaConfig(form.value.pwaConfig) }
 async function load() {
   form.value = writeCachedSite(await api.adminSite())
+  siteLoaded.value = true
   ensureTheme()
   ensureHomeConfig()
   ensureShortsConfig()
@@ -676,6 +679,16 @@ function subtypeKey(type, name) {
   const t = String(type || '').trim()
   const n = String(name || '').trim()
   return t && n ? `${t}::${n}` : ''
+}
+
+function typeScopeKey(type) {
+  const t = String(type || '').trim()
+  return t ? `type:${t}` : ''
+}
+
+function parseTypeScopeKey(value) {
+  const raw = String(value || '')
+  return raw.startsWith('type:') ? raw.slice(5).trim() : ''
 }
 
 function parseSubtypeKey(value) {
@@ -843,6 +856,10 @@ function onPwaIcon(file) {
 }
 
 async function save() {
+  if (!siteLoaded.value) {
+    ElMessage.warning('站点信息还未加载完成')
+    return
+  }
   saving.value = true
   try {
     ensureTheme()
@@ -948,7 +965,8 @@ onMounted(() => { ensureTheme(); ensureHomeConfig(); ensureShortsConfig(); ensur
 .pv-nav-demo { display: grid; gap: 6px; max-width: 160px; }
 .pv-search-demo { display: flex; gap: 8px; align-items: center; }
 .tp-search-button { border: 0; height: 30px; border-radius: 16px; padding: 0 14px; background: var(--tp-search-button-bg); color: var(--tp-search-button-text); font-weight: 800; }
-.pv-rank-demo { display: flex; gap: 12px; align-items: center; font-size: 22px; font-weight: 900; font-style: italic; }
+.pv-rank-demo { display: flex; gap: 12px; align-items: center; width: fit-content; padding: 9px 12px; border-radius: 12px;
+  background: var(--tp-search-panel-bg); border: 1px solid rgba(255,255,255,.08); font-size: 22px; font-weight: 900; font-style: italic; }
 .pv-rank-demo .r1 { color: var(--tp-rank-first-text); }
 .pv-rank-demo .r2 { color: var(--tp-rank-second-text); }
 .pv-rank-demo .r3 { color: var(--tp-rank-third-text); }
