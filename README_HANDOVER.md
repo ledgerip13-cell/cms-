@@ -167,7 +167,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净 ✅｜127 次提交｜HEAD=`337cfdb`（2026-07-10 06:11 `feat: add mobile template search experience`）
+**代码状态**：`git` 工作树干净（除本交接文档）✅｜129 次提交｜HEAD=`2acd7ff`（2026-07-10 06:26 `fix: require high quality douban posters`）
 **运行状态**：4 容器全在线（postgres 8 天 healthy / admin 22h / server·web 4h）
 
 ### 🟢 100% 已完成
@@ -178,7 +178,8 @@ docker compose up -d --build
 - **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater）。
 
 ### 🟡 正在进行
-- **移动端模板体验打磨**：搜索页(`MobileSearch.vue`)刚落地（最新提交）；影院(`MobileTheater`)/短视频(`MobileShorts`)交互与首页 hero 视觉仍在迭代（近 10 次提交集中在 home hero / 主题 / 移动模板）。
+- **豆瓣元数据画质**：最新提交 `2acd7ff` 引入 `sharp` 对豆瓣海报做画质探针，强制高清封面（`collector/douban.ts:267`）。
+- **移动端模板体验打磨**：搜索页(`MobileSearch.vue`)已落地；影院(`MobileTheater`)/短视频(`MobileShorts`)交互与首页 hero 视觉仍在迭代。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。
