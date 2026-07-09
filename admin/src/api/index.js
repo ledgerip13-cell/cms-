@@ -199,6 +199,7 @@ export const DEFAULT_PLAY_CONFIG = {
 
 export const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [],
+  mobileTemplate: 'responsive',
 }
 
 export const DEFAULT_PWA_CONFIG = {
@@ -321,7 +322,9 @@ export function normalizeHomeConfig(config) {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
   const rest = { ...(raw || {}) }
-  delete rest.mobileTemplate
+  const mobileTemplate = ['responsive', 'shortDrama'].includes(String(raw?.mobileTemplate || ''))
+    ? raw.mobileTemplate
+    : DEFAULT_HOME_CONFIG.mobileTemplate
   const cleanList = (value, limit = 20) => {
     const rows = Array.isArray(value) ? value : String(value || '').split(',')
     return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit)
@@ -329,6 +332,7 @@ export function normalizeHomeConfig(config) {
   return {
     ...DEFAULT_HOME_CONFIG,
     ...rest,
+    mobileTemplate,
     dailyUpdateTypes: cleanList(raw?.dailyUpdateTypes),
   }
 }

@@ -60,6 +60,14 @@
 
         <el-tab-pane label="首页设置" name="home">
           <el-form :model="form.homeConfig" label-width="130px" class="site-form">
+            <el-form-item label="移动端模板">
+              <el-radio-group v-model="form.homeConfig.mobileTemplate">
+                <el-radio-button label="responsive">自适应影视站</el-radio-button>
+                <el-radio-button label="shortDrama">短剧 App 模板</el-radio-button>
+              </el-radio-group>
+              <div class="hint inline">开启短剧 App 模板后，手机访问首页/搜索/分类会进入独立 /m 模板；桌面与旧播放页不受影响。</div>
+            </el-form-item>
+
             <el-form-item label="每日更新分类">
               <el-select
                 v-model="form.homeConfig.dailyUpdateTypes"

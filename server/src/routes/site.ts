@@ -49,6 +49,7 @@ const DEFAULT_PLAY_CONFIG = {
 
 const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [] as string[],
+  mobileTemplate: "responsive",
 };
 
 const DEFAULT_PWA_CONFIG = {
@@ -157,10 +158,13 @@ export function normalizeHomeConfig(value: any) {
     }
   }
   const rest = { ...(raw || {}) };
-  delete (rest as any).mobileTemplate;
+  const mobileTemplate = ["responsive", "shortDrama"].includes(String(raw?.mobileTemplate || ""))
+    ? String(raw.mobileTemplate)
+    : DEFAULT_HOME_CONFIG.mobileTemplate;
   return {
     ...DEFAULT_HOME_CONFIG,
     ...rest,
+    mobileTemplate,
     dailyUpdateTypes: cleanStringList(raw?.dailyUpdateTypes, 20),
   };
 }

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-10 06:30 (GMT+8)｜**对应提交**：`2acd7ff`（第 129 次提交）
+> **最后更新**：2026-07-10 07:08 (GMT+8)｜**对应提交**：本提交（移动端模板收口）
 
 ---
 
@@ -116,7 +116,7 @@ video-cms/
 └── web/                        # 观众前端(Vue3 + hls.js)
     └── src/
         ├── views/             # Home/Play/Shorts/Auth/Profile (PC)
-        ├── mobile/            # MobileShell/Home/Search/Shorts/Theater/Placeholder (移动模板)
+        ├── mobile/            # MobileShell/Home/Search/Shorts/Theater/Me (独立移动模板)
         └── components/        # AuthModal/ToastStack
 ```
 
@@ -167,7 +167,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净（除本交接文档）✅｜129 次提交｜HEAD=`2acd7ff`（2026-07-10 06:26 `fix: require high quality douban posters`）
+**代码状态**：`git` 工作树干净 ✅｜本提交：`feat: finish mobile template account entry`
 **运行状态**：4 容器全在线（postgres 8 天 healthy / admin 22h / server·web 4h）
 
 ### 🟢 100% 已完成
@@ -175,11 +175,11 @@ docker compose up -d --build
 - **用户与权限**：后台管理员 + Web 用户体系、VIP 等级、邀请码、登录限流、访问审计(AccessAudit)+ 操作审计(AuditLog)。
 - **站点运营**：站点/主题配置(15 原子 token 主题系统)、热榜配置、分类访问控制、聚合计数缓存（浏览/分页/搜索提速 + P0 索引）。
 - **运营后台**：12 个页面全部落地（Login/Dashboard/Sources/Vods/Categories/Tasks/Meta/Site/Users/Hot/Access/HlsClean）。
-- **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater）。
+- **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater/Me）。
 
 ### 🟡 正在进行
 - **豆瓣元数据画质**：最新提交 `2acd7ff` 引入 `sharp` 对豆瓣海报做画质探针，强制高清封面（`collector/douban.ts:267`）。
-- **移动端模板体验打磨**：搜索页(`MobileSearch.vue`)已落地；影院(`MobileTheater`)/短视频(`MobileShorts`)交互与首页 hero 视觉仍在迭代。
+- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

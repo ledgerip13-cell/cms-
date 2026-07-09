@@ -18,12 +18,16 @@
         <span>{{ item.label }}</span>
       </button>
     </nav>
+    <AuthModal />
+    <ToastStack />
   </div>
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AuthModal from '../components/AuthModal.vue'
+import ToastStack from '../components/ToastStack.vue'
 import { icon } from './icons'
 
 const route = useRoute()

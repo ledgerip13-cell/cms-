@@ -169,13 +169,16 @@ const isHomeRoot = computed(() => isHomeRoute.value && !curType.value && !isSear
 const isShortsRoute = computed(() => route.path === '/shorts')
 const isMobileTemplateRoute = computed(() => route.path === '/m' || route.path.startsWith('/m/'))
 const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
+const mobileTemplateEnabled = computed(() => site.value?.homeConfig?.mobileTemplate === 'shortDrama')
 
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
 watch(() => route.fullPath, () => {
   drawer.value = false
   enforcePwaViewportLock()
   applySiteTheme(site.value, themePageFromRoute(route))
+  applyMobileTemplateRedirect()
 })
+watch(() => site.value?.homeConfig?.mobileTemplate, applyMobileTemplateRedirect)
 
 function pic(v) { return imgUrl(v.officialPic || v.pic || v.localPic || '') }
 function fallbackPic(v) { return imgUrl(v.localPic || '') }
@@ -202,6 +205,23 @@ function goProfileSection(section) {
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
 function openLogin() { openAuthDialog({ mode: 'login', redirect: route.fullPath }) }
+function isMobileViewport() {
+  return window.matchMedia?.('(max-width: 860px), (pointer: coarse)')?.matches || window.innerWidth <= 860
+}
+function mobileTemplateTarget() {
+  if (!mobileTemplateEnabled.value || isMobileTemplateRoute.value || !isMobileViewport()) return null
+  if (route.path !== '/') return null
+  const kw = String(route.query.kw || '').trim()
+  if (kw) return { path: '/m/search', query: { kw } }
+  const type = String(route.query.type || '').trim()
+  const sort = String(route.query.sort || '').trim()
+  if (type || sort) return { path: '/m/theater', query: { ...(type ? { type } : {}), ...(sort ? { sort } : {}) } }
+  return { path: '/m' }
+}
+function applyMobileTemplateRedirect() {
+  const target = mobileTemplateTarget()
+  if (target) router.replace(target).catch?.(() => {})
+}
 function cancelSearch() {
   searchOpen.value = false
   searchInput.value?.blur?.()
@@ -243,6 +263,7 @@ onMounted(async () => {
     site.value = writeCachedSite(data)
     applySiteHead(site.value)
     applySiteTheme(site.value, themePageFromRoute(route))
+    applyMobileTemplateRedirect()
   }).catch(() => {})
   const categoriesPromise = api.categories().then(data => {
     types.value = writeCachedCategories(data)

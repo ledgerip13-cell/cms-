@@ -11,7 +11,7 @@ import MobileHome from './mobile/MobileHome.vue'
 import MobileTheater from './mobile/MobileTheater.vue'
 import MobileShorts from './mobile/MobileShorts.vue'
 import MobileSearch from './mobile/MobileSearch.vue'
-import MobilePlaceholder from './mobile/MobilePlaceholder.vue'
+import MobileMe from './mobile/MobileMe.vue'
 import './style.css'
 
 const router = createRouter({
@@ -31,7 +31,7 @@ const router = createRouter({
         { path: 'theater', component: MobileTheater },
         { path: 'shorts', component: MobileShorts },
         { path: 'search', component: MobileSearch },
-        { path: 'me', component: MobilePlaceholder },
+        { path: 'me', component: MobileMe },
       ],
     },
   ]
