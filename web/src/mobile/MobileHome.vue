@@ -235,6 +235,16 @@ onMounted(loadHome)
   box-shadow: 0 10px 26px rgba(43, 20, 18, .06);
   font-size: 14px;
   text-align: left;
+  touch-action: manipulation;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.mh-search:active,
+.mh-cats button:active,
+.mh-section-head button:active,
+.mh-history:active,
+.mh-card:active,
+.mh-actions button:active {
+  transform: scale(.98);
 }
 .mh-search svg,
 .mh-section-head svg,
@@ -257,6 +267,8 @@ onMounted(loadHome)
   overflow: hidden;
   background: #201210;
   box-shadow: 0 18px 46px rgba(88, 30, 20, .18);
+  isolation: isolate;
+  touch-action: manipulation;
 }
 .mh-hero-img {
   position: absolute;
@@ -340,6 +352,8 @@ onMounted(loadHome)
   align-items: center;
   gap: 5px;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, filter .16s ease;
 }
 .mh-primary {
   color: #fff;
@@ -372,6 +386,8 @@ onMounted(loadHome)
   background: #fff;
   font-weight: 800;
   box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .mh-section {
   margin-top: 22px;
@@ -401,6 +417,8 @@ onMounted(loadHome)
   color: #9a9fa8;
   font-size: 13px;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, color .16s ease;
 }
 .mh-continue {
   margin: 0 -14px;
@@ -413,6 +431,9 @@ onMounted(loadHome)
 .mh-history {
   width: 122px;
   flex: 0 0 auto;
+  min-width: 0;
+  touch-action: manipulation;
+  transition: transform .16s ease;
 }
 .mh-history-cover {
   position: relative;
@@ -451,13 +472,18 @@ onMounted(loadHome)
   color: #1f232b;
   font-size: 13px;
   line-height: 1.25;
+  min-height: 32px;
 }
 .mh-history span,
 .mh-card p {
+  display: block;
   margin: 4px 0 0;
   color: #8b9098;
   font-size: 11px;
   line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .mh-grid {
   display: grid;
@@ -471,6 +497,11 @@ onMounted(loadHome)
   overflow: hidden;
   background: #e9eaee;
   box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
+}
+.mh-card {
+  min-width: 0;
+  touch-action: manipulation;
+  transition: transform .16s ease;
 }
 .mh-poster img {
   width: 100%;

@@ -66,7 +66,10 @@
           <p></p>
         </div>
       </div>
-      <div v-else-if="!items.length" class="mt-empty">没有找到相关影片</div>
+      <div v-else-if="!items.length" class="mt-empty">
+        <strong>没有找到相关影片</strong>
+        <span>换个关键词或筛选条件试试</span>
+      </div>
       <div v-else class="mt-grid">
         <article v-for="vod in items" :key="vod.id" class="mt-card" @click="goPlay(vod.id)">
           <div class="mt-poster">
@@ -350,6 +353,7 @@ onMounted(async () => {
   gap: 8px;
   background: rgba(255, 255, 255, .94);
   box-shadow: 0 10px 26px rgba(43, 20, 18, .06);
+  touch-action: manipulation;
 }
 .mt-search svg,
 .mt-sortbar svg,
@@ -391,6 +395,18 @@ onMounted(async () => {
   background: #fff0ed;
   font-size: 12px;
   font-weight: 900;
+  transition: transform .16s ease, background .16s ease;
+}
+.mt-search button:active,
+.mt-types button:active,
+.mt-sortbar button:active,
+.mt-section-head button:active,
+.mt-subgrid button:active,
+.mt-rank article:active,
+.mt-card:active,
+.mt-more:active,
+.mt-filter button:active {
+  transform: scale(.98);
 }
 .mt-types,
 .mt-sortbar {
@@ -416,6 +432,8 @@ onMounted(async () => {
   background: #fff;
   font-weight: 800;
   box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .mt-types button.on {
   color: #fff;
@@ -436,6 +454,8 @@ onMounted(async () => {
   color: #616773;
   background: #fff;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, color .16s ease, background .16s ease;
 }
 .mt-sortbar button.on {
   color: #f04438;
@@ -465,6 +485,8 @@ onMounted(async () => {
   background: transparent;
   font-size: 13px;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, color .16s ease;
 }
 .mt-subgrid {
   display: grid;
@@ -484,6 +506,8 @@ onMounted(async () => {
   gap: 4px;
   background: #fff;
   box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .mt-subgrid span {
   max-width: 100%;
@@ -517,6 +541,9 @@ onMounted(async () => {
 .mt-rank article {
   width: 104px;
   flex: 0 0 auto;
+  min-width: 0;
+  touch-action: manipulation;
+  transition: transform .16s ease;
 }
 .mt-rank-poster,
 .mt-poster {
@@ -557,12 +584,18 @@ onMounted(async () => {
   color: #1f232b;
   font-size: 13px;
   line-height: 1.25;
+  min-height: 32px;
 }
 .mt-rank span,
 .mt-card p {
+  display: block;
   margin: 4px 0 0;
   color: #8b9098;
   font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .mt-list-section {
   margin-top: 22px;
@@ -571,6 +604,11 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 10px;
+}
+.mt-card {
+  min-width: 0;
+  touch-action: manipulation;
+  transition: transform .16s ease;
 }
 .mt-poster {
   aspect-ratio: 3 / 4.1;
@@ -601,14 +639,28 @@ onMounted(async () => {
   color: #f04438;
   background: #fff;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, color .16s ease;
 }
 .mt-empty {
   min-height: 160px;
+  padding: 24px 16px;
   display: grid;
-  place-items: center;
-  color: #9a9fa8;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
   background: #fff;
   border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, .03);
+}
+.mt-empty strong {
+  color: #292d36;
+  font-size: 15px;
+}
+.mt-empty span {
+  color: #9a9fa8;
+  font-size: 12px;
+  font-weight: 700;
 }
 .mt-sk div,
 .mt-sk b,
@@ -643,13 +695,14 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 78dvh;
+  max-height: min(78dvh, 620px);
   padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
   border-radius: 22px 22px 0 0;
   background: #fff;
   transform: translateY(108%);
   transition: transform .22s ease;
   overflow-y: auto;
+  box-shadow: 0 -18px 48px rgba(17, 24, 39, .18);
 }
 .mt-filter.open {
   transform: translateY(0);
@@ -690,8 +743,8 @@ onMounted(async () => {
 .mt-filter-group label {
   display: block;
   margin-bottom: 10px;
-  color: #252933;
-  font-size: 14px;
+  color: #6d7480;
+  font-size: 13px;
   font-weight: 900;
 }
 .mt-filter-group div {
@@ -700,21 +753,27 @@ onMounted(async () => {
   gap: 8px;
 }
 .mt-filter-group button {
-  height: 32px;
+  min-height: 34px;
   border: 0;
   border-radius: 999px;
   padding: 0 12px;
   color: #5f6570;
   background: #f4f5f7;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .mt-filter-group button.on {
   color: #f04438;
   background: #fff0ed;
 }
 .mt-filter-actions {
+  position: sticky;
+  bottom: 0;
   gap: 10px;
   margin-top: 22px;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0), #fff 26%);
 }
 .mt-filter-actions button {
   flex: 1;
@@ -722,6 +781,8 @@ onMounted(async () => {
   border: 0;
   border-radius: 999px;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .mt-filter-actions button:first-child {
   color: #5f6570;

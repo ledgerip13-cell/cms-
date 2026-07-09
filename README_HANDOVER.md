@@ -167,8 +167,8 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净 ✅｜本提交：`feat: finish mobile template account entry`
-**运行状态**：4 容器全在线（postgres 8 天 healthy / admin 22h / server·web 4h）
+**代码状态**：`git` 工作树干净 ✅｜本提交：`style: polish mobile template surfaces`
+**运行状态**：4 容器全在线（postgres healthy / server·web·admin 已按最近提交重建）
 
 ### 🟢 100% 已完成
 - **后端全链路 API**：采集源管理、采集任务引擎(taskRunner)+ 定时调度、MacCMS 适配、豆瓣元数据补全、分类/去重、**HLS 清洗去广告**、播放解析(resolve)+代理(hlsProxy/playProxy)。
@@ -179,7 +179,7 @@ docker compose up -d --build
 
 ### 🟡 正在进行
 - **豆瓣元数据匹配**：豆瓣封面已做高清探针；本轮修复置信分阈值不直观的问题，`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存。
-- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`。
+- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；本轮继续统一 `/m` 首页、剧场、刷剧的点击反馈、卡片文字溢出、空/加载态和筛选抽屉视觉。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

@@ -1706,6 +1706,8 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: rgba(0, 0, 0, .28);
   backdrop-filter: blur(12px);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-top svg,
 .ms-play svg,
@@ -1748,6 +1750,8 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 800;
   text-align: left;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-tool-menu button:hover {
   background: rgba(255,255,255,.1);
@@ -1766,6 +1770,8 @@ onBeforeUnmount(() => {
   color: #fff;
   font-weight: 900;
   backdrop-filter: blur(14px);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-center {
   position: absolute;
@@ -1801,6 +1807,8 @@ onBeforeUnmount(() => {
   place-items: center;
   background: rgba(0,0,0,.34);
   backdrop-filter: blur(14px);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-play.landscape {
   top: var(--ms-landscape-play-y, 50%);
@@ -1845,6 +1853,7 @@ onBeforeUnmount(() => {
 .ms-lock button {
   height: 42px;
   padding: 0 24px;
+  touch-action: manipulation;
 }
 .ms-actions {
   position: absolute;
@@ -1863,6 +1872,8 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 800;
   text-shadow: 0 2px 8px rgba(0,0,0,.45);
+  touch-action: manipulation;
+  transition: transform .16s ease, color .16s ease;
 }
 .ms-actions svg {
   width: 30px;
@@ -1935,6 +1946,26 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 800;
   backdrop-filter: blur(12px);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
+}
+.ms-top button:active,
+.ms-tool-menu button:active,
+.ms-landscape-btn:active,
+.ms-play:active,
+.ms-lock button:active,
+.ms-actions button:active,
+.ms-meta button:active,
+.ms-full-bottom button:active,
+.ms-clear-exit:active,
+.ms-state button:active,
+.ms-filter button:active,
+.ms-drawer-tabs button:active,
+.ms-episode-ranges button:active,
+.ms-episode-grid button:active,
+.ms-related-grid article:active,
+.ms-drawer-follow:active {
+  transform: scale(.98);
 }
 .ms-progress {
   position: absolute;
@@ -2075,6 +2106,14 @@ onBeforeUnmount(() => {
   text-align: center;
   background: #050505;
 }
+.ms-state strong {
+  font-size: 16px;
+}
+.ms-state p {
+  margin: 0;
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+}
 .ms-state button {
   border: 0;
   height: 40px;
@@ -2083,6 +2122,8 @@ onBeforeUnmount(() => {
   background: #fff;
   color: #111;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-filter-mask {
   position: fixed;
@@ -2104,6 +2145,7 @@ onBeforeUnmount(() => {
   transform: translateY(105%);
   transition: transform .22s ease;
   overflow-y: auto;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.28);
 }
 .ms-filter.open {
   transform: translateY(0);
@@ -2122,6 +2164,8 @@ onBeforeUnmount(() => {
   width: 36px;
   height: 36px;
   color: #6b7280;
+  border-radius: 50%;
+  background: #f3f4f6;
 }
 .ms-filter-group {
   padding: 12px 0;
@@ -2146,6 +2190,8 @@ onBeforeUnmount(() => {
   background: #f2f3f5;
   color: #333843;
   font-weight: 800;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .ms-filter-group button.on {
   background: #fff0ed;
@@ -2167,6 +2213,8 @@ onBeforeUnmount(() => {
   background: #f2f3f5;
   color: #333843;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
 }
 .ms-drawer-mask {
   position: fixed;
@@ -2282,6 +2330,8 @@ onBeforeUnmount(() => {
   background: #f2f3f5;
   color: #606874;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .ms-episode-ranges button.on {
   background: #fff0ed;
@@ -2301,6 +2351,8 @@ onBeforeUnmount(() => {
   color: #303641;
   font-size: 13px;
   font-weight: 900;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .ms-episode-grid button.on {
   background: linear-gradient(120deg, #ff4d3d, #ff7a38);
@@ -2321,6 +2373,8 @@ onBeforeUnmount(() => {
 }
 .ms-related-grid article {
   min-width: 0;
+  touch-action: manipulation;
+  transition: transform .16s ease;
 }
 .ms-related-grid img {
   width: 100%;
@@ -2356,6 +2410,8 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 15px;
   font-weight: 950;
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .ms-drawer-follow.on {
   background: #f2f3f5;
