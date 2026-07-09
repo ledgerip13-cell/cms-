@@ -712,7 +712,7 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
       doubanId: r.meta.doubanId,
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
-      officialPic: r.meta.pic,
+      ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
     } : {}),
@@ -835,6 +835,7 @@ async function runMetaTask(
           typeName: v.typeName,
           actor: v.actor,
           director: v.director,
+          sourcePic: v.pic || v.localPic,
           autoMatchScore,
           pendingMatchScore,
         });

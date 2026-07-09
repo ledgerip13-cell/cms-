@@ -8,6 +8,7 @@ import {
   matchDouban,
   doubanSuggest,
   doubanDetail,
+  pickOfficialPoster,
   type DoubanCandidate,
   type DoubanMatchResult,
 } from "../collector/douban.js";
@@ -45,7 +46,7 @@ function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
       doubanId: r.meta.doubanId,
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
-      officialPic: r.meta.pic,
+      ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
     } : {}),
@@ -126,6 +127,7 @@ export default async function metaRoutes(app: FastifyInstance) {
       typeName: v.typeName,
       actor: v.actor,
       director: v.director,
+      sourcePic: v.pic || v.localPic,
       autoMatchScore: cfg?.autoMatchScore ?? AUTO_MATCH_SCORE,
       pendingMatchScore: cfg?.pendingMatchScore ?? PENDING_MATCH_SCORE,
     });
@@ -163,11 +165,14 @@ export default async function metaRoutes(app: FastifyInstance) {
     if (!doubanId) return { ok: false, error: "缺少 doubanId" };
     const meta = await doubanDetail(String(doubanId));
     if (!meta) return { ok: false, error: "豆瓣详情获取失败" };
+    const v = await prisma.vod.findUnique({ where: { id }, select: { pic: true, localPic: true } });
+    meta.pic = await pickOfficialPoster(meta, v?.pic || v?.localPic || "");
     await prisma.vod.update({
       where: { id },
       data: {
         doubanId: meta.doubanId, rating: meta.rating, ratingCount: meta.ratingCount,
-        officialPic: meta.pic, officialIntro: cleanText(meta.intro, 2000),
+        ...(meta.pic ? { officialPic: meta.pic } : {}),
+        officialIntro: cleanText(meta.intro, 2000),
         genres: cleanText(meta.genres.join(",")), metaMatched: "manual", metaScore: 100,
         metaReason: JSON.stringify({ score: 100, reasons: ["manual"], candidates: [{ id: meta.doubanId, title: meta.title, year: meta.year, score: 100, reasons: ["manual"] }] }),
         matchedTitle: meta.title, matchedYear: meta.year, metaAt: new Date(),

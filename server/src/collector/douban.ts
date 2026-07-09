@@ -1,5 +1,6 @@
 // 豆瓣元数据抓取：subject_suggest 搜条目 + rexxar API 取评分/简介
 // 内置限速（顺序 + 间隔），规避反爬；调用方仍应做批量间隔
+import sharp from "sharp";
 import { normalizeName } from "./dedupe.js";
 
 const UA_PC = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36";
@@ -171,6 +172,7 @@ export interface DoubanMatchContext {
   typeName?: string;
   actor?: string;
   director?: string;
+  sourcePic?: string;
   autoMatchScore?: number;
   pendingMatchScore?: number;
 }
@@ -208,6 +210,93 @@ async function getJson(url: string, ua: string, referer: string, timeoutMs = 120
   } finally {
     clearTimeout(t);
   }
+}
+
+function uniq<T>(rows: T[]) {
+  return [...new Set(rows.filter(Boolean))];
+}
+
+function withoutResizeQuery(url: string) {
+  if (!url) return "";
+  return url.replace(/\?(?:imageView2|x-oss-process|imageMogr2)[^#]*/i, "");
+}
+
+function posterQuality(url: string) {
+  const u = String(url || "");
+  if (!u) return 0;
+  if (/s_ratio_poster/i.test(u)) return 10;
+  if (/h\/120\b|w\/120\b|\/small\b/i.test(u)) return 10;
+  if (/m_ratio_poster|\/normal\b/i.test(u)) return 55;
+  if (/l_ratio_poster|\/large\b|\/raw\b/i.test(u)) return 85;
+  return 45;
+}
+
+function posterCandidates(url: string) {
+  const raw = String(url || "").trim();
+  if (!raw) return [];
+  const clean = withoutResizeQuery(raw);
+  const rows = [
+    clean.replace(/\/s_ratio_poster\//i, "/l_ratio_poster/"),
+    clean.replace(/\/s_ratio_poster\//i, "/m_ratio_poster/"),
+    clean.replace(/\/m_ratio_poster\//i, "/l_ratio_poster/"),
+    clean,
+  ];
+  return uniq(rows).filter((row) => posterQuality(row) >= 55);
+}
+
+async function probeImage(url: string, timeoutMs = 10000): Promise<{ url: string; ok: boolean; width: number; height: number; area: number; quality: number }> {
+  const quality = posterQuality(url);
+  if (!url || !/^https?:\/\//i.test(url)) return { url, ok: false, width: 0, height: 0, area: 0, quality };
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    let referer = "https://movie.douban.com/";
+    try {
+      const host = new URL(url).hostname;
+      if (!/douban/i.test(host)) referer = new URL(url).origin;
+    } catch {}
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": UA_PC, Referer: referer, Accept: "image/*,*/*" },
+    });
+    if (!res.ok) return { url, ok: false, width: 0, height: 0, area: 0, quality };
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    if (ct && !ct.startsWith("image/")) return { url, ok: false, width: 0, height: 0, area: 0, quality };
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength < 128) return { url, ok: false, width: 0, height: 0, area: 0, quality };
+    const meta = await sharp(buf).metadata();
+    const width = Number(meta.width || 0);
+    const height = Number(meta.height || 0);
+    return { url, ok: width > 0 && height > 0, width, height, area: width * height, quality };
+  } catch {
+    return { url, ok: false, width: 0, height: 0, area: 0, quality };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export async function pickOfficialPoster(meta: DoubanMeta, sourcePic = "", extraPics: string[] = []) {
+  const rawCandidates = uniq([
+    ...extraPics,
+    meta.pic,
+    ...meta.images.filter((img) => img.type === "poster").map((img) => img.url),
+  ]);
+  const candidates = uniq(rawCandidates.flatMap(posterCandidates));
+  if (!candidates.length) return "";
+
+  const probed: Awaited<ReturnType<typeof probeImage>>[] = [];
+  for (const url of candidates) {
+    const row = await probeImage(url);
+    if (row.ok) probed.push(row);
+  }
+  if (!probed.length) return "";
+  probed.sort((a, b) => (b.area - a.area) || (b.quality - a.quality));
+  const best = probed[0];
+
+  const sourceRows = uniq([sourcePic, ...posterCandidates(sourcePic)]);
+  const sourceProbe = sourceRows.length ? await probeImage(sourceRows[0]) : null;
+  if (sourceProbe?.ok && best.area < sourceProbe.area) return "";
+  return best.url;
 }
 
 async function doubanPhotos(id: string, kind: string): Promise<any[]> {
@@ -620,7 +709,7 @@ export async function matchDouban(
   for (const c of preliminary) {
     const suggest = suggests.find((s) => s.id === c.id)!;
     const meta = await doubanDetail(c.id);
-    if (meta && suggest.img) meta.pic = suggest.img; // suggest 的高清封面通常更好，优先用它
+    if (meta) meta.pic = await pickOfficialPoster(meta, ctx.sourcePic, [suggest.img || ""]);
     detailed.push(toCandidate(suggest, name, year, ctx, meta));
   }
   const byId = new Map<string, DoubanCandidate>();
