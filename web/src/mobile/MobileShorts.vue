@@ -1898,7 +1898,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 12;
   left: 50%;
-  bottom: calc(172px + env(safe-area-inset-bottom));
+  bottom: calc(238px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   display: flex;
   align-items: center;
