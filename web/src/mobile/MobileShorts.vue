@@ -2134,7 +2134,7 @@ onBeforeUnmount(() => {
   gap: 15px;
 }
 .full-mode .ms-actions {
-  bottom: calc(124px + env(safe-area-inset-bottom));
+  bottom: calc(82px + env(safe-area-inset-bottom));
 }
 .ms-actions button {
   min-width: 46px;
@@ -2163,10 +2163,10 @@ onBeforeUnmount(() => {
   z-index: 9;
   left: 16px;
   right: 78px;
-  bottom: calc(126px + env(safe-area-inset-bottom));
+  bottom: calc(116px + env(safe-area-inset-bottom));
 }
 .full-mode .ms-meta {
-  bottom: calc(94px + env(safe-area-inset-bottom));
+  bottom: calc(70px + env(safe-area-inset-bottom));
 }
 .ms-meta.full {
   right: 76px;
@@ -2219,7 +2219,7 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   min-width: 0;
-  height: 54px;
+  height: 46px;
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, .08);
   border-radius: 0;
@@ -2247,7 +2247,7 @@ onBeforeUnmount(() => {
 .ms-roam-card strong {
   min-width: 0;
   font-size: 15px;
-  font-weight: 950;
+  font-weight: 500;
   letter-spacing: 0;
   text-align: left;
   overflow: hidden;
