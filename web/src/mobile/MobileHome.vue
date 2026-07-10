@@ -18,33 +18,53 @@
       <div class="sk sk-actions"></div>
     </section>
 
-    <section v-else-if="hero" class="mh-hero" @click="goPlay(hero.id)">
-      <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
-      <div class="mh-hero-shade"></div>
-      <div class="mh-hero-content">
-        <div class="mh-kicker">
-          <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
-          <span>热门推荐</span>
+    <Transition name="mh-hero-swap" mode="out-in">
+      <section v-if="hero" :key="hero.id" class="mh-hero" @click="goPlay(hero.id)">
+        <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
+        <div class="mh-hero-shade"></div>
+        <div class="mh-hero-content">
+          <div class="mh-kicker">
+            <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
+            <span>热门推荐</span>
+          </div>
+          <h1>{{ hero.name }}</h1>
+          <p class="mh-meta">
+            <span v-if="hero.typeName">{{ hero.typeName }}</span>
+            <span v-if="hero.year">{{ hero.year }}</span>
+            <span v-if="hero.remarks">{{ hero.remarks }}</span>
+          </p>
+          <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
+          <div class="mh-actions">
+            <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
+              <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
+              立即播放
+            </button>
+            <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
+              <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
+              追剧
+            </button>
+          </div>
         </div>
-        <h1>{{ hero.name }}</h1>
-        <p class="mh-meta">
-          <span v-if="hero.typeName">{{ hero.typeName }}</span>
-          <span v-if="hero.year">{{ hero.year }}</span>
-          <span v-if="hero.remarks">{{ hero.remarks }}</span>
-        </p>
-        <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
-        <div class="mh-actions">
-          <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
-            <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-            立即播放
+        <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
+          <button type="button" aria-label="上一条推荐" @click="shiftHero(-1)">
+            <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
           </button>
-          <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
-            <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
-            追剧
+          <div class="mh-hero-dots" aria-label="推荐切换">
+            <button
+              v-for="(item, index) in heroSlides"
+              :key="`hero-dot-${item.id}`"
+              type="button"
+              :class="{ on: index === heroIndex }"
+              :aria-label="`切换到${item.name}`"
+              @click="pickHero(index)"
+            ></button>
+          </div>
+          <button type="button" aria-label="下一条推荐" @click="shiftHero(1)">
+            <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
           </button>
         </div>
-      </div>
-    </section>
+      </section>
+    </Transition>
 
     <nav v-if="categories.length" class="mh-cats" aria-label="分类快捷入口">
       <button v-for="cat in categories" :key="cat.name" type="button" @click="goTheater(cat.name)">
@@ -96,7 +116,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { readCachedCategories, readCachedSite, writeCachedCategories, writeCachedSite } from '../siteConfig'
@@ -107,13 +127,16 @@ const router = useRouter()
 const site = ref(readCachedSite())
 const categories = ref(readCachedCategories().slice(0, 10))
 const heroList = ref([])
+const heroIndex = ref(0)
 const historyItems = ref([])
 const hotItems = ref([])
 const newItems = ref([])
 const guessItems = ref([])
 const loading = ref(true)
+let heroTimer = null
 
-const hero = computed(() => heroList.value[0] || null)
+const heroSlides = computed(() => heroList.value.slice(0, 5))
+const hero = computed(() => heroSlides.value[heroIndex.value] || heroSlides.value[0] || null)
 const blocks = computed(() => [
   { key: 'hot', title: '热播推荐', icon: 'hot', sort: 'hot', items: hotItems.value },
   { key: 'new', title: '今日上新', icon: 'calendar', sort: 'recent', items: newItems.value },
@@ -158,6 +181,31 @@ function goSearch() {
   router.push('/m/search')
 }
 
+function stopHeroTimer() {
+  if (!heroTimer) return
+  clearInterval(heroTimer)
+  heroTimer = null
+}
+
+function startHeroTimer() {
+  stopHeroTimer()
+  if (heroSlides.value.length < 2) return
+  heroTimer = window.setInterval(() => shiftHero(1, false), 5200)
+}
+
+function pickHero(index, restart = true) {
+  if (!heroSlides.value.length) return
+  heroIndex.value = Math.max(0, Math.min(index, heroSlides.value.length - 1))
+  if (restart) startHeroTimer()
+}
+
+function shiftHero(step = 1, restart = true) {
+  const total = heroSlides.value.length
+  if (total < 2) return
+  heroIndex.value = (heroIndex.value + step + total) % total
+  if (restart) startHeroTimer()
+}
+
 async function loadHome() {
   loading.value = true
   try {
@@ -165,7 +213,10 @@ async function loadHome() {
     const categoriesPromise = api.categories().then(data => {
       categories.value = writeCachedCategories(data).slice(0, 10)
     }).catch(() => {})
-    const heroPromise = api.hot(10).then(data => { heroList.value = data || [] }).catch(() => {})
+    const heroPromise = api.hot(10).then(data => {
+      heroList.value = Array.isArray(data) ? data : []
+      heroIndex.value = 0
+    }).catch(() => {})
     const hotPromise = api.vods({ page: 1, size: 6, sort: 'hot' }).then(res => { hotItems.value = res.list || [] }).catch(() => {})
     const newPromise = api.vods({ page: 1, size: 6, sort: 'recent' }).then(res => { newItems.value = res.list || [] }).catch(() => {})
     const guessPromise = api.vods({ page: 1, size: 6, sort: 'rating' }).then(res => { guessItems.value = res.list || [] }).catch(() => {})
@@ -175,12 +226,14 @@ async function loadHome() {
       historyItems.value = Array.isArray(rows) ? rows.slice(0, 6) : []
     }).catch(() => {})
     await Promise.allSettled([sitePromise, categoriesPromise, heroPromise, hotPromise, newPromise, guessPromise, userPromise])
+    startHeroTimer()
   } finally {
     loading.value = false
   }
 }
 
 onMounted(loadHome)
+onBeforeUnmount(stopHeroTimer)
 </script>
 
 <style scoped>
@@ -243,13 +296,15 @@ onMounted(loadHome)
 .mh-section-head button:active,
 .mh-history:active,
 .mh-card:active,
-.mh-actions button:active {
+.mh-actions button:active,
+.mh-hero-controls button:active {
   transform: scale(.98);
 }
 .mh-search svg,
 .mh-section-head svg,
 .mh-kicker svg,
-.mh-actions svg {
+.mh-actions svg,
+.mh-hero-controls svg {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
@@ -269,6 +324,20 @@ onMounted(loadHome)
   box-shadow: 0 18px 46px rgba(88, 30, 20, .18);
   isolation: isolate;
   touch-action: manipulation;
+}
+.mh-hero-swap-enter-active,
+.mh-hero-swap-leave-active {
+  transition: opacity .28s ease, transform .28s ease, filter .28s ease;
+}
+.mh-hero-swap-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(.985);
+  filter: blur(8px);
+}
+.mh-hero-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-8px) scale(.99);
+  filter: blur(6px);
 }
 .mh-hero-img {
   position: absolute;
@@ -363,6 +432,53 @@ onMounted(loadHome)
   color: #fff;
   background: rgba(255, 255, 255, .18);
   backdrop-filter: blur(10px);
+}
+.mh-hero-controls {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .24);
+  backdrop-filter: blur(14px);
+}
+.mh-hero-controls > button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, .14);
+  touch-action: manipulation;
+  transition: transform .16s ease, background .16s ease;
+}
+.mh-hero-controls > button:first-child svg {
+  transform: rotate(180deg);
+}
+.mh-hero-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mh-hero-dots button {
+  width: 6px;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(255, 255, 255, .46);
+  transition: width .22s ease, background .22s ease, transform .16s ease;
+}
+.mh-hero-dots button.on {
+  width: 16px;
+  background: #fff;
 }
 .mh-cats {
   margin: 16px -14px 0;
