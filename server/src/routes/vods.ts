@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
+import { resolveShareUrl } from "../collector/resolver.js";
 import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
@@ -91,6 +92,29 @@ function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
   return value.map((ep, index) => ({
     name: String(ep?.name || `第${index + 1}集`),
   }));
+}
+
+function aliasDisplayName(alias: any) {
+  const note = cleanText(alias?.note || "", 120);
+  if (note) return note;
+  return String(alias?.fingerprint || "").split("|")[0] || "";
+}
+
+function normalizeAliasInput(value: any, year = "") {
+  const rows = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[\n,，、]+/);
+  const seen = new Set<string>();
+  const out: Array<{ name: string; fingerprint: string }> = [];
+  for (const row of rows) {
+    const name = cleanText(row, 120);
+    if (!name) continue;
+    const fingerprint = `${normalizeName(name)}|${String(year || "").trim()}`;
+    if (!normalizeName(name) || seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
+    out.push({ name, fingerprint });
+  }
+  return out.slice(0, 50);
 }
 
 function parseIdList(value: unknown, limit = 500) {
@@ -1081,12 +1105,40 @@ export default async function vodRoutes(app: FastifyInstance) {
     });
 
     // 后台单片详情（含已下架），供管理页“线路详情”面板用，复用同一份组装逻辑
+    secured.get("/api/admin/vods/:id/diagnose", async (req, reply) => {
+      const id = Number((req.params as any).id);
+      const q = req.query as any;
+      const playId = Number(q.playId);
+      const epIndex = Math.max(0, Number(q.epIndex) || 0);
+      if (!id || !playId) return reply.code(400).send({ ok: false, error: "缺少诊断参数" });
+      const play = await prisma.play.findUnique({
+        where: { id: playId },
+        include: { vod: true, source: { select: { id: true, name: true, enabled: true, driver: true } } },
+      });
+      if (!play || play.vodId !== id) return reply.code(404).send({ ok: false, error: "线路不存在" });
+      const episodes = parseEpisodes(play.episodes);
+      const ep = episodes[epIndex];
+      if (!ep?.url) return { ok: false, error: "播放集数不存在", source: play.source.name, epIndex };
+      const result = await resolveShareUrl(ep.url);
+      return {
+        ...result,
+        rawUrl: ep.url,
+        source: play.source.name,
+        sourceEnabled: play.source.enabled,
+        playId: play.id,
+        epIndex,
+        epName: ep.name || `第${epIndex + 1}集`,
+        note: "后台诊断仅检查线路解析，不套用前台登录/VIP观看权限。",
+      };
+    });
+
     secured.get("/api/admin/vods/:id", async (req, reply) => {
       const id = Number((req.params as any).id);
       const vod = await prisma.vod.findUnique({
         where: { id },
         include: {
           plays: { include: { source: true } },
+          aliases: { orderBy: { createdAt: "asc" } },
           people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
           images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
         },
@@ -1101,7 +1153,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       const bySource = new Map<number, typeof channels>();
       for (const c of channels) { if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, []); bySource.get(c.sourceId)!.push(c); }
       const lines = [...bySource.values()].map((cs) => { const sorted = [...cs].sort(byHealth); return { ...sorted[0], channels: sorted }; }).sort(byHealth);
-      return { ...vod, plays: undefined, lines };
+      return { ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), plays: undefined, lines };
     });
 
     // 后台管理列表：不限 status，支持多条件筛选(同 /api/vods 参数 + status)
@@ -1113,10 +1165,13 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (q.status) where.status = q.status;
       if (q.kw) {
         const kw = String(q.kw);
+        const aliasKw = normalizeName(kw);
         where.OR = [
           { name: { contains: kw } },
           { actor: { contains: kw } },
           { director: { contains: kw } },
+          { aliases: { some: { note: { contains: kw } } } },
+          ...(aliasKw ? [{ aliases: { some: { fingerprint: { contains: aliasKw } } } }] : []),
           { people: { some: { person: { name: { contains: kw } } } } },
         ];
       }
@@ -1140,10 +1195,10 @@ export default async function vodRoutes(app: FastifyInstance) {
           orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
           skip: (page - 1) * size,
           take: size,
-          include: { _count: { select: { plays: true } } },
+          include: { aliases: { orderBy: { createdAt: "asc" } }, _count: { select: { plays: true } } },
         }),
       ]);
-      return { total, page, size, list };
+      return { total, page, size, list: list.map((vod) => ({ ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean) })) };
     });
 
     // 批量操作：下架/上架/删除，传 ids 数组，支持多选
@@ -1243,6 +1298,9 @@ export default async function vodRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const b = (req.body as any) || {};
     const data: any = {};
+    const currentForAliases = b.aliases !== undefined
+      ? await prisma.vod.findUnique({ where: { id }, select: { name: true, year: true } })
+      : null;
     const fields = ["name", "year", "typeName", "pic", "heroPic", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "officialPic", "genres"];
     const textFields = new Set(["name", "year", "typeName", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "genres"]);
     for (const f of fields) if (b[f] !== undefined) data[f] = textFields.has(f) ? cleanText(b[f], f === "blurb" || f === "officialIntro" ? 2000 : 0) : b[f];
@@ -1264,7 +1322,25 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (b.name !== undefined) return { error: "片名不能为空" };
       delete data.name;
     }
-    const vod = await prisma.vod.update({ where: { id }, data });
+    let vod: any;
+    if (b.aliases !== undefined) {
+      const year = data.year ?? currentForAliases?.year ?? "";
+      const primaryName = normalizeName(data.name ?? currentForAliases?.name ?? "");
+      const aliases = normalizeAliasInput(b.aliases, year).filter((row) => normalizeName(row.name) !== primaryName);
+      vod = await prisma.$transaction(async (tx) => {
+        const updated = await tx.vod.update({ where: { id }, data });
+        await tx.vodAlias.deleteMany({ where: { vodId: id } });
+        if (aliases.length) {
+          await tx.vodAlias.createMany({
+            data: aliases.map((alias) => ({ vodId: id, fingerprint: alias.fingerprint, note: alias.name })),
+            skipDuplicates: true,
+          });
+        }
+        return updated;
+      });
+    } else {
+      vod = await prisma.vod.update({ where: { id }, data });
+    }
     if ("typeName" in data || "status" in data || "year" in data) invalidateAggregateCache();
     return { ok: true, vod };
   });

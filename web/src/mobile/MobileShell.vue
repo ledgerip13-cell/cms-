@@ -7,10 +7,12 @@
       'search-shell': route.path.startsWith('/m/search'),
     }"
   >
-    <router-view v-slot="{ Component }">
-      <keep-alive :max="4">
-        <component :is="Component" />
-      </keep-alive>
+    <router-view v-slot="{ Component, route: viewRoute }">
+      <transition name="m-page" mode="out-in">
+        <keep-alive :max="4">
+          <component :is="Component" :key="viewRoute.path" />
+        </keep-alive>
+      </transition>
     </router-view>
     <nav v-if="!route.path.startsWith('/m/search')" class="mtab" aria-label="移动端模板导航">
       <button v-for="item in tabs" :key="item.path" type="button" :class="{ on: active(item) }" @click="router.push(item.path)">
@@ -159,6 +161,22 @@ onBeforeUnmount(restoreChrome)
 .mshell {
   min-height: 100dvh;
   background: #f7f7f8;
+}
+.m-page-enter-active,
+.m-page-leave-active {
+  transition: opacity .2s ease, transform .2s ease;
+}
+.m-page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.m-page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.shorts-shell .m-page-enter-from,
+.shorts-shell .m-page-leave-to {
+  transform: none;
 }
 .mtab {
   position: fixed;

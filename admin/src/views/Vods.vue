@@ -100,6 +100,7 @@
         <template #default="{ row }">
           <span style="font-weight:600">{{ row.name }}</span>
           <el-tag v-if="row.pinned" size="small" type="warning" style="margin-left:6px">置顶</el-tag>
+          <div v-if="aliasNamesText(row)" class="alias-line">别名：{{ aliasNamesText(row) }}</div>
         </template>
       </el-table-column>
       <el-table-column prop="year" label="年份" width="70" />
@@ -157,6 +158,7 @@
           <p><b>年份:</b> {{ cur.year || '—' }} · <b>分类:</b> {{ cur.typeName || '—' }}</p>
           <p><b>地区:</b> {{ cur.area || '—' }} · <b>语言:</b> {{ cur.lang || '—' }}</p>
           <p><b>主演:</b> <span class="ellip">{{ cur.actor || '—' }}</span></p>
+          <p v-if="aliasNamesText(cur)"><b>别名:</b> <span class="ellip">{{ aliasNamesText(cur) }}</span></p>
           <p><b>指纹:</b> <code>{{ cur.fingerprint }}</code></p>
           <p><b>更新:</b> {{ cur.remarks }}</p>
           <p v-if="cur.heroPic"><b>首页图:</b> 已设置</p>
@@ -279,6 +281,9 @@
     <el-form :model="editForm" label-width="80px">
       <el-form-item label="片名" required>
         <el-input v-model="editForm.name" />
+      </el-form-item>
+      <el-form-item label="别名">
+        <el-input v-model="editForm.aliasesText" type="textarea" :rows="2" placeholder="多个别名用逗号或换行分隔" />
       </el-form-item>
       <div style="display:flex;gap:12px">
         <el-form-item label="年份" style="flex:1"><el-input v-model="editForm.year" /></el-form-item>
@@ -455,6 +460,7 @@
         </div>
       </el-descriptions-item>
       <el-descriptions-item label="探测结果">{{ diag.probe || '未探测' }}</el-descriptions-item>
+      <el-descriptions-item label="说明">{{ diag.result?.note || '后台诊断只检查线路解析，不代表用户可直接观看。' }}</el-descriptions-item>
     </el-descriptions>
     <template #footer>
       <el-button @click="diagOpen=false">关闭</el-button>
@@ -585,6 +591,20 @@ function fallbackCover(row) {
   }
   if (row._coverStage !== 'local' && row.localPic) row._coverStage = 'local'
 }
+function aliasDisplay(alias) {
+  return String(alias?.note || alias?.name || alias?.fingerprint || '').split('|')[0].trim()
+}
+function aliasNames(row) {
+  const rows = Array.isArray(row?.aliasNames) && row.aliasNames.length
+    ? row.aliasNames
+    : Array.isArray(row?.aliases)
+      ? row.aliases.map(aliasDisplay)
+      : []
+  return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))]
+}
+function aliasNamesText(row) {
+  return aliasNames(row).join('、')
+}
 
 async function load() {
   loading.value = true
@@ -710,6 +730,7 @@ const editForm = ref({})
 function openEdit(row) {
   editForm.value = {
     id: row.id, name: row.name, year: row.year, typeName: row.typeName,
+    aliasesText: aliasNames(row).join('\n'),
     area: row.area, lang: row.lang, actor: row.actor, director: row.director,
     remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, heroPic: row.heroPic, blurb: row.blurb,
     autoCollectEnabled: Boolean(row.autoCollectEnabled),
@@ -725,7 +746,9 @@ async function saveEdit() {
   if (!editForm.value.name?.trim()) return ElMessage.warning('片名不能为空')
   saving.value = true
   try {
-    const r = await api.editVod(editForm.value.id, editForm.value)
+    const payload = { ...editForm.value, aliases: editForm.value.aliasesText || '' }
+    delete payload.aliasesText
+    const r = await api.editVod(editForm.value.id, payload)
     if (r.error) return ElMessage.error(r.error)
     ElMessage.success('已保存')
     editDlg.value = false
@@ -807,7 +830,7 @@ async function diagnoseEp(line, ep, visibleIndex, fresh = false) {
   diagOpen.value = true
   diag.value = { loading: true, line, ep, epIndex, result: null, probe: '' }
   try {
-    const result = await api.resolvePlay({ vodId: cur.value.id, playId: line.id, epIndex, ...(fresh ? { fresh: 1 } : {}) })
+    const result = await api.diagnoseVod(cur.value.id, { playId: line.id, epIndex, ...(fresh ? { fresh: 1 } : {}) })
     const probe = result?.url ? await probeResolvedUrl(result.url) : ''
     diag.value = { loading: false, line, ep, epIndex, result, probe }
   } catch (e) {
@@ -918,6 +941,7 @@ watch(() => route.query.kw, (kw) => {
 .filters { display: flex; align-items: center; gap: 10px; flex: 1 1 760px; min-width: 0; flex-wrap: wrap; }
 .filters :deep(.el-button + .el-button) { margin-left: 0; }
 .vod-count { flex: 0 0 auto; color:#9aa4b2; font-size:13px; line-height:32px; white-space: nowrap; }
+.alias-line { margin-top: 4px; color:#98a1b0; font-size:12px; line-height:1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .noimg { width:44px; height:60px; background:#f0f2f5; color:#b8c0cc; font-size:12px;
   display:flex; align-items:center; justify-content:center; border-radius:4px; }
 .pager { margin-top: 16px; justify-content: flex-end; }

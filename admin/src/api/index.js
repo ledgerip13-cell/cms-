@@ -51,6 +51,7 @@ export const api = {
   previewVodCleanup: (d) => http.post('/admin/vods/cleanup/preview', d),
   executeVodCleanup: (d) => http.post('/admin/vods/cleanup/execute', d),
   vod: (id) => http.get(`/admin/vods/${id}`),
+  diagnoseVod: (id, params) => http.get(`/admin/vods/${id}/diagnose`, { params }),
   patchVod: (id, d) => http.patch(`/vods/${id}`, d),
   editVod: (id, d) => http.put(`/vods/${id}`, d),
   refreshVod: (id) => http.post(`/vods/${id}/refresh`),

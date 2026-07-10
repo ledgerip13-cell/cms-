@@ -219,7 +219,10 @@
     </div>
     <button v-if="fullMode && clearScreen" class="ms-clear-exit" type="button" @click="toggleClearScreen">退出清屏</button>
 
-    <div v-if="filterOpen" class="ms-filter-mask" @click="filterOpen = false"></div>
+    <transition name="ms-fade">
+      <div v-if="filterOpen" class="ms-filter-mask" @click="filterOpen = false"></div>
+    </transition>
+    <transition name="ms-bottom-sheet">
     <aside v-if="filterOpen" class="ms-filter open">
       <div class="ms-filter-head">
         <h2>刷剧筛选</h2>
@@ -264,8 +267,12 @@
         <button type="button" @click="applyFilter">重新刷剧</button>
       </div>
     </aside>
+    </transition>
 
-    <div v-if="episodeDrawerOpen" class="ms-drawer-mask" @click="episodeDrawerOpen = false"></div>
+    <transition name="ms-fade">
+      <div v-if="episodeDrawerOpen" class="ms-drawer-mask" @click="episodeDrawerOpen = false"></div>
+    </transition>
+    <transition name="ms-bottom-sheet">
     <aside v-if="episodeDrawerOpen && activeUnit" class="ms-episode-drawer">
       <div class="ms-drag"></div>
       <header class="ms-drawer-head">
@@ -322,6 +329,7 @@
         {{ followed ? '已追剧' : '追剧' }}
       </button>
     </aside>
+    </transition>
   </main>
 </template>
 
@@ -2650,6 +2658,22 @@ onBeforeUnmount(() => {
   font-weight: 900;
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease;
+}
+.ms-fade-enter-active,
+.ms-fade-leave-active {
+  transition: opacity .18s ease;
+}
+.ms-fade-enter-from,
+.ms-fade-leave-to {
+  opacity: 0;
+}
+.ms-bottom-sheet-enter-active,
+.ms-bottom-sheet-leave-active {
+  transition: transform .24s cubic-bezier(.2, .7, .2, 1);
+}
+.ms-bottom-sheet-enter-from,
+.ms-bottom-sheet-leave-to {
+  transform: translateY(105%);
 }
 .ms-drawer-mask {
   position: fixed;
