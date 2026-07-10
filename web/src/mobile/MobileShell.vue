@@ -46,6 +46,8 @@ let previousThemeColor = ''
 let previousAppleStatusBar = ''
 let previousHtmlBg = ''
 let previousBodyBg = ''
+let previousHtmlBgColor = ''
+let previousBodyBgColor = ''
 let previousColorScheme = ''
 let chromeObserver = null
 let chromeSnapshotTaken = false
@@ -105,6 +107,8 @@ function applyMobileChrome() {
     previousAppleStatusBar = apple.getAttribute('content') || ''
     previousHtmlBg = document.documentElement.style.background || ''
     previousBodyBg = document.body.style.background || ''
+    previousHtmlBgColor = document.documentElement.style.backgroundColor || ''
+    previousBodyBgColor = document.body.style.backgroundColor || ''
     previousColorScheme = document.documentElement.style.colorScheme || ''
     chromeSnapshotTaken = true
   }
@@ -113,6 +117,8 @@ function applyMobileChrome() {
   apple.setAttribute('content', settings.appleStatusBar)
   document.documentElement.style.background = settings.htmlBg
   document.body.style.background = settings.bodyBg
+  document.documentElement.style.backgroundColor = settings.htmlBg
+  document.body.style.backgroundColor = settings.bodyBg
   document.documentElement.style.colorScheme = settings.colorScheme
 }
 
@@ -127,6 +133,8 @@ function restoreChrome() {
   if (apple) apple.setAttribute('content', previousAppleStatusBar || 'black')
   document.documentElement.style.background = previousHtmlBg
   document.body.style.background = previousBodyBg
+  document.documentElement.style.backgroundColor = previousHtmlBgColor
+  document.body.style.backgroundColor = previousBodyBgColor
   document.documentElement.style.colorScheme = previousColorScheme
 }
 

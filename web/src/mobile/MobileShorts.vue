@@ -1815,7 +1815,7 @@ onBeforeUnmount(() => {
 }
 .full-mode .ms-feed,
 .full-mode .ms-card {
-  height: calc(100dvh - 56px - env(safe-area-inset-bottom));
+  height: 100dvh;
 }
 .full-mode .ms-card {
   overflow: hidden;
