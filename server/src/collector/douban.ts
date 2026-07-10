@@ -326,6 +326,13 @@ export async function doubanSuggest(keyword: string): Promise<DoubanSuggest[]> {
 
   for (const item of await doubanSearch(keyword)) add(item);
 
+  for (const id of await doubanWebSubjectIds(keyword)) {
+    if (out.has(id)) continue;
+    const meta = await doubanDetail(id);
+    add(meta ? { id, title: meta.title, year: meta.year, type: meta.type, img: meta.pic } : null);
+    if (out.size >= 12) break;
+  }
+
   for (const id of await doubanSubjectIds(keyword)) {
     if (out.has(id)) continue;
     const meta = await doubanDetail(id);
@@ -359,6 +366,32 @@ async function doubanSearch(keyword: string): Promise<DoubanSuggest[]> {
     const items = d?.subjects?.items;
     if (!Array.isArray(items)) return [];
     return items.map(searchItemToSuggest).filter(Boolean).slice(0, 12) as DoubanSuggest[];
+  } catch {
+    return [];
+  }
+}
+
+async function doubanWebSubjectIds(keyword: string): Promise<string[]> {
+  try {
+    const url = `https://movie.douban.com/subject_search?search_text=${encodeURIComponent(keyword)}&cat=1002`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: {
+          "User-Agent": UA_PC,
+          Referer: "https://movie.douban.com/",
+          Accept: "text/html,*/*",
+        },
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const ids = [...html.matchAll(/subject\/(\d+)/g)].map((m) => m[1]).filter(Boolean);
+      return unique(ids).slice(0, 12);
+    } finally {
+      clearTimeout(t);
+    }
   } catch {
     return [];
   }
