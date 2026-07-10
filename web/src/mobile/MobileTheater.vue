@@ -161,7 +161,6 @@ const subtype = computed(() => String(route.query.sub || ''))
 const sort = computed(() => String(route.query.sort || 'recent'))
 const year = computed(() => String(route.query.year || ''))
 const kw = computed(() => String(route.query.kw || ''))
-const defaultAllList = computed(() => !type.value && !subtype.value && !year.value && !kw.value)
 const topSubtypes = computed(() => subtypes.value.slice(0, 8))
 const rankTitle = computed(() => type.value ? `${type.value}热播榜` : '全站热播榜')
 const listTitle = computed(() => {
@@ -295,7 +294,7 @@ function goPlay(id) {
 function vodParams(extra = {}) {
   return cleanQuery({
     page: page.value,
-    size: defaultAllList.value ? 3 : 24,
+    size: 24,
     type: kw.value ? '' : type.value,
     sub: kw.value ? '' : subtype.value,
     kw: kw.value,
@@ -511,7 +510,6 @@ onMounted(async () => {
   color: #3d414a;
   background: #fff;
   font-weight: 800;
-  box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
 }
@@ -682,8 +680,8 @@ onMounted(async () => {
 }
 .mt-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 8px;
 }
 .mt-card {
   min-width: 0;

@@ -554,7 +554,6 @@ onBeforeUnmount(stopHeroTimer)
   color: #343741;
   background: #fff;
   font-weight: 800;
-  box-shadow: 0 8px 22px rgba(17, 24, 39, .05);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
 }

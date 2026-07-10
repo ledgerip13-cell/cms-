@@ -1914,8 +1914,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 58;
   top: calc(env(safe-area-inset-top) + 10px);
-  left: 20px;
-  right: 20px;
+  left: 10px;
+  right: 10px;
   display: flex;
   justify-content: space-between;
 }
@@ -1930,20 +1930,20 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
 }
 .ms-top.full .ms-top-right {
   display: flex;
   flex: 0 0 auto;
-  gap: 10px;
+  gap: 0;
 }
 .ms-episode-title {
   min-width: 0;
-  color: rgba(255,255,255,.94);
+  color: #fffffff0;
   font-size: 16px;
   line-height: 1.2;
   font-weight: 900;
-  text-shadow: 0 2px 8px rgba(0,0,0,.34);
+  text-shadow: 0 0 4px rgba(0, 0, 0, .34);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2611,7 +2611,8 @@ onBeforeUnmount(() => {
   gap: 10px;
   margin: 0 -16px calc(-16px - env(safe-area-inset-bottom));
   padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(255,255,255,0), #fff 22%);
+  background: #ffffffba;
+  backdrop-filter: blur(4px);
 }
 .ms-filter-actions button {
   border: 0;
