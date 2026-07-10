@@ -173,11 +173,6 @@
 
     <div v-if="!fullMode && activeUnit && !clearScreen && !accessBlock" class="ms-roam-bottom">
       <div class="ms-roam-card">
-        <button type="button" class="ms-roam-open" @click="openFullContent(activeUnit)">
-          <span class="ms-roam-icon"><svg viewBox="0 0 24 24" v-html="icon('play')"></svg></span>
-          <strong>观看完整短剧 · 全{{ activeUnit.total || 1 }}集</strong>
-          <svg class="ms-roam-arrow" viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
-        </button>
         <input
           v-if="playUrl"
           type="range"
@@ -196,6 +191,10 @@
           @touchend.stop.prevent="commitSeek"
           @click.stop
         />
+        <button type="button" class="ms-roam-open" @click="openFullContent(activeUnit)">
+          <strong>观看完整{{ activeUnit.vod.typeName || config.defaultType }} · 全{{ activeUnit.total || 1 }}集 · 免费观看</strong>
+          <svg class="ms-roam-arrow" viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
+        </button>
       </div>
     </div>
 
@@ -1834,8 +1833,8 @@ onBeforeUnmount(() => {
 }
 .ms-vignette {
   background:
-    linear-gradient(180deg, rgba(0,0,0,.52), transparent 22%, transparent 58%, rgba(0,0,0,.86)),
-    linear-gradient(90deg, rgba(0,0,0,.38), transparent 46%, rgba(0,0,0,.36));
+    linear-gradient(180deg, rgba(0,0,0,.34), transparent 24%, transparent 60%, rgba(0,0,0,.62)),
+    linear-gradient(90deg, rgba(0,0,0,.18), transparent 48%, rgba(0,0,0,.2));
   pointer-events: none;
 }
 .ms-top {
@@ -2116,58 +2115,45 @@ onBeforeUnmount(() => {
 .ms-roam-bottom {
   position: fixed;
   z-index: 55;
-  left: 12px;
-  right: 12px;
-  bottom: calc(74px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  bottom: calc(62px + env(safe-area-inset-bottom));
 }
 .ms-roam-card {
   position: relative;
   width: 100%;
   min-width: 0;
-  height: 58px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  border-radius: 17px;
+  height: 54px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 0;
   overflow: hidden;
-  background: rgba(12, 12, 14, .68);
+  background: rgba(8, 8, 10, .46);
   color: #fff;
   backdrop-filter: blur(18px);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, .32);
+  box-shadow: none;
 }
 .ms-roam-open {
   width: 100%;
   height: 100%;
   min-width: 0;
   border: 0;
-  padding: 0 14px;
+  padding: 0 14px 0 16px;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 22px;
+  grid-template-columns: minmax(0, 1fr) 22px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: transparent;
   color: inherit;
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease;
-}
-.ms-roam-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 255, 255, .16);
-}
-.ms-roam-icon svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
-  stroke: none;
-  margin-left: 2px;
 }
 .ms-roam-card strong {
   min-width: 0;
   font-size: 15px;
   font-weight: 950;
   letter-spacing: 0;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2187,7 +2173,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   left: 0;
   right: 0;
-  bottom: -13px;
+  top: -13px;
   width: 100%;
   height: 28px;
   margin: 0;
