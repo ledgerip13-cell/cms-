@@ -19,7 +19,14 @@
     </section>
 
     <Transition name="mh-hero-swap" mode="out-in">
-      <section v-if="hero" :key="hero.id" class="mh-hero" @click="goPlay(hero.id)">
+      <section
+        v-if="hero"
+        :key="hero.id"
+        class="mh-hero"
+        @click="onHeroClick(hero.id)"
+        @touchstart.passive="onHeroTouchStart"
+        @touchend.passive="onHeroTouchEnd"
+      >
         <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
         <div class="mh-hero-shade"></div>
         <div class="mh-hero-content">
@@ -46,9 +53,6 @@
           </div>
         </div>
         <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
-          <button type="button" aria-label="上一条推荐" @click="shiftHero(-1)">
-            <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
-          </button>
           <div class="mh-hero-dots" aria-label="推荐切换">
             <button
               v-for="(item, index) in heroSlides"
@@ -59,9 +63,6 @@
               @click="pickHero(index)"
             ></button>
           </div>
-          <button type="button" aria-label="下一条推荐" @click="shiftHero(1)">
-            <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
-          </button>
         </div>
       </section>
     </Transition>
@@ -134,6 +135,9 @@ const newItems = ref([])
 const guessItems = ref([])
 const loading = ref(true)
 let heroTimer = null
+let heroTouchX = 0
+let heroTouchY = 0
+let ignoreHeroClick = false
 
 const heroSlides = computed(() => heroList.value.slice(0, 5))
 const hero = computed(() => heroSlides.value[heroIndex.value] || heroSlides.value[0] || null)
@@ -173,6 +177,14 @@ function goPlay(id) {
   router.push(`/play/${id}`)
 }
 
+function onHeroClick(id) {
+  if (ignoreHeroClick) {
+    ignoreHeroClick = false
+    return
+  }
+  goPlay(id)
+}
+
 function goTheater(type = '', sort = '') {
   router.push({ path: '/m/theater', query: { ...(type ? { type } : {}), ...(sort ? { sort } : {}) } })
 }
@@ -204,6 +216,24 @@ function shiftHero(step = 1, restart = true) {
   if (total < 2) return
   heroIndex.value = (heroIndex.value + step + total) % total
   if (restart) startHeroTimer()
+}
+
+function onHeroTouchStart(event) {
+  const touch = event.changedTouches?.[0]
+  if (!touch) return
+  heroTouchX = touch.clientX
+  heroTouchY = touch.clientY
+}
+
+function onHeroTouchEnd(event) {
+  const touch = event.changedTouches?.[0]
+  if (!touch) return
+  const dx = touch.clientX - heroTouchX
+  const dy = touch.clientY - heroTouchY
+  if (Math.abs(dx) < 42 || Math.abs(dx) < Math.abs(dy) * 1.35) return
+  ignoreHeroClick = true
+  shiftHero(dx < 0 ? 1 : -1)
+  window.setTimeout(() => { ignoreHeroClick = false }, 80)
 }
 
 async function loadHome() {
@@ -297,14 +327,13 @@ onBeforeUnmount(stopHeroTimer)
 .mh-history:active,
 .mh-card:active,
 .mh-actions button:active,
-.mh-hero-controls button:active {
+.mh-hero-dots button:active {
   transform: scale(.98);
 }
 .mh-search svg,
 .mh-section-head svg,
 .mh-kicker svg,
-.mh-actions svg,
-.mh-hero-controls svg {
+.mh-actions svg {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
@@ -323,21 +352,15 @@ onBeforeUnmount(stopHeroTimer)
   background: #201210;
   box-shadow: 0 18px 46px rgba(88, 30, 20, .18);
   isolation: isolate;
-  touch-action: manipulation;
+  touch-action: pan-y;
 }
 .mh-hero-swap-enter-active,
 .mh-hero-swap-leave-active {
-  transition: opacity .28s ease, transform .28s ease, filter .28s ease;
+  transition: opacity .26s ease;
 }
-.mh-hero-swap-enter-from {
-  opacity: 0;
-  transform: translateY(10px) scale(.985);
-  filter: blur(8px);
-}
+.mh-hero-swap-enter-from,
 .mh-hero-swap-leave-to {
   opacity: 0;
-  transform: translateY(-8px) scale(.99);
-  filter: blur(6px);
 }
 .mh-hero-img {
   position: absolute;
@@ -373,10 +396,10 @@ onBeforeUnmount(stopHeroTimer)
   font-weight: 800;
 }
 .mh-hero h1 {
-  max-width: 74%;
+  max-width: 94%;
   margin: 0;
-  font-size: 24px;
-  line-height: 1.12;
+  font-size: 23px;
+  line-height: 1.14;
   letter-spacing: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -438,29 +461,13 @@ onBeforeUnmount(stopHeroTimer)
   z-index: 2;
   right: 12px;
   bottom: 12px;
-  height: 34px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
+  padding: 0 7px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, .24);
-  backdrop-filter: blur(14px);
-}
-.mh-hero-controls > button {
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  background: rgba(255, 255, 255, .14);
-  touch-action: manipulation;
-  transition: transform .16s ease, background .16s ease;
-}
-.mh-hero-controls > button:first-child svg {
-  transform: rotate(180deg);
+  background: rgba(0, 0, 0, .22);
+  backdrop-filter: blur(12px);
 }
 .mh-hero-dots {
   display: flex;

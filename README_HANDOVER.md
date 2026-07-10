@@ -167,7 +167,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净 ✅｜本提交：`feat: add mobile home hero carousel`
+**代码状态**：`git` 工作树干净 ✅｜本提交：`style: simplify mobile hero carousel`
 **运行状态**：4 容器全在线（postgres healthy / server·web·admin 已按最近提交重建）
 
 ### 🟢 100% 已完成
@@ -179,7 +179,7 @@ docker compose up -d --build
 
 ### 🟡 正在进行
 - **豆瓣元数据匹配**：豆瓣封面已做高清探针；本轮修复置信分阈值不直观的问题，`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存。
-- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；`/m` 首页 Hero 已由单条推荐升级为多条轮播，沿用原大卡样式，支持手动切换、自动轮播和 CSS3 过渡。
+- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；`/m` 首页 Hero 已由单条推荐升级为多条轮播，沿用原大卡样式，支持手势/点位/自动轮播，过渡改为纯淡入淡出。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。
