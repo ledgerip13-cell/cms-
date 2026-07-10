@@ -18,54 +18,55 @@
       <div class="sk sk-actions"></div>
     </section>
 
-    <Transition name="mh-hero-swap" mode="out-in">
-      <section
-        v-if="hero"
-        :key="hero.id"
-        class="mh-hero"
-        @click="onHeroClick(hero.id)"
-        @touchstart.passive="onHeroTouchStart"
-        @touchend.passive="onHeroTouchEnd"
-      >
-        <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
-        <div class="mh-hero-shade"></div>
-        <div class="mh-hero-content">
-          <div class="mh-kicker">
-            <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
-            <span>热门推荐</span>
+    <div v-if="hero" class="mh-hero-stage">
+      <Transition name="mh-hero-swap">
+        <section
+          :key="hero.id"
+          class="mh-hero"
+          @click="onHeroClick(hero.id)"
+          @touchstart.passive="onHeroTouchStart"
+          @touchend.passive="onHeroTouchEnd"
+        >
+          <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
+          <div class="mh-hero-shade"></div>
+          <div class="mh-hero-content">
+            <div class="mh-kicker">
+              <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
+              <span>热门推荐</span>
+            </div>
+            <h1>{{ hero.name }}</h1>
+            <p class="mh-meta">
+              <span v-if="hero.typeName">{{ hero.typeName }}</span>
+              <span v-if="hero.year">{{ hero.year }}</span>
+              <span v-if="hero.remarks">{{ hero.remarks }}</span>
+            </p>
+            <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
+            <div class="mh-actions">
+              <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
+                <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
+                立即播放
+              </button>
+              <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
+                <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
+                追剧
+              </button>
+            </div>
           </div>
-          <h1>{{ hero.name }}</h1>
-          <p class="mh-meta">
-            <span v-if="hero.typeName">{{ hero.typeName }}</span>
-            <span v-if="hero.year">{{ hero.year }}</span>
-            <span v-if="hero.remarks">{{ hero.remarks }}</span>
-          </p>
-          <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
-          <div class="mh-actions">
-            <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
-              <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-              立即播放
-            </button>
-            <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
-              <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
-              追剧
-            </button>
+          <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
+            <div class="mh-hero-dots" aria-label="推荐切换">
+              <button
+                v-for="(item, index) in heroSlides"
+                :key="`hero-dot-${item.id}`"
+                type="button"
+                :class="{ on: index === heroIndex }"
+                :aria-label="`切换到${item.name}`"
+                @click="pickHero(index)"
+              ></button>
+            </div>
           </div>
-        </div>
-        <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
-          <div class="mh-hero-dots" aria-label="推荐切换">
-            <button
-              v-for="(item, index) in heroSlides"
-              :key="`hero-dot-${item.id}`"
-              type="button"
-              :class="{ on: index === heroIndex }"
-              :aria-label="`切换到${item.name}`"
-              @click="pickHero(index)"
-            ></button>
-          </div>
-        </div>
-      </section>
-    </Transition>
+        </section>
+      </Transition>
+    </div>
 
     <nav v-if="categories.length" class="mh-cats" aria-label="分类快捷入口">
       <button v-for="cat in categories" :key="cat.name" type="button" @click="goTheater(cat.name)">
@@ -348,10 +349,15 @@ onBeforeUnmount(stopHeroTimer)
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mh-hero {
+.mh-hero-stage {
   position: relative;
   min-height: 214px;
   margin-top: 14px;
+}
+.mh-hero {
+  position: relative;
+  min-height: 214px;
+  height: 100%;
   border-radius: 18px;
   overflow: hidden;
   background: #201210;
@@ -359,11 +365,24 @@ onBeforeUnmount(stopHeroTimer)
   isolation: isolate;
   touch-action: pan-y;
 }
+.mh-skeleton {
+  margin-top: 14px;
+}
 .mh-hero-swap-enter-active,
 .mh-hero-swap-leave-active {
   transition:
     opacity .32s ease,
     transform .32s cubic-bezier(.22, .61, .36, 1);
+}
+.mh-hero-swap-enter-active {
+  z-index: 2;
+}
+.mh-hero-swap-leave-active {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  pointer-events: none;
 }
 .mh-hero-swap-enter-from,
 .mh-hero-swap-leave-to {
