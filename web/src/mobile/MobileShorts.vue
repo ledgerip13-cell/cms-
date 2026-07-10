@@ -384,6 +384,7 @@ const soundPrompt = ref(false)
 const videoContain = ref(true)
 const videoLandscape = ref(false)
 const landscapePlayY = ref('')
+const landscapeActionY = ref('')
 const videoReady = ref(false)
 const accessBlock = ref(null)
 const currentSec = ref(0)
@@ -454,6 +455,7 @@ const progressPercent = computed(() => {
 const shortsVars = computed(() => ({
   '--ms-landscape-object-y': LANDSCAPE_OBJECT_Y,
   ...(landscapePlayY.value ? { '--ms-landscape-play-y': landscapePlayY.value } : {}),
+  ...(landscapeActionY.value ? { '--ms-landscape-action-y': landscapeActionY.value } : {}),
 }))
 const episodeList = computed(() => {
   const episodes = Array.isArray(activeUnit.value?.channel?.episodes) ? activeUnit.value.channel.episodes : []
@@ -844,6 +846,7 @@ function stopVideo() {
   soundPrompt.value = false
   videoContain.value = true
   videoLandscape.value = false
+  landscapeActionY.value = ''
   videoReady.value = false
   currentSec.value = 0
   durationSec.value = 0
@@ -1188,12 +1191,17 @@ function updateLandscapeMetrics(video = getVideo()) {
   const rect = video?.getBoundingClientRect?.()
   if (!videoLandscape.value || !width || !height || !rect?.width || !rect?.height) {
     landscapePlayY.value = ''
+    landscapeActionY.value = ''
     return
   }
   const renderedHeight = Math.min(rect.height, rect.width * (height / width))
   const freeY = Math.max(0, rect.height - renderedHeight)
-  const centerY = freeY * LANDSCAPE_CENTER_RATIO + renderedHeight / 2
+  const frameTop = freeY * LANDSCAPE_CENTER_RATIO
+  const frameBottom = frameTop + renderedHeight
+  const centerY = frameTop + renderedHeight / 2
+  const actionY = Math.min(Math.max(centerY + 42, frameBottom + 14), Math.max(360, rect.height - 260))
   landscapePlayY.value = `${Math.round(centerY)}px`
+  landscapeActionY.value = `${Math.round(actionY)}px`
 }
 
 function scheduleLandscapeMetrics() {
@@ -1944,7 +1952,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 14;
   left: 50%;
-  bottom: calc(190px + env(safe-area-inset-bottom));
+  top: var(--ms-landscape-action-y, 52%);
   transform: translateX(-50%);
   height: 38px;
   border: 0;
@@ -2043,9 +2051,12 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 9;
   right: 13px;
-  bottom: calc(112px + env(safe-area-inset-bottom));
+  bottom: calc(96px + env(safe-area-inset-bottom));
   display: grid;
   gap: 15px;
+}
+.full-mode .ms-actions {
+  bottom: calc(54px + env(safe-area-inset-bottom));
 }
 .ms-actions button {
   min-width: 46px;
