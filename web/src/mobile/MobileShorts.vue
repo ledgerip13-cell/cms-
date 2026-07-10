@@ -1909,7 +1909,7 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   background: rgba(18,18,20,.86);
   color: #fff;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(12px);
   box-shadow: 0 18px 40px rgba(0,0,0,.28);
 }
 .ms-tool-menu button {
@@ -2173,7 +2173,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   left: 0;
   right: 0;
-  top: -13px;
+  top: -14px;
   width: 100%;
   height: 28px;
   margin: 0;
