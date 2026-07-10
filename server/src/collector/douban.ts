@@ -323,8 +323,13 @@ export async function doubanSuggest(keyword: string): Promise<DoubanSuggest[]> {
   } catch {
     // subject_suggest 经常空/限流，继续走移动端兜底
   }
+  if (out.size) return [...out.values()].slice(0, 12);
+
+  for (const item of await doubanSearchSubjects(keyword)) add(item);
+  if (out.size) return [...out.values()].slice(0, 12);
 
   for (const item of await doubanSearch(keyword)) add(item);
+  if (out.size) return [...out.values()].slice(0, 12);
 
   for (const id of await doubanWebSubjectIds(keyword)) {
     if (out.has(id)) continue;
@@ -357,6 +362,36 @@ function searchItemToSuggest(item: any): DoubanSuggest | null {
     type,
     img: t?.cover_url || picFromValue(t?.pic || t?.cover),
   };
+}
+
+async function doubanSearchSubjects(keyword: string): Promise<DoubanSuggest[]> {
+  const rows: DoubanSuggest[] = [];
+  for (const type of ["movie", "tv"]) {
+    try {
+      const url = `https://movie.douban.com/j/search_subjects?type=${type}&tag=${encodeURIComponent(keyword)}&sort=recommend&page_limit=12&page_start=0`;
+      const d = await getJson(url, UA_PC, "https://movie.douban.com/");
+      const subjects = Array.isArray(d?.subjects) ? d.subjects : [];
+      for (const item of subjects) {
+        const id = String(item?.id || item?.url || "").match(/(\d+)/)?.[1] || "";
+        const title = String(item?.title || "").trim();
+        if (!id || !title) continue;
+        rows.push({
+          id,
+          title,
+          type,
+          img: String(item?.cover || ""),
+        });
+      }
+    } catch {
+      // 继续尝试其他类型或后续兜底
+    }
+  }
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  }).slice(0, 12);
 }
 
 async function doubanSearch(keyword: string): Promise<DoubanSuggest[]> {

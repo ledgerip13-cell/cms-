@@ -167,7 +167,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净 ✅｜本提交：`fix: restore douban web search fallback`
+**代码状态**：`git` 工作树干净 ✅｜本提交：`fix: prefer douban search subjects api`
 **运行状态**：4 容器全在线（postgres healthy / server·web·admin 已按最近提交重建）
 
 ### 🟢 100% 已完成
@@ -178,7 +178,7 @@ docker compose up -d --build
 - **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater/Me）。
 
 ### 🟡 正在进行
-- **豆瓣元数据匹配**：豆瓣封面已做高清探针；`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存；豆瓣移动 rexxar 搜索返回 `need_login` 时，已增加 `movie.douban.com/subject_search` 网页 subject id 兜底，避免候选为空导致全量 `no_suggest`。
+- **豆瓣元数据匹配**：豆瓣封面已做高清探针；`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存；候选搜索优先使用可用的 `movie.douban.com/j/search_subjects` JSON API，移动 rexxar 返回 `need_login` 或候选仍为空时再走网页 subject id 兜底，避免全量 `no_suggest`。
 - **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；`/m` 首页 Hero 已由单条推荐升级为多条轮播，沿用原大卡样式，支持手势/点位/自动轮播，过渡改为纯淡入淡出。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
