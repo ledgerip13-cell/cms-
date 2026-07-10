@@ -2274,7 +2274,7 @@ onBeforeUnmount(() => {
 .full-mode .ms-progress {
   position: fixed;
   top: auto;
-  bottom: calc(54px + env(safe-area-inset-bottom));
+  bottom: calc(46px + env(safe-area-inset-bottom));
   height: 20px;
   align-items: center;
 }
@@ -2344,17 +2344,17 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(54px + env(safe-area-inset-bottom));
+  height: calc(46px + env(safe-area-inset-bottom));
   padding: 5px 16px calc(5px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 36px;
   gap: 12px;
   align-items: center;
   background: #050505;
 }
 .ms-full-bottom button {
   min-width: 0;
-  height: 44px;
+  height: 36px;
   border: 0;
   border-radius: 12px;
   background: #171717;
@@ -2380,7 +2380,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .ms-full-bottom button:last-child {
-  width: 44px;
+  width: 36px;
   border-radius: 12px;
   background: #171717;
   backdrop-filter: none;
