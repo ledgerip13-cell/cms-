@@ -86,16 +86,31 @@
         <button v-else-if="isActiveDisplay(index) && paused && !accessBlock" class="ms-play" :class="{ landscape: videoLandscape }" type="button" aria-label="播放" @click="playNow">
           <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
         </button>
-        <button
-          v-if="isActiveDisplay(index) && soundPrompt && !accessBlock"
-          class="ms-sound"
-          type="button"
-          aria-label="打开声音"
-          @click="openSound"
+        <div
+          v-if="isActiveDisplay(index) && !accessBlock && (soundPrompt || (fullMode && videoReady && videoLandscape && !clearScreen))"
+          class="ms-prompt-row"
         >
-          <svg viewBox="0 0 24 24" v-html="icon('volume')"></svg>
-          <span>轻触开启声音</span>
-        </button>
+          <button
+            v-if="soundPrompt"
+            class="ms-prompt-btn"
+            type="button"
+            aria-label="打开声音"
+            @click="openSound"
+          >
+            <svg viewBox="0 0 24 24" v-html="icon('volume')"></svg>
+            <span>轻触开启声音</span>
+          </button>
+          <button
+            v-if="fullMode && videoReady && videoLandscape && !clearScreen"
+            class="ms-prompt-btn"
+            type="button"
+            aria-label="全屏观看"
+            @click="requestFullscreen"
+          >
+            <svg viewBox="0 0 24 24" v-html="icon('clean')"></svg>
+            <span>全屏观看</span>
+          </button>
+        </div>
 
         <div v-if="isActiveDisplay(index) && accessBlock" class="ms-lock">
           <strong>{{ accessBlock.title }}</strong>
@@ -117,13 +132,6 @@
             <span>分享</span>
           </button>
         </aside>
-
-        <button
-          v-if="isActiveDisplay(index) && fullMode && videoReady && videoLandscape && !clearScreen"
-          class="ms-landscape-btn"
-          type="button"
-          @click="requestFullscreen"
-        >全屏观看</button>
 
         <div v-if="isActiveDisplay(index)" class="ms-meta" :class="{ full: fullMode }">
           <h1>{{ unit.vod.name }}</h1>
@@ -384,7 +392,6 @@ const soundPrompt = ref(false)
 const videoContain = ref(true)
 const videoLandscape = ref(false)
 const landscapePlayY = ref('')
-const landscapeActionY = ref('')
 const videoReady = ref(false)
 const accessBlock = ref(null)
 const currentSec = ref(0)
@@ -455,7 +462,6 @@ const progressPercent = computed(() => {
 const shortsVars = computed(() => ({
   '--ms-landscape-object-y': LANDSCAPE_OBJECT_Y,
   ...(landscapePlayY.value ? { '--ms-landscape-play-y': landscapePlayY.value } : {}),
-  ...(landscapeActionY.value ? { '--ms-landscape-action-y': landscapeActionY.value } : {}),
 }))
 const episodeList = computed(() => {
   const episodes = Array.isArray(activeUnit.value?.channel?.episodes) ? activeUnit.value.channel.episodes : []
@@ -846,7 +852,7 @@ function stopVideo() {
   soundPrompt.value = false
   videoContain.value = true
   videoLandscape.value = false
-  landscapeActionY.value = ''
+  landscapePlayY.value = ''
   videoReady.value = false
   currentSec.value = 0
   durationSec.value = 0
@@ -1191,17 +1197,13 @@ function updateLandscapeMetrics(video = getVideo()) {
   const rect = video?.getBoundingClientRect?.()
   if (!videoLandscape.value || !width || !height || !rect?.width || !rect?.height) {
     landscapePlayY.value = ''
-    landscapeActionY.value = ''
     return
   }
   const renderedHeight = Math.min(rect.height, rect.width * (height / width))
   const freeY = Math.max(0, rect.height - renderedHeight)
   const frameTop = freeY * LANDSCAPE_CENTER_RATIO
-  const frameBottom = frameTop + renderedHeight
   const centerY = frameTop + renderedHeight / 2
-  const actionY = Math.min(Math.max(centerY + 42, frameBottom + 14), Math.max(360, rect.height - 260))
   landscapePlayY.value = `${Math.round(centerY)}px`
-  landscapeActionY.value = `${Math.round(actionY)}px`
 }
 
 function scheduleLandscapeMetrics() {
@@ -1812,12 +1814,18 @@ onBeforeUnmount(() => {
 .ms-video.ready {
   opacity: 1;
 }
-.ms-sound {
+.ms-prompt-row {
   position: absolute;
   z-index: 12;
   left: 50%;
   bottom: calc(172px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.ms-prompt-btn {
   height: 40px;
   border: 1px solid rgba(255, 255, 255, .26);
   border-radius: 999px;
@@ -1831,8 +1839,10 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 900;
   box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
+  touch-action: manipulation;
+  white-space: nowrap;
 }
-.ms-sound svg {
+.ms-prompt-btn svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -1948,23 +1958,6 @@ onBeforeUnmount(() => {
 .ms-tool-menu button:hover {
   background: rgba(255,255,255,.1);
 }
-.ms-landscape-btn {
-  position: absolute;
-  z-index: 14;
-  left: 50%;
-  top: var(--ms-landscape-action-y, 52%);
-  transform: translateX(-50%);
-  height: 38px;
-  border: 0;
-  border-radius: 999px;
-  padding: 0 16px;
-  background: rgba(255,255,255,.18);
-  color: #fff;
-  font-weight: 900;
-  backdrop-filter: blur(14px);
-  touch-action: manipulation;
-  transition: transform .16s ease, background .16s ease;
-}
 .ms-center {
   position: absolute;
   z-index: 12;
@@ -1991,26 +1984,29 @@ onBeforeUnmount(() => {
   z-index: 12;
   left: 50%;
   top: 50%;
-  width: 70px;
-  height: 70px;
-  margin: -35px 0 0 -35px;
+  width: 74px;
+  height: 74px;
+  margin: -37px 0 0 -37px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: rgba(0,0,0,.34);
-  backdrop-filter: blur(14px);
+  background: transparent;
   touch-action: manipulation;
-  transition: transform .16s ease, background .16s ease;
+  transition: transform .16s ease, color .16s ease;
 }
 .ms-play.landscape {
   top: var(--ms-landscape-play-y, 50%);
 }
 .ms-play svg {
-  width: 34px;
-  height: 34px;
-  fill: currentColor;
-  stroke: none;
-  margin-left: 4px;
+  width: 58px;
+  height: 58px;
+  fill: none;
+  stroke: rgba(255,255,255,.94);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  margin-left: 0;
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,.42));
 }
 .ms-lock {
   position: absolute;
@@ -2051,7 +2047,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 9;
   right: 13px;
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  bottom: calc(126px + env(safe-area-inset-bottom));
   display: grid;
   gap: 15px;
 }
@@ -2240,7 +2236,7 @@ onBeforeUnmount(() => {
 }
 .ms-top button:active,
 .ms-tool-menu button:active,
-.ms-landscape-btn:active,
+.ms-prompt-btn:active,
 .ms-play:active,
 .ms-lock button:active,
 .ms-actions button:active,
@@ -2395,7 +2391,7 @@ onBeforeUnmount(() => {
 .clear-mode .ms-progress,
 .clear-mode .ms-full-bottom,
 .clear-mode .ms-roam-bottom,
-.clear-mode .ms-landscape-btn,
+.clear-mode .ms-prompt-row,
 .clear-mode .ms-tool-menu {
   display: none;
 }
