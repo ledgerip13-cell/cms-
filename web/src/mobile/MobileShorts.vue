@@ -2274,7 +2274,7 @@ onBeforeUnmount(() => {
 .full-mode .ms-progress {
   position: fixed;
   top: auto;
-  bottom: calc(62px + env(safe-area-inset-bottom));
+  bottom: calc(54px + env(safe-area-inset-bottom));
   height: 20px;
   align-items: center;
 }
@@ -2344,17 +2344,17 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(62px + env(safe-area-inset-bottom));
-  padding: 6px 16px calc(6px + env(safe-area-inset-bottom));
+  height: calc(54px + env(safe-area-inset-bottom));
+  padding: 5px 16px calc(5px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 50px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   gap: 12px;
   align-items: center;
   background: #050505;
 }
 .ms-full-bottom button {
   min-width: 0;
-  height: 50px;
+  height: 44px;
   border: 0;
   border-radius: 12px;
   background: #171717;
@@ -2368,6 +2368,11 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 28px rgba(0, 0, 0, .36);
   touch-action: manipulation;
 }
+.ms-full-bottom button:first-child {
+  justify-content: space-between;
+  padding: 0 14px 0 16px;
+  text-align: left;
+}
 .ms-full-bottom button span {
   min-width: 0;
   overflow: hidden;
@@ -2375,7 +2380,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .ms-full-bottom button:last-child {
-  width: 50px;
+  width: 44px;
   border-radius: 12px;
   background: #171717;
   backdrop-filter: none;
