@@ -333,7 +333,7 @@ import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifySuccess, notifyWarning } from '../feedback'
 import { normalizeShortsConfig, readCachedSite, writeCachedSite } from '../siteConfig'
-import { currentUser } from '../userStore'
+import { currentUser, refreshUser } from '../userStore'
 import { icon } from './icons'
 
 const SHORTS_MUTED_KEY = 'vcms.mobile.shorts.muted'
@@ -426,6 +426,7 @@ let playingUnit = null
 let pendingUnmute = false
 let resizeRaf = 0
 let resumeAfterActivate = false
+let resumePlaybackAfterLogin = false
 const unitKeys = new Set()
 const unitVodIds = new Set()
 const resolveCache = new Map()
@@ -1425,6 +1426,7 @@ function showAccessBlock(result) {
 
 function handleAccessAction() {
   if (accessBlock.value?.code === 'login_required') {
+    resumePlaybackAfterLogin = true
     openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: accessBlock.value.title })
     return
   }
@@ -1703,7 +1705,8 @@ function viewerKey() {
   })
 }
 
-async function refreshForViewerChange() {
+async function refreshViewerRuntime(options = {}) {
+  const resumePlayback = Boolean(options?.resumePlayback)
   cancelPendingPlayback({ stop: true })
   accessBlock.value = null
   resolveCache.clear()
@@ -1714,6 +1717,23 @@ async function refreshForViewerChange() {
   await loadShortOptions()
   restoreSavedFilter()
   await reload({ force: true })
+  if (resumePlayback) {
+    await nextTick()
+    if (fullMode.value) scrollToFullCurrent('auto')
+    else scrollTo(activeIndex.value, 'auto')
+    schedulePlay(120)
+    void refreshFollowState()
+  }
+}
+
+async function refreshForViewerChange() {
+  await refreshViewerRuntime()
+}
+
+async function resumePlaybackForLoggedInViewer() {
+  resumePlaybackAfterLogin = false
+  await refreshUser().catch(() => null)
+  await refreshViewerRuntime({ resumePlayback: true })
 }
 
 watch(activeIndex, () => {
@@ -1744,7 +1764,11 @@ watch(episodeDrawerOpen, (open) => {
   if (open && drawerTab.value === 'related' && !relatedItems.value.length) void loadRelated()
 })
 
-watch(viewerKey, () => {
+watch(viewerKey, (next, prev) => {
+  if (resumePlaybackAfterLogin && prev === 'guest' && next !== 'guest') {
+    void resumePlaybackForLoggedInViewer()
+    return
+  }
   void refreshForViewerChange()
 })
 
