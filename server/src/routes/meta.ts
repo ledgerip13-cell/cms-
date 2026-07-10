@@ -45,7 +45,7 @@ function syncYearFromDouban(metaYear = "") {
   return year ? { year } : {};
 }
 
-function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
+function matchedData(r: DoubanMatchResult, status: "matched" | "pending", officialPic = "") {
   const best = r.candidates[0];
   return {
     ...(status === "matched" && r.meta ? {
@@ -53,7 +53,7 @@ function matchedData(r: DoubanMatchResult, status: "matched" | "pending") {
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
       ...syncYearFromDouban(r.meta.year),
-      ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
+      ...(officialPic ? { officialPic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
     } : {}),
@@ -139,11 +139,13 @@ export default async function metaRoutes(app: FastifyInstance) {
       pendingMatchScore: cfg?.pendingMatchScore ?? PENDING_MATCH_SCORE,
     });
     if (r.status === "matched" && r.meta) {
+      const officialPic = await pickOfficialPoster(r.meta, v.pic || v.localPic || "");
       await prisma.vod.update({
         where: { id },
-        data: matchedData(r, "matched"),
+        data: matchedData(r, "matched", officialPic),
       });
       if (syncYearFromDouban(r.meta.year).year) invalidateAggregateCache();
+      if (officialPic) r.meta.pic = officialPic;
       await applyDoubanAssets(id, r.meta);
     } else if (r.status === "pending") {
       await prisma.vod.update({

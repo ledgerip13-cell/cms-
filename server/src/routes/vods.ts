@@ -437,17 +437,26 @@ function seasonNo(name: string) {
 function cleanupRuleWhere(input: any): any {
   const rule = String(input?.rule || "");
   const yWhere = cleanupYearWhere(input);
-  if (rule === "empty_plays") return { rule, where: andWhere({ plays: { none: {} } }, yWhere) };
-  if (rule === "all_dead") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { alive: true } } } }, yWhere) };
-  if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, yWhere) };
+  const categoryWhere = cleanupCategoryWhere(input);
+  const vodScopeWhere = mergeWhere(yWhere, categoryWhere);
+  if (rule === "empty_plays") return { rule, where: andWhere({ plays: { none: {} } }, vodScopeWhere) };
+  if (rule === "all_dead") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { alive: true } } } }, vodScopeWhere) };
+  if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, vodScopeWhere) };
+  if (rule === "category_vods") {
+    if (!categoryWhere) throw new Error("按分类清理必须选择主分类或子分类");
+    return { rule, where: andWhere(categoryWhere, yWhere) };
+  }
+  if (rule === "no_cover") return { rule, where: andWhere({ pic: "", officialPic: "", localPic: "" }, vodScopeWhere) };
+  if (rule === "no_official_pic") return { rule, where: andWhere({ officialPic: "" }, vodScopeWhere) };
+  if (rule === "no_hero_pic") return { rule, where: andWhere({ heroPic: "", images: { none: { isHero: true } } }, vodScopeWhere) };
   if (rule === "offline_old") {
     const days = Math.max(1, Math.min(3650, Number(input?.days) || 30));
-    return { rule, where: andWhere({ status: "offline", updatedAt: { lt: new Date(Date.now() - days * DAY_MS) } }, yWhere) };
+    return { rule, where: andWhere({ status: "offline", updatedAt: { lt: new Date(Date.now() - days * DAY_MS) } }, vodScopeWhere) };
   }
   if (rule === "source_lines") {
     const sourceId = Number(input?.sourceId);
     if (!Number.isInteger(sourceId) || sourceId <= 0) throw new Error("按源清退必须选择采集源");
-    const vodWhere = mergeWhere(yWhere, cleanupCategoryWhere(input));
+    const vodWhere = vodScopeWhere;
     return {
       rule,
       sourceId,
@@ -1212,6 +1221,16 @@ export default async function vodRoutes(app: FastifyInstance) {
     const textFields = new Set(["name", "year", "typeName", "actor", "director", "area", "lang", "remarks", "blurb", "officialIntro", "genres"]);
     for (const f of fields) if (b[f] !== undefined) data[f] = textFields.has(f) ? cleanText(b[f], f === "blurb" || f === "officialIntro" ? 2000 : 0) : b[f];
     if (b.rating !== undefined) data.rating = b.rating === null || b.rating === "" ? null : Number(b.rating);
+    if (b.autoCollectEnabled !== undefined) data.autoCollectEnabled = Boolean(b.autoCollectEnabled);
+    if (b.autoCollectIntervalHours !== undefined) {
+      const hours = Math.max(0, Math.min(24 * 30, Math.floor(Number(b.autoCollectIntervalHours) || 0)));
+      data.autoCollectIntervalHours = hours;
+      data.autoCollectNextAt = Boolean(b.autoCollectEnabled ?? false) && hours > 0
+        ? new Date(Date.now() + hours * 60 * 60 * 1000)
+        : null;
+    }
+    if (b.autoCollectMeta !== undefined) data.autoCollectMeta = Boolean(b.autoCollectMeta);
+    if (b.autoCollectClean !== undefined) data.autoCollectClean = Boolean(b.autoCollectClean);
     if (!data.name || !String(data.name).trim()) {
       // 防空名：名字未传则不改；传了但为空则拒绝
       if (b.name !== undefined) return { error: "片名不能为空" };

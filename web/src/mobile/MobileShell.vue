@@ -79,6 +79,15 @@ function mobileChromeSettings() {
       colorScheme: 'light',
     }
   }
+  if (route.path.startsWith('/m/search') || route.path.startsWith('/m/theater')) {
+    return {
+      themeColor: '#fff4f1',
+      appleStatusBar: 'default',
+      htmlBg: '#fff4f1',
+      bodyBg: '#f7f7f8',
+      colorScheme: 'light',
+    }
+  }
   return {
     themeColor: '#fff4f1',
     appleStatusBar: 'default',

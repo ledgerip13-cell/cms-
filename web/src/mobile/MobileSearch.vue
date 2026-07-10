@@ -332,8 +332,8 @@ onMounted(async () => {
   min-height: 100dvh;
   padding: calc(env(safe-area-inset-top) + 10px) 14px 28px;
   background:
-    radial-gradient(circle at 80% -10%, rgba(255, 112, 78, .14), transparent 34%),
-    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 172px, #f7f7f8 100%);
+    radial-gradient(circle at 80% -10%, rgba(255, 112, 78, .12), transparent 34%),
+    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 180px, #f7f7f8 100%);
   color: #1f232b;
 }
 .msr-head {
@@ -346,7 +346,7 @@ onMounted(async () => {
   grid-template-columns: 36px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(180deg, #fff4f1 0%, rgba(255, 244, 241, .96) 74%, rgba(255, 244, 241, 0) 100%);
+  background: linear-gradient(180deg, #fff4f1 0%, rgba(255, 244, 241, .92) 72%, rgba(255, 244, 241, 0) 100%);
 }
 .msr-back,
 .msr-submit,

@@ -2,7 +2,7 @@
 import { prisma } from "../db.js";
 import { invalidateAggregateCache } from "../aggregateCache.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
-import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
+import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, pickOfficialPoster, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
 import { applyDoubanAssets } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 import { cleanText } from "../textClean.js";
@@ -711,7 +711,7 @@ function syncYearFromDouban(metaYear = "") {
   return year ? { year } : {};
 }
 
-function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
+function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending", officialPic = "") {
   const best = r.candidates[0];
   return {
     ...(status === "matched" && r.meta ? {
@@ -719,7 +719,7 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending") {
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
       ...syncYearFromDouban(r.meta.year),
-      ...(r.meta.pic ? { officialPic: r.meta.pic } : {}),
+      ...(officialPic ? { officialPic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
     } : {}),
@@ -847,11 +847,13 @@ async function runMetaTask(
           pendingMatchScore,
         });
         if (r.status === "matched" && r.meta) {
+          const officialPic = await pickOfficialPoster(r.meta, v.pic || v.localPic || "");
           await prisma.vod.update({
             where: { id: v.id },
-            data: matchedMetaData(r, "matched"),
+            data: matchedMetaData(r, "matched", officialPic),
           });
           if (syncYearFromDouban(r.meta.year).year) invalidateAggregateCache();
+          if (officialPic) r.meta.pic = officialPic;
           await applyDoubanAssets(v.id, r.meta);
           matched++;
         } else if (r.status === "pending") {

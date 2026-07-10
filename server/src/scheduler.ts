@@ -1,7 +1,8 @@
 // 定时调度：按源 cronExpr 自动增量采集 + 周期性线路探活
 import cron from "node-cron";
 import { prisma } from "./db.js";
-import { createCollectTask, createMetaTask } from "./collector/taskRunner.js";
+import { createCollectTask, createHlsCleanTask, createMetaTask } from "./collector/taskRunner.js";
+import { refreshVod } from "./collector/sync.js";
 import { probeBatch } from "./collector/probe.js";
 import { parseAutoTypeIds } from "./sourceAutoTypes.js";
 
@@ -63,6 +64,57 @@ export async function reloadSchedules() {
 }
 
 let probing = false;
+let vodAutoCollecting = false;
+
+async function runVodAutoCollectDue() {
+  if (vodAutoCollecting) return;
+  vodAutoCollecting = true;
+  const now = new Date();
+  try {
+    const rows = await prisma.vod.findMany({
+      where: {
+        autoCollectEnabled: true,
+        autoCollectIntervalHours: { gt: 0 },
+        OR: [
+          { autoCollectNextAt: null },
+          { autoCollectNextAt: { lte: now } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        autoCollectIntervalHours: true,
+        autoCollectMeta: true,
+        autoCollectClean: true,
+      },
+      orderBy: [{ autoCollectNextAt: "asc" }, { id: "asc" }],
+      take: 20,
+    });
+    for (const vod of rows) {
+      const intervalHours = Math.max(1, Math.min(24 * 30, Number(vod.autoCollectIntervalHours) || 24));
+      const nextAt = new Date(Date.now() + intervalHours * 60 * 60 * 1000);
+      try {
+        await prisma.vod.update({
+          where: { id: vod.id },
+          data: { autoCollectLastAt: now, autoCollectNextAt: nextAt },
+        });
+        await refreshVod(vod.id);
+        if (vod.autoCollectMeta) await createMetaTask({ vodIds: [vod.id], limit: 1, redo: true, priority: 70 });
+        if (vod.autoCollectClean) await createHlsCleanTask({ vodId: vod.id, episodeMode: "first", limit: 20, priority: 90 });
+        console.log(`[vod-auto] 已刷新影片#${vod.id} ${vod.name}，下次 ${nextAt.toISOString()}`);
+      } catch (e: any) {
+        console.error(`[vod-auto] 影片#${vod.id} 刷新失败:`, e?.message || e);
+        await prisma.vod.update({
+          where: { id: vod.id },
+          data: { autoCollectNextAt: nextAt },
+        }).catch(() => {});
+      }
+    }
+  } finally {
+    vodAutoCollecting = false;
+  }
+}
+
 export function startScheduler() {
   reloadSchedules();
   reloadMetaSchedule();
@@ -79,5 +131,12 @@ export function startScheduler() {
       probing = false;
     }
   });
-  console.log("[scheduler] 调度器已启动（自动采集 + 20min探活）");
+  cron.schedule("*/10 * * * *", async () => {
+    try {
+      await runVodAutoCollectDue();
+    } catch (e: any) {
+      console.error("[vod-auto] 扫描失败:", e?.message || e);
+    }
+  });
+  console.log("[scheduler] 调度器已启动（自动采集 + 单片周期采集 + 20min探活）");
 }

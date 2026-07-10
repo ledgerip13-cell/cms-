@@ -325,6 +325,13 @@ model Vod {
   matchedTitle  String         @default("") // 实际命中的豆瓣标题
   matchedYear   String         @default("") // 实际命中的豆瓣年份
   metaAt        DateTime? // 元数据抓取时间
+  // 单片自动采集：按影片自身周期重拉现有片源详情，刷新剧集/状态
+  autoCollectEnabled       Boolean   @default(false)
+  autoCollectIntervalHours Int       @default(0)
+  autoCollectNextAt        DateTime?
+  autoCollectLastAt        DateTime?
+  autoCollectMeta          Boolean   @default(true)
+  autoCollectClean         Boolean   @default(false)
   plays         Play[]
   aliases       VodAlias[]
   people        VodPerson[]
@@ -347,6 +354,7 @@ model Vod {
   @@index([status, typeName, ratingCount, rating, updatedAt, id])
   @@index([status, typeName, rating, ratingCount, updatedAt, id])
   @@index([status, typeName, year, updatedAt, id])
+  @@index([autoCollectEnabled, autoCollectNextAt])
 }
 
 // 手动合并后的去重别名：采集遇到旧指纹时继续归并到主影片

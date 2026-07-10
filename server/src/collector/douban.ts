@@ -40,7 +40,7 @@ export interface DoubanPerson {
 
 export interface DoubanImage {
   url: string;
-  type: "poster" | "backdrop" | "still";
+  type: "poster" | "backdrop";
   width: number;
   height: number;
   score: number;
@@ -123,21 +123,22 @@ function normalizePeople(...values: any[]) {
   return people;
 }
 
-function normalizeImage(value: any, fallbackType: DoubanImage["type"] = "still"): DoubanImage | null {
+function normalizeImage(value: any, fallbackType: DoubanImage["type"] = "backdrop"): DoubanImage | null {
   const url = picFromValue(value);
   if (!url) return null;
   const rawType = String(value?.type || value?.kind || "").toLowerCase();
   const type: DoubanImage["type"] = /poster|cover|海报/.test(rawType)
     ? "poster"
-    : /backdrop|background|横|剧照/.test(rawType)
-      ? "backdrop"
-      : fallbackType;
+    : fallbackType;
   const image = value?.image || {};
   const size = image?.large || image?.normal || image?.small || value?.large || value?.normal || value?.small || {};
   const width = Number(value?.width || value?.w || size?.width || 0) || 0;
   const height = Number(value?.height || value?.h || size?.height || 0) || 0;
-  const score = type === "poster" ? 70 : width > height ? 95 : 82;
-  return { url, type, width, height, score };
+  const inferredType = type === "poster" || (height && width && height > width * 1.15) ? "poster" : "backdrop";
+  const score = inferredType === "poster"
+    ? (height > width ? 88 : 68)
+    : (width > height ? 96 : 76);
+  return { url, type: inferredType, width, height, score };
 }
 
 function normalizeImages(d: any, poster: string) {
@@ -294,19 +295,37 @@ export async function pickOfficialPoster(meta: DoubanMeta, sourcePic = "", extra
   const best = probed[0];
 
   const sourceRows = uniq([sourcePic, ...posterCandidates(sourcePic)]);
-  const sourceProbe = sourceRows.length ? await probeImage(sourceRows[0]) : null;
-  if (sourceProbe?.ok && best.area < sourceProbe.area) return "";
+  const sourceProbed: Awaited<ReturnType<typeof probeImage>>[] = [];
+  for (const url of sourceRows) {
+    const row = await probeImage(url);
+    if (row.ok) sourceProbed.push(row);
+  }
+  sourceProbed.sort((a, b) => (b.area - a.area) || (b.quality - a.quality));
+  const sourceBest = sourceProbed[0];
+  if (sourceBest?.ok && best.area < sourceBest.area) return "";
   return best.url;
 }
 
 async function doubanPhotos(id: string, kind: string): Promise<any[]> {
-  try {
-    const url = `https://m.douban.com/rexxar/api/v2/${kind}/${id}/photos?type=S&start=0&count=12&ck=&for_mobile=1`;
-    const d = await getJson(url, UA_M, `https://m.douban.com/movie/subject/${id}/`);
-    return Array.isArray(d?.photos) ? d.photos : [];
-  } catch {
-    return [];
+  const out: any[] = [];
+  const seen = new Set<string>();
+  for (const type of ["R", "S", ""]) {
+    try {
+      const typeParam = type ? `type=${type}&` : "";
+      const url = `https://m.douban.com/rexxar/api/v2/${kind}/${id}/photos?${typeParam}start=0&count=24&ck=&for_mobile=1`;
+      const d = await getJson(url, UA_M, `https://m.douban.com/movie/subject/${id}/`);
+      const rows = Array.isArray(d?.photos) ? d.photos : [];
+      for (const row of rows) {
+        const photoUrl = picFromValue(row);
+        if (!photoUrl || seen.has(photoUrl)) continue;
+        seen.add(photoUrl);
+        out.push({ ...row, type: type === "R" ? "poster" : row?.type });
+      }
+    } catch {
+      // 继续尝试其他图片类型
+    }
   }
+  return out;
 }
 
 // 搜索候选

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-10 07:45 (GMT+8)｜**对应提交**：本提交（豆瓣匹配置信分与年份同步）
+> **最后更新**：2026-07-10 09:35 (GMT+8)｜**对应提交**：本提交（豆瓣图片策略、单片周期采集、清理维度、移动顶部色）
 
 ---
 
@@ -167,7 +167,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
-**代码状态**：`git` 工作树干净 ✅｜本提交：`fix: prefer douban search subjects api`
+**代码状态**：`git` 工作树干净 ✅｜本提交：`feat: improve douban assets and vod maintenance`
 **运行状态**：4 容器全在线（postgres healthy / server·web·admin 已按最近提交重建）
 
 ### 🟢 100% 已完成
@@ -178,8 +178,9 @@ docker compose up -d --build
 - **观众前端**：PC 端（Home/Play/Shorts/Auth/Profile）+ 移动端模板（Shell/Home/Search/Shorts/Theater/Me）。
 
 ### 🟡 正在进行
-- **豆瓣元数据匹配**：豆瓣封面已做高清探针；`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存；候选搜索优先使用可用的 `movie.douban.com/j/search_subjects` JSON API，移动 rexxar 返回 `need_login` 或候选仍为空时再走网页 subject id 兜底，避免全量 `no_suggest`。
-- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；`/m` 首页 Hero 已由单条推荐升级为多条轮播，沿用原大卡样式，支持手势/点位/自动轮播，过渡改为纯淡入淡出。
+- **豆瓣元数据匹配**：豆瓣图片只落两类资产：竖版海报(`poster`/`officialPic`)与横图(`backdrop`/Hero)。匹配写库前会从详情图和 `photos` 接口候选中探测尺寸，跳过 `s_ratio_poster`，最少使用 `m_ratio_poster`，优先更大图；若豆瓣候选清晰度/面积低于原采集源封面，则不覆盖 `officialPic`。`autoMatchScore` 达标即自动写入；后台即时/筛选提交会显式带当前置信分；匹配/人工确认后同步影片 `year`，以豆瓣年份为准并清聚合缓存。
+- **移动端模板收口**：`/m/me` 已替换占位，展示登录/会员权益/观看历史/追剧/推荐；后台 `站点设置 -> 首页设置 -> 移动端模板` 已恢复 `homeConfig.mobileTemplate` 开关；开启 `shortDrama` 后，移动端访问旧首页/搜索/分类会映射到 `/m`、`/m/search`、`/m/theater`；`/m` 首页 Hero 已由单条推荐升级为多条轮播，沿用原大卡样式，支持手势/点位/自动轮播，过渡改为纯淡入淡出；`/m/search` 顶部浏览器颜色与剧场页背景统一。
+- **影片维护能力**：后台影片详情可设置单片自动采集周期（小时级），调度器每 10 分钟扫描到期影片并重拉现有片源详情，可选同步豆瓣与提交 HLS 清洗；影片清理支持按分类/子分类叠加年份过滤，并新增按分类删除、无封面、无豆瓣封面、无横图/Hero 图等规则。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

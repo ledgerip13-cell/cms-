@@ -175,6 +175,13 @@
             <b>置信:</b> {{ cur.metaScore || 0 }}<span v-if="cur.matchedTitle"> · {{ cur.matchedTitle }} {{ cur.matchedYear ? '(' + cur.matchedYear + ')' : '' }}</span>
           </p>
           <p v-if="cur.genres"><b>豆瓣类型:</b> {{ cur.genres }}</p>
+          <p>
+            <b>自动采集:</b>
+            <el-tag size="small" :type="cur.autoCollectEnabled ? 'success' : 'info'">
+              {{ cur.autoCollectEnabled ? `${cur.autoCollectIntervalHours || 0} 小时/次` : '关闭' }}
+            </el-tag>
+            <span v-if="cur.autoCollectNextAt" class="muted"> 下次 {{ formatDate(cur.autoCollectNextAt) }}</span>
+          </p>
         </div>
       </div>
       <div v-if="pendingCandidates(cur).length" class="meta-candidates">
@@ -297,6 +304,18 @@
           <template #append><el-image v-if="editForm.heroPic" :src="imgUrl(editForm.heroPic)" style="width:48px;height:28px" fit="cover" /></template>
         </el-input>
       </el-form-item>
+      <el-divider content-position="left">自动采集</el-divider>
+      <el-form-item label="周期采集">
+        <el-switch v-model="editForm.autoCollectEnabled" active-text="开启" inactive-text="关闭" />
+      </el-form-item>
+      <el-form-item v-if="editForm.autoCollectEnabled" label="采集周期">
+        <div class="auto-collect-row">
+          <el-input-number v-model="editForm.autoCollectIntervalHours" :min="1" :max="720" controls-position="right" />
+          <span class="muted">小时/次</span>
+          <el-checkbox v-model="editForm.autoCollectMeta">同步豆瓣</el-checkbox>
+          <el-checkbox v-model="editForm.autoCollectClean">提交HLS清洗</el-checkbox>
+        </div>
+      </el-form-item>
       <el-form-item label="简介"><el-input v-model="editForm.blurb" type="textarea" :rows="3" /></el-form-item>
     </el-form>
     <template #footer>
@@ -314,6 +333,10 @@
           <el-option label="只剩禁用源线路" value="disabled_source_only" />
           <el-option label="下架超过 N 天" value="offline_old" />
           <el-option label="按源清退线路" value="source_lines" />
+          <el-option label="按分类/子分类删除影片" value="category_vods" />
+          <el-option label="无任何封面" value="no_cover" />
+          <el-option label="无豆瓣封面" value="no_official_pic" />
+          <el-option label="无横图/Hero图" value="no_hero_pic" />
         </el-select>
       </el-form-item>
       <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="采集源">
@@ -321,12 +344,12 @@
           <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="主分类">
+      <el-form-item label="主分类">
         <el-select v-model="cleanupForm.categoryName" clearable filterable placeholder="全部主分类" style="width:260px" @change="onCleanupCategoryChange">
           <el-option v-for="t in types" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="cleanupForm.rule === 'source_lines'" label="子分类">
+      <el-form-item label="子分类">
         <el-select v-model="cleanupForm.subType" clearable filterable
           :disabled="!cleanupForm.categoryName"
           :loading="cleanupSubtypesLoading"
@@ -671,6 +694,10 @@ function openEdit(row) {
     id: row.id, name: row.name, year: row.year, typeName: row.typeName,
     area: row.area, lang: row.lang, actor: row.actor, director: row.director,
     remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, heroPic: row.heroPic, blurb: row.blurb,
+    autoCollectEnabled: Boolean(row.autoCollectEnabled),
+    autoCollectIntervalHours: row.autoCollectIntervalHours || 24,
+    autoCollectMeta: row.autoCollectMeta !== false,
+    autoCollectClean: Boolean(row.autoCollectClean),
   }
   editDlg.value = true
 }
@@ -770,6 +797,10 @@ async function diagnoseEp(line, ep, visibleIndex, fresh = false) {
 function openUrl(url) {
   if (!url) return
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+function formatDate(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleString()
 }
 async function matchOne(id) {
   ElMessage.info('正在匹配豆瓣…')
@@ -886,6 +917,8 @@ watch(() => route.query.kw, (kw) => {
 .kw-post-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .kw-post-actions :deep(.el-checkbox) { margin-right: 0; }
 .year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.auto-collect-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.auto-collect-row :deep(.el-checkbox) { margin-right: 0; }
 .muted { color: #9aa4b2; font-size: 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }
