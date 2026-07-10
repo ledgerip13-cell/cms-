@@ -83,7 +83,7 @@
           <el-select v-model="q.status" style="width:130px" @change="applyRows">
             <el-option label="待确认" value="pending" />
             <el-option label="待匹配" value="none" />
-            <el-option label="失败/无收录" value="failed" />
+            <el-option label="失败/无候选" value="failed" />
             <el-option label="已匹配" value="matched" />
             <el-option label="全部" value="all" />
           </el-select>
@@ -102,7 +102,7 @@
         <el-table-column prop="name" label="片名" min-width="180" />
         <el-table-column prop="typeName" label="分类" width="110" />
         <el-table-column label="状态" width="110">
-          <template #default="{ row }"><el-tag size="small" :type="metaType(row.metaMatched)">{{ metaLabel(row.metaMatched) }}</el-tag></template>
+          <template #default="{ row }"><el-tag size="small" :type="metaType(row.metaMatched)">{{ metaLabel(row) }}</el-tag></template>
         </el-table-column>
         <el-table-column label="命中" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ row.matchedTitle || '—' }} {{ row.matchedYear ? '(' + row.matchedYear + ')' : '' }}</template>
@@ -168,13 +168,22 @@ const statCards = [
   { k:'total', label:'影片总数', color:'#1a1f2b' },
   { k:'matched', label:'已匹配', color:'#16a34a' },
   { k:'pending', label:'待确认', color:'#e6a23c' },
-  { k:'failed', label:'无收录', color:'#98a1b0' },
+  { k:'failed', label:'失败/无候选', color:'#98a1b0' },
   { k:'none', label:'待匹配', color:'#4f6ef7' },
 ]
 const matchRate = computed(() => stat.value.total ? Math.round((stat.value.matched / stat.value.total) * 100) : 0)
 
 const fmt = (v) => v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '—'
-const metaLabel = (s) => ({ none:'待匹配', matched:'已匹配', manual:'人工确认', pending:'待确认', failed:'失败/无收录', skip:'跳过' }[s] || s)
+const metaLabel = (rowOrStatus) => {
+  const s = typeof rowOrStatus === 'string' ? rowOrStatus : rowOrStatus?.metaMatched
+  if (s === 'failed' && typeof rowOrStatus === 'object') {
+    const reasons = parseReason(rowOrStatus).reasons || []
+    if (reasons.includes('no_suggest')) return '搜索无候选'
+    if (reasons.includes('detail_failed')) return '详情获取失败'
+    return Number(rowOrStatus?.metaScore || 0) > 0 ? '低置信' : '无收录'
+  }
+  return ({ none:'待匹配', matched:'已匹配', manual:'人工确认', pending:'待确认', failed:'失败/无候选', skip:'跳过' }[s] || s)
+}
 const metaType = (s) => ({ matched:'success', manual:'success', pending:'warning', failed:'info', none:'primary' }[s] || 'info')
 const reasonMap = {
   manual: '人工确认',

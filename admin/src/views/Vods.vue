@@ -114,7 +114,7 @@
         <template #default="{ row }">
           <span v-if="row.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ row.rating }}</span>
           <el-tag v-else-if="row.metaMatched==='pending'" size="small" type="warning">待确认 {{ row.metaScore || '' }}</el-tag>
-          <el-tag v-else-if="row.metaMatched==='failed'" size="small" type="info">无收录</el-tag>
+          <el-tag v-else-if="row.metaMatched==='failed'" size="small" type="info">{{ failedMetaLabel(row) }}</el-tag>
           <span v-else style="color:#c0c4cc">—</span>
         </template>
       </el-table-column>
@@ -166,7 +166,7 @@
             <b>豆瓣:</b>
             <span v-if="cur.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ cur.rating }}</span>
             <el-tag v-else-if="cur.metaMatched==='pending'" size="small" type="warning">待确认 {{ cur.metaScore || '' }}</el-tag>
-            <span v-else style="color:#9aa4b2">{{ cur.metaMatched==='failed'?'无收录':'未匹配' }}</span>
+            <span v-else style="color:#9aa4b2">{{ cur.metaMatched==='failed' ? failedMetaLabel(cur) : '未匹配' }}</span>
             <el-button size="small" text type="primary" @click="matchOne(cur.id)">
               {{ cur.rating ? '重新匹配' : '匹配豆瓣' }}
             </el-button>
@@ -871,12 +871,18 @@ async function matchOne(id) {
     const r = await api.metaMatch(id)
     if (r.status === 'matched') ElMessage.success(`匹配成功，置信 ${r.score}`)
     else if (r.status === 'pending') ElMessage.warning(`低置信候选，已转待确认（${r.score}分）`)
-    else ElMessage.warning('豆瓣未收录或置信过低')
+    else ElMessage.warning(failedMetaLabel({ metaReason: JSON.stringify(r), metaScore: r.score }))
     cur.value = await api.vod(id); load(); loadMeta()
   } catch (e) { ElMessage.error(e.message) }
 }
 function parseMetaReason(row) {
   try { return JSON.parse(row?.metaReason || '{}') } catch { return {} }
+}
+function failedMetaLabel(row) {
+  const reasons = parseMetaReason(row).reasons || []
+  if (reasons.includes('no_suggest')) return '搜索无候选'
+  if (reasons.includes('detail_failed')) return '详情获取失败'
+  return Number(row?.metaScore || 0) > 0 ? '低置信' : '无收录'
 }
 const reasonMap = {
   manual: '人工确认',
