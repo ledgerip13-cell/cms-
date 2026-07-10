@@ -32,10 +32,12 @@
 
         <div v-if="isActiveDisplay(index)" class="ms-top" :class="{ full: fullMode }">
           <template v-if="fullMode">
-            <button type="button" aria-label="返回刷剧" @click="exitFullContent">
-              <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
-            </button>
-            <span class="ms-episode-title">{{ unit.epName || `第${unit.epIndex + 1}集` }}</span>
+            <div class="ms-top-left">
+              <button type="button" aria-label="返回刷剧" @click="exitFullContent">
+                <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
+              </button>
+              <span class="ms-episode-title">{{ unit.epName || `第${unit.epIndex + 1}集` }}</span>
+            </div>
             <div class="ms-top-right">
               <button type="button" aria-label="搜索" @click="goSearch">
                 <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
@@ -1847,14 +1849,21 @@ onBeforeUnmount(() => {
   justify-content: space-between;
 }
 .ms-top.full {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ms-top.full .ms-top-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .ms-top.full .ms-top-right {
   display: flex;
-  gap: 8px;
+  flex: 0 0 auto;
+  gap: 10px;
 }
 .ms-episode-title {
   min-width: 0;
