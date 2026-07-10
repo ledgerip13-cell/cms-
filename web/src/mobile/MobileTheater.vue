@@ -159,6 +159,7 @@ const subtype = computed(() => String(route.query.sub || ''))
 const sort = computed(() => String(route.query.sort || 'recent'))
 const year = computed(() => String(route.query.year || ''))
 const kw = computed(() => String(route.query.kw || ''))
+const defaultAllList = computed(() => !type.value && !subtype.value && !year.value && !kw.value)
 const topSubtypes = computed(() => subtypes.value.slice(0, 8))
 const rankTitle = computed(() => type.value ? `${type.value}热播榜` : '全站热播榜')
 const listTitle = computed(() => {
@@ -253,7 +254,7 @@ function goPlay(id) {
 function vodParams(extra = {}) {
   return cleanQuery({
     page: page.value,
-    size: 24,
+    size: defaultAllList.value ? 3 : 24,
     type: kw.value ? '' : type.value,
     sub: kw.value ? '' : subtype.value,
     kw: kw.value,
@@ -687,7 +688,7 @@ onMounted(async () => {
   position: fixed;
   z-index: 80;
   inset: 0;
-  background: rgba(0, 0, 0, .28);
+  background: transparent;
 }
 .mt-filter {
   position: fixed;

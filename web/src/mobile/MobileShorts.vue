@@ -1905,6 +1905,11 @@ onBeforeUnmount(() => {
     linear-gradient(90deg, rgba(0,0,0,.18), transparent 48%, rgba(0,0,0,.2));
   pointer-events: none;
 }
+.full-mode .ms-vignette {
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.14), transparent 22%, transparent 62%, rgba(0,0,0,.58)),
+    linear-gradient(90deg, rgba(0,0,0,.12), transparent 48%, rgba(0,0,0,.14));
+}
 .ms-top {
   position: fixed;
   z-index: 58;
@@ -1919,6 +1924,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,.34));
 }
 .ms-top.full .ms-top-left {
   min-width: 0;
@@ -1937,7 +1943,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
   line-height: 1.2;
   font-weight: 900;
-  text-shadow: 0 2px 12px rgba(0,0,0,.62);
+  text-shadow: 0 2px 8px rgba(0,0,0,.34);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
