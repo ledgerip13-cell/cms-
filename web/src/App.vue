@@ -205,11 +205,17 @@ function goProfileSection(section) {
 function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
 function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
 function openLogin() { openAuthDialog({ mode: 'login', redirect: route.fullPath }) }
-function isMobileViewport() {
-  return window.matchMedia?.('(max-width: 860px), (pointer: coarse)')?.matches || window.innerWidth <= 860
+function isPhoneDevice() {
+  const ua = navigator.userAgent || ''
+  const platform = navigator.platform || ''
+  const touchPoints = navigator.maxTouchPoints || 0
+  const isIpad = /iPad/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1)
+  const isTablet = /Tablet|PlayBook|Silk/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua))
+  if (isIpad || isTablet) return false
+  return /iPhone|iPod|Windows Phone|Android.*Mobile|Mobile.*Android/i.test(ua)
 }
 function mobileTemplateTarget() {
-  if (!mobileTemplateEnabled.value || isMobileTemplateRoute.value || !isMobileViewport()) return null
+  if (!mobileTemplateEnabled.value || isMobileTemplateRoute.value || !isPhoneDevice()) return null
   if (route.path !== '/') return null
   const kw = String(route.query.kw || '').trim()
   if (kw) return { path: '/m/search', query: { kw } }
