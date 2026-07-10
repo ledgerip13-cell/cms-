@@ -123,8 +123,11 @@ function validateForm() {
   }
   if (authDialog.mode === 'register' && cfg.value && !cfg.value.allowRegister) return '当前站点暂未开放注册'
   if (!form.username) add('username', '请输入账号')
-  if (authDialog.mode === 'register' && form.username && !/^[A-Za-z0-9_]{3,32}$/.test(form.username)) {
-    add('username', '账号需为3-32位字母、数字或下划线')
+  if (authDialog.mode === 'register' && form.username && !/^[A-Za-z0-9_]{4,32}$/.test(form.username)) {
+    add('username', '账号需为4-32位字母、数字或下划线')
+  }
+  if (authDialog.mode === 'register' && form.username && /^\d+$/.test(form.username)) {
+    add('username', '账号不能为纯数字')
   }
   if (form.nickname.length > 32) add('nickname', '昵称最多32个字符')
   if (!form.password) add('password', '请输入密码')

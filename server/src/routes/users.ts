@@ -94,8 +94,9 @@ function adminUser(u: {
 }
 
 async function consumeInviteCode(code: string, userId: number) {
-  if (!code) return false;
-  const invite = await prisma.inviteCode.findUnique({ where: { code } });
+  const normalized = String(code || "").trim();
+  if (!normalized) return false;
+  const invite = await prisma.inviteCode.findFirst({ where: { code: { equals: normalized, mode: "insensitive" } } });
   const now = new Date();
   if (!invite || !invite.enabled) return false;
   if (invite.expiresAt && invite.expiresAt <= now) return false;
@@ -252,8 +253,11 @@ export default async function userRoutes(app: FastifyInstance) {
     const password = String(b.password || "");
     const nickname = String(b.nickname || username).trim().slice(0, 32);
     const inviteCode = String(b.inviteCode || "").trim();
-    if (!/^[A-Za-z0-9_]{3,32}$/.test(username)) {
-      return reply.code(400).send({ error: "账号需为3-32位字母、数字或下划线" });
+    if (!/^[A-Za-z0-9_]{4,32}$/.test(username)) {
+      return reply.code(400).send({ error: "账号需为4-32位字母、数字或下划线" });
+    }
+    if (/^\d+$/.test(username)) {
+      return reply.code(400).send({ error: "账号不能为纯数字" });
     }
     if (password.length < 6) return reply.code(400).send({ error: "密码至少6位" });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
