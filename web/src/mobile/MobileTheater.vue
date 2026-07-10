@@ -778,7 +778,7 @@ onMounted(async () => {
   border-radius: 22px 22px 0 0;
   background: #fff;
   transform: translateY(108%);
-  transition: transform .22s ease;
+  transition: transform .16s ease;
   overflow-y: auto;
   box-shadow: 0 -18px 48px rgba(17, 24, 39, .18);
 }

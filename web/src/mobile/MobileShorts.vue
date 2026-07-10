@@ -2661,7 +2661,7 @@ onBeforeUnmount(() => {
 }
 .ms-fade-enter-active,
 .ms-fade-leave-active {
-  transition: opacity .18s ease;
+  transition: opacity .12s ease;
 }
 .ms-fade-enter-from,
 .ms-fade-leave-to {
@@ -2669,7 +2669,7 @@ onBeforeUnmount(() => {
 }
 .ms-bottom-sheet-enter-active,
 .ms-bottom-sheet-leave-active {
-  transition: transform .24s cubic-bezier(.2, .7, .2, 1);
+  transition: transform .16s cubic-bezier(.2, .7, .2, 1);
 }
 .ms-bottom-sheet-enter-from,
 .ms-bottom-sheet-leave-to {

@@ -444,12 +444,12 @@ onBeforeUnmount(unlockPageScroll)
 .auth-submit { height: 44px; margin-top: 2px; border: 0; border-radius: 11px; background: var(--btn-primary-bg);
   background-clip: border-box; box-shadow: none; color: var(--btn-primary-text); cursor: pointer; font-size: 15px; font-weight: 900; }
 .auth-submit:disabled { opacity: .58; cursor: not-allowed; }
-.auth-fade-enter-active, .auth-fade-leave-active { transition: opacity .2s ease; }
+.auth-fade-enter-active, .auth-fade-leave-active { transition: opacity .12s ease; }
 .auth-fade-enter-from, .auth-fade-leave-to { opacity: 0; }
 .auth-fade-enter-active .auth-modal,
-.auth-fade-leave-active .auth-modal { transition: transform .22s cubic-bezier(.2,.7,.2,1), opacity .22s ease; }
+.auth-fade-leave-active .auth-modal { transition: transform .16s cubic-bezier(.2,.7,.2,1), opacity .16s ease; }
 .auth-fade-enter-from .auth-modal,
-.auth-fade-leave-to .auth-modal { opacity: 0; transform: translateY(16px) scale(.98); }
+.auth-fade-leave-to .auth-modal { opacity: 0; transform: translateY(10px) scale(.985); }
 @media (max-width: 640px) {
   .auth-overlay { padding: 14px; align-items: flex-end; }
   .auth-wall { grid-template-columns: repeat(6, minmax(70px, 1fr)); grid-auto-rows: 118px; gap: 8px; inset: -6vh -24vw;

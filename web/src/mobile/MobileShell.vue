@@ -8,7 +8,7 @@
     }"
   >
     <router-view v-slot="{ Component, route: viewRoute }">
-      <transition name="m-page" mode="out-in">
+      <transition name="m-page">
         <keep-alive :max="4">
           <component :is="Component" :key="viewRoute.path" />
         </keep-alive>
@@ -164,15 +164,15 @@ onBeforeUnmount(restoreChrome)
 }
 .m-page-enter-active,
 .m-page-leave-active {
-  transition: opacity .2s ease, transform .2s ease;
+  transition: opacity .12s ease, transform .12s ease;
 }
 .m-page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(5px);
 }
 .m-page-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-2px);
 }
 .shorts-shell .m-page-enter-from,
 .shorts-shell .m-page-leave-to {
