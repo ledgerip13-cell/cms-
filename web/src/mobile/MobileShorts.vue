@@ -2170,6 +2170,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 9;
   left: 16px;
+  text-shadow: 0 0 4px #000;
   right: 78px;
   bottom: calc(116px + env(safe-area-inset-bottom));
 }
