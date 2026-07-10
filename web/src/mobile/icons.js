@@ -24,6 +24,7 @@ const icons = {
   back: '<path d="M15 18 9 12l6-6"/>',
   more: '<path d="M12 6h.01M12 12h.01M12 18h.01"/>',
   clean: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
+  wander: '<path d="M4 7h7a4 4 0 0 1 4 4v6"/><path d="m12 14 3 3 3-3"/><path d="M20 7h-4"/><path d="M8 17H4"/>',
   cast: '<path d="M4 7V5h16v14h-5"/><path d="M4 15a4 4 0 0 1 4 4M4 19h.01M4 11a8 8 0 0 1 8 8"/>',
   speed: '<path d="M4 14a8 8 0 1 1 16 0"/><path d="m12 14 4-4"/><path d="M12 14h.01"/>',
   pip: '<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1"/>',

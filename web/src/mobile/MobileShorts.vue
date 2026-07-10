@@ -131,10 +131,9 @@
             <span v-if="unit.vod.remarks">{{ unit.vod.remarks }}</span>
           </div>
           <p>{{ unit.epName }} · {{ intro(unit) }}</p>
-          <button v-if="!fullMode" type="button" @click="openFullContent(unit)">观看完整内容 · 全{{ unit.total || 1 }}集</button>
         </div>
 
-        <div v-if="isActiveDisplay(index) && playUrl && !accessBlock" class="ms-progress" :class="{ active: seeking }">
+        <div v-if="isActiveDisplay(index) && fullMode && playUrl && !accessBlock" class="ms-progress" :class="{ active: seeking }">
           <input
             type="range"
             min="0"
@@ -172,13 +171,41 @@
       </template>
     </section>
 
+    <div v-if="!fullMode && activeUnit && !clearScreen && !accessBlock" class="ms-roam-bottom">
+      <div class="ms-roam-card">
+        <button type="button" class="ms-roam-open" @click="openFullContent(activeUnit)">
+          <span class="ms-roam-icon"><svg viewBox="0 0 24 24" v-html="icon('play')"></svg></span>
+          <strong>观看完整短剧 · 全{{ activeUnit.total || 1 }}集</strong>
+          <svg class="ms-roam-arrow" viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
+        </button>
+        <input
+          v-if="playUrl"
+          type="range"
+          min="0"
+          max="1000"
+          step="1"
+          :value="seekValue"
+          :style="{ '--progress': `${progressPercent}%` }"
+          aria-label="播放进度"
+          @pointerdown.stop.prevent="startSeek"
+          @pointermove.stop.prevent="moveSeek"
+          @pointerup.stop="commitSeek"
+          @pointercancel.stop="cancelSeek"
+          @touchstart.stop.prevent="startSeek"
+          @touchmove.stop.prevent="moveSeek"
+          @touchend.stop.prevent="commitSeek"
+          @click.stop
+        />
+      </div>
+    </div>
+
     <div v-if="fullMode && activeUnit && !clearScreen" class="ms-full-bottom">
       <button type="button" @click="openEpisodeDrawer">
-        选集 · 全{{ activeUnit.total || 1 }}集
+        <span>选集 · 全{{ activeUnit.total || 1 }}集 · 免费观看</span>
         <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
       </button>
-      <button type="button" aria-label="清屏观看" @click="toggleClearScreen">
-        <svg viewBox="0 0 24 24" v-html="icon('clean')"></svg>
+      <button type="button" aria-label="返回漫游" @click="exitFullContent">
+        <svg viewBox="0 0 24 24" v-html="icon('wander')"></svg>
       </button>
     </div>
     <button v-if="fullMode && clearScreen" class="ms-clear-exit" type="button" @click="toggleClearScreen">退出清屏</button>
@@ -191,21 +218,27 @@
           <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
         </button>
       </div>
+      <div v-if="selectedFilterTags.length" class="ms-filter-tags">
+        <button v-for="tag in selectedFilterTags" :key="tag.key" type="button" @click="removeFilterTag(tag)">
+          {{ tag.label }}
+          <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
+        </button>
+      </div>
       <div class="ms-filter-group">
         <label>内容范围</label>
         <div>
-          <button type="button" :class="{ on: !selectedType }" @click="pickType('')">全部</button>
-          <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: selectedType === cat.name }" @click="pickType(cat.name)">
+          <button type="button" :class="{ on: !selectedTypes.length }" @click="clearTypes">全部</button>
+          <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: selectedTypes.includes(cat.name) }" @click="toggleType(cat.name)">
             {{ cat.name }}
           </button>
         </div>
       </div>
-      <div v-if="subtypes.length" class="ms-filter-group">
+      <div v-if="availableSubtypes.length" class="ms-filter-group">
         <label>细分类</label>
         <div>
-          <button type="button" :class="{ on: !selectedSubtype }" @click="selectedSubtype = ''">全部</button>
-          <button v-for="sub in subtypes.slice(0, 18)" :key="sub.name" type="button" :class="{ on: selectedSubtype === sub.name }" @click="selectedSubtype = sub.name">
-            {{ sub.name }}
+          <button type="button" :class="{ on: !selectedSubtypeKeys.length }" @click="selectedSubtypeKeys = []">全部</button>
+          <button v-for="sub in availableSubtypes.slice(0, 36)" :key="sub.key" type="button" :class="{ on: selectedSubtypeKeys.includes(sub.key) }" @click="toggleSubtype(sub)">
+            {{ sub.name }}<small v-if="selectedTypes.length > 1">{{ sub.type }}</small>
           </button>
         </div>
       </div>
@@ -335,7 +368,6 @@ const videoEl = ref(null)
 const site = ref(readCachedSite())
 const categories = ref([])
 const shortOptions = ref({ types: [], subtypes: {} })
-const subtypes = ref([])
 const units = ref([])
 const activeIndex = ref(0)
 const loading = ref(true)
@@ -359,8 +391,8 @@ const seekValue = ref(0)
 const seeking = ref(false)
 const followed = ref(false)
 const liked = ref(false)
-const selectedType = ref('')
-const selectedSubtype = ref('')
+const selectedTypes = ref([])
+const selectedSubtypeKeys = ref([])
 const sortMode = ref('smart')
 const episodeDrawerOpen = ref(false)
 const drawerTab = ref('intro')
@@ -442,6 +474,29 @@ const episodeRanges = computed(() => {
 })
 const activeRange = computed(() => episodeRanges.value.find(item => item.start === activeRangeStart.value) || episodeRanges.value[0])
 const visibleEpisodes = computed(() => episodeList.value.slice(activeRange.value.start, activeRange.value.end))
+const availableSubtypes = computed(() => {
+  const scopeTypes = selectedTypes.value.length
+    ? selectedTypes.value
+    : categories.value.map(cat => cat.name).filter(Boolean)
+  const rows = []
+  for (const type of scopeTypes) {
+    const list = Array.isArray(shortOptions.value.subtypes?.[type]) ? shortOptions.value.subtypes[type] : []
+    for (const sub of list) {
+      const name = String(sub?.name || '').trim()
+      if (!name) continue
+      rows.push({ ...sub, type, name, key: `${type}::${name}` })
+    }
+  }
+  return rows
+})
+const selectedFilterTags = computed(() => {
+  const tags = selectedTypes.value.map(type => ({ key: `type:${type}`, type: 'type', value: type, label: type }))
+  for (const key of selectedSubtypeKeys.value) {
+    const item = parseSubtypeKey(key)
+    if (item) tags.push({ key: `sub:${key}`, type: 'subtype', value: key, label: selectedTypes.value.length > 1 ? `${item.type} · ${item.name}` : item.name })
+  }
+  return tags
+})
 const sorts = [
   { value: 'smart', label: '智能推荐' },
   { value: 'hot', label: '热门优先' },
@@ -571,15 +626,21 @@ function seriesUnit(index) {
 }
 
 function scopeParams() {
-  if (selectedType.value && selectedSubtype.value) return { subKeys: `${selectedType.value}::${selectedSubtype.value}` }
-  if (selectedType.value) return { types: selectedType.value }
-  const types = Array.isArray(config.value.preferredTypes) ? config.value.preferredTypes.filter(Boolean) : []
-  const subs = (Array.isArray(config.value.preferredSubtypes) ? config.value.preferredSubtypes : [])
-    .filter(item => item?.type && item?.name && !types.includes(item.type))
-  if (types.length || subs.length) {
+  const selectedTypeNames = selectedTypes.value.filter(Boolean)
+  const selectedSubs = selectedSubtypeKeys.value.filter(Boolean)
+  if (selectedTypeNames.length || selectedSubs.length) {
     return {
-      ...(types.length ? { types: types.join(',') } : {}),
-      ...(subs.length ? { subKeys: subs.map(item => `${item.type}::${item.name}`).join('|') } : {}),
+      ...(selectedTypeNames.length ? { types: selectedTypeNames.join(',') } : {}),
+      ...(selectedSubs.length ? { subKeys: selectedSubs.join('|') } : {}),
+    }
+  }
+  const configTypes = Array.isArray(config.value.preferredTypes) ? config.value.preferredTypes.filter(Boolean) : []
+  const configSubs = (Array.isArray(config.value.preferredSubtypes) ? config.value.preferredSubtypes : [])
+    .filter(item => item?.type && item?.name && !configTypes.includes(item.type))
+  if (configTypes.length || configSubs.length) {
+    return {
+      ...(configTypes.length ? { types: configTypes.join(',') } : {}),
+      ...(configSubs.length ? { subKeys: configSubs.map(item => `${item.type}::${item.name}`).join('|') } : {}),
     }
   }
   return { type: config.value.defaultType }
@@ -608,8 +669,8 @@ function rebuildUnitIndexes() {
 
 function sessionScopeKey() {
   return JSON.stringify({
-    type: selectedType.value || '',
-    subtype: selectedSubtype.value || '',
+    types: selectedTypes.value,
+    subtypes: selectedSubtypeKeys.value,
     sort: sortMode.value || config.value.sortMode || 'smart',
     configTypes: Array.isArray(config.value.preferredTypes) ? config.value.preferredTypes : [],
     configSubs: Array.isArray(config.value.preferredSubtypes) ? config.value.preferredSubtypes : [],
@@ -641,8 +702,8 @@ function writeShortsSession() {
       feedCursor,
       feedSeed,
       hasMoreFeed,
-      selectedType: selectedType.value,
-      selectedSubtype: selectedSubtype.value,
+      selectedTypes: selectedTypes.value,
+      selectedSubtypeKeys: selectedSubtypeKeys.value,
       sortMode: sortMode.value,
     }))
   } catch {}
@@ -1523,23 +1584,49 @@ async function loadShortOptions() {
   } catch {}
 }
 
-async function loadSubtypes(type) {
-  subtypes.value = []
-  selectedSubtype.value = ''
-  if (!type) return
-  subtypes.value = Array.isArray(shortOptions.value.subtypes?.[type]) ? shortOptions.value.subtypes[type] : []
+function parseSubtypeKey(key) {
+  const raw = String(key || '')
+  const index = raw.indexOf('::')
+  if (index <= 0) return null
+  const type = raw.slice(0, index).trim()
+  const name = raw.slice(index + 2).trim()
+  return type && name ? { type, name } : null
 }
 
-function pickType(type) {
-  selectedType.value = type
-  void loadSubtypes(type)
+function clearTypes() {
+  selectedTypes.value = []
+  selectedSubtypeKeys.value = []
+}
+
+function toggleType(type) {
+  const name = String(type || '').trim()
+  if (!name) return
+  const selected = selectedTypes.value.includes(name)
+  selectedTypes.value = selected ? selectedTypes.value.filter(item => item !== name) : [...selectedTypes.value, name]
+  const allowedTypes = new Set(selectedTypes.value)
+  selectedSubtypeKeys.value = selectedSubtypeKeys.value.filter(key => {
+    const item = parseSubtypeKey(key)
+    return item && (!selected || item.type !== name) && (!allowedTypes.size || allowedTypes.has(item.type))
+  })
+}
+
+function toggleSubtype(sub) {
+  const key = sub?.key || `${sub?.type || ''}::${sub?.name || ''}`
+  if (!parseSubtypeKey(key)) return
+  selectedSubtypeKeys.value = selectedSubtypeKeys.value.includes(key)
+    ? selectedSubtypeKeys.value.filter(item => item !== key)
+    : [...selectedSubtypeKeys.value, key]
+}
+
+function removeFilterTag(tag) {
+  if (tag?.type === 'type') toggleType(tag.value)
+  if (tag?.type === 'subtype') selectedSubtypeKeys.value = selectedSubtypeKeys.value.filter(item => item !== tag.value)
 }
 
 function resetFilter() {
-  selectedType.value = ''
-  selectedSubtype.value = ''
+  selectedTypes.value = []
+  selectedSubtypeKeys.value = []
   sortMode.value = config.value.sortMode
-  subtypes.value = []
 }
 
 function applyFilter() {
@@ -1922,7 +2009,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 9;
   right: 13px;
-  bottom: calc(150px + env(safe-area-inset-bottom));
+  bottom: calc(158px + env(safe-area-inset-bottom));
   display: grid;
   gap: 16px;
 }
@@ -1954,7 +2041,7 @@ onBeforeUnmount(() => {
   z-index: 9;
   left: 16px;
   right: 78px;
-  bottom: calc(86px + env(safe-area-inset-bottom));
+  bottom: calc(144px + env(safe-area-inset-bottom));
 }
 .full-mode .ms-meta {
   bottom: calc(24px + env(safe-area-inset-bottom));
@@ -1999,18 +2086,126 @@ onBeforeUnmount(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.ms-meta button {
-  border: 0;
-  height: 34px;
-  padding: 0 13px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.18);
+.ms-roam-bottom {
+  position: fixed;
+  z-index: 55;
+  left: 12px;
+  right: 12px;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+}
+.ms-roam-card {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 58px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 17px;
+  overflow: hidden;
+  background: rgba(12, 12, 14, .68);
   color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .32);
+}
+.ms-roam-open {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0 14px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  color: inherit;
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease;
+}
+.ms-roam-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, .16);
+}
+.ms-roam-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+  margin-left: 2px;
+}
+.ms-roam-card strong {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-roam-arrow {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .82;
+}
+.ms-roam-card input {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: -13px;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  touch-action: none;
+}
+.ms-roam-card input::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff5547 var(--progress), rgba(255,255,255,.24) var(--progress));
+}
+.ms-roam-card input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.ms-roam-card input:active::-webkit-slider-thumb {
+  opacity: 1;
+}
+.ms-roam-card input::-moz-range-track {
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.24);
+}
+.ms-roam-card input::-moz-range-progress {
+  height: 2px;
+  border-radius: 999px;
+  background: #ff5547;
+}
+.ms-roam-card input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
 }
 .ms-top button:active,
 .ms-tool-menu button:active,
@@ -2018,7 +2213,7 @@ onBeforeUnmount(() => {
 .ms-play:active,
 .ms-lock button:active,
 .ms-actions button:active,
-.ms-meta button:active,
+.ms-roam-open:active,
 .ms-full-bottom button:active,
 .ms-clear-exit:active,
 .ms-state button:active,
@@ -2043,7 +2238,10 @@ onBeforeUnmount(() => {
 }
 .full-mode .ms-progress {
   position: fixed;
-  bottom: calc(56px + env(safe-area-inset-bottom) - 13px);
+  top: 0;
+  bottom: auto;
+  height: calc(8px + env(safe-area-inset-top));
+  align-items: flex-end;
 }
 .ms-progress input {
   position: relative;
@@ -2059,6 +2257,10 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 .full-mode .ms-progress input {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   transform: none;
 }
 .ms-progress input::-webkit-slider-runnable-track {
@@ -2106,29 +2308,41 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(56px + env(safe-area-inset-bottom));
-  padding: 7px 14px calc(7px + env(safe-area-inset-bottom));
+  height: calc(72px + env(safe-area-inset-bottom));
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   gap: 10px;
-  background: #050505;
-  border-top: 1px solid rgba(255,255,255,.1);
+  background: linear-gradient(180deg, rgba(5,5,5,.08), #050505 22%);
 }
 .ms-full-bottom button {
   min-width: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(255,255,255,.1);
+  background: #101012;
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  font-size: 14px;
+  gap: 7px;
+  font-size: 15px;
   font-weight: 900;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .36);
+  touch-action: manipulation;
+}
+.ms-full-bottom button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ms-full-bottom button:last-child {
   border-radius: 50%;
+  background: rgba(255,255,255,.12);
+  backdrop-filter: blur(14px);
+}
+.ms-full-bottom button:first-child svg {
+  transform: rotate(-90deg);
 }
 .ms-clear-exit {
   position: fixed;
@@ -2149,6 +2363,7 @@ onBeforeUnmount(() => {
 .clear-mode .ms-meta,
 .clear-mode .ms-progress,
 .clear-mode .ms-full-bottom,
+.clear-mode .ms-roam-bottom,
 .clear-mode .ms-landscape-btn,
 .clear-mode .ms-tool-menu {
   display: none;
@@ -2230,6 +2445,36 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: #f3f4f6;
 }
+.ms-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 10px;
+}
+.ms-filter-tags button {
+  border: 0;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px 0 11px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #fff0ed;
+  color: #f04438;
+  font-size: 12px;
+  font-weight: 900;
+  touch-action: manipulation;
+}
+.ms-filter-tags svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .ms-filter-group {
   padding: 12px 0;
 }
@@ -2259,6 +2504,13 @@ onBeforeUnmount(() => {
 .ms-filter-group button.on {
   background: #fff0ed;
   color: #f04438;
+}
+.ms-filter-group button small {
+  margin-left: 5px;
+  color: inherit;
+  opacity: .6;
+  font-size: 10px;
+  font-weight: 900;
 }
 .ms-filter-actions {
   position: sticky;
