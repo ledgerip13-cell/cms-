@@ -17,11 +17,12 @@ export async function writeAudit(req: FastifyRequest, action: string, target = "
   }).catch(() => {});
 }
 
-function randCode(len = 10) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
+const INVITE_CODE_MIN = 1000;
+const INVITE_CODE_RANGE = 9000;
+const INVITE_CODE_RETRY_LIMIT = 80;
+
+function randCode() {
+  return String(INVITE_CODE_MIN + Math.floor(Math.random() * INVITE_CODE_RANGE));
 }
 
 async function uniqueVipLevelCode(name: string, preferred = "", excludeId?: number) {
@@ -68,10 +69,17 @@ export default async function accessRoutes(app: FastifyInstance) {
     for (let i = 0; i < count; i++) {
       let code = String(b.code || "").trim().toUpperCase() || randCode();
       if (count > 1 || i > 0) code = randCode();
-      try {
-        rows.push(await prisma.inviteCode.create({ data: { code, maxUses, remark, expiresAt } }));
-      } catch {
-        i--;
+      for (let attempt = 0; attempt < INVITE_CODE_RETRY_LIMIT; attempt++) {
+        try {
+          rows.push(await prisma.inviteCode.create({ data: { code, maxUses, remark, expiresAt } }));
+          break;
+        } catch {
+          if (b.code && count === 1) return reply.code(409).send({ error: "邀请码已存在" });
+          code = randCode();
+        }
+      }
+      if (rows.length !== i + 1) {
+        return reply.code(409).send({ error: "4位邀请码池可用数量不足，请稍后重试或清理旧邀请码" });
       }
     }
     await writeAudit(req, "invite.create", "InviteCode", { count, maxUses, remark });
