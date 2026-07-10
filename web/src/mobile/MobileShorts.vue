@@ -2067,7 +2067,7 @@ onBeforeUnmount(() => {
   z-index: 9;
   left: 16px;
   right: 78px;
-  bottom: calc(144px + env(safe-area-inset-bottom));
+  bottom: calc(126px + env(safe-area-inset-bottom));
 }
 .full-mode .ms-meta {
   bottom: calc(24px + env(safe-area-inset-bottom));
