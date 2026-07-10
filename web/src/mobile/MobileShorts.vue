@@ -1873,6 +1873,9 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 10px;
 }
+.full-mode .ms-prompt-row {
+  bottom: calc(220px + env(safe-area-inset-bottom));
+}
 .ms-prompt-btn {
   height: 40px;
   border: 1px solid rgba(255, 255, 255, .26);
@@ -2107,7 +2110,7 @@ onBeforeUnmount(() => {
   gap: 15px;
 }
 .full-mode .ms-actions {
-  bottom: calc(54px + env(safe-area-inset-bottom));
+  bottom: calc(124px + env(safe-area-inset-bottom));
 }
 .ms-actions button {
   min-width: 46px;
@@ -2139,7 +2142,7 @@ onBeforeUnmount(() => {
   bottom: calc(126px + env(safe-area-inset-bottom));
 }
 .full-mode .ms-meta {
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: calc(94px + env(safe-area-inset-bottom));
 }
 .ms-meta.full {
   right: 76px;
