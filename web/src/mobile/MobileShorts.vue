@@ -213,8 +213,8 @@
         <span>选集 · 全{{ activeUnit.total || 1 }}集 · 免费观看</span>
         <svg viewBox="0 0 24 24" v-html="icon('chevron')"></svg>
       </button>
-      <button type="button" aria-label="返回漫游" @click="exitFullContent">
-        <svg viewBox="0 0 24 24" v-html="icon('wander')"></svg>
+      <button type="button" aria-label="清屏观看" @click="toggleClearScreen">
+        <svg viewBox="0 0 24 24" v-html="icon('clean')"></svg>
       </button>
     </div>
     <button v-if="fullMode && clearScreen" class="ms-clear-exit" type="button" @click="toggleClearScreen">退出清屏</button>
@@ -2274,7 +2274,7 @@ onBeforeUnmount(() => {
 .full-mode .ms-progress {
   position: fixed;
   top: auto;
-  bottom: calc(84px + env(safe-area-inset-bottom));
+  bottom: calc(76px + env(safe-area-inset-bottom));
   height: 20px;
   align-items: center;
 }
@@ -2344,8 +2344,8 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(84px + env(safe-area-inset-bottom));
-  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+  min-height: calc(76px + env(safe-area-inset-bottom));
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: minmax(0, 1fr) 54px;
   gap: 12px;
