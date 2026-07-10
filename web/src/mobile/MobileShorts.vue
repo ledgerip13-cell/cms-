@@ -2295,7 +2295,7 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -10px;
+  bottom: -9px;
   height: 20px;
   transform: none;
 }
