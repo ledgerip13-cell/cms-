@@ -79,7 +79,7 @@ async function handleICloud(url, req) {
 }
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).catch(() => {}));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

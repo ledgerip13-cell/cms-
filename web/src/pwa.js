@@ -19,6 +19,13 @@ function preventMultiTouchZoom(event) {
   if (event.touches?.length > 1) event.preventDefault()
 }
 
+function activateWaitingWorker(worker) {
+  if (!worker) return false
+  waitingWorker = worker
+  worker.postMessage({ type: 'SKIP_WAITING' })
+  return true
+}
+
 export function setupPwaViewportLock() {
   enforcePwaViewportLock()
   window.addEventListener('pageshow', enforcePwaViewportLock)
@@ -34,24 +41,30 @@ export function setupPwaViewportLock() {
 
 export function setupPwaUpdates(onUpdate) {
   if (!('serviceWorker' in navigator)) return
-  window.addEventListener('load', () => {
+  const register = () => {
     navigator.serviceWorker.register('/sw.js').then((registration) => {
-      if (registration.waiting) {
-        waitingWorker = registration.waiting
-        onUpdate?.()
-      }
+      const checkForUpdate = () => registration.update().catch(() => {})
+      if (registration.waiting) activateWaitingWorker(registration.waiting)
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing
         if (!worker) return
         worker.addEventListener('statechange', () => {
           if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-            waitingWorker = worker
+            activateWaitingWorker(worker)
             onUpdate?.()
           }
         })
       })
+      checkForUpdate()
+      window.addEventListener('focus', checkForUpdate)
+      window.addEventListener('pageshow', checkForUpdate)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkForUpdate()
+      })
     }).catch(() => {})
-  })
+  }
+  if (document.readyState === 'complete') register()
+  else window.addEventListener('load', register, { once: true })
   let refreshing = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (refreshing) return
@@ -61,7 +74,5 @@ export function setupPwaUpdates(onUpdate) {
 }
 
 export function applyPwaUpdate() {
-  if (!waitingWorker) return false
-  waitingWorker.postMessage({ type: 'SKIP_WAITING' })
-  return true
+  return activateWaitingWorker(waitingWorker)
 }
