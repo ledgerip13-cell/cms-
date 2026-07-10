@@ -1867,6 +1867,9 @@ onBeforeUnmount(() => {
   justify-content: space-between;
 }
 .ms-top.full {
+  top: calc(env(safe-area-inset-top) + 30px);
+  left: 18px;
+  right: 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1876,7 +1879,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 .ms-top.full .ms-top-right {
   display: flex;
@@ -1886,7 +1889,8 @@ onBeforeUnmount(() => {
 .ms-episode-title {
   min-width: 0;
   color: rgba(255,255,255,.94);
-  font-size: 15px;
+  font-size: 25px;
+  line-height: 1.08;
   font-weight: 900;
   text-shadow: 0 2px 12px rgba(0,0,0,.62);
   overflow: hidden;
@@ -1910,6 +1914,10 @@ onBeforeUnmount(() => {
   background: transparent;
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
+}
+.ms-top.full button {
+  width: 38px;
+  height: 38px;
 }
 .ms-top svg,
 .ms-play svg,
@@ -2265,10 +2273,10 @@ onBeforeUnmount(() => {
 }
 .full-mode .ms-progress {
   position: fixed;
-  top: 0;
-  bottom: auto;
-  height: calc(8px + env(safe-area-inset-top));
-  align-items: flex-end;
+  top: auto;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  height: 20px;
+  align-items: center;
 }
 .ms-progress input {
   position: relative;
@@ -2288,6 +2296,7 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
+  height: 20px;
   transform: none;
 }
 .ms-progress input::-webkit-slider-runnable-track {
@@ -2335,18 +2344,20 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(72px + env(safe-area-inset-bottom));
-  padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
+  height: calc(84px + env(safe-area-inset-bottom));
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
-  gap: 10px;
-  background: linear-gradient(180deg, rgba(5,5,5,.08), #050505 22%);
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 12px;
+  align-items: center;
+  background: #050505;
 }
 .ms-full-bottom button {
   min-width: 0;
+  height: 60px;
   border: 0;
-  border-radius: 999px;
-  background: #101012;
+  border-radius: 12px;
+  background: #171717;
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -2364,9 +2375,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .ms-full-bottom button:last-child {
-  border-radius: 50%;
-  background: rgba(255,255,255,.12);
-  backdrop-filter: blur(14px);
+  width: 54px;
+  border-radius: 12px;
+  background: #171717;
+  backdrop-filter: none;
 }
 .ms-full-bottom button:first-child svg {
   transform: rotate(-90deg);
