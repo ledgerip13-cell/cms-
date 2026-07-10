@@ -338,6 +338,7 @@ import { icon } from './icons'
 
 const SHORTS_MUTED_KEY = 'vcms.mobile.shorts.muted'
 const SHORTS_SESSION_KEY = 'vcms.mobile.shorts.session.v1'
+const SHORTS_FILTER_KEY = 'vcms.mobile.shorts.filter.v1'
 const SHORTS_SESSION_TTL = 30 * 60 * 1000
 const RESOLVE_CACHE_TTL = 20 * 60 * 1000
 const RESOLVE_CACHE_LIMIT = 80
@@ -727,6 +728,49 @@ function restoreShortsSession(data) {
   hasMoreFeed = data.hasMoreFeed !== false
   rebuildUnitIndexes()
   return true
+}
+
+function readSavedFilter() {
+  try {
+    const raw = localStorage.getItem(SHORTS_FILTER_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw)
+    if (!data || typeof data !== 'object') return null
+    return {
+      selectedTypes: Array.isArray(data.selectedTypes) ? data.selectedTypes.map(String).filter(Boolean) : [],
+      selectedSubtypeKeys: Array.isArray(data.selectedSubtypeKeys) ? data.selectedSubtypeKeys.map(String).filter(key => parseSubtypeKey(key)) : [],
+      sortMode: sorts.some(item => item.value === data.sortMode) ? data.sortMode : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeSelectedFilter() {
+  const allowedTypes = new Set(categories.value.map(item => item?.name).filter(Boolean))
+  if (allowedTypes.size) selectedTypes.value = selectedTypes.value.filter(type => allowedTypes.has(type))
+  const allowedSubtypes = new Set(availableSubtypes.value.map(item => item.key))
+  if (allowedSubtypes.size) selectedSubtypeKeys.value = selectedSubtypeKeys.value.filter(key => allowedSubtypes.has(key))
+}
+
+function restoreSavedFilter() {
+  const data = readSavedFilter()
+  if (!data) return false
+  selectedTypes.value = data.selectedTypes
+  selectedSubtypeKeys.value = data.selectedSubtypeKeys
+  sortMode.value = data.sortMode || config.value.sortMode
+  normalizeSelectedFilter()
+  return true
+}
+
+function writeSavedFilter() {
+  try {
+    localStorage.setItem(SHORTS_FILTER_KEY, JSON.stringify({
+      selectedTypes: selectedTypes.value,
+      selectedSubtypeKeys: selectedSubtypeKeys.value,
+      sortMode: sortMode.value || config.value.sortMode,
+    }))
+  } catch {}
 }
 
 function preloadPoster(unit) {
@@ -1592,6 +1636,7 @@ async function loadShortOptions() {
       subtypes: data?.subtypes && typeof data.subtypes === 'object' ? data.subtypes : {},
     }
     categories.value = shortOptions.value.types
+    normalizeSelectedFilter()
   } catch {}
 }
 
@@ -1638,10 +1683,12 @@ function resetFilter() {
   selectedTypes.value = []
   selectedSubtypeKeys.value = []
   sortMode.value = config.value.sortMode
+  writeSavedFilter()
 }
 
 function applyFilter() {
   filterOpen.value = false
+  writeSavedFilter()
   void reload({ force: true })
 }
 
@@ -1665,6 +1712,7 @@ async function refreshForViewerChange() {
   playbackLineFailures.clear()
   await loadSite()
   await loadShortOptions()
+  restoreSavedFilter()
   await reload({ force: true })
 }
 
@@ -1703,8 +1751,8 @@ watch(viewerKey, () => {
 onMounted(async () => {
   window.addEventListener('resize', scheduleLandscapeMetrics)
   await loadSite()
-  sortMode.value = config.value.sortMode
   await loadShortOptions()
+  if (!restoreSavedFilter()) sortMode.value = config.value.sortMode
   await reload()
 })
 
@@ -1867,9 +1915,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
 }
 .ms-top.full {
-  top: calc(env(safe-area-inset-top) + 30px);
-  left: 18px;
-  right: 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1889,8 +1934,8 @@ onBeforeUnmount(() => {
 .ms-episode-title {
   min-width: 0;
   color: rgba(255,255,255,.94);
-  font-size: 25px;
-  line-height: 1.08;
+  font-size: 16px;
+  line-height: 1.2;
   font-weight: 900;
   text-shadow: 0 2px 12px rgba(0,0,0,.62);
   overflow: hidden;
@@ -1914,10 +1959,6 @@ onBeforeUnmount(() => {
   background: transparent;
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
-}
-.ms-top.full button {
-  width: 38px;
-  height: 38px;
 }
 .ms-top svg,
 .ms-play svg,
@@ -2558,11 +2599,12 @@ onBeforeUnmount(() => {
 }
 .ms-filter-actions {
   position: sticky;
-  bottom: 0;
+  bottom: calc(-16px - env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: 10px;
-  padding-top: 12px;
+  margin: 0 -16px calc(-16px - env(safe-area-inset-bottom));
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, rgba(255,255,255,0), #fff 22%);
 }
 .ms-filter-actions button {
