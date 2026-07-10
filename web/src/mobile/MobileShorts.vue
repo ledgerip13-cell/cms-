@@ -30,7 +30,7 @@
         ></video>
         <div class="ms-vignette"></div>
 
-        <div class="ms-top" :class="{ full: fullMode }">
+        <div v-if="isActiveDisplay(index)" class="ms-top" :class="{ full: fullMode }">
           <template v-if="fullMode">
             <button type="button" aria-label="返回刷剧" @click="exitFullContent">
               <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
@@ -1838,8 +1838,8 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 .ms-top {
-  position: absolute;
-  z-index: 8;
+  position: fixed;
+  z-index: 58;
   top: calc(env(safe-area-inset-top) + 10px);
   left: 14px;
   right: 14px;
@@ -1880,10 +1880,9 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: rgba(0, 0, 0, .28);
-  backdrop-filter: blur(12px);
+  background: transparent;
   touch-action: manipulation;
-  transition: transform .16s ease, background .16s ease;
+  transition: transform .16s ease, color .16s ease;
 }
 .ms-top svg,
 .ms-play svg,
@@ -2054,10 +2053,9 @@ onBeforeUnmount(() => {
 .ms-actions svg {
   width: 30px;
   height: 30px;
-  padding: 8px;
-  border-radius: 50%;
-  background: rgba(0,0,0,.24);
-  backdrop-filter: blur(10px);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .ms-actions button.on {
   color: #ff5747;
