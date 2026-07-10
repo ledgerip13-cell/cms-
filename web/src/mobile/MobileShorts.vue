@@ -1735,7 +1735,7 @@ onBeforeUnmount(() => {
   min-height: 100dvh;
   background: #050505;
   color: #fff;
-  overflow: hidden;
+  overflow: visible;
   overflow-x: hidden;
 }
 .ms-feed {
@@ -2127,10 +2127,10 @@ onBeforeUnmount(() => {
   border: 0;
   border-top: 1px solid rgba(255, 255, 255, .08);
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
   background: rgba(8, 8, 10, .46);
   color: #fff;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(12px);
   box-shadow: none;
 }
 .ms-roam-open {
