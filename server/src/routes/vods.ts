@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
-import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, watchableTypeNames } from "../publicVod.js";
+import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
@@ -735,8 +735,8 @@ export default async function vodRoutes(app: FastifyInstance) {
     const cfg = await siteShortsConfig();
     if (!cfg.enabled) return { types: [], subtypes: {} };
     const viewer = await viewerFromRequest(req);
-    const [watchableTypes, sourceIds] = await Promise.all([watchableTypeNames(viewer), enabledPlayableSourceIds()]);
-    const typeNames = shortsConfiguredTypeNames(cfg, watchableTypes);
+    const [visibleTypes, sourceIds] = await Promise.all([visibleTypeNames(viewer), enabledPlayableSourceIds()]);
+    const typeNames = shortsConfiguredTypeNames(cfg, visibleTypes);
     if (!typeNames.length) return { types: [], subtypes: {} };
     const counts = await prisma.vod.groupBy({
       by: ["typeName"],
@@ -771,7 +771,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const cfg = await siteShortsConfig();
     if (!cfg.enabled) return { list: [], nextCursor: 0, hasMore: false, disabled: true };
     const viewer = await viewerFromRequest(req);
-    const publicTypes = await watchableTypeNames(viewer);
+    const publicTypes = await visibleTypeNames(viewer);
     const typeWhere = shortFeedTypeWhere(publicTypes, q, cfg);
     const sortMode = ["smart", "hot", "recent", "rating"].includes(String(q.sort || "")) ? String(q.sort) : cfg.sortMode;
     const limit = Math.max(1, Math.min(20, Number(q.limit) || cfg.feedLimit || 10));

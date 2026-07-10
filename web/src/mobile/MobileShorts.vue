@@ -1634,6 +1634,29 @@ function applyFilter() {
   void reload({ force: true })
 }
 
+function viewerKey() {
+  const value = user.value
+  if (!value) return 'guest'
+  return JSON.stringify({
+    id: value.id || value.mid || 0,
+    isVip: Boolean(value.isVip),
+    vipLevelId: value.vipLevelId || value.levelId || null,
+    vipExpireAt: value.vipExpireAt || value.vipUntil || '',
+  })
+}
+
+async function refreshForViewerChange() {
+  cancelPendingPlayback({ stop: true })
+  accessBlock.value = null
+  resolveCache.clear()
+  resolveInflight.clear()
+  vodDetailCache.clear()
+  playbackLineFailures.clear()
+  await loadSite()
+  await loadShortOptions()
+  await reload({ force: true })
+}
+
 watch(activeIndex, () => {
   saveHistory(true)
   writeShortsSession()
@@ -1660,6 +1683,10 @@ watch(drawerTab, (tab) => {
 
 watch(episodeDrawerOpen, (open) => {
   if (open && drawerTab.value === 'related' && !relatedItems.value.length) void loadRelated()
+})
+
+watch(viewerKey, () => {
+  void refreshForViewerChange()
 })
 
 onMounted(async () => {
