@@ -141,6 +141,8 @@ import { api, imgUrl } from '../api'
 import { readCachedCategories, writeCachedCategories } from '../siteConfig'
 import { icon } from './icons'
 
+const THEATER_CACHE_KEY = 'vcms.mobile.theater.cache.v1'
+const THEATER_CACHE_LIMIT = 96
 const route = useRoute()
 const router = useRouter()
 const categories = ref(readCachedCategories())
@@ -179,6 +181,45 @@ const filterSorts = [
   { value: 'rating', label: '高分优先' },
   { value: 'year', label: '年份新到旧' },
 ]
+let listRequestId = 0
+let rankRequestId = 0
+let theaterCache = readTheaterCache()
+
+function readTheaterCache() {
+  try {
+    const data = JSON.parse(localStorage.getItem(THEATER_CACHE_KEY) || '{}')
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeTheaterCache() {
+  const rows = Object.entries(theaterCache)
+    .sort((a, b) => Number(b[1]?.ts || 0) - Number(a[1]?.ts || 0))
+    .slice(0, THEATER_CACHE_LIMIT)
+  theaterCache = Object.fromEntries(rows)
+  try {
+    localStorage.setItem(THEATER_CACHE_KEY, JSON.stringify(theaterCache))
+  } catch {}
+}
+
+function cacheKey(scope, params) {
+  return JSON.stringify({ scope, ...params })
+}
+
+function cacheGet(key) {
+  return theaterCache[key]?.data || null
+}
+
+function cacheSet(key, data) {
+  theaterCache[key] = { ts: Date.now(), data }
+  writeTheaterCache()
+}
+
+function sameData(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
 
 function poster(vod) {
   return imgUrl(vod?.officialPic || vod?.pic || vod?.localPic || vod?.heroImage || '')
@@ -275,39 +316,77 @@ async function loadSubtypes() {
     subtypes.value = []
     return
   }
+  const key = cacheKey('subtypes', { type: type.value })
+  const cached = cacheGet(key)
+  if (cached) subtypes.value = cached
   try {
-    subtypes.value = (await api.subtypes(type.value)).filter(row => Number(row.count) > 0)
+    const currentType = type.value
+    const data = (await api.subtypes(currentType)).filter(row => Number(row.count) > 0)
+    if (currentType !== type.value || kw.value) return
+    if (!sameData(subtypes.value, data)) subtypes.value = data
+    cacheSet(key, data)
   } catch {
-    subtypes.value = []
+    if (!cached) subtypes.value = []
   }
 }
 
 async function loadYears() {
+  const params = cleanQuery({ type: kw.value ? '' : type.value, sub: kw.value ? '' : subtype.value, kw: kw.value })
+  const key = cacheKey('years', params)
+  const cached = cacheGet(key)
+  if (cached) years.value = cached
   try {
-    years.value = await api.years(cleanQuery({ type: kw.value ? '' : type.value, sub: kw.value ? '' : subtype.value, kw: kw.value }))
+    const data = await api.years(params)
+    if (key !== cacheKey('years', cleanQuery({ type: kw.value ? '' : type.value, sub: kw.value ? '' : subtype.value, kw: kw.value }))) return
+    if (!sameData(years.value, data)) years.value = data
+    cacheSet(key, data)
   } catch {
-    years.value = []
+    if (!cached) years.value = []
   }
 }
 
 async function loadRank() {
+  const params = cleanQuery({ page: 1, size: 6, type: type.value, sort: 'hot' })
+  const key = cacheKey('rank', params)
+  const cached = cacheGet(key)
+  const requestId = ++rankRequestId
+  if (cached) rankItems.value = cached
   try {
-    const res = await api.vods(cleanQuery({ page: 1, size: 6, type: type.value, sort: 'hot' }))
-    rankItems.value = res.list || []
+    const res = await api.vods(params)
+    if (requestId !== rankRequestId || key !== cacheKey('rank', cleanQuery({ page: 1, size: 6, type: type.value, sort: 'hot' }))) return
+    const data = res.list || []
+    if (!sameData(rankItems.value, data)) rankItems.value = data
+    cacheSet(key, data)
   } catch {
-    rankItems.value = []
+    if (!cached) rankItems.value = []
   }
 }
 
 async function loadList({ append = false } = {}) {
-  loading.value = !append
+  const params = vodParams()
+  const key = cacheKey('list', params)
+  const cached = cacheGet(key)
+  const requestId = ++listRequestId
+  let usedCache = false
+  if (cached) {
+    usedCache = true
+    const cachedList = cached.list || []
+    items.value = append ? [...items.value, ...cachedList] : cachedList
+    hasMore.value = Boolean(cached.hasMore)
+  }
+  loading.value = !append && !usedCache
   try {
-    const res = await api.vods(vodParams())
+    const res = await api.vods(params)
+    if (requestId !== listRequestId || key !== cacheKey('list', vodParams())) return
     const next = res.list || []
-    items.value = append ? [...items.value, ...next] : next
-    hasMore.value = Boolean(res.hasMore)
+    const data = { list: next, hasMore: Boolean(res.hasMore) }
+    if (!sameData(cached, data)) {
+      items.value = append ? [...items.value.slice(0, Math.max(0, items.value.length - (cached?.list?.length || 0))), ...next] : next
+      hasMore.value = data.hasMore
+    }
+    cacheSet(key, data)
   } finally {
-    loading.value = false
+    if (requestId === listRequestId) loading.value = false
   }
 }
 
