@@ -468,6 +468,32 @@ function cleanupRuleWhere(input: any): any {
   throw new Error("不支持的清理规则");
 }
 
+function parseAutoCollectWeekdays(value: unknown) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))]
+    .sort((a, b) => a - b);
+}
+
+function nextAutoCollectAt(input: any) {
+  if (!input?.autoCollectEnabled) return null;
+  const mode = input.autoCollectMode === "weekdays" ? "weekdays" : "days";
+  const now = new Date();
+  if (mode === "weekdays") {
+    const weekdays = parseAutoCollectWeekdays(input.autoCollectWeekdays);
+    const targets = weekdays.length ? weekdays : [1];
+    for (let offset = 0; offset <= 14; offset++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + offset);
+      d.setHours(4, 0, 0, 0);
+      const weekday = d.getDay() === 0 ? 7 : d.getDay();
+      if (targets.includes(weekday) && d.getTime() > now.getTime() + 60_000) return d;
+    }
+  }
+  const days = Math.max(1, Math.min(30, Math.floor(Number(input.autoCollectIntervalDays) || 1)));
+  return new Date(now.getTime() + days * DAY_MS);
+}
+
 async function mergeVods(targetId: number, sourceIds: number[]) {
   const ids = [...new Set(sourceIds.filter((id) => Number.isInteger(id) && id > 0 && id !== targetId))];
   if (!Number.isInteger(targetId) || targetId <= 0) throw new Error("主影片无效");
@@ -1222,12 +1248,14 @@ export default async function vodRoutes(app: FastifyInstance) {
     for (const f of fields) if (b[f] !== undefined) data[f] = textFields.has(f) ? cleanText(b[f], f === "blurb" || f === "officialIntro" ? 2000 : 0) : b[f];
     if (b.rating !== undefined) data.rating = b.rating === null || b.rating === "" ? null : Number(b.rating);
     if (b.autoCollectEnabled !== undefined) data.autoCollectEnabled = Boolean(b.autoCollectEnabled);
-    if (b.autoCollectIntervalHours !== undefined) {
-      const hours = Math.max(0, Math.min(24 * 30, Math.floor(Number(b.autoCollectIntervalHours) || 0)));
-      data.autoCollectIntervalHours = hours;
-      data.autoCollectNextAt = Boolean(b.autoCollectEnabled ?? false) && hours > 0
-        ? new Date(Date.now() + hours * 60 * 60 * 1000)
-        : null;
+    if (b.autoCollectMode !== undefined) data.autoCollectMode = b.autoCollectMode === "weekdays" ? "weekdays" : "days";
+    if (b.autoCollectIntervalDays !== undefined) {
+      data.autoCollectIntervalDays = Math.max(1, Math.min(30, Math.floor(Number(b.autoCollectIntervalDays) || 1)));
+      data.autoCollectIntervalHours = data.autoCollectIntervalDays * 24;
+    }
+    if (b.autoCollectWeekdays !== undefined) data.autoCollectWeekdays = JSON.stringify(parseAutoCollectWeekdays(b.autoCollectWeekdays));
+    if (b.autoCollectEnabled !== undefined || b.autoCollectMode !== undefined || b.autoCollectIntervalDays !== undefined || b.autoCollectWeekdays !== undefined) {
+      data.autoCollectNextAt = nextAutoCollectAt({ ...b, ...data, autoCollectWeekdays: b.autoCollectWeekdays });
     }
     if (b.autoCollectMeta !== undefined) data.autoCollectMeta = Boolean(b.autoCollectMeta);
     if (b.autoCollectClean !== undefined) data.autoCollectClean = Boolean(b.autoCollectClean);

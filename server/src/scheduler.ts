@@ -66,6 +66,34 @@ export async function reloadSchedules() {
 let probing = false;
 let vodAutoCollecting = false;
 
+function parseWeekdays(value: unknown) {
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw || "[]"); } catch { raw = []; }
+  }
+  return [...new Set((Array.isArray(raw) ? raw : [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7))]
+    .sort((a, b) => a - b);
+}
+
+function nextVodAutoCollectAt(vod: { autoCollectMode?: string; autoCollectIntervalDays?: number; autoCollectIntervalHours?: number; autoCollectWeekdays?: string }) {
+  const now = new Date();
+  if (vod.autoCollectMode === "weekdays") {
+    const weekdays = parseWeekdays(vod.autoCollectWeekdays);
+    const targets = weekdays.length ? weekdays : [1];
+    for (let offset = 0; offset <= 14; offset++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + offset);
+      d.setHours(4, 0, 0, 0);
+      const weekday = d.getDay() === 0 ? 7 : d.getDay();
+      if (targets.includes(weekday) && d.getTime() > now.getTime() + 60_000) return d;
+    }
+  }
+  const days = Math.max(1, Math.min(30, Number(vod.autoCollectIntervalDays) || Math.ceil((Number(vod.autoCollectIntervalHours) || 24) / 24) || 1));
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
 async function runVodAutoCollectDue() {
   if (vodAutoCollecting) return;
   vodAutoCollecting = true;
@@ -84,6 +112,9 @@ async function runVodAutoCollectDue() {
         id: true,
         name: true,
         autoCollectIntervalHours: true,
+        autoCollectMode: true,
+        autoCollectIntervalDays: true,
+        autoCollectWeekdays: true,
         autoCollectMeta: true,
         autoCollectClean: true,
       },
@@ -91,8 +122,7 @@ async function runVodAutoCollectDue() {
       take: 20,
     });
     for (const vod of rows) {
-      const intervalHours = Math.max(1, Math.min(24 * 30, Number(vod.autoCollectIntervalHours) || 24));
-      const nextAt = new Date(Date.now() + intervalHours * 60 * 60 * 1000);
+      const nextAt = nextVodAutoCollectAt(vod);
       try {
         await prisma.vod.update({
           where: { id: vod.id },

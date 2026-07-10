@@ -1,5 +1,5 @@
 <template>
-  <main class="mh">
+  <main class="mh" :class="heroDirectionClass">
     <header class="mh-head">
       <div class="mh-brand">
         <img v-if="site.logo" :src="site.logo" alt="logo" />
@@ -129,6 +129,7 @@ const site = ref(readCachedSite())
 const categories = ref(readCachedCategories().slice(0, 10))
 const heroList = ref([])
 const heroIndex = ref(0)
+const heroDirection = ref(1)
 const historyItems = ref([])
 const hotItems = ref([])
 const newItems = ref([])
@@ -141,6 +142,7 @@ let ignoreHeroClick = false
 
 const heroSlides = computed(() => heroList.value.slice(0, 5))
 const hero = computed(() => heroSlides.value[heroIndex.value] || heroSlides.value[0] || null)
+const heroDirectionClass = computed(() => heroDirection.value < 0 ? 'hero-prev' : 'hero-next')
 const blocks = computed(() => [
   { key: 'hot', title: '热播推荐', icon: 'hot', sort: 'hot', items: hotItems.value },
   { key: 'new', title: '今日上新', icon: 'calendar', sort: 'recent', items: newItems.value },
@@ -207,13 +209,16 @@ function startHeroTimer() {
 
 function pickHero(index, restart = true) {
   if (!heroSlides.value.length) return
-  heroIndex.value = Math.max(0, Math.min(index, heroSlides.value.length - 1))
+  const next = Math.max(0, Math.min(index, heroSlides.value.length - 1))
+  heroDirection.value = next >= heroIndex.value ? 1 : -1
+  heroIndex.value = next
   if (restart) startHeroTimer()
 }
 
 function shiftHero(step = 1, restart = true) {
   const total = heroSlides.value.length
   if (total < 2) return
+  heroDirection.value = step >= 0 ? 1 : -1
   heroIndex.value = (heroIndex.value + step + total) % total
   if (restart) startHeroTimer()
 }
@@ -356,11 +361,25 @@ onBeforeUnmount(stopHeroTimer)
 }
 .mh-hero-swap-enter-active,
 .mh-hero-swap-leave-active {
-  transition: opacity .26s ease;
+  transition:
+    opacity .32s ease,
+    transform .32s cubic-bezier(.22, .61, .36, 1);
 }
 .mh-hero-swap-enter-from,
 .mh-hero-swap-leave-to {
   opacity: 0;
+}
+.hero-next .mh-hero-swap-enter-from {
+  transform: translateX(12px);
+}
+.hero-next .mh-hero-swap-leave-to {
+  transform: translateX(-8px);
+}
+.hero-prev .mh-hero-swap-enter-from {
+  transform: translateX(-12px);
+}
+.hero-prev .mh-hero-swap-leave-to {
+  transform: translateX(8px);
 }
 .mh-hero-img {
   position: absolute;
@@ -385,6 +404,14 @@ onBeforeUnmount(stopHeroTimer)
   flex-direction: column;
   justify-content: flex-end;
   color: #fff;
+  transition: opacity .26s ease .08s, transform .26s ease .08s;
+}
+.mh-hero-swap-enter-from .mh-hero-content {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.hero-prev .mh-hero-swap-enter-from .mh-hero-content {
+  transform: translateX(-8px);
 }
 .mh-kicker {
   display: flex;

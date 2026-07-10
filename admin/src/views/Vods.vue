@@ -178,7 +178,7 @@
           <p>
             <b>自动采集:</b>
             <el-tag size="small" :type="cur.autoCollectEnabled ? 'success' : 'info'">
-              {{ cur.autoCollectEnabled ? `${cur.autoCollectIntervalHours || 0} 小时/次` : '关闭' }}
+              {{ autoCollectSummary(cur) }}
             </el-tag>
             <span v-if="cur.autoCollectNextAt" class="muted"> 下次 {{ formatDate(cur.autoCollectNextAt) }}</span>
           </p>
@@ -310,8 +310,17 @@
       </el-form-item>
       <el-form-item v-if="editForm.autoCollectEnabled" label="采集周期">
         <div class="auto-collect-row">
-          <el-input-number v-model="editForm.autoCollectIntervalHours" :min="1" :max="720" controls-position="right" />
-          <span class="muted">小时/次</span>
+          <el-radio-group v-model="editForm.autoCollectMode">
+            <el-radio-button label="days">按天</el-radio-button>
+            <el-radio-button label="weekdays">固定周几</el-radio-button>
+          </el-radio-group>
+          <template v-if="editForm.autoCollectMode === 'days'">
+            <el-input-number v-model="editForm.autoCollectIntervalDays" :min="1" :max="30" controls-position="right" />
+            <span class="muted">天/次</span>
+          </template>
+          <el-checkbox-group v-else v-model="editForm.autoCollectWeekdays" class="weekday-group">
+            <el-checkbox-button v-for="day in weekdayOptions" :key="day.value" :label="day.value">{{ day.label }}</el-checkbox-button>
+          </el-checkbox-group>
           <el-checkbox v-model="editForm.autoCollectMeta">同步豆瓣</el-checkbox>
           <el-checkbox v-model="editForm.autoCollectClean">提交HLS清洗</el-checkbox>
         </div>
@@ -553,6 +562,15 @@ const cleanupForm = ref({
   yearStart: currentYear,
   yearEnd: currentYear,
 })
+const weekdayOptions = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 7, label: '周日' },
+]
 
 function coverUrl(row) {
   if (row?._coverStage === 'local') return imgUrl(row.localPic || '')
@@ -695,7 +713,9 @@ function openEdit(row) {
     area: row.area, lang: row.lang, actor: row.actor, director: row.director,
     remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, heroPic: row.heroPic, blurb: row.blurb,
     autoCollectEnabled: Boolean(row.autoCollectEnabled),
-    autoCollectIntervalHours: row.autoCollectIntervalHours || 24,
+    autoCollectMode: row.autoCollectMode === 'weekdays' ? 'weekdays' : 'days',
+    autoCollectIntervalDays: row.autoCollectIntervalDays || Math.max(1, Math.ceil((row.autoCollectIntervalHours || 24) / 24)),
+    autoCollectWeekdays: parseWeekdays(row.autoCollectWeekdays),
     autoCollectMeta: row.autoCollectMeta !== false,
     autoCollectClean: Boolean(row.autoCollectClean),
   }
@@ -801,6 +821,26 @@ function openUrl(url) {
 function formatDate(value) {
   if (!value) return ''
   return new Date(value).toLocaleString()
+}
+function parseWeekdays(value) {
+  let raw = value
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw || '[]') } catch { raw = [] }
+  }
+  return [...new Set((Array.isArray(raw) ? raw : [])
+    .map(n => Number(n))
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= 7))]
+    .sort((a, b) => a - b)
+}
+function autoCollectSummary(row) {
+  if (!row?.autoCollectEnabled) return '关闭'
+  if (row.autoCollectMode === 'weekdays') {
+    const labels = parseWeekdays(row.autoCollectWeekdays)
+      .map(value => weekdayOptions.find(day => day.value === value)?.label)
+      .filter(Boolean)
+    return labels.length ? labels.join(' / ') : '固定周几'
+  }
+  return `${row.autoCollectIntervalDays || Math.max(1, Math.ceil((row.autoCollectIntervalHours || 24) / 24))} 天/次`
 }
 async function matchOne(id) {
   ElMessage.info('正在匹配豆瓣…')
@@ -919,6 +959,8 @@ watch(() => route.query.kw, (kw) => {
 .year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .auto-collect-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .auto-collect-row :deep(.el-checkbox) { margin-right: 0; }
+.weekday-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.weekday-group :deep(.el-checkbox-button__inner) { border-left: 1px solid var(--el-border-color); border-radius: 6px; }
 .muted { color: #9aa4b2; font-size: 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }

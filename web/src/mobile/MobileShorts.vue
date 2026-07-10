@@ -84,6 +84,16 @@
         <button v-else-if="isActiveDisplay(index) && paused && !accessBlock" class="ms-play" :class="{ landscape: videoLandscape }" type="button" aria-label="播放" @click="playNow">
           <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
         </button>
+        <button
+          v-if="isActiveDisplay(index) && soundPrompt && !accessBlock"
+          class="ms-sound"
+          type="button"
+          aria-label="打开声音"
+          @click="openSound"
+        >
+          <svg viewBox="0 0 24 24" v-html="icon('volume')"></svg>
+          <span>轻触开启声音</span>
+        </button>
 
         <div v-if="isActiveDisplay(index) && accessBlock" class="ms-lock">
           <strong>{{ accessBlock.title }}</strong>
@@ -337,6 +347,7 @@ const playingKey = ref('')
 const needsTap = ref(false)
 const paused = ref(false)
 const muted = ref(readMutedPreference())
+const soundPrompt = ref(false)
 const videoContain = ref(true)
 const videoLandscape = ref(false)
 const landscapePlayY = ref('')
@@ -768,6 +779,7 @@ function stopVideo() {
   playingKey.value = ''
   needsTap.value = false
   paused.value = false
+  soundPrompt.value = false
   videoContain.value = true
   videoLandscape.value = false
   videoReady.value = false
@@ -1010,7 +1022,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (seq !== playSeq || hls !== currentHls || activeUnit.value?.key !== attachedUnit.key) return
       clearLineFailures(attachedUnit)
-      playNow({ mutedFallback: false })
+      playNow()
     })
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data?.fatal && hls === currentHls && seq === playSeq && activeUnit.value?.key === attachedUnit.key) {
@@ -1021,7 +1033,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
     if (seq !== playSeq || activeUnit.value?.key !== attachedUnit.key) return
     video.src = url
     clearLineFailures(attachedUnit)
-    playNow({ mutedFallback: false })
+    playNow()
   }
 }
 
@@ -1033,6 +1045,7 @@ async function playNow(options = {}) {
   try {
     await video.play()
     if (!desiredMuted) pendingUnmute = false
+    soundPrompt.value = false
     needsTap.value = false
     paused.value = false
     return true
@@ -1042,6 +1055,7 @@ async function playNow(options = {}) {
         video.muted = true
         await video.play()
         pendingUnmute = true
+        soundPrompt.value = true
         needsTap.value = false
         paused.value = false
         return true
@@ -1069,9 +1083,29 @@ function togglePlay() {
   }
 }
 
+async function openSound() {
+  const video = getVideo()
+  muted.value = false
+  writeMutedPreference(false)
+  soundPrompt.value = false
+  pendingUnmute = false
+  if (!video) return
+  video.muted = false
+  try {
+    await video.play()
+    needsTap.value = false
+    paused.value = false
+  } catch {
+    soundPrompt.value = true
+    notifyWarning('浏览器限制了自动开声，请再轻触一次')
+  }
+}
+
 function toggleMute() {
   muted.value = !muted.value
   writeMutedPreference(muted.value)
+  soundPrompt.value = false
+  pendingUnmute = false
   const video = getVideo()
   if (video) video.muted = muted.value
 }
@@ -1115,7 +1149,6 @@ function onVideoMeta(event) {
 
 function onVideoCanPlay(event) {
   updateVideoFit(event?.target)
-  videoReady.value = true
 }
 
 function onTimeUpdate() {
@@ -1127,6 +1160,7 @@ function onTimeUpdate() {
 }
 
 function onPlaying() {
+  videoReady.value = true
   paused.value = false
   needsTap.value = false
 }
@@ -1654,6 +1688,35 @@ onBeforeUnmount(() => {
 }
 .ms-video.ready {
   opacity: 1;
+}
+.ms-sound {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: calc(172px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 999px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #fff;
+  background: rgba(0, 0, 0, .44);
+  backdrop-filter: blur(14px);
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
+}
+.ms-sound svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .ms-vignette {
   background:

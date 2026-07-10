@@ -328,6 +328,9 @@ model Vod {
   // 单片自动采集：按影片自身周期重拉现有片源详情，刷新剧集/状态
   autoCollectEnabled       Boolean   @default(false)
   autoCollectIntervalHours Int       @default(0)
+  autoCollectMode          String    @default("days") // days / weekdays
+  autoCollectIntervalDays  Int       @default(1)
+  autoCollectWeekdays      String    @default("[]") // JSON: [1..7], 1=周一, 7=周日
   autoCollectNextAt        DateTime?
   autoCollectLastAt        DateTime?
   autoCollectMeta          Boolean   @default(true)
