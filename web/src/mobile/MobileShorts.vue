@@ -2274,7 +2274,7 @@ onBeforeUnmount(() => {
 .full-mode .ms-progress {
   position: fixed;
   top: auto;
-  bottom: calc(46px + env(safe-area-inset-bottom));
+  bottom: calc(54px + env(safe-area-inset-bottom));
   height: 20px;
   align-items: center;
 }
@@ -2344,8 +2344,8 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(46px + env(safe-area-inset-bottom));
-  padding: 5px 16px calc(5px + env(safe-area-inset-bottom));
+  height: calc(54px + env(safe-area-inset-bottom));
+  padding: 9px 16px calc(9px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: minmax(0, 1fr) 36px;
   gap: 12px;
