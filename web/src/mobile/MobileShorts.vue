@@ -1841,8 +1841,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 58;
   top: calc(env(safe-area-inset-top) + 10px);
-  left: 14px;
-  right: 14px;
+  left: 20px;
+  right: 20px;
   display: flex;
   justify-content: space-between;
 }
@@ -1875,8 +1875,8 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .ms-top button {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -2034,9 +2034,9 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 9;
   right: 13px;
-  bottom: calc(158px + env(safe-area-inset-bottom));
+  bottom: calc(112px + env(safe-area-inset-bottom));
   display: grid;
-  gap: 16px;
+  gap: 15px;
 }
 .ms-actions button {
   min-width: 46px;
