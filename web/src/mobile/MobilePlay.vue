@@ -1,10 +1,15 @@
 <template>
   <main class="mp">
-    <section class="mp-player" :style="heroStyle" @click="showControls()">
-      <button class="mp-back" type="button" aria-label="返回" @click.stop="goBack">
-        <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
-      </button>
-      <div v-if="episodes.length && controlsVisible" class="mp-episode-pill">第 {{ epIdx + 1 }} 集 / 共 {{ episodes.length }} 集</div>
+    <section class="mp-player" :class="{ landscape: playerLandscape }" :style="heroStyle" @click="showControls()">
+      <div class="mp-topbar">
+        <button class="mp-icon-btn" type="button" aria-label="返回" @click.stop="goBack">
+          <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
+        </button>
+        <strong>{{ playerTitle }}</strong>
+        <button v-if="mode === 'hls' && curUrl && !accessBlock" class="mp-icon-btn" type="button" :aria-label="playerLandscape ? '退出横屏' : '横屏播放'" @click.stop="toggleLandscape">
+          <svg viewBox="0 0 24 24" v-html="icon(playerLandscape ? 'close' : 'rotate')"></svg>
+        </button>
+      </div>
       <div class="mp-bg"></div>
       <video
         v-if="mode === 'hls' && !accessBlock"
@@ -37,42 +42,60 @@
       <button v-else-if="!curUrl" class="mp-play" type="button" aria-label="播放" @click="playCurrent">
         <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
       </button>
-      <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="showControls()">
-        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="上一集" :disabled="!hasPrevEp" @click.stop="playPrevEp">
+      <div v-if="curUrl && !accessBlock && controlsVisible && mode === 'hls'" class="mp-center-controls" @click.stop="showControls()">
+        <button class="mp-round-btn" type="button" aria-label="上一集" :disabled="!hasPrevEp" @click.stop="playPrevEp">
           <svg viewBox="0 0 24 24" v-html="icon('skipBack')"></svg>
         </button>
-        <button v-if="mode === 'hls'" class="mp-control-btn mp-toggle" type="button" :aria-label="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
+        <button class="mp-round-btn mp-round-main" type="button" :aria-label="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
           <svg viewBox="0 0 24 24" v-html="icon(isPlaying ? 'pause' : 'play')"></svg>
         </button>
-        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="下一集" :disabled="!hasNextEp" @click.stop="playNextEp">
+        <button class="mp-round-btn" type="button" aria-label="下一集" :disabled="!hasNextEp" @click.stop="playNextEp">
           <svg viewBox="0 0 24 24" v-html="icon('skipForward')"></svg>
         </button>
-        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" :aria-label="isMuted ? '取消静音' : '静音'" @click.stop="toggleMuted">
-          <svg viewBox="0 0 24 24" v-html="icon(isMuted ? 'volumeOff' : 'volume')"></svg>
-        </button>
-        <span v-if="mode === 'hls'" class="mp-time">{{ formatTime(currentTime) }}</span>
-        <input
-          v-if="mode === 'hls'"
-          class="mp-range"
-          type="range"
-          min="0"
-          :max="duration || 0"
-          step="0.1"
-          :value="currentTime"
-          :style="{ '--progress': progressPercent }"
-          aria-label="播放进度"
-          @input="seekVideo"
-          @click.stop
-        />
-        <span v-if="mode === 'hls'" class="mp-time">{{ formatTime(duration) }}</span>
-        <button v-if="mode === 'hls'" class="mp-text-btn" type="button" aria-label="倍速" @click.stop="cycleSpeed">{{ playbackRateLabel }}</button>
-        <button v-if="mode === 'hls' && qualityOptions.length" class="mp-text-btn" type="button" aria-label="清晰度" @click.stop="cycleQuality">{{ qualityLabel }}</button>
-        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="投屏" @click.stop="openCast">
-          <svg viewBox="0 0 24 24" v-html="icon('cast')"></svg>
-        </button>
-        <button class="mp-control-btn" type="button" aria-label="全屏播放" @click.stop="enterFullscreen">
+      </div>
+      <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-bottom-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="showControls()">
+        <div v-if="mode === 'hls'" class="mp-progress-row" :class="{ compact: !showQualityControl }">
+          <button class="mp-control-btn" type="button" :aria-label="isMuted ? '取消静音' : '静音'" @click.stop="toggleMuted">
+            <svg viewBox="0 0 24 24" v-html="icon(isMuted ? 'volumeOff' : 'volume')"></svg>
+          </button>
+          <span class="mp-time">{{ formatTime(currentTime) }}</span>
+          <input
+            class="mp-range"
+            type="range"
+            min="0"
+            :max="duration || 0"
+            step="0.1"
+            :value="currentTime"
+            :style="{ '--progress': progressPercent }"
+            aria-label="播放进度"
+            @input="seekVideo"
+            @click.stop
+          />
+          <span class="mp-time">{{ formatTime(duration) }}</span>
+          <button v-if="showQualityControl" class="mp-control-btn" type="button" aria-label="清晰度" @click.stop="cycleQuality">
+            <svg viewBox="0 0 24 24" v-html="icon('quality')"></svg>
+          </button>
+          <button class="mp-control-btn" type="button" aria-label="更多播放设置" @click.stop="togglePlayerMenu">
+            <svg viewBox="0 0 24 24" v-html="icon('more')"></svg>
+          </button>
+          <button class="mp-control-btn" type="button" aria-label="全屏播放" @click.stop="enterFullscreen">
+            <svg viewBox="0 0 24 24" v-html="icon('expand')"></svg>
+          </button>
+        </div>
+        <button v-else class="mp-control-btn mp-iframe-full" type="button" aria-label="全屏播放" @click.stop="enterFullscreen">
           <svg viewBox="0 0 24 24" v-html="icon('expand')"></svg>
         </button>
+        <div v-if="menuOpen && mode === 'hls'" class="mp-menu" @click.stop="showControls(4200)">
+          <div class="mp-menu-speeds">
+            <button v-for="rate in speedOptions" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click.stop="setSpeed(rate)">
+              {{ rate === 1 ? '1x' : `${rate}x` }}
+            </button>
+          </div>
+          <button class="mp-menu-cast" type="button" @click.stop="openCast">
+            <svg viewBox="0 0 24 24" v-html="icon('cast')"></svg>
+            投屏
+          </button>
+        </div>
       </div>
       <div v-if="playNotice" class="mp-notice">{{ playNotice }}</div>
     </section>
@@ -171,11 +194,15 @@ const duration = ref(0)
 const playbackRate = ref(1)
 const qualityLevel = ref(-1)
 const qualityOptions = ref([])
+const menuOpen = ref(false)
+const playerLandscape = ref(false)
+const speedOptions = [0.75, 1, 1.25, 1.5, 2]
 let hls = null
 let noticeTimer = 0
 let historyTimer = 0
 let controlsTimer = 0
 let retryingLine = false
+let bodyOverflowBeforeLandscape = ''
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value] || null)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
@@ -184,10 +211,18 @@ const hasPrevEp = computed(() => epIdx.value > 0)
 const hasNextEp = computed(() => epIdx.value < episodes.value.length - 1)
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
-const playbackRateLabel = computed(() => playbackRate.value === 1 ? '倍速' : `${playbackRate.value}x`)
+const showQualityControl = computed(() => qualityOptions.value.length > 1)
 const qualityLabel = computed(() => {
   if (qualityLevel.value < 0) return '自动'
   return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || '清晰度'
+})
+const currentEpisodeName = computed(() => {
+  const ep = episodes.value[epIdx.value]
+  return ep?.name || (episodes.value.length ? `第 ${epIdx.value + 1} 集` : '')
+})
+const playerTitle = computed(() => {
+  const name = vod.value?.name || '播放'
+  return currentEpisodeName.value ? `${name} · ${currentEpisodeName.value}` : name
 })
 const heroStyle = computed(() => {
   const url = poster(vod.value)
@@ -230,6 +265,7 @@ function stopPlayback() {
   duration.value = 0
   isMuted.value = false
   controlsVisible.value = false
+  menuOpen.value = false
   qualityLevel.value = -1
   qualityOptions.value = []
   if (controlsTimer) clearTimeout(controlsTimer)
@@ -259,8 +295,29 @@ function showControls(timeout = 2600) {
   if (controlsTimer) clearTimeout(controlsTimer)
   controlsTimer = window.setTimeout(() => {
     controlsVisible.value = false
+    menuOpen.value = false
     controlsTimer = 0
   }, timeout)
+}
+
+async function toggleLandscape() {
+  playerLandscape.value = !playerLandscape.value
+  if (playerLandscape.value) {
+    bodyOverflowBeforeLandscape = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    try { await screen.orientation?.lock?.('landscape') } catch {}
+  } else {
+    document.body.style.overflow = bodyOverflowBeforeLandscape
+    try { screen.orientation?.unlock?.() } catch {}
+  }
+  showControls(3200)
+}
+
+function resetLandscape() {
+  if (!playerLandscape.value) return
+  playerLandscape.value = false
+  document.body.style.overflow = bodyOverflowBeforeLandscape
+  try { screen.orientation?.unlock?.() } catch {}
 }
 
 function enterFullscreen() {
@@ -286,6 +343,7 @@ function enterFullscreen() {
 
 async function openCast() {
   const video = videoEl.value
+  menuOpen.value = false
   showControls()
   try {
     if (video?.webkitShowPlaybackTargetPicker) {
@@ -343,25 +401,35 @@ function seekVideo(event) {
 }
 
 function playPrevEp() {
-  if (!hasPrevEp.value) return
+  if (!hasPrevEp.value) {
+    showControls(2200)
+    return
+  }
   playEp(epIdx.value - 1)
   showControls(2200)
 }
 
 function playNextEp() {
-  if (!hasNextEp.value) return
+  if (!hasNextEp.value) {
+    showControls(2200)
+    return
+  }
   playEp(epIdx.value + 1)
   showControls(2200)
 }
 
-function cycleSpeed() {
-  const speeds = [1, 1.25, 1.5, 2, 0.75]
-  const current = speeds.indexOf(playbackRate.value)
-  playbackRate.value = speeds[(current + 1) % speeds.length]
+function setSpeed(rate) {
+  playbackRate.value = rate
   const video = videoEl.value
   if (video) video.playbackRate = playbackRate.value
   showNotice(playbackRate.value === 1 ? '已恢复正常速度' : `已切换 ${playbackRate.value}x`)
+  menuOpen.value = false
   showControls(3200)
+}
+
+function togglePlayerMenu() {
+  menuOpen.value = !menuOpen.value
+  showControls(menuOpen.value ? 4200 : 2600)
 }
 
 function refreshQualityOptions() {
@@ -382,6 +450,7 @@ function refreshQualityOptions() {
 
 function cycleQuality() {
   if (!hls || !qualityOptions.value.length) return
+  menuOpen.value = false
   const order = [-1, ...qualityOptions.value.map(item => item.level)]
   const current = order.indexOf(qualityLevel.value)
   qualityLevel.value = order[(current + 1) % order.length]
@@ -615,11 +684,15 @@ watch(() => route.params.id, (id) => {
 onMounted(() => loadVod(route.params.id))
 onBeforeUnmount(() => {
   stopPlayback()
+  resetLandscape()
   if (noticeTimer) clearTimeout(noticeTimer)
   if (historyTimer) clearTimeout(historyTimer)
   if (controlsTimer) clearTimeout(controlsTimer)
 })
-onDeactivated(stopPlayback)
+onDeactivated(() => {
+  stopPlayback()
+  resetLandscape()
+})
 </script>
 
 <style scoped>
@@ -640,6 +713,14 @@ onDeactivated(stopPlayback)
   background-size: cover;
   background-position: center;
 }
+.mp-player.landscape {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  aspect-ratio: auto;
+}
 .mp-bg {
   position: absolute;
   inset: 0;
@@ -654,11 +735,31 @@ onDeactivated(stopPlayback)
   object-fit: contain;
   background: #000;
 }
-.mp-back {
+.mp-topbar {
   position: absolute;
   z-index: 10;
   top: calc(env(safe-area-inset-top) + 6px);
-  left: 6px;
+  left: 8px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+  pointer-events: none;
+}
+.mp-topbar strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.94);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 8px rgba(0,0,0,.72);
+  white-space: nowrap;
+}
+.mp-icon-btn {
   width: 38px;
   height: 38px;
   border: 0;
@@ -666,8 +767,9 @@ onDeactivated(stopPlayback)
   place-items: center;
   color: #fff;
   background: transparent;
+  pointer-events: auto;
 }
-.mp-back svg {
+.mp-icon-btn svg {
   width: 23px;
   height: 23px;
   fill: none;
@@ -675,19 +777,7 @@ onDeactivated(stopPlayback)
   stroke-width: 2.3;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.mp-episode-pill {
-  position: absolute;
-  z-index: 9;
-  top: calc(env(safe-area-inset-top) + 12px);
-  left: 44px;
-  right: 12px;
-  color: rgba(255,255,255,.86);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
-  text-shadow: 0 1px 6px rgba(0,0,0,.6);
-  pointer-events: none;
+  filter: drop-shadow(0 1px 6px rgba(0,0,0,.72));
 }
 .mp-state,
 .mp-lock,
@@ -730,39 +820,77 @@ onDeactivated(stopPlayback)
   margin-left: 4px;
   filter: drop-shadow(0 8px 18px rgba(0,0,0,.46));
 }
-.mp-controls {
+.mp-center-controls {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  grid-template-columns: 46px 62px 46px;
+  align-items: center;
+  gap: 22px;
+  transform: translate(-50%, -50%);
+}
+.mp-round-btn {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(0,0,0,.26);
+  backdrop-filter: blur(8px);
+}
+.mp-round-btn:disabled {
+  opacity: .35;
+}
+.mp-round-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mp-round-main {
+  width: 62px;
+  height: 62px;
+  background: rgba(0,0,0,.34);
+}
+.mp-round-main svg {
+  width: 34px;
+  height: 34px;
+  fill: currentColor;
+  stroke: none;
+  opacity: .86;
+}
+.mp-bottom-controls {
   position: absolute;
   z-index: 9;
   left: 0;
   right: 0;
   bottom: 0;
-  min-height: 48px;
-  padding: 8px 8px 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  min-height: 54px;
+  padding: 12px 8px 8px;
   color: #fff;
-  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.72));
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.76));
 }
-.mp-controls::-webkit-scrollbar {
-  display: none;
+.mp-progress-row {
+  display: grid;
+  grid-template-columns: 30px auto minmax(74px, 1fr) auto repeat(3, 30px);
+  align-items: center;
+  gap: 5px;
 }
-.mp-controls.iframe {
-  grid-template-columns: minmax(0, 1fr) 34px;
-}
-.mp-controls.iframe .mp-control-btn {
-  grid-column: 2;
+.mp-progress-row.compact {
+  grid-template-columns: 30px auto minmax(92px, 1fr) auto repeat(2, 30px);
 }
 .mp-control-btn {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 30px;
+  height: 30px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   color: #fff;
@@ -772,22 +900,19 @@ onDeactivated(stopPlayback)
   opacity: .35;
 }
 .mp-control-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.1;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mp-toggle svg {
-  fill: currentColor;
-  stroke: none;
-  opacity: .86;
+.mp-iframe-full {
+  margin-left: auto;
 }
 .mp-range {
   min-width: 0;
-  flex: 1 1 72px;
   width: 100%;
   height: 20px;
   margin: 0;
@@ -832,17 +957,50 @@ onDeactivated(stopPlayback)
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.mp-text-btn {
-  flex: 0 0 auto;
-  min-width: 42px;
-  height: 30px;
+.mp-menu {
+  position: absolute;
+  right: 10px;
+  bottom: 50px;
+  width: min(240px, calc(100vw - 20px));
+  padding: 10px;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  background: rgba(18,18,22,.9);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 28px rgba(0,0,0,.28);
+}
+.mp-menu-speeds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.mp-menu-speeds button,
+.mp-menu-cast {
+  height: 32px;
   border: 0;
   border-radius: 9px;
-  padding: 0 8px;
-  color: #fff;
-  background: rgba(255,255,255,.12);
-  font-size: 11px;
+  color: rgba(255,255,255,.84);
+  background: rgba(255,255,255,.1);
+  font-size: 12px;
   font-weight: 900;
+}
+.mp-menu-speeds button.on {
+  color: #fff;
+  background: #f04438;
+}
+.mp-menu-cast {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.mp-menu-cast svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
 }
 .mp-lock {
   width: min(320px, calc(100vw - 42px));
