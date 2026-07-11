@@ -84,6 +84,47 @@ function clampInt(value: unknown, fallback: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
+function metaVodWhere(q: any) {
+  const where: any = {};
+  const vodIds = Array.isArray(q.vodIds)
+    ? q.vodIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+    : [];
+  if (vodIds.length) where.id = { in: vodIds };
+  const status = String(q.status || "").trim();
+  if (status && status !== "all") where.metaMatched = status;
+  if (q.sourceId) where.plays = { some: { sourceId: Number(q.sourceId) } };
+  if (q.categoryName) where.typeName = String(q.categoryName);
+  if (q.kw) {
+    const kw = String(q.kw);
+    where.OR = [{ name: { contains: kw } }, { matchedTitle: { contains: kw } }];
+  }
+  return where;
+}
+
+function metaTaskPayload(b: any, extra: Record<string, any> = {}) {
+  return {
+    limit: b.limit,
+    intervalMs: b.intervalMs,
+    redo: b.redo,
+    status: b.status,
+    sourceId: b.sourceId ? Number(b.sourceId) : undefined,
+    categoryName: b.categoryName ? String(b.categoryName) : undefined,
+    priority: b.priority,
+    provider: b.provider ? String(b.provider) : undefined,
+    matchConcurrency: b.matchConcurrency,
+    concurrencyBatchSize: b.concurrencyBatchSize,
+    autoMatchScore: b.autoMatchScore,
+    pendingMatchScore: b.pendingMatchScore,
+    ...extra,
+  };
+}
+
+function chunks<T>(rows: T[], size: number) {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
 async function runProviderMatch(provider: MetaProviderConfig, v: any): Promise<DoubanMatchResult> {
   const ctx = {
     typeName: v.typeName,
@@ -142,16 +183,36 @@ export default async function metaRoutes(app: FastifyInstance) {
   app.post("/api/meta/batch", async (req) => {
     const b = (req.body as any) || {};
     const vodIds = Array.isArray(b.vodIds) ? b.vodIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0) : undefined;
+    if (b.split) {
+      const limit = clampInt(b.limit, 50, 1, 500);
+      const where = metaVodWhere(b);
+      const rows = await prisma.vod.findMany({
+        where,
+        orderBy: b.redo ? { metaAt: "asc" } : { id: "asc" },
+        select: { id: true },
+      });
+      if (!rows.length) return { taskIds: [], total: 0, tasks: 0, message: "当前筛选没有可提交的影片" };
+      const taskIds: number[] = [];
+      for (const part of chunks(rows.map((row) => row.id), limit)) {
+        const task = await createMetaTask(metaTaskPayload(b, {
+          limit: part.length,
+          vodIds: part,
+          status: undefined,
+          redo: true,
+        }));
+        taskIds.push(task.id);
+      }
+      return {
+        taskIds,
+        total: rows.length,
+        tasks: taskIds.length,
+        perTaskLimit: limit,
+        message: `已提交 ${rows.length} 部，拆分为 ${taskIds.length} 个元数据任务`,
+      };
+    }
     const task = await createMetaTask({
-      limit: b.limit,
-      intervalMs: b.intervalMs,
-      redo: b.redo,
-      status: b.status,
-      sourceId: b.sourceId ? Number(b.sourceId) : undefined,
-      categoryName: b.categoryName ? String(b.categoryName) : undefined,
+      ...metaTaskPayload(b),
       vodIds,
-      priority: b.priority,
-      provider: b.provider ? String(b.provider) : undefined,
     });
     return { taskId: task.id, message: "元数据匹配任务已提交，去「采集任务」看进度" };
   });
@@ -160,15 +221,7 @@ export default async function metaRoutes(app: FastifyInstance) {
     const q = (req.query as any) || {};
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Math.max(10, Number(q.size) || 20));
-    const where: any = {};
-    const status = String(q.status || "").trim();
-    if (status && status !== "all") where.metaMatched = status;
-    if (q.sourceId) where.plays = { some: { sourceId: Number(q.sourceId) } };
-    if (q.categoryName) where.typeName = String(q.categoryName);
-    if (q.kw) {
-      const kw = String(q.kw);
-      where.OR = [{ name: { contains: kw } }, { matchedTitle: { contains: kw } }];
-    }
+    const where = metaVodWhere(q);
     const [total, list] = await Promise.all([
       prisma.vod.count({ where }),
       prisma.vod.findMany({

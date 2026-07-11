@@ -154,7 +154,7 @@ function progressDetail(row) {
     return `处理 ${row.pageNow || 0}/${row.pageTotal || 0} · 可用${row.added || 0} 失败${row.updated || 0} 无广告${row.merged || 0}`
   }
   if (row.type === 'meta') {
-    return `处理 ${row.pageNow || 0}/${row.pageTotal || 0} · 匹配${row.added || 0} 待确认/失败${row.updated || 0}`
+    return `处理 ${row.pageNow || 0}/${row.pageTotal || 0} · 成功${row.added || 0} 待确认${row.merged || 0} 失败${row.updated || 0}`
   }
   return `页 ${row.pageNow || 0}/${row.pageTotal || 0} · 新增${row.added || 0} 更新${row.updated || 0} 合并${row.merged || 0}`
 }
@@ -177,6 +177,7 @@ function taskRunConfig(row) {
   const parts = []
   if (p.provider) parts.push(`源 ${sourceLabel(p.provider)}`)
   if (p.limit) parts.push(`任务上限 ${p.limit}`)
+  if (Array.isArray(p.vodIds) && p.vodIds.length) parts.push(`固定影片 ${p.vodIds.length}`)
   if (p.provider === 'tmdb' || p.matchConcurrency || p.concurrencyBatchSize) {
     const concurrency = Number(p.matchConcurrency) || 0
     const perWorker = Number(p.concurrencyBatchSize) || 0

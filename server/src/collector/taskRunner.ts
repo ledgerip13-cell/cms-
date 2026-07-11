@@ -931,6 +931,8 @@ export async function createMetaTask(opts: {
   provider?: string;
   matchConcurrency?: number;
   concurrencyBatchSize?: number;
+  autoMatchScore?: number;
+  pendingMatchScore?: number;
   manualConfirm?: boolean;
   vodId?: number;
   metaSourceId?: string;
@@ -1036,7 +1038,7 @@ async function runMetaTask(
       if (canceled.has(taskId)) {
         await taskUpdate({
           where: { id: taskId },
-          data: { status: "canceled", message: `已手动中止（已处理${processed}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: new Date() },
+          data: { status: "canceled", message: `已手动中止（已处理${processed}/${vods.length}）`, added: matched, updated: failed, merged: pending, finishedAt: new Date() },
         });
         metaRunning = false;
         return;
@@ -1044,7 +1046,7 @@ async function runMetaTask(
       if (paused.has(taskId)) {
         await taskUpdate({
           where: { id: taskId },
-          data: { status: "paused", message: `已暂停（已处理${processed}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: null },
+          data: { status: "paused", message: `已暂停（已处理${processed}/${vods.length}）`, added: matched, updated: failed, merged: pending, finishedAt: null },
         });
         metaRunning = false;
         return;
@@ -1063,14 +1065,14 @@ async function runMetaTask(
       const progress = vods.length ? Math.round((processed / vods.length) * 100) : 100;
       await taskUpdate({
         where: { id: taskId },
-        data: { progress, pageNow: processed, pageTotal: vods.length, added: matched, updated: failed + pending },
+        data: { progress, pageNow: processed, pageTotal: vods.length, added: matched, updated: failed, merged: pending },
       });
       if (offset + waveSize < vods.length) await sleep(interval);
     }
     await taskUpdate({
       where: { id: taskId },
       data: {
-        status: "done", progress: 100, added: matched, updated: failed,
+        status: "done", progress: 100, added: matched, updated: failed, merged: pending,
         message: `匹配成功${matched} 待确认${pending} 失败${failed} / 共${vods.length}`,
         finishedAt: new Date(),
       },

@@ -12,7 +12,9 @@
       </div>
     </div>
 
-    <div class="cols">
+    <el-tabs v-model="activeTab" class="meta-tabs">
+      <el-tab-pane label="概览" name="overview">
+        <div class="overview-grid">
       <!-- 手动操作 -->
       <div class="card">
         <div class="sec-title" style="margin-bottom:16px">元数据匹配</div>
@@ -28,7 +30,10 @@
         </div>
         <p class="tip">任务在后台运行，进度见「采集任务」页。默认按启用源优先级执行；自动通过分/待确认分/限速按各源独立配置。</p>
       </div>
+        </div>
+      </el-tab-pane>
 
+      <el-tab-pane label="匹配源配置" name="providers">
       <!-- 参数设置 -->
       <div class="card">
         <div class="toolbar">
@@ -126,8 +131,9 @@
           </template>
         </el-form>
       </div>
-    </div>
+      </el-tab-pane>
 
+      <el-tab-pane label="匹配记录" name="records">
     <div class="card">
       <div class="toolbar">
         <div class="sec-title">匹配记录</div>
@@ -183,6 +189,8 @@
         :total="rowTotal" :page-size="q.size" :current-page="q.page"
         @current-change="p=>{q.page=p;loadRows()}" />
     </div>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog v-model="candOpen" title="待确认候选" width="760">
       <div v-if="candRow" class="cand-title">{{ candRow.name }} · 当前置信 {{ candRow.metaScore || 0 }}</div>
@@ -222,6 +230,7 @@ const DEFAULT_PROVIDERS_CONFIG = {
 }
 const stat = ref({}); const cfg = ref({ intervalMs:2500, batchLimit:50, autoMatchScore:80, pendingMatchScore:60, autoMatch:false, cronExpr:'0 4 * * *', redoFailed:false, saveImages:false, providersConfig: JSON.parse(JSON.stringify(DEFAULT_PROVIDERS_CONFIG)) })
 const saving = ref(false)
+const activeTab = ref('overview')
 const sources = ref([])
 const categories = ref([])
 const rows = ref([])
@@ -350,7 +359,9 @@ async function load() {
 }
 async function run(redo) {
   try {
-    const payload = metaTaskPayload({ redo })
+    const payload = metaTaskPayload({ redo, split: true, ...(redo ? { status: 'all' } : { status: 'none' }) })
+    const ok = await confirmMetaSubmit(payload, redo ? '重刷全部影片元数据' : '匹配未处理影片')
+    if (!ok) return
     const r = await api.metaBatch(payload)
     ElMessage.success(r.message || '任务已提交，去「采集任务」看进度')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
@@ -368,19 +379,51 @@ async function loadRows() {
   } catch (e) { ElMessage.error(e.message || '加载失败') } finally { rowLoading.value = false }
 }
 async function runFiltered() {
-  const ok = await ElMessageBox.confirm('按当前筛选条件提交元数据匹配任务？', '元数据匹配', { type: 'warning' })
-    .then(() => true).catch(() => false)
+  const payload = {
+    ...metaTaskPayload(),
+    status: q.value.status,
+    sourceId: q.value.sourceId || undefined,
+    categoryName: q.value.categoryName || undefined,
+    kw: q.value.kw || undefined,
+    redo: q.value.status === 'all',
+    split: true,
+  }
+  const ok = await confirmMetaSubmit(payload, '按当前筛选提交元数据匹配')
   if (!ok) return
   try {
-    const r = await api.metaBatch({
-      ...metaTaskPayload(),
-      status: q.value.status,
-      sourceId: q.value.sourceId || undefined,
-      categoryName: q.value.categoryName || undefined,
-      redo: q.value.status === 'all',
-    })
+    const r = await api.metaBatch(payload)
     ElMessage.success(r.message || '任务已提交')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+async function metaScopeTotal(payload) {
+  const r = await api.metaVods({
+    page: 1,
+    size: 10,
+    status: payload.status || (payload.redo ? 'all' : 'none'),
+    sourceId: payload.sourceId || undefined,
+    categoryName: payload.categoryName || undefined,
+    kw: payload.kw || undefined,
+  })
+  return Number(r.total || 0)
+}
+async function confirmMetaSubmit(payload, title) {
+  const total = await metaScopeTotal(payload)
+  if (!total) {
+    ElMessage.warning('当前条件没有可提交的影片')
+    return false
+  }
+  const limit = Math.max(1, Number(payload.limit) || 50)
+  const tasks = Math.ceil(total / limit)
+  const provider = providerLabel(payload.provider)
+  const concurrency = payload.provider === 'tmdb' && payload.matchConcurrency && payload.concurrencyBatchSize
+    ? `\nTMDB 每任务并发：${payload.matchConcurrency} worker × 每 worker ${payload.concurrencyBatchSize} 部 = 每轮 ${payload.matchConcurrency * payload.concurrencyBatchSize} 部`
+    : ''
+  const message = `当前条件共 ${total} 部。\n任务数量上限 ${limit} 部/任务，将拆成 ${tasks} 个任务排队。\n匹配源：${provider}${concurrency}\n\n确认提交？`
+  return ElMessageBox.confirm(message, title, {
+    type: 'warning',
+    confirmButtonText: `提交 ${tasks} 个任务`,
+    cancelButtonText: '取消',
+  }).then(() => true).catch(() => false)
 }
 async function clearSelected() {
   if (!selectedRows.value.length) return
@@ -458,7 +501,8 @@ onMounted(load)
   padding: 18px 20px; box-shadow: var(--shadow-card); }
 .stat-num { font-size: 26px; font-weight: 750; }
 .stat-label { font-size: 13px; color: var(--text-3); margin-top: 4px; }
-.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.meta-tabs { margin-top: 4px; }
+.overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
 .provider-list { display: grid; gap: 12px; margin-bottom: 18px; }
 .provider-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg-soft); }
@@ -473,5 +517,5 @@ onMounted(load)
 .pager { margin-top: 14px; justify-content: flex-end; }
 .muted { color: var(--text-3); font-size: 12px; }
 .cand-title { font-weight: 700; margin-bottom: 12px; color: var(--text-1); }
-@media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .stat-row { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 1000px) { .overview-grid { grid-template-columns: 1fr; } .stat-row { grid-template-columns: repeat(2,1fr); } }
 </style>
