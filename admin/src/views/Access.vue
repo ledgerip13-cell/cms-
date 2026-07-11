@@ -112,7 +112,7 @@
           </div>
         </el-form-item>
         <el-form-item label="排序"><el-input-number v-model="levelForm.sort" :min="0" :max="999" /></el-form-item>
-        <el-form-item label="状态"><el-switch v-model="levelForm.enabled" :disabled="levelForm.isDefault" active-text="启用" inactive-text="停用" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="levelForm.enabled" :disabled="levelForm.isDefault" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="levelForm.remark" type="textarea" :rows="3" maxlength="100" show-word-limit /></el-form-item>
       </el-form>
       <template #footer>

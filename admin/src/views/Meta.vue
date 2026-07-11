@@ -70,7 +70,7 @@
             <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
           </el-form-item>
           <el-form-item label="保存图片">
-            <el-switch v-model="cfg.saveImages" />
+            <el-switch v-model="cfg.saveImages" inline-prompt active-text="开启" inactive-text="关闭" />
             <span class="unit">所有元数据源生效；保存海报/剧照到本地兜底</span>
           </el-form-item>
           <el-divider>置信分设置</el-divider>
@@ -84,7 +84,7 @@
           </el-form-item>
           <el-divider>定时自动匹配</el-divider>
           <el-form-item label="自动匹配">
-            <el-switch v-model="cfg.autoMatch" />
+            <el-switch v-model="cfg.autoMatch" inline-prompt active-text="开启" inactive-text="关闭" />
             <span class="unit">所有启用源按优先级执行</span>
           </el-form-item>
           <template v-if="cfg.autoMatch">
@@ -97,7 +97,7 @@
               </el-select>
             </el-form-item>
             <el-form-item label="一并重试失败">
-              <el-switch v-model="cfg.redoFailed" />
+              <el-switch v-model="cfg.redoFailed" inline-prompt active-text="开启" inactive-text="关闭" />
               <span class="unit">开启则定时任务也重刷之前失败的</span>
             </el-form-item>
           </template>
@@ -110,7 +110,7 @@
                 <b>{{ provider.name }}</b>
                 <span>{{ provider.key === 'douban' ? '评分 / 简介 / 图片 / 别名' : '海报 / 剧照 / 国际化元数据' }}</span>
               </div>
-              <el-switch v-model="provider.enabled" active-text="启用" inactive-text="停用" />
+              <el-switch v-model="provider.enabled" inline-prompt active-text="启用" inactive-text="停用" />
             </div>
             <el-form label-width="82px" class="provider-form">
               <el-form-item label="优先级">

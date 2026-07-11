@@ -50,7 +50,7 @@
             <el-divider content-position="left">前台用户注册</el-divider>
 
             <el-form-item label="开放注册">
-              <el-switch v-model="form.allowRegister" active-text="允许" inactive-text="关闭" />
+              <el-switch v-model="form.allowRegister" inline-prompt active-text="允许" inactive-text="关闭" />
               <div class="hint inline">关闭后，新用户无法注册，已有用户仍可登录。</div>
             </el-form-item>
 
@@ -89,7 +89,7 @@
         <el-tab-pane label="刷短剧" name="shorts">
           <el-form :model="form.shortsConfig" label-width="120px" class="site-form">
             <el-form-item label="显示入口">
-              <el-switch v-model="form.shortsConfig.enabled" active-text="显示" inactive-text="隐藏" />
+              <el-switch v-model="form.shortsConfig.enabled" inline-prompt active-text="显示" inactive-text="隐藏" />
               <div class="hint inline">关闭后前台导航不显示“刷短剧”，直接访问也只显示停用提示。</div>
             </el-form-item>
 
@@ -134,16 +134,16 @@
             <el-divider content-position="left">前台交互</el-divider>
 
             <el-form-item label="框架内搜索">
-              <el-switch v-model="form.shortsConfig.enableSearch" active-text="开启" inactive-text="关闭" />
+              <el-switch v-model="form.shortsConfig.enableSearch" inline-prompt active-text="开启" inactive-text="关闭" />
               <div class="hint inline">开启后搜索在短剧框架内完成，不跳回普通列表页。</div>
             </el-form-item>
 
             <el-form-item label="沉浸按钮">
-              <el-switch v-model="form.shortsConfig.showImmersiveButton" active-text="显示" inactive-text="隐藏" />
+              <el-switch v-model="form.shortsConfig.showImmersiveButton" inline-prompt active-text="显示" inactive-text="隐藏" />
             </el-form-item>
 
             <el-form-item label="自动下一集">
-              <el-switch v-model="form.shortsConfig.autoPlayNext" active-text="开启" inactive-text="关闭" />
+              <el-switch v-model="form.shortsConfig.autoPlayNext" inline-prompt active-text="开启" inactive-text="关闭" />
               <div class="hint inline">全集观看时当前集结束后自动滑到下一集。</div>
             </el-form-item>
           </el-form>
@@ -152,7 +152,7 @@
         <el-tab-pane label="播放策略" name="playback">
           <el-form :model="form.playConfig" label-width="140px" class="site-form">
             <el-form-item label="隐藏重复通道">
-              <el-switch v-model="form.playConfig.hideDuplicateSourceChannels" active-text="开启" inactive-text="关闭" />
+              <el-switch v-model="form.playConfig.hideDuplicateSourceChannels" inline-prompt active-text="开启" inactive-text="关闭" />
               <div class="hint inline">同一采集源下，若 HLS 直链与 share/iframe 包装通道集数完全一致，观众端只显示直链通道。</div>
             </el-form-item>
             <el-form-item label="全局回源模式">
@@ -169,7 +169,7 @@
         <el-tab-pane label="PWA" name="pwa">
           <el-form :model="form.pwaConfig" label-width="130px" class="site-form">
             <el-form-item label="桌面安装">
-              <el-switch v-model="form.pwaConfig.enabled" active-text="开启" inactive-text="关闭" />
+              <el-switch v-model="form.pwaConfig.enabled" inline-prompt active-text="开启" inactive-text="关闭" />
               <div class="hint inline">开启后支持添加到手机桌面；新版本发布后前台会弹出升级提示。</div>
             </el-form-item>
 

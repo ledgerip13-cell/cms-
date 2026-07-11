@@ -40,12 +40,12 @@
       </el-table-column>
       <el-table-column label="启用" width="60">
         <template #default="{ row }">
-          <el-switch v-model="row.enabled" @change="toggle(row)" />
+          <el-switch v-model="row.enabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggle(row)" />
         </template>
       </el-table-column>
       <el-table-column label="定时采集" width="110">
         <template #default="{ row }">
-          <el-switch v-model="row.autoSync" @change="toggle(row)" />
+          <el-switch v-model="row.autoSync" inline-prompt active-text="开启" inactive-text="关闭" @change="toggle(row)" />
           <div v-if="row.autoSync" style="font-size:11px;color:#9aa4b2">
             {{ row.cronExpr }} · {{ row.syncHours }}h · {{ autoTypeSummary(row) }}
           </div>
@@ -99,9 +99,9 @@
         <small style="margin-left:8px;color:#9aa4b2">默认不下载；加密源选 key</small>
       </el-form-item>
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
-      <el-form-item label="启用"><el-switch v-model="form.enabled" /></el-form-item>
+      <el-form-item label="启用"><el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
       <el-divider>定时自动采集</el-divider>
-      <el-form-item label="自动采集"><el-switch v-model="form.autoSync" /></el-form-item>
+      <el-form-item label="自动采集"><el-switch v-model="form.autoSync" inline-prompt active-text="开启" inactive-text="关闭" /></el-form-item>
       <template v-if="form.autoSync">
         <el-form-item label="采集频率">
           <el-select v-model="form.cronExpr" style="width:220px">

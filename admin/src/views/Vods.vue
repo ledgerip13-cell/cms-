@@ -341,7 +341,7 @@
       </el-form-item>
       <el-divider content-position="left">自动采集</el-divider>
       <el-form-item label="周期采集">
-        <el-switch v-model="editForm.autoCollectEnabled" active-text="开启" inactive-text="关闭" />
+        <el-switch v-model="editForm.autoCollectEnabled" inline-prompt active-text="开启" inactive-text="关闭" />
       </el-form-item>
       <el-form-item v-if="editForm.autoCollectEnabled" label="采集周期">
         <div class="auto-collect-row">

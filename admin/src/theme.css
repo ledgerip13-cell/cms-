@@ -71,6 +71,10 @@ body { margin: 0; background: var(--page-bg); color: var(--text-1);
 /* 通用行内图标按钮间距 */
 .el-button + .el-button { margin-left: var(--sp-2); }
 
+/* 开关文字统一显示在按钮内部，避免“关闭 按钮 开启”式错位 */
+.el-switch.is-text .el-switch__core { min-width: 58px; }
+.el-switch.is-text .el-switch__inner { padding: 0 7px; }
+
 /* 评分展示 */
 .rating { color: #f7a23b; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
 .rating .el-icon { font-size: 14px; }

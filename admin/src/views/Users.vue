@@ -113,7 +113,7 @@
       <el-form label-width="88px">
         <el-form-item label="账号"><el-input v-model="edit.username" disabled /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="edit.nickname" maxlength="32" /></el-form-item>
-        <el-form-item label="状态"><el-switch v-model="edit.enabled" active-text="正常" inactive-text="禁用" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="edit.enabled" inline-prompt active-text="正常" inactive-text="禁用" /></el-form-item>
         <el-form-item label="VIP等级">
           <el-select v-model="edit.vipLevelId" filterable style="width:100%">
             <el-option v-for="level in levelOptions" :key="level.id" :label="level.name" :value="level.id">

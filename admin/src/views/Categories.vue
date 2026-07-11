@@ -30,7 +30,7 @@
           </el-table-column>
           <el-table-column label="前台显示" width="80">
             <template #default="{ row }">
-              <el-switch v-model="row.enabled" @change="v => toggleEnabled(row, v)" />
+              <el-switch v-model="row.enabled" inline-prompt active-text="显示" inactive-text="隐藏" @change="v => toggleEnabled(row, v)" />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="120">
@@ -115,7 +115,7 @@
         </div>
       </el-form-item>
       <el-form-item label="排序"><el-input-number v-model="form.sort" :min="1" :max="999" /></el-form-item>
-      <el-form-item label="前台显示"><el-switch v-model="form.enabled" /></el-form-item>
+      <el-form-item label="前台显示"><el-switch v-model="form.enabled" inline-prompt active-text="显示" inactive-text="隐藏" /></el-form-item>
       <el-form-item label="展示权限">
         <el-select v-model="form.displayMode" style="width:220px">
           <el-option v-for="m in displayModes" :key="m.value" :label="m.label" :value="m.value" />

@@ -14,14 +14,15 @@
 
       <el-form :model="cfg" label-width="132px" class="cfg-form">
         <el-form-item label="总开关">
-          <el-switch v-model="cfg.enabled" active-text="开启清洗返回" inactive-text="关闭返回原始源" />
+          <el-switch v-model="cfg.enabled" inline-prompt active-text="开启" inactive-text="关闭" />
+          <span class="unit">开启后播放优先返回 clean m3u8；关闭则返回原始源</span>
         </el-form-item>
         <el-form-item label="自动更新后清洗">
-          <el-switch v-model="cfg.autoOnCollect" active-text="开启" inactive-text="关闭" />
+          <el-switch v-model="cfg.autoOnCollect" inline-prompt active-text="开启" inactive-text="关闭" />
           <span class="unit">仅定时自动更新采集触发，手动采集请在采集弹窗勾选</span>
         </el-form-item>
         <el-form-item label="播放缺失时排队">
-          <el-switch v-model="cfg.autoQueueOnMiss" active-text="开启" inactive-text="关闭" />
+          <el-switch v-model="cfg.autoQueueOnMiss" inline-prompt active-text="开启" inactive-text="关闭" />
           <span class="unit">缺少 clean 结果时仍先回退原始源</span>
         </el-form-item>
         <el-form-item label="默认策略链">
