@@ -4,6 +4,8 @@
 // 标准化片名：去空格/标点/常见后缀噪音，全角转半角，繁简暂不处理
 export function normalizeName(name: string): string {
   return (name || "")
+    // 去零宽/方向控制符等不可见格式字符（如 U+200E LRM、U+200B ZWSP、U+FEFF BOM），避免胉脏字符导致同名判不相等
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, "")
     .trim()
     .replace(/[\s\u3000]+/g, "")
     // 去除画质/来源等噪音标记
