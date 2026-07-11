@@ -1,13 +1,13 @@
 <template>
   <main class="mp">
-    <section class="mp-player" :class="{ landscape: playerLandscape }" :style="heroStyle" @click="showControls()">
+    <section class="mp-player" :class="{ landscape: playerLandscape, portrait: playerLandscape && fullscreenPortrait }" :style="heroStyle" @click="onPlayerTap" @touchstart="onPlayerTouchStart" @touchmove="onPlayerTouchMove" @touchend="onPlayerTouchEnd" @touchcancel="onPlayerTouchEnd">
       <div class="mp-topbar">
         <button class="mp-icon-btn" type="button" aria-label="返回" @click.stop="goBack">
           <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
         </button>
         <strong>{{ playerTitle }}</strong>
         <button v-if="mode === 'hls' && curUrl && !accessBlock" class="mp-icon-btn" type="button" :aria-label="playerLandscape ? '退出横屏' : '横屏播放'" @click.stop="toggleLandscape">
-          <svg viewBox="0 0 24 24" v-html="icon(playerLandscape ? 'close' : 'rotate')"></svg>
+          <svg viewBox="0 0 24 24" v-html="icon(playerLandscape ? 'close' : 'ratio')"></svg>
         </button>
       </div>
       <div class="mp-bg"></div>
@@ -20,7 +20,6 @@
         :poster="poster(vod)"
         playsinline
         webkit-playsinline
-        @click="showControls()"
         @play="isPlaying = true"
         @pause="isPlaying = false"
         @volumechange="syncVideoState"
@@ -42,7 +41,7 @@
       <button v-else-if="!curUrl" class="mp-play" type="button" aria-label="播放" @click="playCurrent">
         <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
       </button>
-      <div v-if="curUrl && !accessBlock && controlsVisible && mode === 'hls'" class="mp-center-controls" @click.stop="showControls()">
+      <div v-if="curUrl && !accessBlock && showCenterControls && mode === 'hls'" class="mp-center-controls">
         <button class="mp-round-btn" type="button" aria-label="上一集" :disabled="!hasPrevEp" @click.stop="playPrevEp">
           <svg viewBox="0 0 24 24" v-html="icon('skipBack')"></svg>
         </button>
@@ -53,7 +52,7 @@
           <svg viewBox="0 0 24 24" v-html="icon('skipForward')"></svg>
         </button>
       </div>
-      <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-bottom-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="showControls()">
+      <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-bottom-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="keepControlsVisible()">
         <div v-if="mode === 'hls'" class="mp-progress-row" :class="{ compact: !showQualityControl }">
           <button class="mp-control-btn" type="button" :aria-label="isMuted ? '取消静音' : '静音'" @click.stop="toggleMuted">
             <svg viewBox="0 0 24 24" v-html="icon(isMuted ? 'volumeOff' : 'volume')"></svg>
@@ -68,6 +67,14 @@
             :value="currentTime"
             :style="{ '--progress': progressPercent }"
             aria-label="播放进度"
+            @pointerdown.stop="beginRangeSeek"
+            @pointerup.stop="endRangeSeek"
+            @pointercancel.stop="cancelRangeSeek"
+            @touchstart.stop="beginRangeSeek"
+            @touchend.stop="endRangeSeek"
+            @touchcancel.stop="cancelRangeSeek"
+            @mousedown.stop="beginRangeSeek"
+            @mouseup.stop="endRangeSeek"
             @input="seekVideo"
             @click.stop
           />
@@ -85,7 +92,7 @@
         <button v-else class="mp-control-btn mp-iframe-full" type="button" aria-label="全屏播放" @click.stop="enterFullscreen">
           <svg viewBox="0 0 24 24" v-html="icon('expand')"></svg>
         </button>
-        <div v-if="menuOpen && mode === 'hls'" class="mp-menu" @click.stop="showControls(4200)">
+        <div v-if="menuOpen && mode === 'hls'" class="mp-menu" @click.stop="keepControlsVisible(4200)">
           <div class="mp-menu-speeds">
             <button v-for="rate in speedOptions" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click.stop="setSpeed(rate)">
               {{ rate === 1 ? '1x' : `${rate}x` }}
@@ -98,6 +105,7 @@
         </div>
       </div>
       <div v-if="playNotice" class="mp-notice">{{ playNotice }}</div>
+      <div v-if="seeking" class="mp-seek-preview">{{ formatTime(seekPreviewTime) }} / {{ formatTime(duration) }}</div>
     </section>
 
     <section v-if="vod.id" class="mp-info">
@@ -189,6 +197,7 @@ const epIdx = ref(0)
 const isPlaying = ref(false)
 const isMuted = ref(false)
 const controlsVisible = ref(false)
+const centerControlsVisible = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const playbackRate = ref(1)
@@ -196,7 +205,18 @@ const qualityLevel = ref(-1)
 const qualityOptions = ref([])
 const menuOpen = ref(false)
 const playerLandscape = ref(false)
+const fullscreenPortrait = ref(false)   // 全屏时的实际方向：true=竖屏全屏，false=横屏全屏
 const speedOptions = [0.75, 1, 1.25, 1.5, 2]
+// 横滑调进度手势状态
+const seeking = ref(false)
+const seekPreviewTime = ref(0)
+let touchStartX = 0
+let touchStartY = 0
+let touchBaseTime = 0
+let touchAxis = ''   // '' 未定 | 'h' 横滑(进度) | 'v' 竖滑(不拦)
+let touchActive = false
+let touchMoved = false      // 本次触摸是否发生位移（用于区分点击/滑动）
+let suppressTapUntil = 0    // 滑动结束后抑制随后合成 click 的截止时间戳
 let hls = null
 let noticeTimer = 0
 let historyTimer = 0
@@ -212,6 +232,7 @@ const hasNextEp = computed(() => epIdx.value < episodes.value.length - 1)
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
 const showQualityControl = computed(() => qualityOptions.value.length > 1)
+const showCenterControls = computed(() => controlsVisible.value && centerControlsVisible.value && !seeking.value)
 const qualityLabel = computed(() => {
   if (qualityLevel.value < 0) return '自动'
   return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || '清晰度'
@@ -289,25 +310,61 @@ function startVideo(video) {
   }, 700)
 }
 
-function showControls(timeout = 2600) {
+function showControls(timeout = 5000, options = {}) {
   if (!curUrl.value || accessBlock.value) return
+  const showCenter = options.center !== false
   controlsVisible.value = true
+  centerControlsVisible.value = showCenter
   if (controlsTimer) clearTimeout(controlsTimer)
   controlsTimer = window.setTimeout(() => {
     controlsVisible.value = false
+    centerControlsVisible.value = false
     menuOpen.value = false
     controlsTimer = 0
   }, timeout)
 }
 
+function keepControlsVisible(timeout = 4200) {
+  showControls(timeout, { center: false })
+}
+
+function hideControls() {
+  controlsVisible.value = false
+  centerControlsVisible.value = false
+  menuOpen.value = false
+  if (controlsTimer) { clearTimeout(controlsTimer); controlsTimer = 0 }
+}
+
+// 触点是否落在控件上（顶栏/中央/底部/菜单，含进度条滑块），是则不触发播放器级手势与显隐
+function isControlTarget(e) {
+  const t = e?.target
+  if (!t || !t.closest) return false
+  return !!t.closest('.mp-topbar, .mp-center-controls, .mp-bottom-controls, .mp-menu')
+}
+
+// 点击播放器：显隐切换（区分滑动——滑动后短时间内抑制合成 click）
+function onPlayerTap(e) {
+  if (!curUrl.value || accessBlock.value) return
+  if (Date.now() < suppressTapUntil) return
+  if (isControlTarget(e)) return
+  if (controlsVisible.value) hideControls()
+  else showControls()
+}
+
 async function toggleLandscape() {
   playerLandscape.value = !playerLandscape.value
   if (playerLandscape.value) {
+    // 根据视频实际宽高判定横/竖：竖片锁竖屏全屏，横片锁横屏全屏
+    const video = videoEl.value
+    const vw = Number(video?.videoWidth) || 0
+    const vh = Number(video?.videoHeight) || 0
+    fullscreenPortrait.value = vw > 0 && vh > 0 && vh > vw
     bodyOverflowBeforeLandscape = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    try { await screen.orientation?.lock?.('landscape') } catch {}
+    try { await screen.orientation?.lock?.(fullscreenPortrait.value ? 'portrait' : 'landscape') } catch {}
   } else {
     document.body.style.overflow = bodyOverflowBeforeLandscape
+    fullscreenPortrait.value = false
     try { screen.orientation?.unlock?.() } catch {}
   }
   showControls(3200)
@@ -316,6 +373,7 @@ async function toggleLandscape() {
 function resetLandscape() {
   if (!playerLandscape.value) return
   playerLandscape.value = false
+  fullscreenPortrait.value = false
   document.body.style.overflow = bodyOverflowBeforeLandscape
   try { screen.orientation?.unlock?.() } catch {}
 }
@@ -397,7 +455,90 @@ function seekVideo(event) {
   const next = Number(event?.target?.value) || 0
   video.currentTime = next
   currentTime.value = next
-  showControls(3600)
+  seekPreviewTime.value = next
+  keepControlsVisible(3600)
+}
+
+function beginRangeSeek(event) {
+  if (mode.value !== 'hls' || accessBlock.value || !curUrl.value) return
+  event?.stopPropagation?.()
+  seeking.value = true
+  seekPreviewTime.value = currentTime.value
+  menuOpen.value = false
+  controlsVisible.value = true
+  centerControlsVisible.value = false
+  if (controlsTimer) { clearTimeout(controlsTimer); controlsTimer = 0 }
+}
+
+function endRangeSeek(event) {
+  event?.stopPropagation?.()
+  if (!seeking.value) return
+  seeking.value = false
+  suppressTapUntil = Date.now() + 400
+  keepControlsVisible(1800)
+}
+
+function cancelRangeSeek(event) {
+  event?.stopPropagation?.()
+  seeking.value = false
+  suppressTapUntil = Date.now() + 400
+  keepControlsVisible(1200)
+}
+
+// 播放器区域横滑调进度：横滑预览、松手才 seek；竖滑不拦（交给页面滚动）
+function onPlayerTouchStart(e) {
+  touchMoved = false
+  touchActive = false
+  if (mode.value !== 'hls' || accessBlock.value || !curUrl.value) return
+  if (isControlTarget(e)) return // 落在控件(如进度条滑块)上，交给控件自身处理，不启用播放器手势
+  const t = e.touches?.[0]
+  if (!t) return
+  touchActive = true
+  touchAxis = ''
+  touchStartX = t.clientX
+  touchStartY = t.clientY
+  touchBaseTime = currentTime.value
+}
+
+function onPlayerTouchMove(e) {
+  if (!touchActive) return
+  const video = videoEl.value
+  const t = e.touches?.[0]
+  if (!video || !t || !duration.value) return
+  const dx = t.clientX - touchStartX
+  const dy = t.clientY - touchStartY
+  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) touchMoved = true
+  // 方向判定：首次位移超 10px 才锁轴，横>竖认为调进度
+  if (!touchAxis) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return
+    touchAxis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+    // 横滑调进度时隐藏菜单：seek 预览与操作菜单不同时出现
+    if (touchAxis === 'h') { seeking.value = true; hideControls() }
+  }
+  if (touchAxis !== 'h') return // 竖滑不拦截，让页面正常滚动
+  e.preventDefault() // 横滑时阻止页面横向滑动/选中
+  // 全屏宽度对应整段时长（一屏横滑 = 全片长），最少按 90s 基准避免短片太敏感
+  const w = window.innerWidth || 360
+  const span = Math.max(duration.value, 90)
+  const next = Math.max(0, Math.min(duration.value, touchBaseTime + (dx / w) * span))
+  seekPreviewTime.value = next
+  currentTime.value = next // 实时更新进度条 UI（不动 video.currentTime，避免频繁 seek 卡顿）
+}
+
+function onPlayerTouchEnd(e) {
+  if (!touchActive) return
+  touchActive = false
+  const cancelled = e?.type === 'touchcancel'
+  if (touchAxis === 'h' && seeking.value) {
+    const video = videoEl.value
+    if (!cancelled && video && duration.value) {
+      video.currentTime = seekPreviewTime.value
+    }
+    seeking.value = false
+  }
+  // 发生过位移=滑动手势，抑制随后合成的 click，避免误触发菜单显隐
+  if (touchMoved) suppressTapUntil = Date.now() + 400
+  touchAxis = ''
 }
 
 function playPrevEp() {
@@ -698,6 +839,7 @@ onDeactivated(() => {
 <style scoped>
 .mp {
   min-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
   background: #f7f7f8;
   color: #15171d;
@@ -720,6 +862,19 @@ onDeactivated(() => {
   width: 100vw;
   height: 100dvh;
   aspect-ratio: auto;
+  --mp-player-top-safe: env(safe-area-inset-top);
+}
+/* 横片 + 手机处于竖屏且方向锁定未生效时，用 CSS 旋转铺满横向全屏（方向锁成功时视口已为横向，不匹配此规则） */
+@media (orientation: portrait) {
+  .mp-player.landscape:not(.portrait) {
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: 100dvh;
+    height: 100vw;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+  }
 }
 .mp-bg {
   position: absolute;
@@ -738,7 +893,7 @@ onDeactivated(() => {
 .mp-topbar {
   position: absolute;
   z-index: 10;
-  top: calc(env(safe-area-inset-top) + 6px);
+  top: calc(var(--mp-player-top-safe, 0px) + 6px);
   left: 8px;
   right: 8px;
   display: grid;
@@ -1046,6 +1201,23 @@ onDeactivated(() => {
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+.mp-seek-preview {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 18px;
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(0,0,0,.66);
+  backdrop-filter: blur(12px);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .mp-info,
 .mp-panel {

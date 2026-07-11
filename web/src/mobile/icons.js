@@ -34,6 +34,7 @@ const icons = {
   skipBack: '<path d="M11 6 5 12l6 6V6Z"/><path d="M19 6 13 12l6 6V6Z"/>',
   skipForward: '<path d="m13 6 6 6-6 6V6Z"/><path d="m5 6 6 6-6 6V6Z"/>',
   pip: '<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1"/>',
+  ratio: '<rect width="12" height="20" x="6" y="2" rx="2"/><rect width="20" height="12" x="2" y="6" rx="2"/>',
 }
 
 export function icon(name) {
