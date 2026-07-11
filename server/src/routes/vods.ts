@@ -421,6 +421,14 @@ function mergeWhere(...items: any[]) {
   return list.length === 1 ? list[0] : { AND: list };
 }
 
+function cleanupExcludeWhere(input: any) {
+  const ids = [...new Set((Array.isArray(input?.excludeVodIds) ? input.excludeVodIds : [])
+    .map((id: any) => Number(id))
+    .filter((id: number) => Number.isInteger(id) && id > 0))]
+    .slice(0, 5000);
+  return ids.length ? { id: { notIn: ids } } : null;
+}
+
 function cleanupCategoryWhere(input: any) {
   const categoryName = String(input?.categoryName || "").trim();
   const subType = String(input?.subType || "").trim();
@@ -462,7 +470,8 @@ function cleanupRuleWhere(input: any): any {
   const rule = String(input?.rule || "");
   const yWhere = cleanupYearWhere(input);
   const categoryWhere = cleanupCategoryWhere(input);
-  const vodScopeWhere = mergeWhere(yWhere, categoryWhere);
+  const excludeWhere = cleanupExcludeWhere(input);
+  const vodScopeWhere = mergeWhere(yWhere, categoryWhere, excludeWhere);
   if (rule === "empty_plays") return { rule, where: andWhere({ plays: { none: {} } }, vodScopeWhere) };
   if (rule === "all_dead") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { alive: true } } } }, vodScopeWhere) };
   if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, vodScopeWhere) };
@@ -1262,13 +1271,13 @@ export default async function vodRoutes(app: FastifyInstance) {
             prisma.play.count({ where: playWhere || { sourceId } }),
             prisma.vod.count({ where }),
             prisma.source.findUnique({ where: { id: sourceId }, select: { id: true, name: true, enabled: true } }),
-            prisma.vod.findMany({ where, take: 12, orderBy: { updatedAt: "desc" }, include: { _count: { select: { plays: true } } } }),
+            prisma.vod.findMany({ where, take: limit, orderBy: { id: "asc" }, include: { _count: { select: { plays: true } } } }),
           ]);
           return { ok: true, rule, mode: "delete_lines", source, playCount, total: vodCount, limit, samples };
         }
         const [total, samples] = await Promise.all([
           prisma.vod.count({ where }),
-          prisma.vod.findMany({ where, take: 12, orderBy: { updatedAt: "desc" }, include: { _count: { select: { plays: true } } } }),
+          prisma.vod.findMany({ where, take: limit, orderBy: { id: "asc" }, include: { _count: { select: { plays: true } } } }),
         ]);
         return { ok: true, rule, mode: "delete_vods", total, limit, samples };
       } catch (e: any) {
