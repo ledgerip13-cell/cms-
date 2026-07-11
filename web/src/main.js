@@ -12,6 +12,7 @@ import MobileTheater from './mobile/MobileTheater.vue'
 import MobileShorts from './mobile/MobileShorts.vue'
 import MobileSearch from './mobile/MobileSearch.vue'
 import MobileMe from './mobile/MobileMe.vue'
+import MobilePlay from './mobile/MobilePlay.vue'
 import './style.css'
 
 const router = createRouter({
@@ -32,8 +33,14 @@ const router = createRouter({
         { path: 'shorts', component: MobileShorts },
         { path: 'search', component: MobileSearch },
         { path: 'me', component: MobileMe },
+        { path: 'play/:id', component: MobilePlay },
       ],
     },
   ]
 })
-createApp(App).use(router).mount('#app')
+
+Promise.resolve(window.__VCMS_MOBILE_GATE__)
+  .catch(() => {})
+  .finally(() => {
+    createApp(App).use(router).mount('#app')
+  })

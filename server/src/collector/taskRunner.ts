@@ -2,10 +2,12 @@
 import { prisma } from "../db.js";
 import { invalidateAggregateCache } from "../aggregateCache.js";
 import { syncSource, backfillSubTypes, syncByKeyword, collectKeywordCandidates, type SyncOptions } from "./sync.js";
-import { AUTO_MATCH_SCORE, PENDING_MATCH_SCORE, matchDouban, pickOfficialPoster, sleep, type DoubanCandidate, type DoubanMatchResult } from "./douban.js";
-import { applyDoubanAssets } from "./metaAssets.js";
+import { doubanDetail, matchDouban, pickOfficialPoster, sleep, type DoubanCandidate, type DoubanMatchResult, type DoubanMeta } from "./douban.js";
+import { matchTmdb, tmdbDetail } from "./tmdb.js";
+import { applyDoubanAssets, localizeMetaImages } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 import { cleanText } from "../textClean.js";
+import { enabledMetaProviders, metaProviderByKey, type MetaProviderConfig } from "../metaProviders.js";
 
 import { EventEmitter } from "node:events";
 
@@ -20,10 +22,22 @@ function isMissingTaskError(e: any) {
   return e?.code === "P2025";
 }
 
+async function pruneTerminalTasks(status: "done" | "failed", keep = 500) {
+  const rows = await prisma.task.findMany({
+    where: { status },
+    orderBy: { createdAt: "desc" },
+    skip: keep,
+    take: 500,
+    select: { id: true },
+  });
+  if (rows.length) await prisma.task.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } });
+}
+
 // 包一层：更新任务即推送事件
 async function taskUpdate(args: Parameters<typeof prisma.task.update>[0]) {
   try {
     const r = await prisma.task.update(args);
+    if (r.status === "done" || r.status === "failed") void pruneTerminalTasks(r.status);
     emitTaskChange();
     return r;
   } catch (e: any) {
@@ -213,7 +227,7 @@ export async function createCollectTask(sourceId: number, opts: SyncOptions & { 
 }
 
 export async function createHlsCleanTask(opts: {
-  sourceId?: number;
+  sourceId?: number | string;
   categoryName?: string;
   vodId?: number;
   playId?: number;
@@ -627,7 +641,7 @@ async function runKeywordConfirmTask(
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
+        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -670,7 +684,7 @@ async function runKeywordTask(taskId: number, keyword: string, opts: SyncOptions
       where: { id: taskId },
       data: {
         status: "done", progress: 100, added: r.added, updated: r.updated, merged: r.merged,
-        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
+        message: `共命中${r.hits}条 新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -681,9 +695,11 @@ async function runKeywordTask(taskId: number, keyword: string, opts: SyncOptions
   }
 }
 
-// ============ 元数据任务（豆瓣，限速批处理） ============
+// ============ 元数据任务（按配置源限速批处理） ============
 function metaCandidateSnapshot(candidates: DoubanCandidate[]) {
   return candidates.slice(0, 5).map((c) => ({
+    source: c.source || "douban",
+    sourceName: c.sourceName || "豆瓣",
     id: c.id,
     title: c.title,
     subTitle: c.subTitle,
@@ -700,13 +716,14 @@ function metaCandidateSnapshot(candidates: DoubanCandidate[]) {
 
 function metaReason(r: DoubanMatchResult) {
   return JSON.stringify({
+    provider: r.meta?.source || r.candidates[0]?.source || "douban",
     score: r.score,
     reasons: r.reasons,
     candidates: metaCandidateSnapshot(r.candidates),
   });
 }
 
-function syncYearFromDouban(metaYear = "") {
+function syncYearFromMeta(metaYear = "") {
   const year = String(metaYear || "").match(/(19|20)\d{2}/)?.[0] || "";
   return year ? { year } : {};
 }
@@ -715,10 +732,12 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending", of
   const best = r.candidates[0];
   return {
     ...(status === "matched" && r.meta ? {
-      doubanId: r.meta.doubanId,
+      metaSource: r.meta.source || "douban",
+      metaSourceId: r.meta.sourceId || r.meta.doubanId,
+      ...(r.meta.doubanId ? { doubanId: r.meta.doubanId } : {}),
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
-      ...syncYearFromDouban(r.meta.year),
+      ...syncYearFromMeta(r.meta.year),
       ...(officialPic ? { officialPic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
       genres: cleanText(r.meta.genres.join(",")),
@@ -732,6 +751,174 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending", of
   };
 }
 
+function manualMetaReason(meta: DoubanMeta, provider: string, providerId: string) {
+  return JSON.stringify({
+    provider: meta.source || provider || "douban",
+    score: 100,
+    reasons: ["manual"],
+    candidates: [{
+      source: meta.source || provider || "douban",
+      sourceName: meta.sourceName || provider,
+      id: meta.sourceId || meta.doubanId || providerId,
+      title: meta.title,
+      year: meta.year,
+      score: 100,
+      reasons: ["manual"],
+    }],
+  });
+}
+
+async function detailByConfiguredSource(source: string, id: string): Promise<DoubanMeta | null> {
+  const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
+  const provider = metaProviderByKey(cfg?.providersConfig, source || "douban");
+  if (source === "tmdb") return tmdbDetail(id, { apiKey: provider?.apiKey, accessToken: provider?.accessToken }).catch(() => null);
+  return doubanDetail(id).catch(() => null);
+}
+
+async function runManualMetaConfirm(taskId: number, opts: { vodId?: number; provider?: string; metaSourceId?: string; doubanId?: string }) {
+  const vodId = Number(opts.vodId);
+  const provider = String(opts.provider || (opts.doubanId ? "douban" : "") || "douban");
+  const providerId = String(opts.metaSourceId || opts.doubanId || "");
+  if (!Number.isInteger(vodId) || vodId <= 0 || !providerId) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "缺少影片或元数据源ID", finishedAt: new Date() } });
+    return;
+  }
+  await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), pageNow: 0, pageTotal: 1 } });
+  const vod = await prisma.vod.findUnique({ where: { id: vodId }, select: { id: true, pic: true, localPic: true } });
+  if (!vod) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "影片不存在", finishedAt: new Date() } });
+    return;
+  }
+  const meta = await detailByConfiguredSource(provider, providerId);
+  if (!meta) {
+    await prisma.vod.update({
+      where: { id: vodId },
+      data: { metaMatched: "failed", metaScore: 0, metaReason: JSON.stringify({ provider, score: 0, reasons: ["detail_failed"], candidates: [] }), metaAt: new Date() },
+    });
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", progress: 100, pageNow: 1, pageTotal: 1, message: "元数据详情获取失败", finishedAt: new Date() } });
+    return;
+  }
+  meta.pic = await pickOfficialPoster(meta, vod.pic || vod.localPic || "");
+  const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 }, select: { saveImages: true } });
+  if (cfg?.saveImages) await localizeMetaImages(meta);
+  await prisma.vod.update({
+    where: { id: vodId },
+    data: {
+      metaSource: meta.source || provider || "douban",
+      metaSourceId: meta.sourceId || providerId,
+      ...(meta.doubanId ? { doubanId: meta.doubanId } : {}),
+      rating: meta.rating,
+      ratingCount: meta.ratingCount,
+      ...syncYearFromMeta(meta.year),
+      ...(meta.pic ? { officialPic: meta.pic } : {}),
+      officialIntro: cleanText(meta.intro, 2000),
+      genres: cleanText(meta.genres.join(",")),
+      metaMatched: "manual",
+      metaScore: 100,
+      metaReason: manualMetaReason(meta, provider, providerId),
+      matchedTitle: meta.title,
+      matchedYear: meta.year,
+      metaAt: new Date(),
+    },
+  });
+  if (syncYearFromMeta(meta.year).year) invalidateAggregateCache();
+  await applyDoubanAssets(vodId, meta);
+  await taskUpdate({
+    where: { id: taskId },
+    data: { status: "done", progress: 100, pageNow: 1, pageTotal: 1, added: 1, message: `已确认${meta.sourceName || provider}《${meta.title}》`, finishedAt: new Date() },
+  });
+}
+
+async function runProviderMatch(provider: MetaProviderConfig, v: any): Promise<DoubanMatchResult> {
+  const ctx = {
+    typeName: v.typeName,
+    actor: v.actor,
+    director: v.director,
+    sourcePic: v.pic || v.localPic,
+    autoMatchScore: provider.autoMatchScore,
+    pendingMatchScore: provider.pendingMatchScore,
+  };
+  if (provider.key === "tmdb") {
+    return matchTmdb(v.name, v.year, { ...ctx, credentials: { apiKey: provider.apiKey, accessToken: provider.accessToken } });
+  }
+  return matchDouban(v.name, v.year, ctx);
+}
+
+async function matchByConfiguredProviders(v: any, providerKey = ""): Promise<DoubanMatchResult> {
+  const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
+  const providers = providerKey
+    ? [metaProviderByKey(cfg?.providersConfig, providerKey)].filter(Boolean) as MetaProviderConfig[]
+    : enabledMetaProviders(cfg?.providersConfig);
+  const active = providers.length ? providers : [metaProviderByKey(cfg?.providersConfig, "douban")].filter(Boolean) as MetaProviderConfig[];
+  const candidates: DoubanCandidate[] = [];
+  let bestPending: DoubanMatchResult | null = null;
+  let bestPendingProvider = "";
+  let bestFailed: DoubanMatchResult | null = null;
+  for (const provider of active) {
+    const result = await runProviderMatch(provider, v).catch(() => ({
+      ok: false,
+      status: "failed" as const,
+      score: 0,
+      reasons: ["provider_failed"],
+      candidates: [],
+    }));
+    candidates.push(...result.candidates);
+    if (result.status === "matched") return result;
+    if (result.status === "pending") {
+      if (!bestPending || result.score > bestPending.score) {
+        bestPending = result;
+        bestPendingProvider = provider.key;
+      }
+      continue;
+    }
+    if (!bestFailed || result.score > bestFailed.score) bestFailed = result;
+  }
+  if (bestPending) return {
+    ...bestPending,
+    candidates: [...bestPending.candidates, ...candidates.filter((c) => c.source !== bestPendingProvider)],
+  };
+  return bestFailed ? { ...bestFailed, candidates } : { ok: false, status: "failed", score: 0, reasons: ["no_provider"], candidates };
+}
+
+async function processMetaVod(v: any, providerKey = "") {
+  try {
+    const r = await matchByConfiguredProviders(v, providerKey);
+    if (r.status === "matched" && r.meta) {
+      const officialPic = await pickOfficialPoster(r.meta, v.pic || v.localPic || "");
+      const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 }, select: { saveImages: true } });
+      if (officialPic) r.meta.pic = officialPic;
+      if (cfg?.saveImages) await localizeMetaImages(r.meta);
+      await prisma.vod.update({
+        where: { id: v.id },
+        data: matchedMetaData(r, "matched", r.meta.pic || officialPic),
+      });
+      if (syncYearFromMeta(r.meta.year).year) invalidateAggregateCache();
+      await applyDoubanAssets(v.id, r.meta);
+      return "matched" as const;
+    }
+    if (r.status === "pending") {
+      await prisma.vod.update({
+        where: { id: v.id },
+        data: matchedMetaData(r, "pending"),
+      });
+      return "pending" as const;
+    }
+    await prisma.vod.update({
+      where: { id: v.id },
+      data: { metaMatched: "failed", metaScore: r.score, metaReason: metaReason(r), matchedTitle: "", matchedYear: "", metaAt: new Date() },
+    });
+    return "failed" as const;
+  } catch {
+    return "failed" as const;
+  }
+}
+
+function splitChunks<T>(rows: T[], size: number) {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
 export async function createMetaTask(opts: {
   limit?: number;
   intervalMs?: number;
@@ -741,11 +928,18 @@ export async function createMetaTask(opts: {
   categoryName?: string;
   vodIds?: number[];
   priority?: number;
+  provider?: string;
+  matchConcurrency?: number;
+  concurrencyBatchSize?: number;
+  manualConfirm?: boolean;
+  vodId?: number;
+  metaSourceId?: string;
+  doubanId?: string;
 } = {}) {
   const task = await prisma.task.create({
     data: {
       type: "meta",
-      sourceName: "豆瓣元数据",
+      sourceName: opts.manualConfirm ? "确认元数据" : opts.provider ? `${opts.provider}元数据` : "元数据匹配",
       mode: opts.redo ? "full" : "incr",
       status: "pending",
       priority: clampPriority(opts.priority),
@@ -778,7 +972,7 @@ async function pumpMetaQueue() {
 
 async function runMetaTask(
   taskId: number,
-  opts: { limit?: number; intervalMs?: number; redo?: boolean; status?: string; sourceId?: number; categoryName?: string; vodIds?: number[]; autoMatchScore?: number; pendingMatchScore?: number }
+  opts: { limit?: number; intervalMs?: number; redo?: boolean; status?: string; sourceId?: number; categoryName?: string; vodIds?: number[]; autoMatchScore?: number; pendingMatchScore?: number; provider?: string; matchConcurrency?: number; concurrencyBatchSize?: number; manualConfirm?: boolean; vodId?: number; metaSourceId?: string; doubanId?: string }
 ) {
   if (metaRunning) {
     await taskUpdate({
@@ -789,15 +983,29 @@ async function runMetaTask(
   }
   metaRunning = true;
   canceled.delete(taskId);
-  const limit = Math.min(opts.limit || 50, 500);
-  const interval = Math.max(opts.intervalMs || 2500, 1000); // 默认2.5s/条，防封
+  if (opts.manualConfirm) {
+    try {
+      await runManualMetaConfirm(taskId, {
+        vodId: opts.vodId,
+        provider: opts.provider,
+        metaSourceId: opts.metaSourceId,
+        doubanId: opts.doubanId,
+      });
+    } finally {
+      metaRunning = false;
+      canceled.delete(taskId);
+      paused.delete(taskId);
+    }
+    return;
+  }
   const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
-  const autoMatchScore = Number.isFinite(Number(opts.autoMatchScore))
-    ? Number(opts.autoMatchScore)
-    : (cfg?.autoMatchScore ?? AUTO_MATCH_SCORE);
-  const pendingMatchScore = Number.isFinite(Number(opts.pendingMatchScore))
-    ? Number(opts.pendingMatchScore)
-    : (cfg?.pendingMatchScore ?? PENDING_MATCH_SCORE);
+  const providers = opts.provider
+    ? [metaProviderByKey(cfg?.providersConfig, opts.provider)].filter(Boolean) as MetaProviderConfig[]
+    : enabledMetaProviders(cfg?.providersConfig);
+  const primaryProvider = providers[0] || metaProviderByKey(cfg?.providersConfig, "douban");
+  const effectiveProvider = opts.provider || primaryProvider?.key || "";
+  const limit = Math.min(opts.limit || primaryProvider?.batchLimit || cfg?.batchLimit || 50, 500);
+  const interval = Math.max(opts.intervalMs || primaryProvider?.intervalMs || cfg?.intervalMs || 2500, 500);
   await taskUpdate({
     where: { id: taskId },
     data: { status: "running", startedAt: new Date() },
@@ -819,11 +1027,16 @@ async function runMetaTask(
       take: limit,
     });
     let matched = 0, failed = 0, pending = 0;
-    for (let i = 0; i < vods.length; i++) {
+    let processed = 0;
+    const tmdbOnly = primaryProvider?.key === "tmdb" && effectiveProvider === "tmdb";
+    const concurrency = tmdbOnly ? Math.max(1, Math.min(10, Number(opts.matchConcurrency || primaryProvider?.matchConcurrency) || 1)) : 1;
+    const concurrencyBatchSize = tmdbOnly ? Math.max(1, Math.min(50, Number(opts.concurrencyBatchSize || primaryProvider?.concurrencyBatchSize) || 1)) : 1;
+    const waveSize = concurrency * concurrencyBatchSize;
+    for (let offset = 0; offset < vods.length; offset += waveSize) {
       if (canceled.has(taskId)) {
         await taskUpdate({
           where: { id: taskId },
-              data: { status: "canceled", message: `已手动中止（已处理${i}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: new Date() },
+          data: { status: "canceled", message: `已手动中止（已处理${processed}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: new Date() },
         });
         metaRunning = false;
         return;
@@ -831,53 +1044,28 @@ async function runMetaTask(
       if (paused.has(taskId)) {
         await taskUpdate({
           where: { id: taskId },
-          data: { status: "paused", message: `已暂停（已处理${i}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: null },
+          data: { status: "paused", message: `已暂停（已处理${processed}/${vods.length}）`, added: matched, updated: failed + pending, finishedAt: null },
         });
         metaRunning = false;
         return;
       }
-      const v = vods[i];
-      try {
-        const r = await matchDouban(v.name, v.year, {
-          typeName: v.typeName,
-          actor: v.actor,
-          director: v.director,
-          sourcePic: v.pic || v.localPic,
-          autoMatchScore,
-          pendingMatchScore,
-        });
-        if (r.status === "matched" && r.meta) {
-          const officialPic = await pickOfficialPoster(r.meta, v.pic || v.localPic || "");
-          await prisma.vod.update({
-            where: { id: v.id },
-            data: matchedMetaData(r, "matched", officialPic),
-          });
-          if (syncYearFromDouban(r.meta.year).year) invalidateAggregateCache();
-          if (officialPic) r.meta.pic = officialPic;
-          await applyDoubanAssets(v.id, r.meta);
-          matched++;
-        } else if (r.status === "pending") {
-          await prisma.vod.update({
-            where: { id: v.id },
-            data: matchedMetaData(r, "pending"),
-          });
-          pending++;
-        } else {
-          await prisma.vod.update({
-            where: { id: v.id },
-            data: { metaMatched: "failed", metaScore: r.score, metaReason: metaReason(r), matchedTitle: "", matchedYear: "", metaAt: new Date() },
-          });
-          failed++;
-        }
-      } catch {
-        failed++;
-      }
-      const progress = Math.round(((i + 1) / vods.length) * 100);
+      const wave = vods.slice(offset, offset + waveSize);
+      const chunks = splitChunks(wave, concurrencyBatchSize);
+      const results = (await Promise.all(chunks.map(async (chunk) => {
+        const rows: Array<"matched" | "pending" | "failed"> = [];
+        for (const v of chunk) rows.push(await processMetaVod(v, tmdbOnly ? "tmdb" : opts.provider));
+        return rows;
+      }))).flat();
+      matched += results.filter((status) => status === "matched").length;
+      pending += results.filter((status) => status === "pending").length;
+      failed += results.filter((status) => status === "failed").length;
+      processed += results.length;
+      const progress = vods.length ? Math.round((processed / vods.length) * 100) : 100;
       await taskUpdate({
         where: { id: taskId },
-        data: { progress, pageNow: i + 1, pageTotal: vods.length, added: matched, updated: failed + pending },
+        data: { progress, pageNow: processed, pageTotal: vods.length, added: matched, updated: failed + pending },
       });
-      if (i < vods.length - 1) await sleep(interval);
+      if (offset + waveSize < vods.length) await sleep(interval);
     }
     await taskUpdate({
       where: { id: taskId },
@@ -974,7 +1162,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已提交豆瓣匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗任务#${hlsQueued}` : ""}`,
+        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗任务#${hlsQueued}` : ""}`,
         cursor: wasPaused ? undefined : null, // 暂停保留断点，完成/取消 清空断点
         finishedAt: wasPaused ? null : new Date(),
       },

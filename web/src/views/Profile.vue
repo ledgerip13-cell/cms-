@@ -149,7 +149,7 @@ const VodCard = defineComponent({
           })
           : h('div', { class: 'noimg' }, '暂无封面'),
         props.vod.rating ? h('span', { class: 'badge score' }, props.vod.rating) : null,
-        h('div', { class: 'poster-hover' }, [h('span', { class: 'play-ic' }, [h('svg', { viewBox: '0 0 24 24', fill: 'currentColor' }, [h('path', { d: 'M8 5v14l11-7z' })])])]),
+        h('div', { class: 'poster-hover' }, [h('span', { class: 'play-ic' }, [h('svg', { viewBox: '0 0 24 24', fill: 'currentColor' }, [h('path', { d: 'M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z' })])])]),
       ]),
       h('div', { class: 'c-info' }, [
         h('div', { class: 'c-name' }, props.vod.name),

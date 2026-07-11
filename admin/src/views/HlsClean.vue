@@ -204,8 +204,8 @@
     <div class="card">
       <div class="toolbar">
         <div>
-          <div class="sec-title">最近清洗结果</div>
-          <div class="hint">clean 可用于播放；dry_run / failed / no_ads 不会替换原始源。</div>
+          <div class="sec-title">清洗结果（按影片+源聚合）</div>
+          <div class="hint">clean 可用于播放；dry_run / failed / no_ads 不会替换原始源。点展开看逐集明细。</div>
         </div>
         <div class="stat-line">
           <el-tag type="success">clean {{ stats.clean || 0 }}</el-tag>
@@ -214,27 +214,78 @@
           <el-tag type="danger">failed {{ stats.failed || 0 }}</el-tag>
         </div>
       </div>
-      <el-table :data="recent" v-loading="loading" stripe>
-        <el-table-column prop="id" label="#" width="70" />
-        <el-table-column prop="playId" label="线路" width="80" />
-        <el-table-column prop="epName" label="集数" min-width="120" show-overflow-tooltip />
-        <el-table-column label="策略" width="230" show-overflow-tooltip>
-          <template #default="{ row }">{{ strategyChainLabel(row.strategyId) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag></template>
-        </el-table-column>
-        <el-table-column prop="confidence" label="置信度" width="90" />
-        <el-table-column label="广告段" min-width="170">
+      <div class="result-filters">
+        <el-input v-model="resultFilter.kw" clearable placeholder="搜影片名" style="width:200px" @keyup.enter="loadResults(1)" @clear="loadResults(1)" />
+        <el-select v-model="resultFilter.sourceId" clearable placeholder="全部源" style="width:150px" @change="loadResults(1)">
+          <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
+        </el-select>
+        <el-select v-model="resultFilter.status" clearable placeholder="全部状态" style="width:140px" @change="loadResults(1)">
+          <el-option label="clean" value="clean" />
+          <el-option label="no_ads" value="no_ads" />
+          <el-option label="dry_run" value="dry_run" />
+          <el-option label="failed" value="failed" />
+          <el-option label="uncertain" value="uncertain" />
+        </el-select>
+        <el-button :icon="Refresh" @click="loadResults(1)">刷新</el-button>
+        <span class="muted">共 {{ resultTotal }} 条线路</span>
+      </div>
+      <el-table :data="grouped" v-loading="resultLoading" stripe row-key="playId" @expand-change="onExpand">
+        <el-table-column type="expand">
           <template #default="{ row }">
-            <span v-if="row.adRanges?.length">{{ row.adRanges.map(r => `${r.start}-${r.end}s`).join(' / ') }}</span>
-            <span v-else class="muted">—</span>
+            <div class="ep-detail" v-loading="row._loading">
+              <el-table :data="row._episodes || []" size="small" stripe>
+                <el-table-column prop="epName" label="集数" width="120" show-overflow-tooltip />
+                <el-table-column label="策略" min-width="220" show-overflow-tooltip>
+                  <template #default="{ row: e }">{{ strategyChainLabel(e.strategyId) }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row: e }"><el-tag size="small" :type="statusType(e.status)">{{ e.status }}</el-tag></template>
+                </el-table-column>
+                <el-table-column prop="confidence" label="置信度" width="80" />
+                <el-table-column label="广告段" min-width="160">
+                  <template #default="{ row: e }">
+                    <span v-if="e.adRanges?.length">{{ e.adRanges.map(r => `${r.start}-${r.end}s`).join(' / ') }}</span>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="时间" width="160">
+                  <template #default="{ row: e }">{{ fmt(e.checkedAt) }}</template>
+                </el-table-column>
+              </el-table>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="时间" width="160">
-          <template #default="{ row }">{{ fmt(row.checkedAt) }}</template>
+        <el-table-column label="影片" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.vodName }}</span>
+            <el-tag v-if="row.vodStatus && row.vodStatus !== 'online'" size="small" type="info" style="margin-left:6px">{{ row.vodStatus }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sourceName" label="源" width="120" show-overflow-tooltip />
+        <el-table-column prop="playId" label="线路" width="90" />
+        <el-table-column prop="episodes" label="集数" width="80" />
+        <el-table-column label="清洗分布" min-width="200">
+          <template #default="{ row }">
+            <el-tag v-if="row.statusCounts.clean" size="small" type="success">clean {{ row.statusCounts.clean }}</el-tag>
+            <el-tag v-if="row.statusCounts.no_ads" size="small" style="margin-left:4px">no_ads {{ row.statusCounts.no_ads }}</el-tag>
+            <el-tag v-if="row.statusCounts.dry_run" size="small" type="warning" style="margin-left:4px">dry_run {{ row.statusCounts.dry_run }}</el-tag>
+            <el-tag v-if="row.statusCounts.failed" size="small" type="danger" style="margin-left:4px">failed {{ row.statusCounts.failed }}</el-tag>
+            <el-tag v-if="row.statusCounts.uncertain" size="small" type="info" style="margin-left:4px">uncertain {{ row.statusCounts.uncertain }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近清洗" width="160">
+          <template #default="{ row }">{{ fmt(row.lastCheckedAt) }}</template>
         </el-table-column>
       </el-table>
+      <div class="result-pager">
+        <el-pagination
+          layout="prev, pager, next"
+          :total="resultTotal"
+          :page-size="resultFilter.size"
+          :current-page="resultFilter.page"
+          @current-change="loadResults"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -275,6 +326,10 @@ const categories = ref([])
 const policies = ref([])
 const stats = ref({})
 const recent = ref([])
+const grouped = ref([])
+const resultLoading = ref(false)
+const resultTotal = ref(0)
+const resultFilter = ref({ kw: '', sourceId: '', status: '', page: 1, size: 30 })
 const vodOptions = ref([])
 const vodSearching = ref(false)
 const lineTableRef = ref(null)
@@ -349,6 +404,35 @@ async function load() {
     if (!job.value.strategyIds?.length && strategies.value[0]) job.value.strategyIds = [strategies.value[0].id]
   } catch (e) { ElMessage.error(e.message || '加载失败') }
   finally { loading.value = false }
+}
+
+async function loadResults(page = 1) {
+  resultFilter.value.page = page
+  resultLoading.value = true
+  try {
+    const r = await api.hlsCleanResults({
+      mode: 'grouped',
+      kw: resultFilter.value.kw || undefined,
+      sourceId: resultFilter.value.sourceId || undefined,
+      status: resultFilter.value.status || undefined,
+      page,
+      size: resultFilter.value.size,
+    })
+    grouped.value = (r.list || []).map(x => ({ ...x, _episodes: null, _loading: false }))
+    resultTotal.value = r.total || 0
+  } catch (e) { ElMessage.error(e.message || '加载结果失败') }
+  finally { resultLoading.value = false }
+}
+
+async function onExpand(row, expanded) {
+  const open = Array.isArray(expanded) ? expanded.includes(row) : expanded
+  if (!open || row._episodes) return
+  row._loading = true
+  try {
+    const r = await api.hlsCleanResults({ mode: 'flat', playId: row.playId, size: 100 })
+    row._episodes = r.list || []
+  } catch (e) { ElMessage.error(e.message || '加载明细失败') }
+  finally { row._loading = false }
 }
 
 async function saveConfig() {
@@ -501,7 +585,7 @@ async function startTask() {
   finally { starting.value = false }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadResults(1) })
 </script>
 
 <style scoped>
@@ -517,6 +601,9 @@ onMounted(load)
 .confidence-note b { color: var(--text-1); }
 .stat-line { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .muted { color: var(--text-3); }
+.result-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.result-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+.ep-detail { padding: 8px 16px; }
 .vod-option { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .vod-option em { color: var(--text-3); font-style: normal; font-size: 12px; white-space: nowrap; }
 .line-panel { margin: -2px 0 18px 90px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

@@ -535,12 +535,17 @@ async function mergeVods(targetId: number, sourceIds: number[]) {
     if (sources.length !== ids.length) throw new Error("部分重复影片不存在");
 
     const sourceIdList = sources.map((row) => row.id);
-    const aliases = new Set<string>();
+    const aliases = new Map<string, string>();
+    const putAlias = (fingerprint: string, note = "") => {
+      const fp = cleanText(fingerprint, 180);
+      if (!fp || fp === target.fingerprint) return;
+      const display = cleanText(note || fp.split("|")[0] || "", 120);
+      if (!aliases.has(fp) || (!aliases.get(fp) && display)) aliases.set(fp, display);
+    };
     for (const row of sources) {
-      aliases.add(row.fingerprint);
-      for (const alias of row.aliases) aliases.add(alias.fingerprint);
+      putAlias(row.fingerprint, row.name);
+      for (const alias of row.aliases) putAlias(alias.fingerprint, aliasDisplayName(alias));
     }
-    aliases.delete(target.fingerprint);
 
     for (const row of sources) {
       const people = row.people.map((p) => ({
@@ -594,11 +599,16 @@ async function mergeVods(targetId: number, sourceIds: number[]) {
     await tx.userFollow.deleteMany({ where: { vodId: { in: sourceIdList } } });
     await tx.watchHistory.deleteMany({ where: { vodId: { in: sourceIdList } } });
 
-    for (const fingerprint of aliases) {
+    const existingAliases = aliases.size
+      ? await tx.vodAlias.findMany({ where: { fingerprint: { in: [...aliases.keys()] } }, select: { fingerprint: true, note: true } })
+      : [];
+    const existingAliasNotes = new Map(existingAliases.map((alias) => [alias.fingerprint, cleanText(alias.note || "", 120)]));
+    for (const [fingerprint, note] of aliases) {
+      const nextNote = existingAliasNotes.get(fingerprint) || note;
       await tx.vodAlias.upsert({
         where: { fingerprint },
-        create: { fingerprint, vodId: targetId, note: "manual_merge" },
-        update: { vodId: targetId, note: "manual_merge" },
+        create: { fingerprint, vodId: targetId, note: nextNote },
+        update: { vodId: targetId, ...(nextNote ? { note: nextNote } : {}) },
       });
     }
 

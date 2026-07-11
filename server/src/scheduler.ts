@@ -9,7 +9,7 @@ import { parseAutoTypeIds } from "./sourceAutoTypes.js";
 const tasks = new Map<number, ReturnType<typeof cron.schedule>>();
 let metaTask: ReturnType<typeof cron.schedule> | null = null;
 
-// 重新加载豆瓣元数据定时任务
+// 重新加载元数据定时任务
 export async function reloadMetaSchedule() {
   if (metaTask) { metaTask.stop(); metaTask = null; }
   const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
@@ -18,7 +18,7 @@ export async function reloadMetaSchedule() {
   if (!cron.validate(expr)) { console.warn(`[meta] cron 无效: ${expr}`); return; }
   metaTask = cron.schedule(expr, async () => {
     try {
-      await createMetaTask({ limit: cfg.batchLimit, intervalMs: cfg.intervalMs, redo: cfg.redoFailed });
+      await createMetaTask({ redo: cfg.redoFailed });
       console.log("[meta] 已创建定时元数据匹配任务");
     } catch (e: any) {
       console.error("[meta] 创建任务失败:", e?.message);

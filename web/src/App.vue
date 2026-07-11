@@ -79,7 +79,7 @@
                     <div class="sp-thumb">
                       <img v-if="h.officialPic || h.pic || h.localPic" :src="pic(h)" :alt="h.name" loading="lazy" @error="onErr($event, fallbackPic(h))" />
                       <div v-else class="noimg"></div>
-                      <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                      <span class="sp-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg></span>
                     </div>
                     <div class="sp-info">
                       <div class="sp-name">{{ h.name }}</div>
@@ -216,6 +216,8 @@ function isPhoneDevice() {
 }
 function mobileTemplateTarget() {
   if (!mobileTemplateEnabled.value || isMobileTemplateRoute.value || !isPhoneDevice()) return null
+  const playMatch = route.path.match(/^\/play\/([^/?#]+)/)
+  if (playMatch) return { path: `/m/play/${playMatch[1]}` }
   if (route.path !== '/') return null
   const kw = String(route.query.kw || '').trim()
   if (kw) return { path: '/m/search', query: { kw } }

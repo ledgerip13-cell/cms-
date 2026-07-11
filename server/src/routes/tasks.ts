@@ -5,6 +5,15 @@ import { requestCancel, requestPause, clearPause, wakeTaskQueues, createCollectT
 import { previewByKeyword } from "../collector/sync.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
+  function taskStatusWhere(q: any) {
+    const group = String(q.group || "");
+    if (group === "active") return { in: ["running", "canceling"] };
+    if (group === "waiting") return { in: ["pending", "paused"] };
+    if (group === "done") return "done";
+    if (group === "failed") return "failed";
+    return q.status ? String(q.status) : undefined;
+  }
+
   // SSE 实时推送：任务变更时推送活跃任务快照（EventSource 不能带 header，故用 query token）
   // 注意：此路由在 authGuard 钩子之前注册，自行验证 token
   app.get("/api/tasks/stream", async (req, reply) => {
@@ -49,7 +58,8 @@ export default async function taskRoutes(app: FastifyInstance) {
   secured.get("/api/tasks", async (req) => {
     const q = req.query as any;
     const where: any = {};
-    if (q.status) where.status = q.status;
+    const statusWhere = taskStatusWhere(q);
+    if (statusWhere) where.status = statusWhere;
     if (q.type) where.type = q.type;
     const [total, list] = await Promise.all([
       prisma.task.count({ where }),

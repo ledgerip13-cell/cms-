@@ -5,6 +5,7 @@
       'shorts-shell': route.path.startsWith('/m/shorts'),
       'shorts-full-shell': route.path.startsWith('/m/shorts') && route.query.mode === 'full',
       'search-shell': route.path.startsWith('/m/search'),
+      'play-shell': route.path.startsWith('/m/play'),
     }"
   >
     <router-view v-slot="{ Component, route: viewRoute }">
@@ -14,7 +15,7 @@
         </keep-alive>
       </transition>
     </router-view>
-    <nav v-if="!route.path.startsWith('/m/search')" class="mtab" aria-label="移动端模板导航">
+    <nav v-if="!route.path.startsWith('/m/search') && !route.path.startsWith('/m/play')" class="mtab" aria-label="移动端模板导航">
       <button v-for="item in tabs" :key="item.path" type="button" :class="{ on: active(item) }" @click="router.push(item.path)">
         <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
         <span>{{ item.label }}</span>
@@ -79,6 +80,15 @@ function mobileChromeSettings() {
       themeColor: '#ffe1db',
       appleStatusBar: 'default',
       htmlBg: '#ffe1db',
+      bodyBg: '#f7f7f8',
+      colorScheme: 'light',
+    }
+  }
+  if (route.path.startsWith('/m/play')) {
+    return {
+      themeColor: '#08090d',
+      appleStatusBar: 'black-translucent',
+      htmlBg: '#08090d',
       bodyBg: '#f7f7f8',
       colorScheme: 'light',
     }
@@ -223,6 +233,9 @@ onBeforeUnmount(restoreChrome)
 }
 .shorts-shell {
   background: #050505;
+}
+.play-shell {
+  background: #f7f7f8;
 }
 .shorts-shell .mtab {
   background: rgba(8, 8, 10, .72);

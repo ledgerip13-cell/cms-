@@ -1,5 +1,5 @@
 <template>
-  <main class="msearch">
+  <main class="msearch" :style="{ '--msr-head-bg': headBg }">
     <header class="msr-head">
       <button class="msr-back" type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
@@ -32,13 +32,13 @@
             <svg viewBox="0 0 24 24" v-html="icon('refresh')"></svg>
           </button>
         </div>
-        <div class="msr-word-grid">
+        <div class="msr-word-grid msr-suggest-grid">
           <button v-for="word in suggestWords" :key="word" type="button" @click="pickWord(word)">{{ word }}</button>
         </div>
       </section>
 
       <section class="msr-rank-panel">
-        <nav class="msr-rank-tabs" aria-label="热搜榜">
+        <nav ref="rankTabsEl" class="msr-rank-tabs" aria-label="热搜榜">
           <button v-for="tab in rankTabs" :key="tab.key" type="button" :class="{ on: rankTab === tab.key }" @click="rankTab = tab.key">
             {{ tab.label }}
           </button>
@@ -55,8 +55,7 @@
             <div class="msr-rank-poster">
               <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
               <span class="msr-rank-no">{{ index + 1 }}</span>
-              <span v-if="isNewVod(vod)" class="msr-new">新剧</span>
-              <i>{{ heatText(vod) }}</i>
+              <span class="msr-rank-tag" :class="rankTag(vod).type">{{ rankTag(vod).label }}</span>
             </div>
             <strong>{{ vod.name }}</strong>
             <p>{{ heatValue(vod) }} 热搜值</p>
@@ -66,7 +65,7 @@
     </template>
 
     <template v-else>
-      <nav class="msr-result-tabs" aria-label="搜索结果分类">
+      <nav ref="resultTabsEl" class="msr-result-tabs" aria-label="搜索结果分类">
         <button v-for="tab in resultTabs" :key="tab.key" type="button" :class="{ on: resultTab === tab.key }" @click="pickResultTab(tab.key)">
           {{ tab.label }}
         </button>
@@ -105,7 +104,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { icon } from './icons'
@@ -122,11 +121,17 @@ const suggestOffset = ref(0)
 const rankTab = ref('hot')
 const rankItems = ref([])
 const rankLoading = ref(false)
+const rankCache = ref({})
 const resultTab = ref('all')
 const resultItems = ref([])
 const resultLoading = ref(false)
 const page = ref(1)
 const hasMore = ref(false)
+const headBg = ref('0')
+const rankTabsEl = ref(null)
+const resultTabsEl = ref(null)
+let rankRequestId = 0
+let headRaf = 0
 
 const rankTabs = [
   { key: 'hot', label: '热门榜' },
@@ -146,7 +151,7 @@ const activeKw = computed(() => String(route.query.kw || '').trim())
 const suggestWords = computed(() => {
   const words = uniqueWords([...baseSuggestWords.value, '热门短剧', '动漫', '电影', '电视剧', '热播', '上新'])
   const start = Math.min(suggestOffset.value, Math.max(0, words.length - 1))
-  return [...words.slice(start), ...words.slice(0, start)].slice(0, 8)
+  return [...words.slice(start), ...words.slice(0, start)].slice(0, 4)
 })
 
 function uniqueWords(words) {
@@ -205,6 +210,33 @@ function pickResultTab(key) {
   loadResults()
 }
 
+function keepActiveTabVisible(containerRef) {
+  const container = containerRef.value
+  const active = container?.querySelector?.('button.on')
+  if (!container || !active || container.scrollWidth <= container.clientWidth) return
+  const left = active.offsetLeft
+  const maxLeft = container.scrollWidth - container.clientWidth
+  const nextLeft = Math.max(0, Math.min(maxLeft, left - ((container.clientWidth - active.offsetWidth) / 2)))
+  if (Math.abs(container.scrollLeft - nextLeft) < 1) return
+  container.scrollTo({ left: nextLeft, behavior: 'smooth' })
+}
+
+async function syncHorizontalTabs() {
+  await nextTick()
+  keepActiveTabVisible(rankTabsEl)
+  keepActiveTabVisible(resultTabsEl)
+}
+
+function syncHeadBg() {
+  headRaf = 0
+  headBg.value = Math.max(0, Math.min(.9, (window.scrollY / 88) * .9)).toFixed(3)
+}
+
+function onPageScroll() {
+  if (headRaf) return
+  headRaf = window.requestAnimationFrame(syncHeadBg)
+}
+
 function goBack() {
   if (window.history.length > 1) router.back()
   else router.push('/m')
@@ -212,7 +244,7 @@ function goBack() {
 
 function goVod(vod) {
   if (!vod?.id) return
-  router.push(`/play/${vod.id}`)
+  router.push(`/m/play/${vod.id}`)
 }
 
 function poster(vod) {
@@ -231,14 +263,19 @@ function heatValue(vod) {
   return String(n)
 }
 
-function heatText(vod) {
-  const value = heatValue(vod)
-  return value ? `${value}热度` : '热播'
+function isDoneVod(vod) {
+  return /完结|已完结|全集|全\s*\d+\s*(集|话|期|回)|大结局|终章/i.test(String(vod?.remarks || ''))
 }
 
-function isNewVod(vod) {
-  const t = Date.parse(vod?.createdAt || vod?.updatedAt || '')
+function isFreshVod(vod) {
+  const t = Date.parse(vod?.contentUpdatedAt || vod?.createdAt || '')
   return Number.isFinite(t) && Date.now() - t < 1000 * 60 * 60 * 24 * 21
+}
+
+function rankTag(vod) {
+  if (isDoneVod(vod)) return { label: '完结', type: 'done' }
+  if (isFreshVod(vod)) return { label: '新剧', type: 'fresh' }
+  return { label: '热门', type: 'hot' }
 }
 
 async function loadSuggest() {
@@ -252,18 +289,30 @@ async function loadSuggest() {
 
 async function loadRank() {
   const tab = rankTabs.find(x => x.key === rankTab.value) || rankTabs[0]
+  const cached = rankCache.value[tab.key]
+  if (cached) {
+    rankItems.value = cached
+    rankLoading.value = false
+    return
+  }
+  const requestId = ++rankRequestId
   rankLoading.value = true
   try {
+    let rows = []
     if (tab.key === 'hot') {
-      rankItems.value = (await api.hot(12)) || []
+      rows = (await api.hot(12)) || []
     } else {
       const res = await api.vods({ page: 1, size: 12, sort: 'hot', type: tab.type })
-      rankItems.value = res.list || []
+      rows = res.list || []
     }
+    if (requestId !== rankRequestId || rankTab.value !== tab.key) return
+    rankCache.value = { ...rankCache.value, [tab.key]: rows }
+    rankItems.value = rows
   } catch {
+    if (requestId !== rankRequestId || rankTab.value !== tab.key) return
     rankItems.value = []
   } finally {
-    rankLoading.value = false
+    if (requestId === rankRequestId) rankLoading.value = false
   }
 }
 
@@ -317,36 +366,49 @@ watch(activeKw, async (kw) => {
   }
 }, { immediate: true })
 
-watch(rankTab, loadRank)
+watch(rankTab, async () => {
+  await Promise.allSettled([loadRank(), syncHorizontalTabs()])
+})
+watch(resultTab, syncHorizontalTabs)
+watch(activeKw, syncHorizontalTabs)
 
 onMounted(async () => {
+  syncHeadBg()
+  window.addEventListener('scroll', onPageScroll, { passive: true })
   readHistory()
   await Promise.allSettled([loadSuggest(), loadRank()])
   await nextTick()
+  syncHorizontalTabs()
   inputEl.value?.focus?.()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onPageScroll)
+  if (headRaf) cancelAnimationFrame(headRaf)
 })
 </script>
 
 <style scoped>
 .msearch {
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 10px) 14px 28px;
-  background:
-    radial-gradient(circle at 80% -10%, rgba(255, 112, 78, .12), transparent 34%),
-    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 180px, #f7f7f8 100%);
+  padding: calc(env(safe-area-inset-top) + 62px) 14px 28px;
+  background: #f7f7f8;
   color: #1f232b;
 }
 .msr-head {
-  position: sticky;
+  position: fixed;
   z-index: 20;
+  left: 0;
+  right: 0;
   top: 0;
-  margin: 0 -14px;
-  padding: 0 14px 12px;
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(180deg, #fff4f1 0%, rgba(255, 244, 241, .92) 72%, rgba(255, 244, 241, 0) 100%);
+  background: rgb(255 244 241 / var(--msr-head-bg));
+  backdrop-filter: blur(9px);
+  transition: background .16s ease;
 }
 .msr-back,
 .msr-submit,
@@ -462,6 +524,13 @@ onMounted(async () => {
   text-overflow: ellipsis;
   box-shadow: 0 8px 20px rgba(17, 24, 39, .04);
 }
+.msr-suggest-grid {
+  gap: 0;
+}
+.msr-suggest-grid button {
+  background: transparent;
+  box-shadow: none;
+}
 .msr-rank-panel {
   margin-top: 20px;
   padding: 12px;
@@ -487,13 +556,13 @@ onMounted(async () => {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
-  color: #727984;
+  color: #2106069e;
   font-weight: 900;
 }
 .msr-rank-tabs button {
-  height: 32px;
+  height: 34px;
   padding: 0 4px;
-  font-size: 13px;
+  font-size: 15px;
 }
 .msr-rank-tabs button.on,
 .msr-result-tabs button.on {
@@ -522,8 +591,7 @@ onMounted(async () => {
   object-fit: cover;
 }
 .msr-rank-no,
-.msr-new,
-.msr-rank-poster i,
+.msr-rank-tag,
 .msr-poster span {
   position: absolute;
   color: #fff;
@@ -540,26 +608,23 @@ onMounted(async () => {
   background: linear-gradient(135deg, #ff7b4c, #f04438);
   font-size: 11px;
 }
-.msr-new {
+.msr-rank-tag {
   right: 5px;
   top: 5px;
-  padding: 3px 5px;
+  padding: 4px 6px;
   border-radius: 999px;
-  background: rgba(240, 68, 56, .9);
-  font-size: 9px;
+  background: rgba(240, 68, 56, .92);
+  font-size: 11px;
+  line-height: 1;
 }
-.msr-rank-poster i {
-  left: 5px;
-  right: 5px;
-  bottom: 5px;
-  padding: 3px 5px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, .48);
-  font-size: 9px;
-  font-style: normal;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.msr-rank-tag.hot {
+  background: rgba(240, 68, 56, .92);
+}
+.msr-rank-tag.fresh {
+  background: rgba(31, 119, 255, .9);
+}
+.msr-rank-tag.done {
+  background: rgba(33, 6, 6, .62);
 }
 .msr-rank-card strong,
 .msr-card strong {
@@ -588,11 +653,11 @@ onMounted(async () => {
   background: linear-gradient(180deg, rgba(255, 244, 241, .94), rgba(247, 247, 248, .94));
 }
 .msr-result-tabs button {
-  height: 34px;
+  height: 36px;
   border-radius: 999px;
   padding: 0 14px;
   background: #fff;
-  font-size: 13px;
+  font-size: 14px;
   box-shadow: 0 8px 18px rgba(17, 24, 39, .04);
 }
 .msr-result-tabs button.on {

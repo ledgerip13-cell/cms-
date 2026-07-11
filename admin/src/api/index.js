@@ -86,7 +86,10 @@ export const api = {
   metaBatch: (d) => http.post('/meta/batch', d),
   metaMatch: (id) => http.post(`/meta/match/${id}`),
   metaSuggest: (kw) => http.get('/meta/suggest', { params: { kw } }),
-  metaSet: (id, doubanId) => http.post(`/meta/set/${id}`, { doubanId }),
+  metaSet: (id, candidate) => typeof candidate === 'object'
+    ? http.post(`/meta/set/${id}`, { source: candidate.source, sourceId: candidate.id, doubanId: candidate.source === 'douban' ? candidate.id : undefined })
+    : http.post(`/meta/set/${id}`, { doubanId: candidate }),
+  metaClear: (ids) => http.post('/meta/clear', { ids }),
   metaStats: () => http.get('/meta/stats'),
   metaVods: (params) => http.get('/meta/vods', { params }),
   metaConfig: () => http.get('/meta/config'),

@@ -1,5 +1,5 @@
 <template>
-  <main class="mt">
+  <main class="mt" :style="{ '--mt-head-bg': headBg }">
     <header class="mt-head">
       <form class="mt-search" @submit.prevent="submitSearch">
         <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
@@ -7,32 +7,6 @@
         <button v-if="draftKw" type="submit">搜索</button>
       </form>
     </header>
-
-    <nav class="mt-types" aria-label="影片大类">
-      <button type="button" :class="{ on: !type }" @click="pickType('')">全部</button>
-      <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: type === cat.name }" @click="pickType(cat.name)">
-        {{ cat.name }}
-      </button>
-    </nav>
-
-    <nav class="mt-sortbar" aria-label="排序入口">
-      <button v-for="item in quickSorts" :key="item.value" type="button" :class="{ on: sort === item.value }" @click="pickSort(item.value)">
-        <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
-        {{ item.label }}
-      </button>
-    </nav>
-
-    <section v-if="subtypes.length && !kw" class="mt-section">
-      <div class="mt-section-head">
-        <h2>热门分类</h2>
-      </div>
-      <div class="mt-subgrid">
-        <button v-for="sub in topSubtypes" :key="sub.name" type="button" :class="{ on: subtype === sub.name }" @click="pickSubtype(sub.name)">
-          <span>{{ sub.name }}</span>
-          <i>{{ compactCount(sub.count) }}</i>
-        </button>
-      </div>
-    </section>
 
     <section v-if="rankItems.length" class="mt-section">
       <div class="mt-section-head">
@@ -48,6 +22,32 @@
           <strong>{{ vod.name }}</strong>
           <span>{{ compactCount(vod.ratingCount || vod._count?.plays || 0) }}热度</span>
         </article>
+      </div>
+    </section>
+
+    <nav ref="typeTabsEl" class="mt-types" aria-label="影片大类">
+      <button type="button" :class="{ on: !type }" @click="pickType('')">全部</button>
+      <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: type === cat.name }" @click="pickType(cat.name)">
+        {{ cat.name }}
+      </button>
+    </nav>
+
+    <nav ref="sortTabsEl" class="mt-sortbar" aria-label="排序入口">
+      <button v-for="item in quickSorts" :key="item.value" type="button" :class="{ on: sort === item.value }" @click="pickSort(item.value)">
+        <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
+        {{ item.label }}
+      </button>
+    </nav>
+
+    <section v-if="subtypes.length && !kw" class="mt-section">
+      <div class="mt-section-head">
+        <h2>热门分类</h2>
+      </div>
+      <div class="mt-subgrid">
+        <button v-for="sub in topSubtypes" :key="sub.name" type="button" :class="{ on: subtype === sub.name }" @click="pickSubtype(sub.name)">
+          <span>{{ sub.name }}</span>
+          <i>{{ compactCount(sub.count) }}</i>
+        </button>
       </div>
     </section>
 
@@ -135,7 +135,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { readCachedCategories, writeCachedCategories } from '../siteConfig'
@@ -155,6 +155,9 @@ const filterOpen = ref(false)
 const draftKw = ref('')
 const page = ref(1)
 const hasMore = ref(false)
+const headBg = ref(0)
+const typeTabsEl = ref(null)
+const sortTabsEl = ref(null)
 
 const type = computed(() => String(route.query.type || ''))
 const subtype = computed(() => String(route.query.sub || ''))
@@ -183,6 +186,7 @@ const filterSorts = [
 let listRequestId = 0
 let rankRequestId = 0
 let theaterCache = readTheaterCache()
+let headRaf = 0
 
 function readTheaterCache() {
   try {
@@ -288,7 +292,7 @@ function applyFilter() {
 
 function goPlay(id) {
   if (!id) return
-  router.push(`/play/${id}`)
+  router.push(`/m/play/${id}`)
 }
 
 function vodParams(extra = {}) {
@@ -400,28 +404,69 @@ async function reload() {
   await Promise.allSettled([loadSubtypes(), loadYears(), loadRank(), loadList()])
 }
 
+function syncHeadBg() {
+  headRaf = 0
+  headBg.value = Math.max(0, Math.min(.9, (window.scrollY / 88) * .9)).toFixed(3)
+}
+
+function onPageScroll() {
+  if (headRaf) return
+  headRaf = window.requestAnimationFrame(syncHeadBg)
+}
+
+function keepActiveTabVisible(containerRef) {
+  const container = containerRef.value
+  const active = container?.querySelector?.('button.on')
+  if (!container || !active || container.scrollWidth <= container.clientWidth) return
+  const left = active.offsetLeft
+  const maxLeft = container.scrollWidth - container.clientWidth
+  const nextLeft = Math.max(0, Math.min(maxLeft, left - ((container.clientWidth - active.offsetWidth) / 2)))
+  if (Math.abs(container.scrollLeft - nextLeft) < 1) return
+  container.scrollTo({ left: nextLeft, behavior: 'smooth' })
+}
+
+async function syncHorizontalTabs() {
+  await nextTick()
+  keepActiveTabVisible(typeTabsEl)
+  keepActiveTabVisible(sortTabsEl)
+}
+
 watch(() => route.fullPath, reload)
+watch([type, sort, () => categories.value.length], syncHorizontalTabs, { immediate: true })
 onMounted(async () => {
+  syncHeadBg()
+  window.addEventListener('scroll', onPageScroll, { passive: true })
   await loadCategories()
   await reload()
+  syncHorizontalTabs()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onPageScroll)
+  if (headRaf) cancelAnimationFrame(headRaf)
 })
 </script>
 
 <style scoped>
 .mt {
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 12px) 14px calc(90px + env(safe-area-inset-bottom));
+  padding: calc(env(safe-area-inset-top) + 64px) 14px calc(90px + env(safe-area-inset-bottom));
   background:
     linear-gradient(180deg, #fff4f1 0%, #f7f7f8 180px, #f7f7f8 100%);
   color: #191a20;
+  overscroll-behavior-y: none;
 }
 .mt-head {
-  position: sticky;
+  position: fixed;
   z-index: 20;
+  left: 0;
+  right: 0;
   top: 0;
-  margin: 0 -14px;
-  padding: 0 14px 10px;
-  background: linear-gradient(180deg, #fff4f1 0%, rgba(255, 244, 241, .92) 72%, rgba(255, 244, 241, 0) 100%);
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px 10px;
+  background: rgb(255 244 241 / var(--mt-head-bg));
+  transition: background .16s ease;
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
 }
 .mt-search {
   height: 42px;
@@ -489,7 +534,7 @@ onMounted(async () => {
 }
 .mt-types,
 .mt-sortbar {
-  margin: 2px -14px 0;
+  margin: 10px -14px 0;
   padding: 0 14px 2px;
   display: flex;
   gap: 9px;
@@ -518,7 +563,7 @@ onMounted(async () => {
   background: linear-gradient(135deg, #ff6a4f, #f04438);
 }
 .mt-sortbar {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .mt-sortbar button {
   flex: 0 0 auto;
@@ -540,6 +585,9 @@ onMounted(async () => {
 }
 .mt-section {
   margin-top: 20px;
+}
+.mt > .mt-section:first-of-type {
+  margin-top: 0;
 }
 .mt-section-head {
   height: 30px;

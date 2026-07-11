@@ -90,10 +90,10 @@
               <span>解析中</span>
             </div>
             <div v-if="i === activeIndex && needsTap && !accessBlock" class="center-state play-state" @click.stop="playNow">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg>
             </div>
             <div v-if="i === activeIndex && paused && !needsTap && !accessBlock" class="center-state play-state" @click.stop="playNow">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg>
             </div>
             <div v-if="i === activeIndex && accessBlock" class="short-lock">
               <div class="lock-icon">
@@ -160,7 +160,7 @@
                   <svg viewBox="0 0 24 24"><path d="M6 5v14"/><path d="M18 6l-8 6 8 6z"/></svg>
                 </button>
                 <button class="theater-play-btn" type="button" :aria-label="paused ? '播放' : '暂停'" @click="togglePause">
-                  <svg v-if="paused" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  <svg v-if="paused" viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg>
                   <svg v-else viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg>
                 </button>
                 <button class="theater-skip-btn" type="button" aria-label="下一集" :disabled="!canGoNextTheater" @click="nextTheaterEpisode">
@@ -2673,7 +2673,7 @@ onBeforeUnmount(() => {
 .theater-skip-btn svg { width: 25px; height: 25px; fill: rgba(255,255,255,.12); stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .theater-play-btn { width: 70px; height: 70px; background: rgba(255,255,255,.9); color: #101218; border-color: rgba(255,255,255,.92); }
 .theater-play-btn svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.theater-play-btn svg[fill="currentColor"] { fill: currentColor; stroke: none; margin-left: 3px; }
+.theater-play-btn svg[fill="currentColor"] { fill: currentColor; stroke: none; opacity: .8; margin-left: 4px; }
 .theater-icon-btn:disabled,
 .theater-skip-btn:disabled { opacity: .36; cursor: not-allowed; }
 .landscape-theater-mode .shorts-top,
@@ -2726,7 +2726,7 @@ onBeforeUnmount(() => {
 .center-state { position: absolute; left: 50%; top: 50%; z-index: 5; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 9px;
   min-height: 42px; padding: 0 15px; border-radius: 999px; background: rgba(10,12,18,.58); color: #fff; font-size: 13px; font-weight: 800; backdrop-filter: blur(14px); }
 .play-state { width: 68px; height: 68px; min-height: 68px; justify-content: center; padding: 0; background: rgba(255,255,255,.2); }
-.play-state svg { width: 30px; height: 30px; margin-left: 3px; }
+.play-state svg { width: 34px; height: 34px; opacity: .8; margin-left: 4px; }
 .portrait-lock-mask { position: absolute; inset: 0; z-index: 32; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px;
   padding: 24px; text-align: center; background: rgba(5,6,10,.94); color: #fff; backdrop-filter: blur(18px); }
 .portrait-lock-mask .rotate-icon { width: 58px; height: 58px; border-radius: 18px; display: flex; align-items: center; justify-content: center;

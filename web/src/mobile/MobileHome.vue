@@ -1,5 +1,5 @@
 <template>
-  <main class="mh" :class="heroDirectionClass">
+  <main class="mh" :class="heroDirectionClass" :style="{ '--mh-head-bg': headBg }">
     <header class="mh-head">
       <div class="mh-brand">
         <img v-if="site.logo" :src="site.logo" alt="logo" />
@@ -68,12 +68,6 @@
       </Transition>
     </div>
 
-    <nav v-if="categories.length" class="mh-cats" aria-label="分类快捷入口">
-      <button v-for="cat in categories" :key="cat.name" type="button" @click="goTheater(cat.name)">
-        {{ cat.name }}
-      </button>
-    </nav>
-
     <section v-if="historyItems.length" class="mh-section">
       <div class="mh-section-head">
         <h2>
@@ -121,13 +115,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
-import { readCachedCategories, readCachedSite, writeCachedCategories, writeCachedSite } from '../siteConfig'
+import { readCachedSite, writeCachedSite } from '../siteConfig'
 import { currentUser, refreshUser } from '../userStore'
 import { icon } from './icons'
 
 const router = useRouter()
 const site = ref(readCachedSite())
-const categories = ref(readCachedCategories().slice(0, 10))
 const heroList = ref([])
 const heroIndex = ref(0)
 const heroDirection = ref(1)
@@ -136,10 +129,12 @@ const hotItems = ref([])
 const newItems = ref([])
 const guessItems = ref([])
 const loading = ref(true)
+const headBg = ref(0)
 let heroTimer = null
 let heroTouchX = 0
 let heroTouchY = 0
 let ignoreHeroClick = false
+let headRaf = 0
 
 const heroSlides = computed(() => heroList.value.slice(0, 5))
 const hero = computed(() => heroSlides.value[heroIndex.value] || heroSlides.value[0] || null)
@@ -177,7 +172,7 @@ function historyProgress(item) {
 
 function goPlay(id) {
   if (!id) return
-  router.push(`/play/${id}`)
+  router.push(`/m/play/${id}`)
 }
 
 function onHeroClick(id) {
@@ -206,6 +201,16 @@ function startHeroTimer() {
   stopHeroTimer()
   if (heroSlides.value.length < 2) return
   heroTimer = window.setInterval(() => shiftHero(1, false), 5200)
+}
+
+function syncHeadBg() {
+  headRaf = 0
+  headBg.value = Math.max(0, Math.min(.9, (window.scrollY / 88) * .9)).toFixed(3)
+}
+
+function onPageScroll() {
+  if (headRaf) return
+  headRaf = window.requestAnimationFrame(syncHeadBg)
 }
 
 function pickHero(index, restart = true) {
@@ -246,9 +251,6 @@ async function loadHome() {
   loading.value = true
   try {
     const sitePromise = api.site().then(data => { site.value = writeCachedSite(data) }).catch(() => {})
-    const categoriesPromise = api.categories().then(data => {
-      categories.value = writeCachedCategories(data).slice(0, 10)
-    }).catch(() => {})
     const heroPromise = api.hot(10).then(data => {
       heroList.value = Array.isArray(data) ? data : []
       heroIndex.value = 0
@@ -261,31 +263,50 @@ async function loadHome() {
       const rows = await api.history(8)
       historyItems.value = Array.isArray(rows) ? rows.slice(0, 6) : []
     }).catch(() => {})
-    await Promise.allSettled([sitePromise, categoriesPromise, heroPromise, hotPromise, newPromise, guessPromise, userPromise])
+    await Promise.allSettled([sitePromise, heroPromise, hotPromise, newPromise, guessPromise, userPromise])
     startHeroTimer()
   } finally {
     loading.value = false
   }
 }
 
-onMounted(loadHome)
-onBeforeUnmount(stopHeroTimer)
+onMounted(() => {
+  loadHome()
+  syncHeadBg()
+  window.addEventListener('scroll', onPageScroll, { passive: true })
+})
+onBeforeUnmount(() => {
+  stopHeroTimer()
+  window.removeEventListener('scroll', onPageScroll)
+  if (headRaf) cancelAnimationFrame(headRaf)
+})
 </script>
 
 <style scoped>
 .mh {
   min-height: 100dvh;
-  padding: 0 14px calc(88px + env(safe-area-inset-bottom));
+  padding: calc(env(safe-area-inset-top) + 64px) 14px calc(88px + env(safe-area-inset-bottom));
   background:
     radial-gradient(circle at 22% 0%, rgba(255, 102, 79, .16), transparent 32%),
     linear-gradient(180deg, #fff4f1 0%, #f7f7f8 260px, #f7f7f8 100%);
   color: #191a20;
+  overscroll-behavior-y: none;
 }
 .mh-head {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: 0;
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px 10px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: calc(env(safe-area-inset-top) + 12px);
+  background: rgb(255 244 241 / var(--mh-head-bg));
+  transition: background .16s ease;
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
 }
 .mh-brand {
   width: 42px;
@@ -328,7 +349,6 @@ onBeforeUnmount(stopHeroTimer)
   transition: transform .16s ease, box-shadow .16s ease;
 }
 .mh-search:active,
-.mh-cats button:active,
 .mh-section-head button:active,
 .mh-history:active,
 .mh-card:active,
@@ -349,10 +369,16 @@ onBeforeUnmount(stopHeroTimer)
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.mh-primary svg {
+  fill: currentColor;
+  stroke: none;
+  opacity: .8;
+  margin-left: 1px;
+}
 .mh-hero-stage {
   position: relative;
   min-height: 214px;
-  margin-top: 14px;
+  margin-top: 4px;
 }
 .mh-hero {
   position: relative;
@@ -366,7 +392,7 @@ onBeforeUnmount(stopHeroTimer)
   touch-action: pan-y;
 }
 .mh-skeleton {
-  margin-top: 14px;
+  margin-top: 4px;
 }
 .mh-hero-swap-enter-active,
 .mh-hero-swap-leave-active {
@@ -533,29 +559,8 @@ onBeforeUnmount(stopHeroTimer)
   width: 16px;
   background: #fff;
 }
-.mh-cats {
-  margin: 16px -14px 0;
-  padding: 0 14px 2px;
-  display: flex;
-  gap: 9px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.mh-cats::-webkit-scrollbar,
 .mh-continue::-webkit-scrollbar {
   display: none;
-}
-.mh-cats button {
-  flex: 0 0 auto;
-  height: 32px;
-  border: 0;
-  border-radius: 999px;
-  padding: 0 14px;
-  color: #343741;
-  background: #fff;
-  font-weight: 800;
-  touch-action: manipulation;
-  transition: transform .16s ease, background .16s ease, color .16s ease;
 }
 .mh-section {
   margin-top: 22px;

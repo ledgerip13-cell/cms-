@@ -174,7 +174,7 @@ function logout() {
 }
 function goPlay(id) {
   if (!id) return
-  router.push(`/play/${id}`)
+  router.push(`/m/play/${id}`)
 }
 function goTheater() {
   router.push('/m/theater')
@@ -216,6 +216,9 @@ onActivated(load)
   color: #191a20;
 }
 .mme-hero {
+  position: sticky;
+  z-index: 24;
+  top: calc(env(safe-area-inset-top) + 10px);
   border-radius: 24px;
   padding: 18px;
   background: linear-gradient(135deg, #ff6a4d, #ffb35d);

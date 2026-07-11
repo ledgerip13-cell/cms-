@@ -353,6 +353,7 @@ const RESOLVE_CACHE_LIMIT = 80
 const LANDSCAPE_OBJECT_Y = '36%'
 const LANDSCAPE_CENTER_RATIO = 0.36
 const FULL_SCROLL_SETTLE_MS = 160
+const FULL_RESIZE_SUPPRESS_MS = 420
 
 function readMutedPreference() {
   try {
@@ -433,6 +434,7 @@ let historySaveAt = 0
 let playingUnit = null
 let pendingUnmute = false
 let resizeRaf = 0
+let fullResizeIgnoreUntil = 0
 let resumeAfterActivate = false
 let resumePlaybackAfterLogin = false
 const unitKeys = new Set()
@@ -1261,9 +1263,14 @@ function updateLandscapeMetrics(video = getVideo()) {
 
 function scheduleLandscapeMetrics() {
   if (resizeRaf) cancelAnimationFrame(resizeRaf)
+  if (fullMode.value) {
+    fullResizeIgnoreUntil = Date.now() + FULL_RESIZE_SUPPRESS_MS
+    clearFullCommitTimer()
+  }
   resizeRaf = requestAnimationFrame(() => {
     resizeRaf = 0
     updateLandscapeMetrics()
+    if (fullMode.value) scrollToFullCurrent('auto')
   })
 }
 
@@ -1377,6 +1384,7 @@ function onScroll() {
   scrollRaf = requestAnimationFrame(() => {
     scrollRaf = 0
     if (fullMode.value) {
+      if (Date.now() < fullResizeIgnoreUntil) return
       const el = feedEl.value
       if (!el || !activeUnit.value) return
       const raw = el.scrollTop / Math.max(1, el.clientHeight)
@@ -1399,6 +1407,7 @@ function onScroll() {
 function scheduleFullEpisodeCommit(index) {
   const unit = activeUnit.value
   if (!fullMode.value || !unit?.vod?.id || !unit.channel?.id) return
+  if (Date.now() < fullResizeIgnoreUntil) return
   const total = Math.max(1, Number(unit.total) || 1)
   const epIndex = Math.max(0, Math.min(total - 1, Number(index) || 0))
   if (epIndex === Number(unit.epIndex || 0)) return
@@ -1534,7 +1543,7 @@ async function loadRelated() {
 function openRelated(vod) {
   if (!vod?.id) return
   episodeDrawerOpen.value = false
-  router.push(`/play/${vod.id}`)
+  router.push(`/m/play/${vod.id}`)
 }
 
 function goSearch() {
@@ -2090,12 +2099,11 @@ onBeforeUnmount(() => {
 .ms-play svg {
   width: 58px;
   height: 58px;
-  fill: none;
-  stroke: rgba(255,255,255,.94);
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  margin-left: 0;
+  color: #fff;
+  fill: currentColor;
+  stroke: none;
+  opacity: .8;
+  margin-left: 4px;
   filter: drop-shadow(0 6px 16px rgba(0,0,0,.42));
 }
 .ms-lock {

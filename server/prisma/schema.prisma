@@ -86,7 +86,7 @@ model SiteConfig {
   updatedAt          DateTime @updatedAt
 }
 
-// 元数据(豆瓣)采集配置（单例 id=1）
+// 元数据采集配置（单例 id=1）
 model MetaConfig {
   id                Int      @id @default(1)
   intervalMs        Int      @default(2500) // 限速间隔(毫秒/条)
@@ -96,6 +96,8 @@ model MetaConfig {
   autoMatch         Boolean  @default(false) // 定时自动匹配
   cronExpr          String   @default("0 4 * * *") // 频率(默认每天凌晨4点)
   redoFailed        Boolean  @default(false) // 定时时是否一并重试失败的
+  saveImages        Boolean  @default(false) // 元数据匹配时是否同时保存图片到本地
+  providersConfig   String   @default("{}") // 匹配源配置 JSON：douban/tmdb 开关、排序、TMDB凭据
   updatedAt         DateTime @updatedAt
 }
 
@@ -312,18 +314,20 @@ model Vod {
   heroPic       String         @default("") // 首页/详情横版推荐图(优先级高于海报)
   status        String         @default("online") // online / offline（下架）
   pinned        Boolean        @default(false) // 置顶
-  // 豆瓣元数据（落库持久化，前端读库不实时抓）
-  doubanId      String? // 豆瓣条目id
-  rating        Float? // 豆瓣评分
+  // 元数据（落库持久化，前端读库不实时抓）
+  doubanId      String? // 旧豆瓣条目id兼容字段
+  metaSource    String         @default("") // 实际命中的元数据源：douban / tmdb
+  metaSourceId  String         @default("") // 实际命中的源内ID
+  rating        Float? // 元数据评分
   ratingCount   Int            @default(0) // 评分人数
-  officialPic   String         @default("") // 豆瓣高清封面
-  officialIntro String         @default("") // 豆瓣正规简介
+  officialPic   String         @default("") // 元数据高清封面
+  officialIntro String         @default("") // 元数据简介
   genres        String         @default("") // 类型标签(逗号分隔)
   metaMatched   String         @default("none") // none/matched/manual/pending/failed/skip
-  metaScore     Int            @default(0) // 豆瓣匹配置信分
+  metaScore     Int            @default(0) // 元数据匹配置信分
   metaReason    String         @default("") // 匹配原因/候选快照(JSON)
-  matchedTitle  String         @default("") // 实际命中的豆瓣标题
-  matchedYear   String         @default("") // 实际命中的豆瓣年份
+  matchedTitle  String         @default("") // 实际命中的元数据标题
+  matchedYear   String         @default("") // 实际命中的元数据年份
   metaAt        DateTime? // 元数据抓取时间
   // 单片自动采集：按影片自身周期重拉现有片源详情，刷新剧集/状态
   autoCollectEnabled       Boolean   @default(false)

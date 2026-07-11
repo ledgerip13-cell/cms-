@@ -7,6 +7,8 @@ const UA_PC = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chro
 const UA_M = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Mobile Safari/537.36";
 
 export interface DoubanSuggest {
+  source?: string;
+  sourceName?: string;
   id: string;
   title: string;
   sub_title?: string;
@@ -17,6 +19,9 @@ export interface DoubanSuggest {
 }
 
 export interface DoubanMeta {
+  source?: string;
+  sourceName?: string;
+  sourceId?: string;
   doubanId: string;
   title: string;
   rating: number | null;
@@ -29,6 +34,7 @@ export interface DoubanMeta {
   directors: DoubanPerson[];
   actors: DoubanPerson[];
   images: DoubanImage[];
+  aliases: string[];
 }
 
 export interface DoubanPerson {
@@ -47,6 +53,8 @@ export interface DoubanImage {
 }
 
 export interface DoubanCandidate {
+  source?: string;
+  sourceName?: string;
   id: string;
   title: string;
   subTitle: string;
@@ -123,6 +131,29 @@ function normalizePeople(...values: any[]) {
   return people;
 }
 
+function normalizeAliasNames(...values: any[]) {
+  const names: string[] = [];
+  const push = (value: any) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      for (const item of value) push(item);
+      return;
+    }
+    if (typeof value === "object") {
+      push(value.title || value.name || value.value || value.text || value.original_title || value.original_name);
+      return;
+    }
+    const text = String(value || "").trim();
+    if (!text) return;
+    for (const item of text.split(/[\/,，、\n]+/)) {
+      const name = item.trim();
+      if (name) names.push(name);
+    }
+  };
+  for (const value of values) push(value);
+  return [...new Set(names)].slice(0, 30);
+}
+
 function normalizeImage(value: any, fallbackType: DoubanImage["type"] = "backdrop"): DoubanImage | null {
   const url = picFromValue(value);
   if (!url) return null;
@@ -191,6 +222,7 @@ export interface DoubanMatchResult {
 export const AUTO_MATCH_SCORE = 80;
 export const PENDING_MATCH_SCORE = 60;
 const detailCache = new Map<string, Promise<DoubanMeta | null>>();
+const RETRYABLE_HTTP_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 
 function matchScore(value: unknown, fallback: number) {
   const n = Number(value);
@@ -198,19 +230,41 @@ function matchScore(value: unknown, fallback: number) {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-async function getJson(url: string, ua: string, referer: string, timeoutMs = 12000): Promise<any> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": ua, Referer: referer, Accept: "application/json,*/*" },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return JSON.parse((await res.text()).trim());
-  } finally {
-    clearTimeout(t);
+function retryableJsonError(err: unknown) {
+  const status = Number((err as any)?.status || 0);
+  if (status) return RETRYABLE_HTTP_STATUS.has(status);
+  const name = String((err as any)?.name || "");
+  const msg = String((err as any)?.message || "");
+  return name === "AbortError" || /fetch failed|network|timeout|empty response/i.test(msg);
+}
+
+async function getJson(url: string, ua: string, referer: string, timeoutMs = 12000, retries = 1): Promise<any> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { "User-Agent": ua, Referer: referer, Accept: "application/json,*/*" },
+      });
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`) as Error & { status?: number };
+        err.status = res.status;
+        throw err;
+      }
+      const text = (await res.text()).trim();
+      if (!text) throw new Error("empty response");
+      return JSON.parse(text);
+    } catch (err) {
+      lastError = err;
+      if (attempt >= retries || !retryableJsonError(err)) throw err;
+      await sleep(900 * (attempt + 1));
+    } finally {
+      clearTimeout(t);
+    }
   }
+  throw lastError;
 }
 
 function uniq<T>(rows: T[]) {
@@ -225,6 +279,7 @@ function withoutResizeQuery(url: string) {
 function posterQuality(url: string) {
   const u = String(url || "");
   if (!u) return 0;
+  if (/image\.tmdb\.org\/t\/p\/original/i.test(u)) return 85;
   if (/s_ratio_poster/i.test(u)) return 10;
   if (/h\/120\b|w\/120\b|\/small\b/i.test(u)) return 10;
   if (/m_ratio_poster|\/normal\b/i.test(u)) return 55;
@@ -328,28 +383,52 @@ async function doubanPhotos(id: string, kind: string): Promise<any[]> {
   return out;
 }
 
-// 搜索候选
+// 全空重试节流：避免批量场景对豆瓣疯狂重打（同一进程内至少间隔 RETRY_COOLDOWN 才允许一次整体重试）
+let lastSuggestRetryAt = 0;
+const SUGGEST_RETRY_COOLDOWN = 8000; // 8s 内最多触发一次全空重试
+const SUGGEST_RETRY_DELAY = 1500;    // 全空后等待多久再整体重试
+
+// 搜索候选：五级串行兜底；全空时（且未被节流）隔 1.5s 整体重试 1 次，救瞬时风控
 export async function doubanSuggest(keyword: string): Promise<DoubanSuggest[]> {
+  const first = await runSuggestChain(keyword);
+  if (first.length) return first;
+  // 全空：仅在冷却窗口外允许一次整体重试，防止批量任务把豆瓣打得更封
+  const now = Date.now();
+  if (now - lastSuggestRetryAt < SUGGEST_RETRY_COOLDOWN) return first;
+  lastSuggestRetryAt = now;
+  await sleep(SUGGEST_RETRY_DELAY);
+  return runSuggestChain(keyword);
+}
+
+async function runSuggestChain(keyword: string): Promise<DoubanSuggest[]> {
   const out = new Map<string, DoubanSuggest>();
   const add = (s: DoubanSuggest | null) => {
     if (s?.id && !out.has(s.id)) out.set(s.id, s);
   };
 
-  try {
-    const url = `https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(keyword)}`;
-    const arr = await getJson(url, UA_PC, "https://movie.douban.com/");
-    if (Array.isArray(arr)) for (const item of arr) add(item);
-  } catch {
-    // subject_suggest 经常空/限流，继续走移动端兜底
+  const url = `https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(keyword)}`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const arr = await getJson(url, UA_PC, "https://movie.douban.com/", 12000, 2);
+      if (Array.isArray(arr)) for (const item of arr) add(item);
+      if (out.size || !Array.isArray(arr)) break;
+      await sleep(1200 * (attempt + 1));
+    } catch {
+      // subject_suggest 经常空/限流，继续重试或走兜底
+      if (attempt < 2) await sleep(1200 * (attempt + 1));
+    }
   }
   if (out.size) return [...out.values()].slice(0, 12);
 
+  await sleep(900);
   for (const item of await doubanSearchSubjects(keyword)) add(item);
   if (out.size) return [...out.values()].slice(0, 12);
 
+  await sleep(900);
   for (const item of await doubanSearch(keyword)) add(item);
   if (out.size) return [...out.values()].slice(0, 12);
 
+  await sleep(900);
   for (const id of await doubanWebSubjectIds(keyword)) {
     if (out.has(id)) continue;
     const meta = await doubanDetail(id);
@@ -357,6 +436,7 @@ export async function doubanSuggest(keyword: string): Promise<DoubanSuggest[]> {
     if (out.size >= 12) break;
   }
 
+  if (!out.size) await sleep(900);
   for (const id of await doubanSubjectIds(keyword)) {
     if (out.has(id)) continue;
     const meta = await doubanDetail(id);
@@ -481,6 +561,9 @@ async function fetchDoubanDetail(id: string): Promise<DoubanMeta | null> {
         const poster = d?.pic?.large || d?.pic?.normal || d?.cover_url || "";
         const photos = await doubanPhotos(id, kind);
         return {
+          source: "douban",
+          sourceName: "豆瓣",
+          sourceId: id,
           doubanId: id,
           title: d.title,
           rating: typeof rating === "number" && rating > 0 ? rating : null,
@@ -493,6 +576,7 @@ async function fetchDoubanDetail(id: string): Promise<DoubanMeta | null> {
           directors: normalizePeople(d?.directors, d?.director, d?.directors?.items),
           actors: normalizePeople(d?.actors, d?.casts, d?.cast, d?.actors?.items, d?.casts?.items),
           images: normalizeImages({ ...d, photos: [...(Array.isArray(d?.photos) ? d.photos : []), ...photos] }, poster),
+          aliases: normalizeAliasNames(d?.aka, d?.aka_cn, d?.aka_en, d?.aka_title, d?.original_title, d?.original_name),
         };
       }
     } catch {
@@ -570,6 +654,25 @@ function hasSpecialMarker(value: string) {
   return /剧场版|映画|特别篇|总集篇|OVA|OAD|SP|篇/i.test(value || "");
 }
 
+// 罗马数字 → 阿拉伯数字（Ⅰ-Ⅹ / ⅰ-ⅹ），统一「斗罗大陆Ⅱ」与「斗罗大陆2」
+const ROMAN_MAP: Record<string, string> = {
+  "ⅰ": "1", "ⅱ": "2", "ⅲ": "3", "ⅳ": "4", "ⅴ": "5",
+  "ⅵ": "6", "ⅶ": "7", "ⅷ": "8", "ⅸ": "9", "ⅹ": "10",
+};
+function romanToArabic(value: string) {
+  return (value || "").replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ]/g, (ch) => ROMAN_MAP[ch.toLowerCase()] || ch);
+}
+
+// 基础片名：去分季后缀（年番N/第N季/SN/Season N）+ 括注 + 罗马数字归一，用于跨分季命名比对
+function baseTitle(value: string) {
+  const stripped = romanToArabic(value || "")
+    .replace(/[（(【\[].*?[）)】\]]/g, "")
+    .replace(/年番\s*[一二三四五六七八九十0-9]+/gi, "")
+    .replace(/第[一二三四五六七八九十0-9]+季/gi, "")
+    .replace(/\b(S\d+|Season\s*\d+)\b/gi, "");
+  return normalizeName(stripped);
+}
+
 function typeScore(localType: string, candidateType: string, reasons: string[]) {
   if (!localType || !candidateType) return 0;
   const localMovie = /电影/.test(localType);
@@ -579,7 +682,7 @@ function typeScore(localType: string, candidateType: string, reasons: string[]) 
   const remoteSeries = /tv|电视剧|剧集|series/.test(candidateType);
   if (localAnime && (remoteMovie || remoteSeries)) {
     reasons.push("type_match");
-    return 5;
+    return 8;
   }
   if ((localMovie && remoteMovie) || (localSeries && remoteSeries)) {
     reasons.push("type_match");
@@ -662,9 +765,21 @@ function scoreCandidate(
       else bestSim = Math.max(bestSim, dice(n, c));
     }
   }
+  // 分季命名归一后基础名相等（如 本地「斗罗大陆Ⅱ绝世唐门」↔ 豆瓣「斗罗大陆Ⅱ绝世唐门 年番1」）
+  const localBases = unique([baseTitle(name)].filter(Boolean));
+  const candBases = unique(
+    [baseTitle(meta?.title || suggest.title), baseTitle(suggest.sub_title || "")].filter(Boolean)
+  );
+  const baseMatch =
+    bestSim < 1 && localBases.some((l) => candBases.some((c) => l && c && l === c));
+
   if (bestSim >= 1) {
     score += 55;
     reasons.push("title_exact");
+  } else if (baseMatch) {
+    // 基础名一致但含分季后缀差异：给足底分，最终由年份/季度分二次区分具体季
+    score += 48;
+    reasons.push("title_base");
   } else if (bestSim >= 0.78) {
     score += 38;
     reasons.push("title_contains");
@@ -723,6 +838,8 @@ function scoreCandidate(
 function toCandidate(suggest: DoubanSuggest, name: string, year?: string, ctx?: DoubanMatchContext, meta?: DoubanMeta | null): DoubanCandidate {
   const scored = scoreCandidate(suggest, name, year, ctx, meta);
   return {
+    source: "douban",
+    sourceName: "豆瓣",
     id: suggest.id,
     title: suggest.title,
     subTitle: suggest.sub_title || "",

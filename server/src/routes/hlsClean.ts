@@ -119,25 +119,99 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
       return { ok: true, taskId: task.id };
     });
 
+    // 结果列表：默认按“影片+源(playId)”聚合(grouped)；传 mode=flat 或 playId 时回逐集明细
     admin.get("/api/admin/hls-clean/results", async (req) => {
       const q = req.query as any;
-      const where: any = {};
-      if (q.status) where.status = String(q.status);
-      if (q.sourceId) where.sourceId = Number(q.sourceId);
-      if (q.playId) where.playId = Number(q.playId);
-      if (q.vodId) where.vodId = Number(q.vodId);
+      const status = q.status ? String(q.status) : "";
+      const sourceId = q.sourceId ? Number(q.sourceId) : 0;
+      const playId = q.playId ? Number(q.playId) : 0;
+      const vodId = q.vodId ? Number(q.vodId) : 0;
+      const kw = String(q.kw || "").trim();
       const page = Math.max(1, Number(q.page) || 1);
       const size = Math.min(100, Number(q.size) || 30);
-      const [total, list] = await Promise.all([
-        prisma.hlsCleanResult.count({ where }),
-        prisma.hlsCleanResult.findMany({
-          where,
-          orderBy: { checkedAt: "desc" },
-          skip: (page - 1) * size,
-          take: size,
-        }),
+      const grouped = String(q.mode || "grouped") === "grouped" && !playId;
+
+      const where: any = {};
+      if (status) where.status = status;
+      if (sourceId) where.sourceId = sourceId;
+      if (playId) where.playId = playId;
+      if (vodId) where.vodId = vodId;
+
+      // 按影片名筛选：先查匹配的 vodId 集
+      if (kw) {
+        const vods = await prisma.vod.findMany({
+          where: { name: { contains: kw } },
+          select: { id: true },
+          take: 500,
+        });
+        const ids = vods.map((v) => v.id);
+        where.vodId = ids.length ? { in: ids } : -1; // 无匹配则置空
+      }
+
+      // 非聚合(逐集明细)：供“展开某条线路”使用
+      if (!grouped) {
+        const [total, list] = await Promise.all([
+          prisma.hlsCleanResult.count({ where }),
+          prisma.hlsCleanResult.findMany({
+            where,
+            orderBy: [{ epIndex: "asc" }, { checkedAt: "desc" }],
+            skip: (page - 1) * size,
+            take: size,
+          }),
+        ]);
+        return {
+          mode: "flat",
+          total,
+          list: list.map((r) => ({ ...r, adRanges: parseJson(r.adRanges, []), evidence: parseJson(r.evidence, {}) })),
+        };
+      }
+
+      // 聚合模式：一行 = 一条线路(playId)，带各状态计数 + 影片/源名
+      const groups = await prisma.hlsCleanResult.groupBy({
+        by: ["playId", "vodId", "sourceId"],
+        where,
+        _count: { _all: true },
+        _max: { checkedAt: true },
+      });
+      groups.sort((a, b) => (b._max.checkedAt?.getTime() || 0) - (a._max.checkedAt?.getTime() || 0));
+      const total = groups.length;
+      const pageGroups = groups.slice((page - 1) * size, (page - 1) * size + size);
+
+      // 批量拉各行的状态分布 + 名字
+      const playIds = pageGroups.map((g) => g.playId);
+      const vodIds = [...new Set(pageGroups.map((g) => g.vodId))];
+      const sourceIds = [...new Set(pageGroups.map((g) => g.sourceId))];
+      const [statusRows, vods, sources] = await Promise.all([
+        playIds.length
+          ? prisma.hlsCleanResult.groupBy({
+              by: ["playId", "status"],
+              where: { ...where, playId: { in: playIds } },
+              _count: { _all: true },
+            })
+          : Promise.resolve([] as any[]),
+        prisma.vod.findMany({ where: { id: { in: vodIds } }, select: { id: true, name: true, status: true } }),
+        prisma.source.findMany({ where: { id: { in: sourceIds } }, select: { id: true, name: true } }),
       ]);
-      return { total, list: list.map((r) => ({ ...r, adRanges: parseJson(r.adRanges, []), evidence: parseJson(r.evidence, {}) })) };
+      const vodMap = new Map(vods.map((v) => [v.id, v]));
+      const srcMap = new Map(sources.map((s) => [s.id, s]));
+      const statusMap = new Map<number, Record<string, number>>();
+      for (const r of statusRows as any[]) {
+        const m = statusMap.get(r.playId) || {};
+        m[r.status] = r._count._all;
+        statusMap.set(r.playId, m);
+      }
+      const list = pageGroups.map((g) => ({
+        playId: g.playId,
+        vodId: g.vodId,
+        sourceId: g.sourceId,
+        vodName: vodMap.get(g.vodId)?.name || `#${g.vodId}`,
+        vodStatus: vodMap.get(g.vodId)?.status || "",
+        sourceName: srcMap.get(g.sourceId)?.name || `#${g.sourceId}`,
+        episodes: g._count._all,
+        lastCheckedAt: g._max.checkedAt,
+        statusCounts: statusMap.get(g.playId) || {},
+      }));
+      return { mode: "grouped", total, list };
     });
   });
 }

@@ -3,7 +3,7 @@
   <el-container v-else class="layout">
     <el-aside width="220px" class="side">
       <div class="brand">
-        <div class="brand-mark"><el-icon :size="20"><VideoCamera /></el-icon></div>
+        <div v-if="site.logo" class="brand-mark"><img :src="site.logo" alt="logo" /></div>
         <div class="brand-text">
           <span class="brand-name">视频CMS</span>
           <span class="brand-sub">采集聚合后台</span>
@@ -40,7 +40,7 @@
     <el-container>
       <el-header class="header">
         <div class="crumb">
-          <el-icon class="crumb-icon"><component :is="currentIcon" /></el-icon>
+          <img v-if="site.logo" class="crumb-logo" :src="site.logo" alt="logo" />
           <span>{{ $route.meta.title }}</span>
         </div>
         <el-dropdown @command="onCmd" trigger="click">
@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay } from '@element-plus/icons-vue'
@@ -83,6 +83,7 @@ import { api } from './api'
 const route = useRoute()
 const router = useRouter()
 const user = ref(JSON.parse(localStorage.getItem('user') || '{"username":"—"}'))
+const site = ref({ logo: '' })
 const pwdDlg = ref(false); const pwd = ref({ oldPassword:'', newPassword:'' })
 let activeTimer = null
 
@@ -104,7 +105,7 @@ const menuSections = [
     icon: Film,
     children: [
       { path: '/vods', label: '影片库管理', icon: Film },
-      { path: '/meta', label: '豆瓣元数据', icon: MagicStick },
+      { path: '/meta', label: '元数据匹配', icon: MagicStick },
       { path: '/hot', label: '热门推荐', icon: StarFilled },
     ],
   },
@@ -121,7 +122,6 @@ const menuSections = [
   { index: 'settings', path: '/site', label: '系统设置', icon: Setting },
 ]
 const flatMenus = computed(() => menuSections.flatMap(s => s.children || [s]))
-const currentIcon = computed(() => (flatMenus.value.find(m => m.path === route.path) || flatMenus.value[0]).icon)
 const defaultOpeneds = computed(() => menuSections.filter(s => s.children?.some(m => m.path === route.path)).map(s => s.index))
 
 const activeTasks = ref(0)
@@ -134,6 +134,11 @@ function refreshShell() {
   }
 }
 watch(() => route.path, refreshShell, { immediate: true })
+onMounted(async () => {
+  try {
+    site.value = await api.adminSite()
+  } catch {}
+})
 
 function onCmd(c) {
   if (c === 'logout') {
@@ -157,8 +162,8 @@ async function doPwd() {
 .side { background: var(--side-bg); display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 20px 20px 18px; }
 .brand-mark { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
-  display: flex; align-items: center; justify-content: center; color: #fff; }
+  display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(255,255,255,.08); }
+.brand-mark img { width: 100%; height: 100%; object-fit: cover; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
 .brand-name { color: #fff; font-size: 17px; font-weight: 700; letter-spacing: .5px; }
 .brand-sub { color: #6b7688; font-size: 12px; }
@@ -182,13 +187,14 @@ async function doPwd() {
 .menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) { color: #fff; font-weight: 600; }
 .menu :deep(.el-sub-menu .el-menu) { background: transparent; }
 .menu :deep(.el-sub-menu .el-menu-item) { height: 38px; line-height: 38px; margin-left: 10px; padding-left: 18px !important; font-size: 13px; }
-.menu-badge { margin-left: auto; }
+.menu-badge { margin-left: auto; display: inline-flex; align-items: center; line-height: 1; }
+.menu-badge :deep(.el-badge__content) { position: static; transform: none; height: 16px; min-width: 16px; padding: 0 5px; line-height: 16px; }
 
 /* 顶栏 */
 .header { display: flex; align-items: center; justify-content: space-between;
   background: #fff; border-bottom: 1px solid var(--border); height: 60px; padding: 0 24px; }
 .crumb { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--text-1); }
-.crumb-icon { color: var(--brand-1); }
+.crumb-logo { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; flex: 0 0 22px; }
 .user { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
 .user:hover { background: var(--page-bg); }
 .user-avatar { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: #fff; }

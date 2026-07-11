@@ -16,7 +16,7 @@
         <el-button type="primary" @click="applyFilters">查询</el-button>
         <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
-          豆瓣匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
+          元数据匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
         <el-button type="danger" plain @click="openCleanup">影片清理</el-button>
@@ -64,7 +64,7 @@
 
       <el-divider content-position="left">采集后动作</el-divider>
       <div class="kw-post-actions">
-        <el-checkbox v-model="kwOptions.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
+        <el-checkbox v-model="kwOptions.metaAfterCollect">采集后元数据匹配</el-checkbox>
         <el-checkbox v-model="kwOptions.cleanAfterCollect">采集后HLS清洗</el-checkbox>
       </div>
 
@@ -78,7 +78,7 @@
 
     <div v-if="selected.length" class="batch-bar">
       <span>已选 {{ selected.length }} 项</span>
-      <el-button size="small" type="primary" plain @click="batchMetaMatch">批量匹配豆瓣</el-button>
+      <el-button size="small" type="primary" plain @click="batchMetaMatch">批量匹配元数据</el-button>
       <el-button size="small" type="primary" :disabled="selected.length < 2" @click="openMergeDlg">合并片源</el-button>
       <el-button size="small" type="warning" @click="batchAction('offline')">批量下架</el-button>
       <el-button size="small" type="success" @click="batchAction('online')">批量上架</el-button>
@@ -110,7 +110,7 @@
       <el-table-column label="线路数" width="80">
         <template #default="{ row }"><el-tag type="success" size="small">{{ row._count.plays }} 条</el-tag></template>
       </el-table-column>
-      <el-table-column label="豆瓣评分" width="110">
+      <el-table-column label="元数据评分" width="110">
         <template #default="{ row }">
           <span v-if="row.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ row.rating }}</span>
           <el-tag v-else-if="row.metaMatched==='pending'" size="small" type="warning">待确认 {{ row.metaScore || '' }}</el-tag>
@@ -163,20 +163,23 @@
           <p><b>更新:</b> {{ cur.remarks }}</p>
           <p v-if="cur.heroPic"><b>首页图:</b> 已设置</p>
           <p>
-            <b>豆瓣:</b>
+            <b>元数据:</b>
+            <el-tag v-if="rowProvider(cur)" size="small" effect="plain" style="margin-right:6px">{{ providerLabel(rowProvider(cur)) }}</el-tag>
             <span v-if="cur.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ cur.rating }}</span>
             <el-tag v-else-if="cur.metaMatched==='pending'" size="small" type="warning">待确认 {{ cur.metaScore || '' }}</el-tag>
             <span v-else style="color:#9aa4b2">{{ cur.metaMatched==='failed' ? failedMetaLabel(cur) : '未匹配' }}</span>
             <el-button size="small" text type="primary" @click="matchOne(cur.id)">
-              {{ cur.rating ? '重新匹配' : '匹配豆瓣' }}
+              {{ cur.rating ? '重新匹配' : '匹配元数据' }}
             </el-button>
             <a v-if="cur.doubanId" :href="`https://movie.douban.com/subject/${cur.doubanId}/`" target="_blank"
               style="font-size:12px;color:#409eff">查看豆瓣页 ↗</a>
+            <a v-if="metadataUrl(cur)" :href="metadataUrl(cur)" target="_blank"
+              style="font-size:12px;color:#409eff">查看{{ providerLabel(rowProvider(cur)) }}页 ↗</a>
           </p>
           <p v-if="cur.matchedTitle || cur.metaScore">
             <b>置信:</b> {{ cur.metaScore || 0 }}<span v-if="cur.matchedTitle"> · {{ cur.matchedTitle }} {{ cur.matchedYear ? '(' + cur.matchedYear + ')' : '' }}</span>
           </p>
-          <p v-if="cur.genres"><b>豆瓣类型:</b> {{ cur.genres }}</p>
+          <p v-if="cur.genres"><b>元数据类型:</b> {{ cur.genres }}</p>
           <p>
             <b>自动采集:</b>
             <el-tag size="small" :type="cur.autoCollectEnabled ? 'success' : 'info'">
@@ -198,13 +201,13 @@
             </div>
           </div>
           <div class="cand-actions">
-            <el-button size="small" type="primary" @click="confirmDouban(cur.id, c)">确认此项</el-button>
-            <a :href="`https://movie.douban.com/subject/${c.id}/`" target="_blank">打开</a>
+            <el-button size="small" type="primary" @click="confirmMeta(cur.id, c)">确认此项</el-button>
+            <a v-if="candidateUrl(c)" :href="candidateUrl(c)" target="_blank">打开</a>
           </div>
         </div>
       </div>
       <p class="blurb" v-if="cur.officialIntro" style="border-left:3px solid #409eff;padding-left:10px">
-        <b style="color:#409eff">豆瓣简介:</b> {{ cur.officialIntro }}
+        <b style="color:#409eff">元数据简介:</b> {{ cur.officialIntro }}
       </p>
       <div v-if="cur.people?.length" class="asset-box">
         <div class="asset-title">人物资产</div>
@@ -215,9 +218,15 @@
       <div v-if="cur.images?.length" class="asset-box">
         <div class="asset-title">图片资产</div>
         <div class="asset-imgs">
-          <el-image v-for="img in cur.images.slice(0, 12)" :key="img.id" :src="imgUrl(img.url)" fit="cover" class="asset-img">
-            <template #error><div class="noimg">无图</div></template>
-          </el-image>
+          <div v-for="img in cur.images.slice(0, 18)" :key="img.id" class="asset-img-card">
+            <el-image :src="imgUrl(img.url)" fit="cover" class="asset-img">
+              <template #error><div class="noimg">无图</div></template>
+            </el-image>
+            <div class="asset-img-actions">
+              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'cover')">设封面</el-button>
+              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'hero')">设首页图</el-button>
+            </div>
+          </div>
         </div>
       </div>
       <p class="blurb" v-if="cur.blurb">{{ cur.blurb }}</p>
@@ -297,17 +306,38 @@
       <el-form-item label="导演"><el-input v-model="editForm.director" /></el-form-item>
       <div style="display:flex;gap:12px">
         <el-form-item label="更新状态" style="flex:1"><el-input v-model="editForm.remarks" placeholder="如：更新至20集" /></el-form-item>
-        <el-form-item label="豆瓣评分" style="flex:1"><el-input v-model="editForm.rating" placeholder="如 8.5，空=无" /></el-form-item>
+        <el-form-item label="元数据评分" style="flex:1"><el-input v-model="editForm.rating" placeholder="如 8.5，空=无" /></el-form-item>
       </div>
-      <el-form-item label="封面图">
+      <el-form-item label="当前封面">
+        <el-input v-model="editForm.officialPic" placeholder="优先展示封面 URL">
+          <template #append><el-image v-if="editForm.officialPic" :src="imgUrl(editForm.officialPic)" style="width:28px;height:38px" fit="cover" /></template>
+        </el-input>
+      </el-form-item>
+      <el-form-item label="采集封面">
         <el-input v-model="editForm.pic" placeholder="封面 URL">
           <template #append><el-image v-if="editForm.pic" :src="imgUrl(editForm.pic)" style="width:28px;height:38px" fit="cover" /></template>
         </el-input>
+      </el-form-item>
+      <el-form-item v-if="editForm.images?.length" label="可选封面">
+        <div class="edit-image-picker">
+          <button v-for="img in posterImages(editForm.images)" :key="img.id || img.url" type="button" class="edit-image-option"
+            :class="{on: editForm.officialPic === img.url}" @click="editForm.officialPic = img.url">
+            <img :src="imgUrl(img.url)" alt="" />
+          </button>
+        </div>
       </el-form-item>
       <el-form-item label="首页图">
         <el-input v-model="editForm.heroPic" placeholder="横版剧照/背景图 URL，首页 Hero 优先使用">
           <template #append><el-image v-if="editForm.heroPic" :src="imgUrl(editForm.heroPic)" style="width:48px;height:28px" fit="cover" /></template>
         </el-input>
+      </el-form-item>
+      <el-form-item v-if="editForm.images?.length" label="可选首页图">
+        <div class="edit-image-picker wide">
+          <button v-for="img in heroImages(editForm.images)" :key="img.id || img.url" type="button" class="edit-image-option wide"
+            :class="{on: editForm.heroPic === img.url}" @click="editForm.heroPic = img.url">
+            <img :src="imgUrl(img.url)" alt="" />
+          </button>
+        </div>
       </el-form-item>
       <el-divider content-position="left">自动采集</el-divider>
       <el-form-item label="周期采集">
@@ -326,7 +356,7 @@
           <el-checkbox-group v-else v-model="editForm.autoCollectWeekdays" class="weekday-group">
             <el-checkbox-button v-for="day in weekdayOptions" :key="day.value" :label="day.value">{{ day.label }}</el-checkbox-button>
           </el-checkbox-group>
-          <el-checkbox v-model="editForm.autoCollectMeta">同步豆瓣</el-checkbox>
+          <el-checkbox v-model="editForm.autoCollectMeta">同步元数据</el-checkbox>
           <el-checkbox v-model="editForm.autoCollectClean">提交HLS清洗</el-checkbox>
         </div>
       </el-form-item>
@@ -349,7 +379,7 @@
           <el-option label="按源清退线路" value="source_lines" />
           <el-option label="按分类/子分类删除影片" value="category_vods" />
           <el-option label="无任何封面" value="no_cover" />
-          <el-option label="无豆瓣封面" value="no_official_pic" />
+          <el-option label="无元数据封面" value="no_official_pic" />
           <el-option label="无横图/Hero图" value="no_hero_pic" />
         </el-select>
       </el-form-item>
@@ -536,8 +566,8 @@ async function backfillSubs() {
 }
 async function metaBatch() {
   try {
-    await ElMessageBox.confirm('将对未匹配的影片批量抓豆瓣元数据(限速防封，约2.5秒/条)，任务后台运行。继续？', '豆瓣元数据匹配', { type: 'warning' })
-    const r = await api.metaBatch({ limit: 50, intervalMs: 2500 })
+    await ElMessageBox.confirm('将按当前启用的匹配源批量抓取元数据，任务后台运行。继续？', '元数据匹配', { type: 'warning' })
+    const r = await api.metaBatch({})
     ElMessage.success(r.message || '已提交')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '提交失败') }
 }
@@ -627,11 +657,11 @@ async function batchAction(action) {
 }
 async function batchMetaMatch() {
   if (!selected.value.length) return
-  const ok = await ElMessageBox.confirm(`确认提交 ${selected.value.length} 部影片进行豆瓣匹配？`, '批量豆瓣匹配', { type: 'warning' })
+  const ok = await ElMessageBox.confirm(`确认提交 ${selected.value.length} 部影片进行元数据匹配？`, '批量元数据匹配', { type: 'warning' })
     .then(() => true).catch(() => false)
   if (!ok) return
   try {
-    const r = await api.metaBatch({ vodIds: selected.value.map(r => r.id), limit: selected.value.length, intervalMs: 2500, priority: 50, redo: true })
+    const r = await api.metaBatch({ vodIds: selected.value.map(r => r.id), limit: selected.value.length, priority: 50, redo: true })
     ElMessage.success(r.message || `已提交任务 #${r.taskId}`)
     tableRef.value?.clearSelection()
   } catch (e) { ElMessage.error(e.message || '提交失败') }
@@ -727,12 +757,16 @@ async function togglePin(row) {
 // 编辑影片资料
 const editDlg = ref(false); const saving = ref(false)
 const editForm = ref({})
-function openEdit(row) {
+async function openEdit(row) {
+  if (row?.id && !Array.isArray(row.images)) {
+    try { row = await api.vod(row.id) } catch {}
+  }
   editForm.value = {
     id: row.id, name: row.name, year: row.year, typeName: row.typeName,
     aliasesText: aliasNames(row).join('\n'),
     area: row.area, lang: row.lang, actor: row.actor, director: row.director,
-    remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, heroPic: row.heroPic, blurb: row.blurb,
+    remarks: row.remarks, rating: row.rating ?? '', pic: row.pic, officialPic: row.officialPic, heroPic: row.heroPic, blurb: row.blurb,
+    images: Array.isArray(row.images) ? row.images : [],
     autoCollectEnabled: Boolean(row.autoCollectEnabled),
     autoCollectMode: row.autoCollectMode === 'weekdays' ? 'weekdays' : 'days',
     autoCollectIntervalDays: row.autoCollectIntervalDays || Math.max(1, Math.ceil((row.autoCollectIntervalHours || 24) / 24)),
@@ -748,6 +782,7 @@ async function saveEdit() {
   try {
     const payload = { ...editForm.value, aliases: editForm.value.aliasesText || '' }
     delete payload.aliasesText
+    delete payload.images
     const r = await api.editVod(editForm.value.id, payload)
     if (r.error) return ElMessage.error(r.error)
     ElMessage.success('已保存')
@@ -866,7 +901,7 @@ function autoCollectSummary(row) {
   return `${row.autoCollectIntervalDays || Math.max(1, Math.ceil((row.autoCollectIntervalHours || 24) / 24))} 天/次`
 }
 async function matchOne(id) {
-  ElMessage.info('正在匹配豆瓣…')
+  ElMessage.info('正在匹配元数据…')
   try {
     const r = await api.metaMatch(id)
     if (r.status === 'matched') ElMessage.success(`匹配成功，置信 ${r.score}`)
@@ -886,8 +921,10 @@ function failedMetaLabel(row) {
 }
 const reasonMap = {
   manual: '人工确认',
-  no_suggest: '豆瓣无候选',
-  detail_failed: '豆瓣详情获取失败',
+  no_provider: '未启用匹配源',
+  provider_failed: '匹配源请求失败',
+  no_suggest: '搜索无候选',
+  detail_failed: '详情获取失败',
   title_exact: '标题完全一致',
   title_contains: '标题互相包含',
   title_similar: '标题相似',
@@ -911,17 +948,53 @@ const reasonText = (reasons) => {
   const list = Array.isArray(reasons) ? reasons : []
   return list.length ? list.map(r => reasonMap[r] || '其他匹配信号').join(' / ') : '—'
 }
+const providerLabel = (source) => ({ douban: '豆瓣', tmdb: 'TMDB' }[source] || source || '—')
+function rowProvider(row) {
+  return row?.metaSource || parseMetaReason(row).provider || ''
+}
+function candidateUrl(c) {
+  const source = c?.source || 'douban'
+  if (source === 'douban') return `https://movie.douban.com/subject/${c.id}/`
+  if (source === 'tmdb') {
+    const [kind, id] = String(c.id || '').split(':')
+    return id ? `https://www.themoviedb.org/${kind === 'tv' ? 'tv' : 'movie'}/${id}` : ''
+  }
+  return ''
+}
+function metadataUrl(row) {
+  if (rowProvider(row) !== 'tmdb') return ''
+  const [kind, id] = String(row?.metaSourceId || '').split(':')
+  return id ? `https://www.themoviedb.org/${kind === 'tv' ? 'tv' : 'movie'}/${id}` : ''
+}
+function posterImages(images = []) {
+  return images.filter(img => img?.url && img.type === 'poster').slice(0, 12)
+}
+function heroImages(images = []) {
+  return images.filter(img => img?.url && img.type !== 'poster').slice(0, 12)
+}
+async function setVodImage(row, image, mode) {
+  if (!row?.id || !image?.url) return
+  const payload = mode === 'hero' ? { heroPic: image.url } : { officialPic: image.url }
+  await api.editVod(row.id, payload)
+  ElMessage.success(mode === 'hero' ? '已设为首页图' : '已设为封面')
+  cur.value = await api.vod(row.id)
+  load()
+}
 function pendingCandidates(row) {
   if (row?.metaMatched !== 'pending') return []
   return Array.isArray(parseMetaReason(row).candidates) ? parseMetaReason(row).candidates : []
 }
-async function confirmDouban(id, c) {
+async function confirmMeta(id, c) {
   try {
-    await ElMessageBox.confirm(`确认匹配豆瓣《${c.title}》${c.year ? '（' + c.year + '）' : ''}？`, '确认豆瓣候选', { type: 'warning' })
-    const r = await api.metaSet(id, c.id)
+    await ElMessageBox.confirm(`确认匹配${providerLabel(c.source || 'douban')}《${c.title}》${c.year ? '（' + c.year + '）' : ''}？`, '确认元数据候选', { type: 'warning' })
+    const r = await api.metaSet(id, c)
     if (r.ok) {
-      ElMessage.success('已确认豆瓣匹配')
-      cur.value = await api.vod(id); load(); loadMeta()
+      ElMessage.success(r.message || '已提交后台确认')
+      setTimeout(async () => {
+        cur.value = await api.vod(id)
+        load()
+        loadMeta()
+      }, 1200)
     } else ElMessage.error(r.error || '确认失败')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '确认失败') }
 }
@@ -1006,5 +1079,13 @@ watch(() => route.query.kw, (kw) => {
 .asset-box { margin: 14px 0; padding: 12px; border: 1px solid #e4e7ed; border-radius: 10px; background: #fafbfc; }
 .asset-title { font-weight: 700; color: #4a5568; margin-bottom: 10px; }
 .asset-imgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.asset-img-card { min-width: 0; }
 .asset-img { width: 100%; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden; background: #f0f2f5; }
+.asset-img-actions { display:flex; justify-content:center; gap: 6px; margin-top: 4px; }
+.edit-image-picker { display: grid; grid-template-columns: repeat(6, 44px); gap: 8px; }
+.edit-image-picker.wide { grid-template-columns: repeat(4, 72px); }
+.edit-image-option { width:44px; height:62px; padding:0; border:2px solid transparent; border-radius:6px; overflow:hidden; background:#f0f2f5; cursor:pointer; }
+.edit-image-option.wide { width:72px; height:42px; }
+.edit-image-option.on { border-color:#2563eb; }
+.edit-image-option img { width:100%; height:100%; object-fit:cover; display:block; }
 </style>

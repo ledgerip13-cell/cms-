@@ -1,4 +1,6 @@
 import { prisma } from "../db.js";
+import { makeFingerprint, normalizeName } from "./dedupe.js";
+import { downloadImageToLocal, isLocalImageUrl } from "../localImages.js";
 import type { DoubanImage, DoubanMeta, DoubanPerson } from "./douban.js";
 
 function names(list: DoubanPerson[]) {
@@ -35,9 +37,50 @@ function bestHero(images: DoubanImage[]) {
     .sort((a, b) => b.score - a.score)[0]?.url || "";
 }
 
+export async function localizeMetaImages(meta: DoubanMeta) {
+  const cache = new Map<string, string>();
+  async function localize(url = "") {
+    const raw = String(url || "").trim();
+    if (!raw || isLocalImageUrl(raw)) return raw;
+    if (cache.has(raw)) return cache.get(raw) || raw;
+    const local = await downloadImageToLocal(raw, { encrypt: true, timeoutMs: 15000 }).catch(() => "");
+    const next = local || raw;
+    cache.set(raw, next);
+    return next;
+  }
+  if (meta.pic) meta.pic = await localize(meta.pic);
+  for (const img of meta.images || []) img.url = await localize(img.url);
+  return meta;
+}
+
+async function applyDoubanAliases(vodId: number, meta: DoubanMeta) {
+  const vod = await prisma.vod.findUnique({ where: { id: vodId }, select: { name: true, year: true, fingerprint: true } });
+  if (!vod) return;
+  const primary = normalizeName(vod.name);
+  const rows = [...new Set([meta.title, ...(meta.aliases || [])].map((name) => String(name || "").trim()).filter(Boolean))]
+    .filter((name) => normalizeName(name) && normalizeName(name) !== primary)
+    .map((name) => ({ name, fingerprint: makeFingerprint(name, meta.year || vod.year) }))
+    .filter((alias) => alias.fingerprint && alias.fingerprint !== vod.fingerprint);
+  if (!rows.length) return;
+  const existing = await prisma.vodAlias.findMany({
+    where: { fingerprint: { in: rows.map((row) => row.fingerprint) } },
+    select: { fingerprint: true, note: true },
+  });
+  const existingNotes = new Map(existing.map((alias) => [alias.fingerprint, String(alias.note || "").trim()]));
+  for (const row of rows) {
+    const note = existingNotes.get(row.fingerprint) || row.name;
+    await prisma.vodAlias.upsert({
+      where: { fingerprint: row.fingerprint },
+      create: { vodId, fingerprint: row.fingerprint, note },
+      update: { vodId, ...(note ? { note } : {}) },
+    });
+  }
+}
+
 export async function applyDoubanAssets(vodId: number, meta: DoubanMeta) {
   const directors = meta.directors.slice(0, 12);
   const actors = meta.actors.slice(0, 24);
+  await applyDoubanAliases(vodId, meta);
   for (let i = 0; i < directors.length; i++) await upsertVodPerson(vodId, directors[i], "director", i);
   for (let i = 0; i < actors.length; i++) await upsertVodPerson(vodId, actors[i], "actor", i);
 
@@ -48,7 +91,7 @@ export async function applyDoubanAssets(vodId: number, meta: DoubanMeta) {
         vodId,
         url: img.url,
         type: img.type,
-        source: "douban",
+        source: meta.source || "douban",
         width: img.width,
         height: img.height,
         score: img.score,
@@ -56,7 +99,7 @@ export async function applyDoubanAssets(vodId: number, meta: DoubanMeta) {
       },
       update: {
         type: img.type,
-        source: "douban",
+        source: meta.source || "douban",
         width: img.width,
         height: img.height,
         score: img.score,

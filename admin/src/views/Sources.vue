@@ -260,7 +260,7 @@
       </el-form-item>
       <el-form-item label="后置动作">
         <div class="post-actions">
-          <el-checkbox v-model="syncForm.metaAfterCollect">采集后豆瓣匹配</el-checkbox>
+          <el-checkbox v-model="syncForm.metaAfterCollect">采集后元数据匹配</el-checkbox>
           <el-checkbox v-model="syncForm.cleanAfterCollect" :disabled="isNbflixSync" :title="isNbflixSync ? 'iCloud 客户端解析链无法清洗' : ''">采集后HLS清洗{{ isNbflixSync ? '（iCloud源不适用）' : '' }}</el-checkbox>
           <div class="form-help">HLS 清洗只在这里勾选时提交；全局自动清洗仅用于定时自动更新采集。</div>
         </div>

@@ -1,21 +1,21 @@
 /* ============ 视频CMS 后台设计规范 ============ */
 :root {
-  /* 主色：专业靛蓝 */
-  --el-color-primary: #4f6ef7;
-  --el-color-primary-light-3: #7d92f9;
-  --el-color-primary-light-5: #a3b2fb;
-  --el-color-primary-light-7: #c9d3fc;
-  --el-color-primary-light-8: #dce2fd;
-  --el-color-primary-light-9: #eef1fe;
-  --el-color-primary-dark-2: #3f58d6;
+  /* 主色：运营后台蓝 */
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #5b8def;
+  --el-color-primary-light-5: #8db1f5;
+  --el-color-primary-light-7: #bfd3fa;
+  --el-color-primary-light-8: #d6e3fc;
+  --el-color-primary-light-9: #eef4ff;
+  --el-color-primary-dark-2: #1d4ed8;
   --el-border-radius-base: 8px;
 
   /* 语义色 */
-  --brand-1: #4f6ef7;
-  --brand-2: #7b5cff;
-  --side-bg: #171b26;
-  --side-bg-hover: #222735;
-  --side-text: #aeb6c4;
+  --brand-1: #2563eb;
+  --brand-2: #3b82f6;
+  --side-bg: #111318;
+  --side-bg-hover: #1d2028;
+  --side-text: #a7b0bf;
   --side-active: #ffffff;
   --page-bg: #f5f6f8;
   --card-bg: #ffffff;

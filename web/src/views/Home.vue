@@ -47,7 +47,7 @@
           <p class="hero-desc" v-if="cur.officialIntro || cur.blurb">{{ cur.officialIntro || cur.blurb }}</p>
           <div class="hero-actions">
             <button class="hero-play" @click="goPlay(cur.id)">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg>
               立即播放
             </button>
             <button class="hero-fav" @click="goPlay(cur.id)">
@@ -88,7 +88,7 @@
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
               <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
-              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg></span></div>
             </div>
             <div class="c-info">
               <div class="c-name">{{ v.name }}</div>
@@ -119,7 +119,7 @@
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
               <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
-              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg></span></div>
             </div>
             <div class="c-info">
               <div class="c-name">{{ v.name }}</div>
@@ -148,7 +148,7 @@
               <div v-else class="noimg">暂无封面</div>
               <span v-if="v.remarks" class="badge">{{ v.remarks }}</span>
               <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
-              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+              <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg></span></div>
             </div>
             <div class="c-info">
               <div class="c-name">{{ v.name }}</div>
@@ -223,7 +223,7 @@
             <div v-else class="noimg">暂无封面</div>
             <span v-if="v.remarks || v.year" class="badge">{{ v.remarks || v.year }}</span>
             <span v-if="v.rating" class="score-badge">{{ v.rating }}</span>
-            <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></div>
+            <div class="poster-hover"><span class="play-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z"/></svg></span></div>
           </div>
           <div class="c-info">
             <div class="c-name">{{ v.name }}</div>

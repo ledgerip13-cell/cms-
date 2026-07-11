@@ -18,6 +18,13 @@
       </div>
     </div>
 
+    <el-tabs v-model="statusGroup" class="task-tabs" @tab-change="onGroupChange">
+      <el-tab-pane label="进行中" name="active" />
+      <el-tab-pane label="等待中" name="waiting" />
+      <el-tab-pane label="已完成" name="done" />
+      <el-tab-pane label="失败" name="failed" />
+    </el-tabs>
+
     <el-table ref="tableRef" row-key="id" :data="list" v-loading="loading" stripe @selection-change="onSelectionChange">
       <el-table-column type="selection" width="44" :reserve-selection="true" />
       <el-table-column prop="id" label="#" width="60" />
@@ -39,6 +46,9 @@
             :stroke-width="14" />
           <div style="font-size:11px;color:#9aa4b2">
             {{ progressDetail(row) }}
+          </div>
+          <div v-if="taskRunConfig(row)" class="task-run-config">
+            {{ taskRunConfig(row) }}
           </div>
         </template>
       </el-table-column>
@@ -93,6 +103,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
 const list = ref([]); const total = ref(0); const page = ref(1); const size = 20
+const statusGroup = ref('active')
 const loading = ref(false); const active = ref(0); const connected = ref(false)
 const tableRef = ref(null)
 const selected = ref([])
@@ -112,6 +123,20 @@ const canBatchCancel = computed(() => selected.value.some((row) => batchStatus.c
 const canBatchPause = computed(() => selected.value.some((row) => batchStatus.pause.includes(row.status)))
 const canBatchResume = computed(() => selected.value.some((row) => batchStatus.resume.includes(row.status)))
 const canBatchRetry = computed(() => selected.value.some((row) => batchStatus.retry.includes(row.status)))
+const groupStatus = {
+  active: ['running', 'canceling'],
+  waiting: ['pending', 'paused'],
+  done: ['done'],
+  failed: ['failed'],
+}
+function rowInCurrentGroup(row) {
+  return (groupStatus[statusGroup.value] || []).includes(row.status)
+}
+function onGroupChange() {
+  page.value = 1
+  clearSelected()
+  load()
+}
 function onSelectionChange(rows) {
   selected.value = rows
 }
@@ -128,7 +153,40 @@ function progressDetail(row) {
   if (row.type === 'hls_clean') {
     return `处理 ${row.pageNow || 0}/${row.pageTotal || 0} · 可用${row.added || 0} 失败${row.updated || 0} 无广告${row.merged || 0}`
   }
+  if (row.type === 'meta') {
+    return `处理 ${row.pageNow || 0}/${row.pageTotal || 0} · 匹配${row.added || 0} 待确认/失败${row.updated || 0}`
+  }
   return `页 ${row.pageNow || 0}/${row.pageTotal || 0} · 新增${row.added || 0} 更新${row.updated || 0} 合并${row.merged || 0}`
+}
+function taskParams(row) {
+  if (!row?.params) return {}
+  if (typeof row.params === 'object') return row.params
+  try { return JSON.parse(row.params) || {} } catch { return {} }
+}
+function sourceLabel(provider) {
+  return ({ tmdb: 'TMDB', douban: '豆瓣' }[provider] || provider || '默认源')
+}
+function msLabel(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return n >= 1000 ? `${n / 1000}s` : `${n}ms`
+}
+function taskRunConfig(row) {
+  if (row.type !== 'meta') return ''
+  const p = taskParams(row)
+  const parts = []
+  if (p.provider) parts.push(`源 ${sourceLabel(p.provider)}`)
+  if (p.limit) parts.push(`任务上限 ${p.limit}`)
+  if (p.provider === 'tmdb' || p.matchConcurrency || p.concurrencyBatchSize) {
+    const concurrency = Number(p.matchConcurrency) || 0
+    const perWorker = Number(p.concurrencyBatchSize) || 0
+    if (concurrency) parts.push(`并发 ${concurrency}`)
+    if (perWorker) parts.push(`每 worker ${perWorker}`)
+    if (concurrency && perWorker) parts.push(`每轮 ${concurrency * perWorker}`)
+  }
+  const interval = msLabel(p.intervalMs)
+  if (interval) parts.push(`轮间隔 ${interval}`)
+  return parts.join(' · ')
 }
 function friendlyMessage(row) {
   const msg = String(row.message || '').replace(/\s*\[重启续跑\]/g, '').trim()
@@ -139,7 +197,7 @@ function friendlyMessage(row) {
 async function load() {
   loading.value = true
   try {
-    const r = await api.tasks({ page: page.value, size })
+    const r = await api.tasks({ page: page.value, size, group: statusGroup.value })
     list.value = r.list; total.value = r.total
     active.value = (await api.taskActiveCount()).active
   } finally { loading.value = false }
@@ -148,7 +206,8 @@ async function load() {
 // 行内原地更新（不重建整表，不闪不丢滚动）
 function applySnapshot(snap) {
   active.value = snap.active || 0
-  const incoming = snap.list || []
+  if (!['active', 'waiting'].includes(statusGroup.value)) return
+  const incoming = (snap.list || []).filter(rowInCurrentGroup)
   const byId = new Map(list.value.map((t) => [t.id, t]))
   const next = incoming.map((t) => {
     const old = byId.get(t.id)
@@ -248,10 +307,12 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
 .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .sec-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.task-tabs { margin-bottom: 10px; }
 .selected-count { font-size:12px; color:#8a94a7; }
+.task-run-config { margin-top:2px; font-size:11px; color:#64748b; white-space:normal; line-height:1.45; }
 .pager { margin-top: 16px; justify-content: flex-end; }
-.live { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:#9aa4b2; font-weight:400; }
-.live .dot { width:7px; height:7px; border-radius:50%; background:#c0c4cc; }
+.live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#9aa4b2; font-weight:400; line-height:1; }
+.live .dot { width:7px; height:7px; border-radius:50%; background:#c0c4cc; flex:0 0 7px; }
 .live.on { color:#67c23a; }
 .live.on .dot { background:#67c23a; box-shadow:0 0 0 3px rgba(103,194,58,.18); animation:pulse 1.6s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }

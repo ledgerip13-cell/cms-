@@ -160,7 +160,7 @@ button { font-family: inherit; }
 .sp-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(8,9,13,.34); opacity: 0; transition: opacity .16s; }
 .sp-item:hover .sp-play { opacity: 1; }
-.sp-play svg { width: 22px; height: 22px; color: #fff; }
+.sp-play svg { width: 23px; height: 23px; color: #fff; opacity: .8; margin-left: 2px; }
 .sp-info { min-width: 0; flex: 1; }
 .sp-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; }
@@ -203,7 +203,7 @@ button { font-family: inherit; }
   font-size: 16px; font-weight: 700; padding: 14px 38px; border-radius: 12px; cursor: pointer;
   border: none; white-space: nowrap; transition: transform .18s, box-shadow .18s, background .18s; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
 .hero-play:hover { transform: translateY(-2px); background: #f2f4f7; box-shadow: 0 14px 38px rgba(0,0,0,.5); }
-.hero-play svg { width: 20px; height: 20px; }
+.hero-play svg { width: 19px; height: 19px; opacity: .8; margin-left: 1px; }
 .hero-fav { display: inline-flex; align-items: center; gap: 8px; background: var(--hero-secondary-button-bg); backdrop-filter: blur(6px);
   color: var(--hero-secondary-button-text); font-size: 15px; font-weight: 600; padding: 14px 26px; border-radius: 12px; cursor: pointer;
   border: 1px solid rgba(255,255,255,.18); white-space: nowrap; transition: .18s; }
@@ -270,7 +270,7 @@ button { font-family: inherit; }
   background: rgba(255,255,255,.95); display: flex; align-items: center; justify-content: center;
   box-shadow: 0 6px 20px rgba(0,0,0,.4); transform: translateY(8px); transition: transform .24s; }
 .card2:hover .poster-hover .play-ic { transform: translateY(0); }
-.poster-hover .play-ic svg { width: 20px; height: 20px; color: #16181d; transform: translateX(1px); }
+.poster-hover .play-ic svg { width: 22px; height: 22px; color: #16181d; opacity: .8; transform: translateX(2px); }
 .badge { position: absolute; right: 8px; top: 8px; background: rgba(8,9,13,.72); backdrop-filter: blur(6px);
   color: var(--text); font-size: 11.5px; font-weight: 600; padding: 3px 8px; border-radius: 7px; z-index: 2; }
 .score-badge { position: absolute; right: 8px; bottom: 8px; z-index: 2; min-width: 32px; text-align: center;

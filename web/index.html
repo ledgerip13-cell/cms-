@@ -10,8 +10,53 @@
   <link rel="manifest" href="/api/pwa/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/api/pwa/apple-touch-icon.png" />
   <title></title>
+  <style>html,body,#app{min-height:100%;background:#0a0b0f}</style>
   <script>
     (function () {
+      function isPhoneDevice() {
+        var ua = navigator.userAgent || ''
+        var platform = navigator.platform || ''
+        var touchPoints = navigator.maxTouchPoints || 0
+        var isIpad = /iPad/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1)
+        var isTablet = /Tablet|PlayBook|Silk/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua))
+        if (isIpad || isTablet) return false
+        return /iPhone|iPod|Windows Phone|Android.*Mobile|Mobile.*Android/i.test(ua)
+      }
+      function hashRoute() {
+        var hash = window.location.hash || '#/'
+        var raw = hash.charAt(0) === '#' ? hash.slice(1) : hash
+        var qIndex = raw.indexOf('?')
+        return {
+          path: qIndex >= 0 ? raw.slice(0, qIndex) : raw,
+          query: new URLSearchParams(qIndex >= 0 ? raw.slice(qIndex + 1) : ''),
+        }
+      }
+      function mobileTemplateTarget(site) {
+        if (!isPhoneDevice()) return ''
+        if (!site || !site.homeConfig || site.homeConfig.mobileTemplate !== 'shortDrama') return ''
+        var route = hashRoute()
+        if (route.path === '/m' || route.path.indexOf('/m/') === 0) return ''
+        var playMatch = route.path.match(/^\/play\/([^/?#]+)/)
+        if (playMatch) return '#/m/play/' + encodeURIComponent(playMatch[1])
+        if (route.path !== '/' && route.path !== '') return ''
+        var kw = String(route.query.get('kw') || '').trim()
+        if (kw) return '#/m/search?kw=' + encodeURIComponent(kw)
+        var type = String(route.query.get('type') || '').trim()
+        var sort = String(route.query.get('sort') || '').trim()
+        if (type || sort) {
+          var params = new URLSearchParams()
+          if (type) params.set('type', type)
+          if (sort) params.set('sort', sort)
+          return '#/m/theater?' + params.toString()
+        }
+        return '#/m'
+      }
+      function redirectMobile(site) {
+        var target = mobileTemplateTarget(site)
+        if (!target || target === window.location.hash) return false
+        window.location.replace(window.location.pathname + window.location.search + target)
+        return true
+      }
       function apply(site) {
         if (site.siteName) document.title = site.siteName
         meta('description', site.description)
@@ -42,15 +87,23 @@
       }
       try {
         var raw = localStorage.getItem('vcms.site')
-        if (raw) apply(JSON.parse(raw))
+        if (raw) {
+          var cached = JSON.parse(raw)
+          if (redirectMobile(cached)) return
+          apply(cached)
+        }
       } catch (e) {}
-      fetch('/api/site').then(function (r) {
+      var sitePromise = fetch('/api/site').then(function (r) {
         return r.ok ? r.json() : null
       }).then(function (site) {
         if (!site) return
         localStorage.setItem('vcms.site', JSON.stringify(site))
+        if (redirectMobile(site)) return
         apply(site)
       }).catch(function () {})
+      window.__VCMS_MOBILE_GATE__ = isPhoneDevice() && (hashRoute().path === '/' || hashRoute().path === '')
+        ? sitePromise
+        : Promise.resolve()
     })()
   </script>
 </head>
