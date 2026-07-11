@@ -28,6 +28,25 @@
             重刷失败/全部（{{ stat.failed || 0 }} 失败）
           </el-button>
         </div>
+        <div class="manual-scope">
+          <div class="scope-title">手动范围匹配</div>
+          <div class="scope-row">
+            <el-select v-model="q.status" style="width:130px">
+              <el-option label="待确认" value="pending" />
+              <el-option label="待匹配" value="none" />
+              <el-option label="失败/无候选" value="failed" />
+              <el-option label="已匹配" value="matched" />
+              <el-option label="全部" value="all" />
+            </el-select>
+            <el-select v-model="q.categoryName" clearable filterable placeholder="全部分类" style="width:150px">
+              <el-option v-for="c in categories" :key="c.name" :label="c.name" :value="c.name" />
+            </el-select>
+            <el-select v-model="q.sourceId" clearable filterable placeholder="全部采集源" style="width:160px">
+              <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+            <el-button type="success" plain @click="runFiltered">按范围提交</el-button>
+          </div>
+        </div>
         <p class="tip">任务在后台运行，进度见「采集任务」页。默认按启用源优先级执行；自动通过分/待确认分/限速按各源独立配置。</p>
       </div>
         </div>
@@ -473,9 +492,9 @@ async function confirmCandidate(c) {
 }
 async function matchOne(row) {
   try {
-    await api.metaMatch(row.id)
-    ElMessage.success('已重新匹配')
-    await Promise.all([loadRows(), load()])
+    const r = await api.metaMatch(row.id)
+    ElMessage.success(r.message || `已提交元数据匹配任务 #${r.taskId}`)
+    setTimeout(() => { loadRows(); load() }, 800)
   } catch (e) { ElMessage.error(e.message || '匹配失败') }
 }
 async function save() {
@@ -504,6 +523,9 @@ onMounted(load)
 .meta-tabs { margin-top: 4px; }
 .overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
+.manual-scope { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.scope-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
+.scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .provider-list { display: grid; gap: 12px; margin-bottom: 18px; }
 .provider-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg-soft); }
 .provider-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }

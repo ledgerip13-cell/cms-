@@ -1,76 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
-import { invalidateAggregateCache } from "../aggregateCache.js";
 import { createMetaTask } from "../collector/taskRunner.js";
 import {
   AUTO_MATCH_SCORE,
   PENDING_MATCH_SCORE,
-  matchDouban,
   doubanSuggest,
-  pickOfficialPoster,
   type DoubanCandidate,
-  type DoubanMatchResult,
 } from "../collector/douban.js";
-import { matchTmdb, tmdbSuggest } from "../collector/tmdb.js";
-import { applyDoubanAssets, localizeMetaImages } from "../collector/metaAssets.js";
-import { cleanText } from "../textClean.js";
+import { tmdbSuggest } from "../collector/tmdb.js";
 import { enabledMetaProviders, metaProviderByKey, normalizeMetaProviders, type MetaProviderConfig } from "../metaProviders.js";
-
-function candidateSnapshot(candidates: DoubanCandidate[]) {
-  return candidates.slice(0, 5).map((c) => ({
-    source: c.source || "douban",
-    sourceName: c.sourceName || "豆瓣",
-    id: c.id,
-    title: c.title,
-    subTitle: c.subTitle,
-    year: c.year,
-    type: c.type,
-    img: c.img,
-    score: c.score,
-    titleSim: c.titleSim,
-    reasons: c.reasons,
-    rating: c.meta?.rating ?? null,
-    ratingCount: c.meta?.ratingCount ?? 0,
-  }));
-}
-
-function metaReason(r: DoubanMatchResult) {
-  return JSON.stringify({
-    provider: r.meta?.source || r.candidates[0]?.source || "douban",
-    score: r.score,
-    reasons: r.reasons,
-    candidates: candidateSnapshot(r.candidates),
-  });
-}
-
-function syncYearFromMeta(metaYear = "") {
-  const year = String(metaYear || "").match(/(19|20)\d{2}/)?.[0] || "";
-  return year ? { year } : {};
-}
-
-function matchedData(r: DoubanMatchResult, status: "matched" | "pending", officialPic = "") {
-  const best = r.candidates[0];
-  return {
-    ...(status === "matched" && r.meta ? {
-      metaSource: r.meta.source || "douban",
-      metaSourceId: r.meta.sourceId || r.meta.doubanId,
-      ...(r.meta.doubanId ? { doubanId: r.meta.doubanId } : {}),
-      rating: r.meta.rating,
-      ratingCount: r.meta.ratingCount,
-      ...syncYearFromMeta(r.meta.year),
-      ...(officialPic ? { officialPic } : {}),
-      officialIntro: cleanText(r.meta.intro, 2000),
-      genres: cleanText(r.meta.genres.join(",")),
-    } : {}),
-    metaMatched: status,
-    metaScore: r.score,
-    metaReason: metaReason(r),
-    matchedTitle: r.meta?.title || best?.title || "",
-    matchedYear: r.meta?.year || best?.year || "",
-    metaAt: new Date(),
-  };
-}
 
 function clampScore(value: unknown, fallback: number) {
   const n = Number(value);
@@ -123,57 +62,6 @@ function chunks<T>(rows: T[], size: number) {
   const out: T[][] = [];
   for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
   return out;
-}
-
-async function runProviderMatch(provider: MetaProviderConfig, v: any): Promise<DoubanMatchResult> {
-  const ctx = {
-    typeName: v.typeName,
-    actor: v.actor,
-    director: v.director,
-    sourcePic: v.pic || v.localPic,
-    autoMatchScore: provider.autoMatchScore,
-    pendingMatchScore: provider.pendingMatchScore,
-  };
-  if (provider.key === "tmdb") {
-    return matchTmdb(v.name, v.year, { ...ctx, credentials: { apiKey: provider.apiKey, accessToken: provider.accessToken } });
-  }
-  return matchDouban(v.name, v.year, ctx);
-}
-
-async function matchByConfiguredProviders(v: any, providerKey = ""): Promise<DoubanMatchResult> {
-  const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 } });
-  const providers = providerKey
-    ? [metaProviderByKey(cfg?.providersConfig, providerKey)].filter(Boolean) as MetaProviderConfig[]
-    : enabledMetaProviders(cfg?.providersConfig);
-  const active = providers.length ? providers : [metaProviderByKey(cfg?.providersConfig, "douban")].filter(Boolean) as MetaProviderConfig[];
-  const candidates: DoubanCandidate[] = [];
-  let bestPending: DoubanMatchResult | null = null;
-  let bestPendingProvider = "";
-  let bestFailed: DoubanMatchResult | null = null;
-  for (const provider of active) {
-    const result = await runProviderMatch(provider, v).catch(() => ({
-      ok: false,
-      status: "failed" as const,
-      score: 0,
-      reasons: ["provider_failed"],
-      candidates: [],
-    }));
-    candidates.push(...result.candidates);
-    if (result.status === "matched") return result;
-    if (result.status === "pending") {
-      if (!bestPending || result.score > bestPending.score) {
-        bestPending = result;
-        bestPendingProvider = provider.key;
-      }
-      continue;
-    }
-    if (!bestFailed || result.score > bestFailed.score) bestFailed = result;
-  }
-  if (bestPending) return {
-    ...bestPending,
-    candidates: [...bestPending.candidates, ...candidates.filter((c) => c.source !== bestPendingProvider)],
-  };
-  return bestFailed ? { ...bestFailed, candidates } : { ok: false, status: "failed", score: 0, reasons: ["no_provider"], candidates };
 }
 
 export default async function metaRoutes(app: FastifyInstance) {
@@ -235,36 +123,20 @@ export default async function metaRoutes(app: FastifyInstance) {
     return { total, page, size, list };
   });
 
-  // 单片即时匹配（后台手动，用于预览/确认）
+  // 单片手动重匹配：统一走后台任务队列，沿用当前元数据源/并发配置。
   app.post("/api/meta/match/:id", async (req) => {
     const id = Number((req.params as any).id);
-    const v = await prisma.vod.findUnique({ where: { id } });
+    const v = await prisma.vod.findUnique({ where: { id }, select: { id: true } });
     if (!v) return { ok: false, error: "影片不存在" };
     const provider = String((req.body as any)?.provider || "");
-    const r = await matchByConfiguredProviders(v, provider);
-    if (r.status === "matched" && r.meta) {
-      const officialPic = await pickOfficialPoster(r.meta, v.pic || v.localPic || "");
-      const cfg = await prisma.metaConfig.findUnique({ where: { id: 1 }, select: { saveImages: true } });
-      if (officialPic) r.meta.pic = officialPic;
-      if (cfg?.saveImages) await localizeMetaImages(r.meta);
-      await prisma.vod.update({
-        where: { id },
-        data: matchedData(r, "matched", r.meta.pic || officialPic),
-      });
-      if (syncYearFromMeta(r.meta.year).year) invalidateAggregateCache();
-      await applyDoubanAssets(id, r.meta);
-    } else if (r.status === "pending") {
-      await prisma.vod.update({
-        where: { id },
-        data: matchedData(r, "pending"),
-      });
-    } else {
-      await prisma.vod.update({
-        where: { id },
-        data: { metaMatched: "failed", metaScore: r.score, metaReason: metaReason(r), matchedTitle: "", matchedYear: "", metaAt: new Date() },
-      });
-    }
-    return r;
+    const task = await createMetaTask({
+      vodIds: [id],
+      limit: 1,
+      redo: true,
+      priority: 40,
+      ...(provider ? { provider } : {}),
+    });
+    return { ok: true, taskId: task.id, message: `已提交单片元数据匹配任务 #${task.id}` };
   });
 
   // 候选搜索（人工确认用）

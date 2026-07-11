@@ -901,13 +901,14 @@ function autoCollectSummary(row) {
   return `${row.autoCollectIntervalDays || Math.max(1, Math.ceil((row.autoCollectIntervalHours || 24) / 24))} 天/次`
 }
 async function matchOne(id) {
-  ElMessage.info('正在匹配元数据…')
   try {
     const r = await api.metaMatch(id)
-    if (r.status === 'matched') ElMessage.success(`匹配成功，置信 ${r.score}`)
-    else if (r.status === 'pending') ElMessage.warning(`低置信候选，已转待确认（${r.score}分）`)
-    else ElMessage.warning(failedMetaLabel({ metaReason: JSON.stringify(r), metaScore: r.score }))
-    cur.value = await api.vod(id); load(); loadMeta()
+    ElMessage.success(r.message || `已提交元数据匹配任务 #${r.taskId}`)
+    setTimeout(async () => {
+      cur.value = await api.vod(id)
+      load()
+      loadMeta()
+    }, 800)
   } catch (e) { ElMessage.error(e.message) }
 }
 function parseMetaReason(row) {
