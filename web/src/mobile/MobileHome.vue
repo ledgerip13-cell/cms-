@@ -1,10 +1,6 @@
 <template>
   <main class="mh" :class="heroDirectionClass" :style="{ '--mh-head-bg': headBg }">
     <header class="mh-head">
-      <div class="mh-brand">
-        <img v-if="site.logo" :src="site.logo" alt="logo" />
-        <span v-else>D</span>
-      </div>
       <button class="mh-search" type="button" @click="goSearch">
         <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
         <span>搜索电影、剧集、动漫、短剧</span>
@@ -307,28 +303,6 @@ onBeforeUnmount(() => {
   transition: background .16s ease;
   -webkit-backdrop-filter: blur(9px);
   backdrop-filter: blur(9px);
-}
-.mh-brand {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, .92);
-  color: #f04438;
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 0;
-  box-shadow: 0 10px 26px rgba(43, 20, 18, .06);
-}
-.mh-brand img {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  object-fit: cover;
 }
 .mh-search {
   flex: 1;

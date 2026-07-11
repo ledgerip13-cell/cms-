@@ -204,6 +204,7 @@ docker compose up -d --build
 - **2026-07-11 移动搜索头部断点**：`MobileSearch.vue` 搜索页头部从 sticky 改为 fixed 固定吸顶；初始背景透明，滚动时按 `scrollY` 渐显 `rgb(255 244 241)` 纯色背景，去掉头部渐变与页面顶部装饰渐变，内容区预留固定头部高度避免遮挡。
 - **2026-07-11 横向分类可视断点**：移动剧场大类/排序、移动搜索榜单/结果分类等横向 tab 增加选中项位置修正；每次选中都会按容器宽度尽量把 `.on` 按钮滚到可视区中间，首尾只受 `scrollLeft` 边界限制，确保后续分类可见。
 - **2026-07-11 移动首页分类断点**：`MobileHome.vue` 已移除 Hero 下方的首页快捷分类入口（电影/电视剧/动漫/短剧等），并停止首页为该入口请求分类接口；“更多”仍通过 `goTheater('', sort)` 进入剧场。
+- **2026-07-12 移动首页头部断点**：`MobileHome.vue` 已移除移动首页顶部左侧站点图标/logo 方块，搜索框占满头部可用宽度；固定头部与滚动背景渐显逻辑保持不变。
 - **2026-07-11 后台视觉断点**：`admin/src/theme.css` 将后台主按钮/主色改为蓝色 `#2563eb`，左侧栏底色改为黑灰 `#111318`；`admin/src/App.vue` 后台品牌区和页面标题前图标改用站点 logo，采集任务菜单红点改为静态行内定位避免错位；`Tasks.vue` 实时连接小点补齐行高/固定尺寸对齐。
 - **2026-07-11 后台开关控件断点**：后台所有 `el-switch` 已统一改为 `inline-prompt`，状态文案显示在按钮内部（开启/关闭、启用/停用、显示/隐藏、正常/禁用），避免旧式“关闭 按钮 开启”左右分散造成误读；`theme.css` 统一设置文字开关最小宽度，防止按钮内文案挤压。
 - **2026-07-11 别名同步断点**：后台手动合并 `mergeVods()` 已从 `Set<fingerprint>` 改为 `Map<fingerprint, displayName>`，来源影片自己的片名会作为别名展示名写入，来源旧别名保留原 `note`，不再统一覆盖成 `manual_merge`；豆瓣详情抓取新增 `aka/aka_cn/aka_en/aka_title/original_title/original_name` 别名提取，`applyDoubanAssets()` 会把豆瓣标题与别名按 `makeFingerprint(name, meta.year || vod.year)` 写入 `VodAlias`，自动元数据任务和手动指定豆瓣 ID 都会同步。
