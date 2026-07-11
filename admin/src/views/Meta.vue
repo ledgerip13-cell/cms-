@@ -20,6 +20,12 @@
         <div class="sec-title" style="margin-bottom:16px">元数据匹配</div>
         <el-alert type="info" :closable="false" style="margin-bottom:16px"
           title="按已启用匹配源抓取评分/简介/高清封面并落库。抓一次存库，前端读库不实时请求；最终来源会在匹配记录中标注。" />
+        <div class="match-mode">
+          <span>匹配模式</span>
+          <el-select v-model="quickProviderMode" style="width:180px">
+            <el-option v-for="item in providerModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
         <div class="ops">
           <el-button type="primary" :icon="MagicStick" @click="run(false)">
             匹配未处理（{{ stat.none || 0 }} 部）
@@ -31,6 +37,9 @@
         <div class="manual-scope">
           <div class="scope-title">手动范围匹配</div>
           <div class="scope-row">
+            <el-select v-model="q.provider" style="width:180px">
+              <el-option v-for="item in providerModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
             <el-select v-model="q.status" style="width:130px">
               <el-option label="待确认" value="pending" />
               <el-option label="待匹配" value="none" />
@@ -259,7 +268,8 @@ const rows = ref([])
 const rowTotal = ref(0)
 const rowLoading = ref(false)
 const selectedRows = ref([])
-const q = ref({ page: 1, size: 20, status: 'pending', sourceId: '', categoryName: '', kw: '' })
+const quickProviderMode = ref('')
+const q = ref({ page: 1, size: 20, provider: '', status: 'pending', sourceId: '', categoryName: '', kw: '' })
 const candOpen = ref(false)
 const candRow = ref(null)
 const candidates = ref([])
@@ -272,6 +282,11 @@ const statCards = [
 ]
 const matchRate = computed(() => stat.value.total ? Math.round((stat.value.matched / stat.value.total) * 100) : 0)
 const primaryProvider = computed(() => cfg.value.providersConfig?.providers?.find(provider => provider.enabled) || providerByKey('douban'))
+const providerModeOptions = [
+  { label: '按优先级自动', value: '' },
+  { label: '仅豆瓣', value: 'douban' },
+  { label: '仅 TMDB', value: 'tmdb' },
+]
 
 function metaTaskLimit(provider = primaryProvider.value) {
   if (provider?.key === 'tmdb') {
@@ -394,7 +409,7 @@ async function load() {
 }
 async function run(redo) {
   try {
-    const payload = metaTaskPayload({ redo, split: true, ...(redo ? { status: 'all' } : { status: 'none' }) })
+    const payload = metaTaskPayload({ redo, split: true, ...(redo ? { status: 'all' } : { status: 'none' }) }, quickProviderMode.value)
     const ok = await confirmMetaSubmit(payload, redo ? '重刷全部影片元数据' : '匹配未处理影片')
     if (!ok) return
     const r = await api.metaBatch(payload)
@@ -415,7 +430,7 @@ async function loadRows() {
 }
 async function runFiltered() {
   const payload = {
-    ...metaTaskPayload(),
+    ...metaTaskPayload({}, q.value.provider),
     status: q.value.status,
     sourceId: q.value.sourceId || undefined,
     categoryName: q.value.categoryName || undefined,
@@ -472,13 +487,14 @@ async function clearSelected() {
     await Promise.all([loadRows(), load()])
   } catch (e) { ElMessage.error(e.message || '清理失败') }
 }
-function metaTaskPayload(extra = {}) {
-  const provider = primaryProvider.value
+function metaTaskPayload(extra = {}, providerKey = '') {
+  const provider = providerKey ? providerByKey(providerKey) : primaryProvider.value
   const autoMatchScore = clampNumber(provider.autoMatchScore, cfg.value.autoMatchScore, 0, 100)
   const pendingMatchScore = Math.min(autoMatchScore, clampNumber(provider.pendingMatchScore, cfg.value.pendingMatchScore, 0, 100))
   return {
     limit: metaTaskLimit(provider),
     intervalMs: provider.intervalMs || cfg.value.intervalMs,
+    ...(providerKey ? { provider: provider.key } : {}),
     ...(provider.key === 'tmdb' ? {
       matchConcurrency: provider.matchConcurrency,
       concurrencyBatchSize: provider.concurrencyBatchSize,
@@ -538,6 +554,7 @@ onMounted(load)
 .meta-tabs { margin-top: 4px; }
 .overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
+.match-mode { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-2); font-size: 13px; }
 .manual-scope { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .scope-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
 .scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
