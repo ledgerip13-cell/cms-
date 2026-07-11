@@ -69,32 +69,33 @@
               </div>
               <el-switch v-model="provider.enabled" active-text="启用" inactive-text="停用" />
             </div>
-            <el-form label-width="90px" class="provider-form">
+            <el-form label-width="82px" class="provider-form">
               <el-form-item label="优先级">
                 <el-input-number v-model="provider.priority" :min="1" :max="99" :step="1" controls-position="right" />
               </el-form-item>
-              <el-form-item label="限速间隔">
+              <el-form-item label="限速">
                 <el-input-number v-model="provider.intervalMs" :min="500" :max="30000" :step="500" controls-position="right" />
                 <span class="unit">毫秒/条</span>
               </el-form-item>
-              <el-form-item label="任务数量上限">
+              <el-form-item label="任务上限">
                 <el-input-number v-model="provider.batchLimit" :min="1" :max="500" :step="10" controls-position="right" />
-                <span class="unit">本次任务最多处理多少部</span>
+                <span class="unit">部/任务</span>
               </el-form-item>
               <template v-if="provider.key === 'tmdb'">
-                <el-form-item label="并发数">
+                <el-form-item label="并发">
                   <el-input-number v-model="provider.matchConcurrency" :min="1" :max="10" :step="1" controls-position="right" />
-                  <span class="unit">个 worker</span>
+                  <span class="unit">worker</span>
                 </el-form-item>
-                <el-form-item label="每 worker 连续处理">
+                <el-form-item label="单工处理">
                   <el-input-number v-model="provider.concurrencyBatchSize" :min="1" :max="50" :step="1" controls-position="right" />
-                  <span class="unit">部；每轮处理 = 并发数 × 该数量</span>
+                  <span class="unit">部/轮</span>
+                  <div class="field-help">每轮处理量 = 并发 × 单工处理；worker 内串行。</div>
                 </el-form-item>
               </template>
-              <el-form-item label="自动通过分">
+              <el-form-item label="通过分">
                 <el-input-number v-model="provider.autoMatchScore" :min="0" :max="100" :step="1" controls-position="right" />
               </el-form-item>
-              <el-form-item label="待确认分">
+              <el-form-item label="候选分">
                 <el-input-number v-model="provider.pendingMatchScore" :min="0" :max="provider.autoMatchScore || 100" :step="1" controls-position="right" />
               </el-form-item>
               <template v-if="provider.key === 'tmdb'">
@@ -534,8 +535,12 @@ onMounted(load)
 .provider-form { margin-top: 4px; }
 .provider-form :deep(.el-form-item) { margin-bottom: 10px; }
 .provider-form :deep(.el-form-item:last-child) { margin-bottom: 0; }
+.provider-form :deep(.el-form-item__content) { min-width: 0; flex-wrap: wrap; gap: 4px 8px; line-height: 1.4; }
+.provider-form :deep(.el-input-number) { width: 138px; max-width: 100%; }
+.provider-form :deep(.el-input) { max-width: 100%; }
+.field-help { flex: 0 0 100%; font-size: 12px; color: var(--text-3); line-height: 1.35; }
 .tip { font-size: 12px; color: var(--text-3); margin-top: 14px; }
-.unit { margin-left: 10px; font-size: 12px; color: var(--text-3); }
+.unit { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 .pager { margin-top: 14px; justify-content: flex-end; }
 .muted { color: var(--text-3); font-size: 12px; }
 .cand-title { font-weight: 700; margin-bottom: 12px; color: var(--text-1); }
