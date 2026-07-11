@@ -175,15 +175,16 @@ function taskRunConfig(row) {
   if (row.type !== 'meta') return ''
   const p = taskParams(row)
   const parts = []
-  if (p.provider) parts.push(`源 ${sourceLabel(p.provider)}`)
-  if (p.limit) parts.push(`任务上限 ${p.limit}`)
-  if (Array.isArray(p.vodIds) && p.vodIds.length) parts.push(`固定影片 ${p.vodIds.length}`)
+  parts.push(`源 ${p.provider ? sourceLabel(p.provider) : '按优先级'}`)
+  const fixedCount = Array.isArray(p.vodIds) ? p.vodIds.length : 0
+  if (fixedCount) parts.push(`本任务 ${fixedCount} 部`)
+  else if (p.limit) parts.push(`单任务 ${p.limit} 部`)
   if (p.provider === 'tmdb' || p.matchConcurrency || p.concurrencyBatchSize) {
     const concurrency = Number(p.matchConcurrency) || 0
     const perWorker = Number(p.concurrencyBatchSize) || 0
     if (concurrency) parts.push(`并发 ${concurrency}`)
-    if (perWorker) parts.push(`每 worker ${perWorker}`)
-    if (concurrency && perWorker) parts.push(`每轮 ${concurrency * perWorker}`)
+    if (perWorker) parts.push(`单工 ${perWorker}`)
+    if (concurrency && perWorker) parts.push(`容量 ${concurrency * perWorker}`)
   }
   const interval = msLabel(p.intervalMs)
   if (interval) parts.push(`轮间隔 ${interval}`)

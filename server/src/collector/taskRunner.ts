@@ -1030,9 +1030,9 @@ async function runMetaTask(
     });
     let matched = 0, failed = 0, pending = 0;
     let processed = 0;
-    const tmdbOnly = primaryProvider?.key === "tmdb" && effectiveProvider === "tmdb";
-    const concurrency = tmdbOnly ? Math.max(1, Math.min(10, Number(opts.matchConcurrency || primaryProvider?.matchConcurrency) || 1)) : 1;
-    const concurrencyBatchSize = tmdbOnly ? Math.max(1, Math.min(50, Number(opts.concurrencyBatchSize || primaryProvider?.concurrencyBatchSize) || 1)) : 1;
+    const tmdbFirst = primaryProvider?.key === "tmdb" && effectiveProvider === "tmdb";
+    const concurrency = tmdbFirst ? Math.max(1, Math.min(10, Number(opts.matchConcurrency || primaryProvider?.matchConcurrency) || 1)) : 1;
+    const concurrencyBatchSize = tmdbFirst ? Math.max(1, Math.min(50, Number(opts.concurrencyBatchSize || primaryProvider?.concurrencyBatchSize) || 1)) : 1;
     const waveSize = concurrency * concurrencyBatchSize;
     for (let offset = 0; offset < vods.length; offset += waveSize) {
       if (canceled.has(taskId)) {
@@ -1055,7 +1055,7 @@ async function runMetaTask(
       const chunks = splitChunks(wave, concurrencyBatchSize);
       const results = (await Promise.all(chunks.map(async (chunk) => {
         const rows: Array<"matched" | "pending" | "failed"> = [];
-        for (const v of chunk) rows.push(await processMetaVod(v, tmdbOnly ? "tmdb" : opts.provider));
+        for (const v of chunk) rows.push(await processMetaVod(v, opts.provider));
         return rows;
       }))).flat();
       matched += results.filter((status) => status === "matched").length;

@@ -77,7 +77,7 @@
                 <el-input-number v-model="provider.intervalMs" :min="500" :max="30000" :step="500" controls-position="right" />
                 <span class="unit">毫秒/条</span>
               </el-form-item>
-              <el-form-item label="任务上限">
+              <el-form-item v-if="provider.key !== 'tmdb'" label="任务上限">
                 <el-input-number v-model="provider.batchLimit" :min="1" :max="500" :step="10" controls-position="right" />
                 <span class="unit">部/任务</span>
               </el-form-item>
@@ -89,7 +89,7 @@
                 <el-form-item label="单工处理">
                   <el-input-number v-model="provider.concurrencyBatchSize" :min="1" :max="50" :step="1" controls-position="right" />
                   <span class="unit">部/轮</span>
-                  <div class="field-help">每轮处理量 = 并发 × 单工处理；worker 内串行。</div>
+                  <div class="field-help">单任务 {{ metaTaskLimit(provider) }} 部 = 并发 × 单工处理；超出自动拆任务。</div>
                 </el-form-item>
               </template>
               <el-form-item label="通过分">
@@ -271,6 +271,19 @@ const statCards = [
 const matchRate = computed(() => stat.value.total ? Math.round((stat.value.matched / stat.value.total) * 100) : 0)
 const primaryProvider = computed(() => cfg.value.providersConfig?.providers?.find(provider => provider.enabled) || providerByKey('douban'))
 
+function metaTaskLimit(provider = primaryProvider.value) {
+  if (provider?.key === 'tmdb') {
+    const concurrency = clampNumber(provider.matchConcurrency, 1, 1, 10)
+    const perWorker = clampNumber(provider.concurrencyBatchSize, 1, 1, 50)
+    return concurrency * perWorker
+  }
+  return clampNumber(provider?.batchLimit, cfg.value.batchLimit || 50, 1, 500)
+}
+
+function metaSourceSubmitLabel(payload) {
+  return payload.provider ? providerLabel(payload.provider) : '按优先级自动'
+}
+
 function clampNumber(value, fallback, min, max) {
   const n = Math.round(Number(value))
   if (!Number.isFinite(n)) return fallback
@@ -434,11 +447,11 @@ async function confirmMetaSubmit(payload, title) {
   }
   const limit = Math.max(1, Number(payload.limit) || 50)
   const tasks = Math.ceil(total / limit)
-  const provider = providerLabel(payload.provider)
-  const concurrency = payload.provider === 'tmdb' && payload.matchConcurrency && payload.concurrencyBatchSize
-    ? `\nTMDB 每任务并发：${payload.matchConcurrency} worker × 每 worker ${payload.concurrencyBatchSize} 部 = 每轮 ${payload.matchConcurrency * payload.concurrencyBatchSize} 部`
+  const provider = metaSourceSubmitLabel(payload)
+  const concurrency = payload.matchConcurrency && payload.concurrencyBatchSize
+    ? `\nTMDB 容量：${payload.matchConcurrency} worker × 单工 ${payload.concurrencyBatchSize} 部 = ${payload.matchConcurrency * payload.concurrencyBatchSize} 部/任务`
     : ''
-  const message = `当前条件共 ${total} 部。\n任务数量上限 ${limit} 部/任务，将拆成 ${tasks} 个任务排队。\n匹配源：${provider}${concurrency}\n\n确认提交？`
+  const message = `当前条件共 ${total} 部。\n单任务 ${limit} 部，将拆成 ${tasks} 个任务排队。\n匹配源：${provider}${concurrency}\n\n确认提交？`
   return ElMessageBox.confirm(message, title, {
     type: 'warning',
     confirmButtonText: `提交 ${tasks} 个任务`,
@@ -462,9 +475,8 @@ function metaTaskPayload(extra = {}) {
   const autoMatchScore = clampNumber(provider.autoMatchScore, cfg.value.autoMatchScore, 0, 100)
   const pendingMatchScore = Math.min(autoMatchScore, clampNumber(provider.pendingMatchScore, cfg.value.pendingMatchScore, 0, 100))
   return {
-    limit: provider.batchLimit || cfg.value.batchLimit,
+    limit: metaTaskLimit(provider),
     intervalMs: provider.intervalMs || cfg.value.intervalMs,
-    provider: provider.key,
     ...(provider.key === 'tmdb' ? {
       matchConcurrency: provider.matchConcurrency,
       concurrencyBatchSize: provider.concurrencyBatchSize,
