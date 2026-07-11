@@ -4,6 +4,7 @@
       <button class="mp-back" type="button" aria-label="返回" @click.stop="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
+      <div v-if="episodes.length && controlsVisible" class="mp-episode-pill">第 {{ epIdx + 1 }} 集 / 共 {{ episodes.length }} 集</div>
       <div class="mp-bg"></div>
       <video
         v-if="mode === 'hls' && !accessBlock"
@@ -37,8 +38,14 @@
         <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
       </button>
       <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="showControls()">
+        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="上一集" :disabled="!hasPrevEp" @click.stop="playPrevEp">
+          <svg viewBox="0 0 24 24" v-html="icon('skipBack')"></svg>
+        </button>
         <button v-if="mode === 'hls'" class="mp-control-btn mp-toggle" type="button" :aria-label="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
           <svg viewBox="0 0 24 24" v-html="icon(isPlaying ? 'pause' : 'play')"></svg>
+        </button>
+        <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="下一集" :disabled="!hasNextEp" @click.stop="playNextEp">
+          <svg viewBox="0 0 24 24" v-html="icon('skipForward')"></svg>
         </button>
         <button v-if="mode === 'hls'" class="mp-control-btn" type="button" :aria-label="isMuted ? '取消静音' : '静音'" @click.stop="toggleMuted">
           <svg viewBox="0 0 24 24" v-html="icon(isMuted ? 'volumeOff' : 'volume')"></svg>
@@ -58,6 +65,8 @@
           @click.stop
         />
         <span v-if="mode === 'hls'" class="mp-time">{{ formatTime(duration) }}</span>
+        <button v-if="mode === 'hls'" class="mp-text-btn" type="button" aria-label="倍速" @click.stop="cycleSpeed">{{ playbackRateLabel }}</button>
+        <button v-if="mode === 'hls' && qualityOptions.length" class="mp-text-btn" type="button" aria-label="清晰度" @click.stop="cycleQuality">{{ qualityLabel }}</button>
         <button v-if="mode === 'hls'" class="mp-control-btn" type="button" aria-label="投屏" @click.stop="openCast">
           <svg viewBox="0 0 24 24" v-html="icon('cast')"></svg>
         </button>
@@ -159,6 +168,9 @@ const isMuted = ref(false)
 const controlsVisible = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const playbackRate = ref(1)
+const qualityLevel = ref(-1)
+const qualityOptions = ref([])
 let hls = null
 let noticeTimer = 0
 let historyTimer = 0
@@ -168,8 +180,15 @@ let retryingLine = false
 const curLine = computed(() => vod.value.lines?.[lineIdx.value] || null)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
 const episodes = computed(() => curChannel.value?.episodes || [])
+const hasPrevEp = computed(() => epIdx.value > 0)
+const hasNextEp = computed(() => epIdx.value < episodes.value.length - 1)
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
+const playbackRateLabel = computed(() => playbackRate.value === 1 ? '倍速' : `${playbackRate.value}x`)
+const qualityLabel = computed(() => {
+  if (qualityLevel.value < 0) return '自动'
+  return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || '清晰度'
+})
 const heroStyle = computed(() => {
   const url = poster(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
@@ -211,6 +230,8 @@ function stopPlayback() {
   duration.value = 0
   isMuted.value = false
   controlsVisible.value = false
+  qualityLevel.value = -1
+  qualityOptions.value = []
   if (controlsTimer) clearTimeout(controlsTimer)
 }
 
@@ -288,6 +309,7 @@ function syncVideoState() {
   duration.value = Number.isFinite(video.duration) ? Number(video.duration) || 0 : 0
   isPlaying.value = !video.paused
   isMuted.value = video.muted || Number(video.volume) === 0
+  video.playbackRate = playbackRate.value
 }
 
 function onTimeUpdate() {
@@ -320,6 +342,54 @@ function seekVideo(event) {
   showControls(3600)
 }
 
+function playPrevEp() {
+  if (!hasPrevEp.value) return
+  playEp(epIdx.value - 1)
+  showControls(2200)
+}
+
+function playNextEp() {
+  if (!hasNextEp.value) return
+  playEp(epIdx.value + 1)
+  showControls(2200)
+}
+
+function cycleSpeed() {
+  const speeds = [1, 1.25, 1.5, 2, 0.75]
+  const current = speeds.indexOf(playbackRate.value)
+  playbackRate.value = speeds[(current + 1) % speeds.length]
+  const video = videoEl.value
+  if (video) video.playbackRate = playbackRate.value
+  showNotice(playbackRate.value === 1 ? '已恢复正常速度' : `已切换 ${playbackRate.value}x`)
+  showControls(3200)
+}
+
+function refreshQualityOptions() {
+  if (!hls?.levels?.length) {
+    qualityOptions.value = []
+    return
+  }
+  qualityOptions.value = hls.levels
+    .map((level, index) => ({
+      level: index,
+      height: Number(level.height) || 0,
+      bitrate: Number(level.bitrate) || 0,
+      label: level.height ? `${level.height}P` : `${Math.round((Number(level.bitrate) || 0) / 1000)}K`,
+    }))
+    .filter(item => item.label && item.label !== '0K')
+    .sort((a, b) => b.height - a.height || b.bitrate - a.bitrate)
+}
+
+function cycleQuality() {
+  if (!hls || !qualityOptions.value.length) return
+  const order = [-1, ...qualityOptions.value.map(item => item.level)]
+  const current = order.indexOf(qualityLevel.value)
+  qualityLevel.value = order[(current + 1) % order.length]
+  hls.currentLevel = qualityLevel.value
+  showNotice(qualityLevel.value < 0 ? '清晰度：自动' : `清晰度：${qualityLabel.value}`)
+  showControls(3200)
+}
+
 function formatTime(value) {
   const total = Math.max(0, Math.floor(Number(value) || 0))
   const mins = Math.floor(total / 60)
@@ -339,7 +409,16 @@ function playDirect(url, kind = '') {
       hls = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
       hls.attachMedia(video)
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url))
-      hls.on(Hls.Events.MANIFEST_PARSED, () => startVideo(video))
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        refreshQualityOptions()
+        if (qualityLevel.value >= 0) hls.currentLevel = qualityLevel.value
+        video.playbackRate = playbackRate.value
+        startVideo(video)
+      })
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+        if (hls?.autoLevelEnabled) qualityLevel.value = -1
+        else if (Number.isInteger(data?.level)) qualityLevel.value = data.level
+      })
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data?.fatal) return
         handlePlaybackError()
@@ -347,6 +426,7 @@ function playDirect(url, kind = '') {
     } else {
       video.src = url
       try { video.load() } catch {}
+      video.playbackRate = playbackRate.value
       startVideo(video)
     }
   })
@@ -596,6 +676,19 @@ onDeactivated(stopPlayback)
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.mp-episode-pill {
+  position: absolute;
+  z-index: 9;
+  top: calc(env(safe-area-inset-top) + 12px);
+  left: 44px;
+  right: 12px;
+  color: rgba(255,255,255,.86);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 6px rgba(0,0,0,.6);
+  pointer-events: none;
+}
 .mp-state,
 .mp-lock,
 .mp-play {
@@ -645,12 +738,18 @@ onDeactivated(stopPlayback)
   bottom: 0;
   min-height: 48px;
   padding: 8px 8px 8px 10px;
-  display: grid;
-  grid-template-columns: 34px 34px auto minmax(0, 1fr) auto 34px 34px;
+  display: flex;
   align-items: center;
   gap: 7px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   color: #fff;
   background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.72));
+}
+.mp-controls::-webkit-scrollbar {
+  display: none;
 }
 .mp-controls.iframe {
   grid-template-columns: minmax(0, 1fr) 34px;
@@ -661,12 +760,16 @@ onDeactivated(stopPlayback)
 .mp-control-btn {
   width: 34px;
   height: 34px;
+  flex: 0 0 34px;
   border: 0;
   border-radius: 9px;
   display: grid;
   place-items: center;
   color: #fff;
   background: transparent;
+}
+.mp-control-btn:disabled {
+  opacity: .35;
 }
 .mp-control-btn svg {
   width: 19px;
@@ -684,6 +787,7 @@ onDeactivated(stopPlayback)
 }
 .mp-range {
   min-width: 0;
+  flex: 1 1 72px;
   width: 100%;
   height: 20px;
   margin: 0;
@@ -721,11 +825,24 @@ onDeactivated(stopPlayback)
   background: #fff;
 }
 .mp-time {
+  flex: 0 0 auto;
   color: rgba(255,255,255,.82);
   font-size: 11px;
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+.mp-text-btn {
+  flex: 0 0 auto;
+  min-width: 42px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 8px;
+  color: #fff;
+  background: rgba(255,255,255,.12);
+  font-size: 11px;
+  font-weight: 900;
 }
 .mp-lock {
   width: min(320px, calc(100vw - 42px));

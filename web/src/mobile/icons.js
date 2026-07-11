@@ -30,6 +30,8 @@ const icons = {
   wander: '<path d="M4 7h7a4 4 0 0 1 4 4v6"/><path d="m12 14 3 3 3-3"/><path d="M20 7h-4"/><path d="M8 17H4"/>',
   cast: '<path d="M4 7V5h16v14h-5"/><path d="M4 15a4 4 0 0 1 4 4M4 19h.01M4 11a8 8 0 0 1 8 8"/>',
   speed: '<path d="M4 14a8 8 0 1 1 16 0"/><path d="m12 14 4-4"/><path d="M12 14h.01"/>',
+  skipBack: '<path d="M11 6 5 12l6 6V6Z"/><path d="M19 6 13 12l6 6V6Z"/>',
+  skipForward: '<path d="m13 6 6 6-6 6V6Z"/><path d="m5 6 6 6-6 6V6Z"/>',
   pip: '<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1"/>',
 }
 
