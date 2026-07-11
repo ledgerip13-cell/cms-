@@ -59,6 +59,49 @@
           <div class="sec-title">采集参数设置</div>
           <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
         </div>
+        <el-divider>全局设置</el-divider>
+        <el-form :model="cfg" label-width="120px" class="global-meta-form">
+          <el-form-item label="限速间隔">
+            <el-input-number v-model="cfg.intervalMs" :min="1000" :max="10000" :step="500" />
+            <span class="unit">毫秒/条（旧版默认值，启用匹配源优先使用源级配置）</span>
+          </el-form-item>
+          <el-form-item label="任务数量上限">
+            <el-input-number v-model="cfg.batchLimit" :min="10" :max="500" :step="10" />
+            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
+          </el-form-item>
+          <el-form-item label="保存图片">
+            <el-switch v-model="cfg.saveImages" />
+            <span class="unit">所有元数据源生效；保存海报/剧照到本地兜底</span>
+          </el-form-item>
+          <el-divider>置信分设置</el-divider>
+          <el-form-item label="自动通过分">
+            <el-input-number v-model="cfg.autoMatchScore" :min="0" :max="100" :step="1" />
+            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
+          </el-form-item>
+          <el-form-item label="待确认分">
+            <el-input-number v-model="cfg.pendingMatchScore" :min="0" :max="cfg.autoMatchScore || 100" :step="1" />
+            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
+          </el-form-item>
+          <el-divider>定时自动匹配</el-divider>
+          <el-form-item label="自动匹配">
+            <el-switch v-model="cfg.autoMatch" />
+            <span class="unit">所有启用源按优先级执行</span>
+          </el-form-item>
+          <template v-if="cfg.autoMatch">
+            <el-form-item label="匹配频率">
+              <el-select v-model="cfg.cronExpr" style="width:220px">
+                <el-option label="每 6 小时" value="0 */6 * * *" />
+                <el-option label="每 12 小时" value="0 */12 * * *" />
+                <el-option label="每天凌晨 4 点" value="0 4 * * *" />
+                <el-option label="每天凌晨 2 点" value="0 2 * * *" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="一并重试失败">
+              <el-switch v-model="cfg.redoFailed" />
+              <span class="unit">开启则定时任务也重刷之前失败的</span>
+            </el-form-item>
+          </template>
+        </el-form>
         <el-divider>采集匹配源管理</el-divider>
         <div class="provider-list">
           <div v-for="provider in cfg.providersConfig.providers" :key="provider.key" class="provider-card">
@@ -109,47 +152,6 @@
             </el-form>
           </div>
         </div>
-        <el-form :model="cfg" label-width="120px">
-          <el-form-item label="限速间隔">
-            <el-input-number v-model="cfg.intervalMs" :min="1000" :max="10000" :step="500" />
-            <span class="unit">毫秒/条（越大越安全，防源站限流）</span>
-          </el-form-item>
-          <el-form-item label="任务数量上限">
-            <el-input-number v-model="cfg.batchLimit" :min="10" :max="500" :step="10" />
-            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
-          </el-form-item>
-          <el-form-item label="保存图片">
-            <el-switch v-model="cfg.saveImages" />
-            <span class="unit">开启后元数据海报/剧照会同步保存到本地，远程 URL 失败时可兜底</span>
-          </el-form-item>
-          <el-divider>置信分设置</el-divider>
-          <el-form-item label="自动通过分">
-            <el-input-number v-model="cfg.autoMatchScore" :min="0" :max="100" :step="1" />
-            <span class="unit">达到该分即自动写入元数据</span>
-          </el-form-item>
-          <el-form-item label="待确认分">
-            <el-input-number v-model="cfg.pendingMatchScore" :min="0" :max="cfg.autoMatchScore || 100" :step="1" />
-            <span class="unit">低于自动通过但达到该分进入待确认</span>
-          </el-form-item>
-          <el-divider>定时自动匹配</el-divider>
-          <el-form-item label="自动匹配">
-            <el-switch v-model="cfg.autoMatch" />
-          </el-form-item>
-          <template v-if="cfg.autoMatch">
-            <el-form-item label="匹配频率">
-              <el-select v-model="cfg.cronExpr" style="width:220px">
-                <el-option label="每 6 小时" value="0 */6 * * *" />
-                <el-option label="每 12 小时" value="0 */12 * * *" />
-                <el-option label="每天凌晨 4 点" value="0 4 * * *" />
-                <el-option label="每天凌晨 2 点" value="0 2 * * *" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="一并重试失败">
-              <el-switch v-model="cfg.redoFailed" />
-              <span class="unit">开启则定时任务也重刷之前失败的</span>
-            </el-form-item>
-          </template>
-        </el-form>
       </div>
       </el-tab-pane>
 
@@ -540,6 +542,8 @@ onMounted(load)
 .scope-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
 .scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .provider-list { display: grid; gap: 12px; margin-bottom: 18px; }
+.global-meta-form { margin-bottom: 18px; }
+.global-meta-form :deep(.el-form-item__content) { min-width: 0; flex-wrap: wrap; gap: 4px 8px; line-height: 1.4; }
 .provider-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg-soft); }
 .provider-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .provider-head b { display: block; color: var(--text-1); font-size: 15px; }
