@@ -6,6 +6,7 @@
       'shorts-full-shell': route.path.startsWith('/m/shorts') && route.query.mode === 'full',
       'search-shell': route.path.startsWith('/m/search'),
       'play-shell': route.path.startsWith('/m/play'),
+      'chrome-ready': chromeReady,
     }"
   >
     <div class="m-route-stage">
@@ -42,6 +43,7 @@ import { icon } from './icons'
 const route = useRoute()
 const router = useRouter()
 const pageTransitionName = ref('m-page-none')
+const chromeReady = ref(false)
 const tabs = [
   { path: '/m', label: '首页', icon: 'home' },
   { path: '/m/theater', label: '剧场', icon: 'theater' },
@@ -203,6 +205,7 @@ onMounted(() => {
   chromeObserver.observe(document.head, { attributes: true, childList: true, subtree: true })
   window.setTimeout(applyMobileChrome, 0)
   window.setTimeout(applyMobileChrome, 400)
+  window.setTimeout(() => { chromeReady.value = true }, 220)
 })
 watch(() => route.path, () => {
   syncPageTransition(route.path)
@@ -302,6 +305,12 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, .94);
   border-top: 1px solid rgba(18, 20, 26, .08);
   backdrop-filter: blur(18px);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.mshell:not(.chrome-ready) .mtab {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 10px, 0);
 }
 .mtab button {
   min-width: 0;

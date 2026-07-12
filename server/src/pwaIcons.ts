@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 export type IconVariant = "192" | "512" | "maskable" | "apple";
@@ -9,6 +11,8 @@ type SourceResult = { buf: Buffer; version: string } | null;
 // 简单内存缓存：key = `${version}:${variant}` -> PNG Buffer
 const renderCache = new Map<string, Buffer>();
 const CACHE_CAP = 32;
+const STARTUP_TEXT_VERSION = "text-only-v2";
+let startupTextMarkCache: Buffer | null = null;
 
 function hexToRgb(hex: string, fallback = { r: 10, g: 11, b: 15 }) {
   const raw = String(hex || "").trim().replace(/^#/, "");
@@ -77,6 +81,22 @@ function pruneCache() {
     renderCache.delete(k);
     if (++i >= drop) break;
   }
+}
+
+function getStartupTextMark(): Buffer {
+  if (startupTextMarkCache) return startupTextMarkCache;
+  const candidates = [
+    new URL("./assets/startup-text-mark.png", import.meta.url),
+    new URL("../src/assets/startup-text-mark.png", import.meta.url),
+  ];
+  for (const candidate of candidates) {
+    const filePath = fileURLToPath(candidate);
+    if (existsSync(filePath)) {
+      startupTextMarkCache = readFileSync(filePath);
+      return startupTextMarkCache;
+    }
+  }
+  throw new Error("PWA startup text asset missing");
 }
 
 // 生成指定规格的 PNG。source 为空时生成纯 backgroundColor 方图，保证始终可安装。
@@ -152,10 +172,11 @@ export async function getStartupImagePng(
   logo: string,
   backgroundHex: string,
 ): Promise<{ buf: Buffer; version: string }> {
+  void icon;
+  void logo;
   const width = Math.max(1, Math.min(4096, Math.floor(Number(size.width) || 0)));
   const height = Math.max(1, Math.min(4096, Math.floor(Number(size.height) || 0)));
-  const src = await loadIconSource(icon, logo);
-  const version = src?.version || "empty";
+  const version = STARTUP_TEXT_VERSION;
   const key = `${version}:startup:${width}x${height}:${backgroundHex}`;
   const cached = renderCache.get(key);
   if (cached) return { buf: cached, version };
@@ -164,18 +185,12 @@ export async function getStartupImagePng(
   const canvas = sharp({
     create: { width, height, channels: 4, background: { ...bg, alpha: 1 } },
   });
-  let buf: Buffer;
-  if (src?.buf) {
-    const markSize = Math.max(96, Math.min(220, Math.round(Math.min(width, height) * 0.18)));
-    const mark = await sharp(src.buf)
-      .resize(markSize, markSize, { fit: "cover" })
-      .flatten({ background: bg })
-      .png()
-      .toBuffer();
-    buf = await canvas.composite([{ input: mark, gravity: "centre" }]).png().toBuffer();
-  } else {
-    buf = await canvas.png().toBuffer();
-  }
+  const textMarkWidth = Math.max(320, Math.min(760, Math.round(width * 0.58)));
+  const textMark = await sharp(getStartupTextMark())
+    .resize({ width: textMarkWidth, withoutEnlargement: false })
+    .png()
+    .toBuffer();
+  const buf = await canvas.composite([{ input: textMark, gravity: "centre" }]).png().toBuffer();
   renderCache.set(key, buf);
   pruneCache();
   return { buf, version };
