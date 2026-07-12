@@ -270,7 +270,7 @@ export default async function siteRoutes(app: FastifyInstance) {
       short_name: shortName,
       start_url: "/",
       scope: "/",
-      display: "standalone",
+      display: "fullscreen",
       orientation: pwa.orientation,
       theme_color: pwa.themeColor,
       background_color: pwa.backgroundColor,
