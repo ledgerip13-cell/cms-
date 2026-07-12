@@ -476,7 +476,7 @@ onBeforeUnmount(() => unlockPageScroll(true))
 .auth-fade-enter-from .auth-modal,
 .auth-fade-leave-to .auth-modal { opacity: 0; transform: translate3d(0, 10px, 0) scale(.985); }
 @media (max-width: 640px) {
-  .auth-overlay { padding: 14px; align-items: flex-end; }
+  .auth-overlay { padding: calc(14px + env(safe-area-inset-top)) 14px 14px; align-items: flex-end; }
   .auth-wall { grid-template-columns: repeat(6, minmax(70px, 1fr)); grid-auto-rows: 118px; gap: 8px; inset: -6vh -24vw;
     transform: rotate(-6deg) scale(1.08); opacity: .58; }
   .auth-poster { border-radius: 9px; }

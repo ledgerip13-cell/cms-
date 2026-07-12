@@ -217,6 +217,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .mshell {
+  --mobile-tab-height: calc(62px + env(safe-area-inset-bottom));
   min-height: 100dvh;
   background: #f7f7f8;
 }
@@ -292,7 +293,8 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  min-height: 62px;
+  height: var(--mobile-tab-height);
+  min-height: var(--mobile-tab-height);
   padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(4, 1fr);

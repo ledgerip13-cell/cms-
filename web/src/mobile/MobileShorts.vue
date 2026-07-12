@@ -2249,7 +2249,7 @@ onBeforeUnmount(() => {
   z-index: 55;
   left: 0;
   right: 0;
-  bottom: calc(62px + env(safe-area-inset-bottom));
+  bottom: var(--mobile-tab-height, calc(62px + env(safe-area-inset-bottom)));
 }
 .ms-roam-card {
   position: relative;

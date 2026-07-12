@@ -37,6 +37,6 @@ import { dismissToast, toasts } from '../feedback'
 .toast-enter-active, .toast-leave-active { transition: opacity .18s, transform .18s; will-change: transform, opacity; backface-visibility: hidden; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate3d(0, -8px, 0); }
 @media (max-width: 640px) {
-  .toast-stack { top: 10px; right: 10px; left: 10px; width: auto; }
+  .toast-stack { top: calc(10px + env(safe-area-inset-top)); right: 10px; left: 10px; width: auto; }
 }
 </style>
