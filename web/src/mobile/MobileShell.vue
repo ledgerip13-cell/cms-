@@ -8,13 +8,19 @@
       'play-shell': route.path.startsWith('/m/play'),
     }"
   >
-    <router-view v-slot="{ Component, route: viewRoute }">
-      <transition name="m-page-none">
-        <keep-alive :max="4">
-          <component :is="Component" :key="viewRoute.path" />
-        </keep-alive>
-      </transition>
-    </router-view>
+    <div class="m-route-stage">
+      <router-view v-slot="{ Component, route: viewRoute }">
+        <transition :name="pageTransitionName">
+          <keep-alive :max="4">
+            <component :is="Component" :key="viewRoute.path" />
+          </keep-alive>
+        </transition>
+      </router-view>
+    </div>
+    <template v-if="blockEdgeSwipe">
+      <div class="m-edge-guard m-edge-guard-left" aria-hidden="true" @touchstart.prevent @touchmove.prevent @pointerdown.prevent></div>
+      <div class="m-edge-guard m-edge-guard-right" aria-hidden="true" @touchstart.prevent @touchmove.prevent @pointerdown.prevent></div>
+    </template>
     <nav v-if="!route.path.startsWith('/m/search') && !route.path.startsWith('/m/play')" class="mtab" aria-label="移动端模板导航">
       <button v-for="item in tabs" :key="item.path" type="button" :class="{ on: active(item) }" @click="router.push(item.path)">
         <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
@@ -27,7 +33,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthModal from '../components/AuthModal.vue'
 import ToastStack from '../components/ToastStack.vue'
@@ -35,6 +41,7 @@ import { icon } from './icons'
 
 const route = useRoute()
 const router = useRouter()
+const pageTransitionName = ref('m-page-none')
 const tabs = [
   { path: '/m', label: '首页', icon: 'home' },
   { path: '/m/theater', label: '剧场', icon: 'theater' },
@@ -43,6 +50,26 @@ const tabs = [
 ]
 function active(item) {
   return item.path === '/m' ? route.path === '/m' : route.path.startsWith(item.path)
+}
+function secondaryLevel(path) {
+  return path.startsWith('/m/play') || path.startsWith('/m/search')
+}
+function primaryLevel(path) {
+  return path === '/m' || path === '/m/theater' || path === '/m/shorts' || path === '/m/me'
+}
+const blockEdgeSwipe = computed(() => primaryLevel(route.path))
+let previousPath = route.path
+function syncPageTransition(nextPath, prevPath = previousPath) {
+  if (nextPath.startsWith('/m/shorts') || prevPath.startsWith('/m/shorts')) {
+    pageTransitionName.value = 'm-page-none'
+  } else if (secondaryLevel(nextPath) && !secondaryLevel(prevPath)) {
+    pageTransitionName.value = 'm-push'
+  } else if (!secondaryLevel(nextPath) && secondaryLevel(prevPath)) {
+    pageTransitionName.value = 'm-pop'
+  } else {
+    pageTransitionName.value = 'm-page-none'
+  }
+  previousPath = nextPath
 }
 
 let previousThemeColor = ''
@@ -161,6 +188,7 @@ onMounted(() => {
   window.setTimeout(applyMobileChrome, 400)
 })
 watch(() => route.path, () => {
+  syncPageTransition(route.path)
   applyMobileChrome()
   window.setTimeout(applyMobileChrome, 0)
 })
@@ -172,12 +200,71 @@ onBeforeUnmount(restoreChrome)
   min-height: 100dvh;
   background: #f7f7f8;
 }
+.m-route-stage {
+  position: relative;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
 .search-shell,
 .play-shell {
   background: #f7f7f8;
 }
 .shorts-shell {
   background: #050505;
+}
+.m-edge-guard {
+  position: fixed;
+  z-index: 2147483647;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  touch-action: none;
+  pointer-events: auto;
+  background: transparent;
+}
+.m-edge-guard-left {
+  left: 0;
+}
+.m-edge-guard-right {
+  right: 0;
+}
+.m-push-enter-active,
+.m-push-leave-active,
+.m-pop-enter-active,
+.m-pop-leave-active {
+  transition: opacity .22s cubic-bezier(.22, .61, .36, 1), transform .22s cubic-bezier(.22, .61, .36, 1);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+.m-push-leave-active,
+.m-pop-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  pointer-events: none;
+}
+.m-push-enter-from {
+  opacity: .98;
+  transform: translate3d(100%, 0, 0);
+}
+.m-push-enter-to,
+.m-push-leave-from,
+.m-pop-enter-to,
+.m-pop-leave-from {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+.m-push-leave-to {
+  opacity: .92;
+  transform: translate3d(-18%, 0, 0);
+}
+.m-pop-enter-from {
+  opacity: .96;
+  transform: translate3d(-18%, 0, 0);
+}
+.m-pop-leave-to {
+  opacity: .98;
+  transform: translate3d(100%, 0, 0);
 }
 .mtab {
   position: fixed;

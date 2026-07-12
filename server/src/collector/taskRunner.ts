@@ -830,10 +830,16 @@ async function runManualMetaConfirm(taskId: number, opts: { vodId?: number; prov
 }
 
 async function runProviderMatch(provider: MetaProviderConfig, v: any): Promise<DoubanMatchResult> {
+  const aliases = Array.isArray(v.aliases)
+    ? v.aliases
+      .map((alias: any) => cleanText(alias?.note || String(alias?.fingerprint || "").split("|")[0] || "", 120))
+      .filter(Boolean)
+    : [];
   const ctx = {
     typeName: v.typeName,
     actor: v.actor,
     director: v.director,
+    aliases,
     sourcePic: v.pic || v.localPic,
     autoMatchScore: provider.autoMatchScore,
     pendingMatchScore: provider.pendingMatchScore,
@@ -1026,6 +1032,7 @@ async function runMetaTask(
     const vods = await prisma.vod.findMany({
       where,
       orderBy: opts.redo ? { metaAt: "asc" } : { id: "asc" },
+      include: { aliases: true },
       take: limit,
     });
     let matched = 0, failed = 0, pending = 0;

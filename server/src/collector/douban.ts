@@ -204,6 +204,7 @@ export interface DoubanMatchContext {
   typeName?: string;
   actor?: string;
   director?: string;
+  aliases?: string[];
   sourcePic?: string;
   autoMatchScore?: number;
   pendingMatchScore?: number;
@@ -603,7 +604,12 @@ function titleBag(name: string) {
       .replace(/第[一二三四五六七八九十0-9]+季/gi, "")
       .replace(/\b(S\d+|Season\s*\d+)\b/gi, "")
   );
-  return unique([normalized, compact].filter(Boolean));
+  const loose = (value: string) => value.replace(/[的之]/g, "");
+  return unique([normalized, compact, loose(normalized), loose(compact)].filter(Boolean));
+}
+
+function titleEntries(values: string[], source: "title" | "alias") {
+  return values.flatMap((value) => titleBag(value).map((name) => ({ name, source })));
 }
 
 function queryBag(name: string) {
@@ -751,44 +757,66 @@ function scoreCandidate(
 ) {
   const reasons: string[] = [];
   let score = 0;
-  const names = titleBag(name);
+  const names = [
+    ...titleEntries([name], "title"),
+    ...titleEntries(ctx.aliases || [], "alias"),
+  ];
   const title = normalizeName(meta?.title || suggest.title);
   const subTitle = normalizeName(suggest.sub_title || "");
-  const candidateNames = unique([title, subTitle].filter(Boolean));
+  const candidateNames = [
+    ...unique([title, subTitle].filter(Boolean)).map((candidate) => ({ name: candidate, source: "title" as const })),
+    ...unique((meta?.aliases || []).flatMap((alias) => titleBag(alias))).map((candidate) => ({ name: candidate, source: "alias" as const })),
+  ];
 
   let bestSim = 0;
+  let bestAlias = false;
+  let bestStrongContains = false;
   for (const n of names) {
     for (const c of candidateNames) {
-      if (!n || !c) continue;
-      if (n === c) bestSim = Math.max(bestSim, 1);
-      else if (n.includes(c) || c.includes(n)) bestSim = Math.max(bestSim, 0.78);
-      else bestSim = Math.max(bestSim, dice(n, c));
+      if (!n.name || !c.name) continue;
+      let sim = 0;
+      let strongContains = false;
+      if (n.name === c.name) sim = 1;
+      else if (n.name.includes(c.name) || c.name.includes(n.name)) {
+        const shorter = Math.min(n.name.length, c.name.length);
+        const longer = Math.max(n.name.length, c.name.length);
+        strongContains = longer > 0 && shorter / longer >= 0.82;
+        sim = strongContains ? 0.86 : 0.78;
+      } else sim = dice(n.name, c.name);
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestAlias = n.source === "alias" || c.source === "alias";
+        bestStrongContains = strongContains;
+      }
     }
   }
   // 分季命名归一后基础名相等（如 本地「斗罗大陆Ⅱ绝世唐门」↔ 豆瓣「斗罗大陆Ⅱ绝世唐门 年番1」）
-  const localBases = unique([baseTitle(name)].filter(Boolean));
+  const localBases = unique([name, ...(ctx.aliases || [])].map(baseTitle).filter(Boolean));
   const candBases = unique(
-    [baseTitle(meta?.title || suggest.title), baseTitle(suggest.sub_title || "")].filter(Boolean)
+    [meta?.title || suggest.title, suggest.sub_title || "", ...(meta?.aliases || [])].map(baseTitle).filter(Boolean)
   );
   const baseMatch =
     bestSim < 1 && localBases.some((l) => candBases.some((c) => l && c && l === c));
 
   if (bestSim >= 1) {
     score += 55;
-    reasons.push("title_exact");
+    reasons.push(bestAlias ? "alias_exact" : "title_exact");
   } else if (baseMatch) {
     // 基础名一致但含分季后缀差异：给足底分，最终由年份/季度分二次区分具体季
     score += 48;
-    reasons.push("title_base");
+    reasons.push(bestAlias ? "alias_base" : "title_base");
+  } else if (bestAlias && bestStrongContains) {
+    score += 45;
+    reasons.push("alias_strong_contains");
   } else if (bestSim >= 0.78) {
     score += 38;
-    reasons.push("title_contains");
+    reasons.push(bestAlias ? "alias_contains" : "title_contains");
   } else if (bestSim >= 0.58) {
     score += Math.round(bestSim * 42);
-    reasons.push("title_similar");
+    reasons.push(bestAlias ? "alias_similar" : "title_similar");
   } else {
     score += Math.round(bestSim * 18);
-    if (bestSim > 0) reasons.push("title_weak");
+    if (bestSim > 0) reasons.push(bestAlias ? "alias_weak" : "title_weak");
   }
 
   const localYear = yearOf(year);

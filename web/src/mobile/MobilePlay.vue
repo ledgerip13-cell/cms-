@@ -169,7 +169,7 @@
 
 <script setup>
 import Hls from 'hls.js'
-import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
@@ -223,6 +223,9 @@ let historyTimer = 0
 let controlsTimer = 0
 let retryingLine = false
 let bodyOverflowBeforeLandscape = ''
+let pageActive = false
+let loadSeq = 0
+let playbackSeq = 0
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value] || null)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
@@ -269,7 +272,20 @@ function showNotice(message) {
   noticeTimer = window.setTimeout(() => { playNotice.value = '' }, 3600)
 }
 
-function stopPlayback() {
+function isPlayRoute() {
+  return String(route.path || '').startsWith('/m/play')
+}
+
+function isPlaybackCurrent(seq) {
+  return pageActive && isPlayRoute() && seq === playbackSeq
+}
+
+function nextPlaybackSeq() {
+  playbackSeq += 1
+  return playbackSeq
+}
+
+function clearPlaybackMedia() {
   if (hls) {
     hls.destroy()
     hls = null
@@ -282,6 +298,7 @@ function stopPlayback() {
   }
   curUrl.value = ''
   isPlaying.value = false
+  resolving.value = false
   currentTime.value = 0
   duration.value = 0
   isMuted.value = false
@@ -289,13 +306,20 @@ function stopPlayback() {
   menuOpen.value = false
   qualityLevel.value = -1
   qualityOptions.value = []
+  retryingLine = false
   if (controlsTimer) clearTimeout(controlsTimer)
 }
 
-function startVideo(video) {
-  if (!video) return
+function stopPlayback() {
+  nextPlaybackSeq()
+  clearPlaybackMedia()
+}
+
+function startVideo(video, seq) {
+  if (!video || !isPlaybackCurrent(seq) || video !== videoEl.value) return
   const play = () => {
     window.requestAnimationFrame(() => {
+      if (!isPlaybackCurrent(seq) || video !== videoEl.value) return
       video.play().catch(() => {})
     })
   }
@@ -306,6 +330,7 @@ function startVideo(video) {
   video.addEventListener('loadeddata', play, { once: true })
   video.addEventListener('canplay', play, { once: true })
   window.setTimeout(() => {
+    if (!isPlaybackCurrent(seq) || video !== videoEl.value) return
     if (video.readyState >= 1) play()
   }, 700)
 }
@@ -607,37 +632,46 @@ function formatTime(value) {
   return `${mins}:${secs}`
 }
 
-function playDirect(url, kind = '') {
-  stopPlayback()
+function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
+  if (!isPlaybackCurrent(seq)) return
+  clearPlaybackMedia()
   curUrl.value = url
   mode.value = kind === 'iframe' ? 'iframe' : 'hls'
   if (mode.value === 'iframe') return
   nextTick(() => {
     const video = videoEl.value
-    if (!video) return
+    if (!video || !isPlaybackCurrent(seq)) return
     if ((kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)) && Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
-      hls.attachMedia(video)
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url))
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        refreshQualityOptions()
-        if (qualityLevel.value >= 0) hls.currentLevel = qualityLevel.value
-        video.playbackRate = playbackRate.value
-        startVideo(video)
+      const hlsInstance = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
+      hls = hlsInstance
+      hlsInstance.attachMedia(video)
+      hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
+        if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
+        hlsInstance.loadSource(url)
       })
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
-        if (hls?.autoLevelEnabled) qualityLevel.value = -1
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
+        refreshQualityOptions()
+        if (qualityLevel.value >= 0) hlsInstance.currentLevel = qualityLevel.value
+        video.playbackRate = playbackRate.value
+        startVideo(video, seq)
+      })
+      hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+        if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
+        if (hlsInstance.autoLevelEnabled) qualityLevel.value = -1
         else if (Number.isInteger(data?.level)) qualityLevel.value = data.level
       })
-      hls.on(Hls.Events.ERROR, (_, data) => {
+      hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+        if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
         if (!data?.fatal) return
         handlePlaybackError()
       })
     } else {
+      if (!isPlaybackCurrent(seq)) return
       video.src = url
       try { video.load() } catch {}
       video.playbackRate = playbackRate.value
-      startVideo(video)
+      startVideo(video, seq)
     }
   })
 }
@@ -673,12 +707,14 @@ function handleAccessAction() {
 async function playCurrent() {
   const channel = curChannel.value
   if (!vod.value?.id || !channel?.id) return
+  const seq = nextPlaybackSeq()
   resolving.value = true
   accessBlock.value = null
   try {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: epIdx.value })
+    if (!isPlaybackCurrent(seq)) return
     if (result?.ok && result.url) {
-      playDirect(result.url, result.kind || '')
+      playDirect(result.url, result.kind || '', seq)
       showControls(1800)
       saveHistory(0)
       return
@@ -690,10 +726,11 @@ async function playCurrent() {
     if (tryNextLine()) return
     showNotice(result?.error || '当前集暂时无法播放')
   } catch {
+    if (!isPlaybackCurrent(seq)) return
     if (tryNextLine()) return
     showNotice('解析播放地址失败')
   } finally {
-    resolving.value = false
+    if (seq === playbackSeq) resolving.value = false
   }
 }
 
@@ -733,7 +770,9 @@ function tryNextLine() {
   lineIdx.value = next.li
   chanIdx.value = next.ci
   showNotice('线路异常，已自动切换')
+  const seq = playbackSeq
   window.setTimeout(() => {
+    if (!isPlaybackCurrent(seq)) return
     retryingLine = false
     playCurrent()
   }, 120)
@@ -778,6 +817,8 @@ async function toggleFollow() {
 }
 
 async function loadVod(id) {
+  const seq = ++loadSeq
+  pageActive = true
   loading.value = true
   stopPlayback()
   vod.value = {}
@@ -790,11 +831,14 @@ async function loadVod(id) {
   epIdx.value = 0
   try {
     const data = await api.vod(id)
+    if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     vod.value = data || {}
     await nextTick()
+    if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     if (user.value) {
       try {
         const state = await api.userVodState(id)
+        if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
         followed.value = Boolean(state?.followed)
         const h = state?.history
         if (h?.lineId && vod.value.lines?.length) {
@@ -811,19 +855,33 @@ async function loadVod(id) {
       } catch {}
     }
     if (vod.value.lines?.length) playCurrent()
-    related.value = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => [])
+    const items = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => [])
+    if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
+    related.value = items
   } catch {
+    if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     showNotice('影片不存在或已下架')
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
 watch(() => route.params.id, (id) => {
   if (id) loadVod(id)
 })
-onMounted(() => loadVod(route.params.id))
+onMounted(() => {
+  pageActive = true
+  loadVod(route.params.id)
+})
+onActivated(() => {
+  pageActive = true
+  if (isPlayRoute() && route.params.id && !curUrl.value && !loading.value) {
+    loadVod(route.params.id)
+  }
+})
 onBeforeUnmount(() => {
+  pageActive = false
+  loadSeq += 1
   stopPlayback()
   resetLandscape()
   if (noticeTimer) clearTimeout(noticeTimer)
@@ -831,6 +889,8 @@ onBeforeUnmount(() => {
   if (controlsTimer) clearTimeout(controlsTimer)
 })
 onDeactivated(() => {
+  pageActive = false
+  loadSeq += 1
   stopPlayback()
   resetLandscape()
 })

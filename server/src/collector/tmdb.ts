@@ -80,6 +80,61 @@ function dice(a: string, b: string) {
   return (2 * hit) / (aa.length + bb.length);
 }
 
+function titleEntries(values: string[], source: "title" | "alias") {
+  return values
+    .flatMap((value) => {
+      const normalized = normalizeName(value);
+      const loose = normalized.replace(/[的之]/g, "");
+      return [normalized, loose];
+    })
+    .filter(Boolean)
+    .map((name) => ({ name, source }));
+}
+
+function parsePeople(value?: string) {
+  return unique(
+    String(value || "")
+      .split(/[，,、/|;；]+/)
+      .map((x) => normalizeName(x))
+      .filter(Boolean)
+  ).slice(0, 12);
+}
+
+function personHit(local: string, remote: string) {
+  if (!local || !remote) return false;
+  return local === remote || local.includes(remote) || remote.includes(local);
+}
+
+function peopleScore(ctx: DoubanMatchContext | undefined, meta: DoubanMeta | null | undefined, reasons: string[]) {
+  if (!ctx || !meta) return 0;
+  let score = 0;
+  const localDirectors = parsePeople(ctx.director);
+  const remoteDirectors = meta.directors.map((x) => normalizeName(x.name)).filter(Boolean);
+  const localActors = parsePeople(ctx.actor);
+  const remoteActors = meta.actors.map((x) => normalizeName(x.name)).filter(Boolean);
+  if (localDirectors.length && remoteDirectors.length) {
+    const matched = localDirectors.filter((l) => remoteDirectors.some((r) => personHit(l, r)));
+    if (matched.length) {
+      score += 28;
+      reasons.push("director_match");
+    } else {
+      score -= 16;
+      reasons.push("director_mismatch");
+    }
+  }
+  if (localActors.length && remoteActors.length) {
+    const matched = localActors.filter((l) => remoteActors.some((r) => personHit(l, r)));
+    if (matched.length) {
+      score += Math.min(18, matched.length * 7);
+      reasons.push(matched.length >= 2 ? "actors_match" : "actor_match");
+    } else {
+      score -= 6;
+      reasons.push("actors_mismatch");
+    }
+  }
+  return score;
+}
+
 function people(rows: any[] = []): DoubanPerson[] {
   return rows.map((row) => ({
     name: String(row?.name || "").trim(),
@@ -128,9 +183,11 @@ export async function tmdbDetail(id: string, creds: TmdbCredentials): Promise<Do
   const title = titleOf(d);
   if (!title) return null;
   const poster = img(d.poster_path);
-  const directors = mediaType === "movie"
-    ? people((d?.credits?.crew || []).filter((x: any) => x?.job === "Director"))
-    : people((d?.created_by || []));
+  const directorRows = [
+    ...(mediaType === "tv" ? (d?.created_by || []) : []),
+    ...(d?.credits?.crew || []).filter((x: any) => x?.job === "Director"),
+  ];
+  const directors = people(directorRows);
   const actors = people((d?.credits?.cast || []).slice(0, 24));
   const backdrops = Array.isArray(d?.images?.backdrops) ? d.images.backdrops : [];
   const posters = Array.isArray(d?.images?.posters) ? d.images.posters : [];
@@ -159,15 +216,44 @@ export async function tmdbDetail(id: string, creds: TmdbCredentials): Promise<Do
 }
 
 function scoreCandidate(suggest: DoubanSuggest, name: string, year = "", ctx?: DoubanMatchContext, meta?: DoubanMeta | null) {
-  const local = normalizeName(name);
-  const names = unique([suggest.title, suggest.sub_title || "", meta?.title || "", ...(meta?.aliases || [])].map(normalizeName));
-  const bestSim = Math.max(0, ...names.map((candidate) => candidate === local ? 1 : dice(local, candidate)));
+  const locals = [
+    ...titleEntries([name], "title"),
+    ...titleEntries(ctx?.aliases || [], "alias"),
+  ];
+  const candidates = [
+    ...titleEntries([suggest.title, suggest.sub_title || "", meta?.title || ""], "title"),
+    ...titleEntries(meta?.aliases || [], "alias"),
+  ];
+  let bestSim = 0;
+  let bestAlias = false;
+  let bestStrongContains = false;
+  for (const local of locals) {
+    for (const candidate of candidates) {
+      let strongContains = false;
+      const sim = candidate.name === local.name
+        ? 1
+        : (candidate.name.includes(local.name) || local.name.includes(candidate.name)
+          ? (() => {
+            const shorter = Math.min(candidate.name.length, local.name.length);
+            const longer = Math.max(candidate.name.length, local.name.length);
+            strongContains = longer > 0 && shorter / longer >= 0.82;
+            return strongContains ? 0.86 : 0.78;
+          })()
+          : dice(local.name, candidate.name));
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestAlias = local.source === "alias" || candidate.source === "alias";
+        bestStrongContains = strongContains;
+      }
+    }
+  }
   let score = 0;
   const reasons: string[] = [];
-  if (bestSim >= 1) { score += 55; reasons.push("title_exact"); }
-  else if (bestSim >= 0.78) { score += 38; reasons.push("title_contains"); }
-  else if (bestSim >= 0.58) { score += 26; reasons.push("title_similar"); }
-  else if (bestSim >= 0.38) { score += 12; reasons.push("title_weak"); }
+  if (bestSim >= 1) { score += 55; reasons.push(bestAlias ? "alias_exact" : "title_exact"); }
+  else if (bestAlias && bestStrongContains) { score += 45; reasons.push("alias_strong_contains"); }
+  else if (bestSim >= 0.78) { score += 38; reasons.push(bestAlias ? "alias_contains" : "title_contains"); }
+  else if (bestSim >= 0.58) { score += 26; reasons.push(bestAlias ? "alias_similar" : "title_similar"); }
+  else if (bestSim >= 0.38) { score += 12; reasons.push(bestAlias ? "alias_weak" : "title_weak"); }
   const y = yearOf(year);
   const cy = yearOf(meta?.year || suggest.year);
   if (y && cy && y === cy) { score += 22; reasons.push("year_match"); }
@@ -176,6 +262,7 @@ function scoreCandidate(suggest: DoubanSuggest, name: string, year = "", ctx?: D
   const localSeries = /剧|动漫|综艺|短剧/.test(ctx?.typeName || "");
   const remoteSeries = /tv/.test(meta?.type || suggest.type || "");
   if ((localSeries && remoteSeries) || (!localSeries && !remoteSeries)) { score += 8; reasons.push("type_match"); }
+  score += peopleScore(ctx, meta, reasons);
   return { score: Math.max(0, Math.min(100, Math.round(score))), bestSim, reasons };
 }
 
