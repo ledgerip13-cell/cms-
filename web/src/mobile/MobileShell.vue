@@ -9,7 +9,7 @@
     }"
   >
     <router-view v-slot="{ Component, route: viewRoute }">
-      <transition name="m-page">
+      <transition name="m-page-none">
         <keep-alive :max="4">
           <component :is="Component" :key="viewRoute.path" />
         </keep-alive>
@@ -172,21 +172,12 @@ onBeforeUnmount(restoreChrome)
   min-height: 100dvh;
   background: #f7f7f8;
 }
-.m-page-enter-active,
-.m-page-leave-active {
-  transition: opacity .12s ease, transform .12s ease;
+.search-shell,
+.play-shell {
+  background: #f7f7f8;
 }
-.m-page-enter-from {
-  opacity: 0;
-  transform: translateY(5px);
-}
-.m-page-leave-to {
-  opacity: 0;
-  transform: translateY(-2px);
-}
-.shorts-shell .m-page-enter-from,
-.shorts-shell .m-page-leave-to {
-  transform: none;
+.shorts-shell {
+  background: #050505;
 }
 .mtab {
   position: fixed;
@@ -230,12 +221,6 @@ onBeforeUnmount(restoreChrome)
 }
 .mtab button.on {
   color: #f04438;
-}
-.shorts-shell {
-  background: #050505;
-}
-.play-shell {
-  background: #f7f7f8;
 }
 .shorts-shell .mtab {
   background: rgba(8, 8, 10, .72);

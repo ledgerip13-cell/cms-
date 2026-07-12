@@ -34,8 +34,8 @@ import { dismissToast, toasts } from '../feedback'
 .toast-item.error .toast-icon { color: #ff7a88; }
 .toast-item.warning .toast-icon { color: #ffd166; }
 .toast-item.info .toast-icon { color: var(--accent); }
-.toast-enter-active, .toast-leave-active { transition: opacity .18s, transform .18s; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-8px); }
+.toast-enter-active, .toast-leave-active { transition: opacity .18s, transform .18s; will-change: transform, opacity; backface-visibility: hidden; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate3d(0, -8px, 0); }
 @media (max-width: 640px) {
   .toast-stack { top: 10px; right: 10px; left: 10px; width: auto; }
 }

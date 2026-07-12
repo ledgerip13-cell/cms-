@@ -825,13 +825,15 @@ onBeforeUnmount(() => {
   padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
   border-radius: 22px 22px 0 0;
   background: #fff;
-  transform: translateY(108%);
+  transform: translate3d(0, 108%, 0);
   transition: transform .16s ease;
+  will-change: transform;
+  backface-visibility: hidden;
   overflow-y: auto;
   box-shadow: 0 -18px 48px rgba(17, 24, 39, .18);
 }
 .mt-filter.open {
-  transform: translateY(0);
+  transform: translate3d(0, 0, 0);
 }
 .mt-filter-head,
 .mt-filter-actions {
