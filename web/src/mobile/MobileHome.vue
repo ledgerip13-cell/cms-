@@ -293,8 +293,7 @@ onBeforeUnmount(() => {
   min-height: 100dvh;
   padding: calc(env(safe-area-inset-top) + 64px) 14px calc(88px + env(safe-area-inset-bottom));
   background:
-    radial-gradient(circle at 22% 0%, rgba(255, 102, 79, .16), transparent 32%),
-    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 260px, #f7f7f8 100%);
+    linear-gradient(180deg, #fff4f1 0%, #f7f7f8 180px, #f7f7f8 100%);
   color: #191a20;
   overscroll-behavior-y: none;
 }
