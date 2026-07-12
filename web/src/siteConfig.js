@@ -382,10 +382,19 @@ export function applySiteTheme(site, page = 'home') {
   const theme = normalizeTheme(site?.theme)
   const c = theme.global
   const root = document.documentElement
+  const app = document.getElementById('app')
   const s = (k, v) => { if (v != null && v !== '') root.style.setProperty(cssVarName(k), v) }
 
   // ── 底板 (可直接消费) ──
   s('bg', c.bg)
+  root.style.background = c.bg
+  root.style.backgroundColor = c.bg
+  document.body.style.background = c.bg
+  document.body.style.backgroundColor = c.bg
+  if (app) {
+    app.style.background = c.bg
+    app.style.backgroundColor = c.bg
+  }
   s('card', c.card)
   s('line', c.border)
   s('line-hi', rgbaColor(c.border, .16))

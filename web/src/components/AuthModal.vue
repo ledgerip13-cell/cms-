@@ -59,13 +59,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { authDialog, closeAuthDialog, safeAuthRedirect } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
 import { setSession } from '../userStore'
 
 const router = useRouter()
+const currentRoute = useRoute()
 const cfg = ref(null)
 const loading = ref(false)
 const serverError = ref('')
@@ -164,6 +165,7 @@ async function submit() {
     notifySuccess(authDialog.mode === 'register' ? '注册成功' : '登录成功')
     const route = nextRoute()
     closeAuthDialog()
+    unlockPageScroll()
     if (route) await router.replace(route)
   } catch (error) {
     const message = apiErrorMessage(error)
@@ -178,40 +180,58 @@ function close() {
   if (!loading.value) closeAuthDialog()
 }
 
+function clearResidualScrollLock(body, html) {
+  const bodyHasAuthLock = body.style.touchAction === 'none' || body.style.overscrollBehavior === 'contain'
+  const htmlHasAuthLock = html.style.touchAction === 'none' || html.style.overscrollBehavior === 'contain'
+  if (bodyHasAuthLock) {
+    if (body.style.overflow === 'hidden') body.style.overflow = ''
+    body.style.touchAction = ''
+    body.style.overscrollBehavior = ''
+  }
+  if (htmlHasAuthLock) {
+    if (html.style.overflow === 'hidden') html.style.overflow = ''
+    html.style.touchAction = ''
+    html.style.overscrollBehavior = ''
+  }
+}
+
 function lockPageScroll() {
   if (typeof window === 'undefined' || scrollLock.active) return
   const body = document.body
   const html = document.documentElement
   scrollLock.scrollY = window.scrollY || html.scrollTop || 0
   scrollLock.body = {
-    position: body.style.position,
-    top: body.style.top,
-    left: body.style.left,
-    right: body.style.right,
-    width: body.style.width,
     overflow: body.style.overflow,
+    touchAction: body.style.touchAction,
+    overscrollBehavior: body.style.overscrollBehavior,
   }
   scrollLock.html = {
     overflow: html.style.overflow,
+    touchAction: html.style.touchAction,
+    overscrollBehavior: html.style.overscrollBehavior,
   }
-  body.style.position = 'fixed'
-  body.style.top = `-${scrollLock.scrollY}px`
-  body.style.left = '0'
-  body.style.right = '0'
-  body.style.width = '100%'
   body.style.overflow = 'hidden'
+  body.style.touchAction = 'none'
+  body.style.overscrollBehavior = 'contain'
   html.style.overflow = 'hidden'
+  html.style.touchAction = 'none'
+  html.style.overscrollBehavior = 'contain'
   scrollLock.active = true
 }
 
-function unlockPageScroll() {
-  if (typeof window === 'undefined' || !scrollLock.active) return
+function unlockPageScroll(force = false) {
+  if (typeof window === 'undefined') return
   const body = document.body
   const html = document.documentElement
+  if (!scrollLock.active) {
+    if (force && !authDialog.open) clearResidualScrollLock(body, html)
+    return
+  }
   Object.assign(body.style, scrollLock.body)
   Object.assign(html.style, scrollLock.html)
   window.scrollTo(0, scrollLock.scrollY)
   scrollLock.active = false
+  if (force && !authDialog.open) clearResidualScrollLock(body, html)
 }
 
 function onPosterError(event) {
@@ -386,7 +406,7 @@ function sameSeries(a, b) {
 
 watch(() => authDialog.open, async (open) => {
   if (!open) {
-    unlockPageScroll()
+    unlockPageScroll(true)
     return
   }
   lockPageScroll()
@@ -394,7 +414,12 @@ watch(() => authDialog.open, async (open) => {
   await Promise.all([loadConfig(), loadPosters()])
 })
 
-onBeforeUnmount(unlockPageScroll)
+watch(() => currentRoute.fullPath, () => {
+  if (authDialog.open) closeAuthDialog()
+  unlockPageScroll(true)
+})
+
+onBeforeUnmount(() => unlockPageScroll(true))
 </script>
 
 <style scoped>

@@ -61,7 +61,7 @@
     <section class="mt-section mt-list-section">
       <div class="mt-section-head">
         <h2>{{ listTitle }}</h2>
-        <button type="button" @click="filterOpen = true">
+        <button type="button" @click="openFilter">
           <svg viewBox="0 0 24 24" v-html="icon('filter')"></svg>
           筛选
         </button>
@@ -90,28 +90,28 @@
       <button v-if="hasMore && !loading" class="mt-more" type="button" @click="loadMore">加载更多</button>
     </section>
 
-    <div v-if="filterOpen" class="mt-filter-mask" @click="filterOpen = false"></div>
+    <div v-if="filterOpen" class="mt-filter-mask" @click="closeFilter"></div>
     <aside class="mt-filter" :class="{ open: filterOpen }">
       <div class="mt-filter-head">
         <h3>筛选影片</h3>
-        <button type="button" aria-label="关闭筛选" @click="filterOpen = false">
+        <button type="button" aria-label="关闭筛选" @click="closeFilter">
           <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
         </button>
       </div>
       <div class="mt-filter-group">
         <label>类型</label>
         <div>
-          <button type="button" :class="{ on: !type }" @click="pickType('', false)">全部</button>
-          <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: type === cat.name }" @click="pickType(cat.name, false)">
+          <button type="button" :class="{ on: !draftType }" @click="setDraftType('')">全部</button>
+          <button v-for="cat in categories" :key="cat.name" type="button" :class="{ on: draftType === cat.name }" @click="setDraftType(cat.name)">
             {{ cat.name }}
           </button>
         </div>
       </div>
-      <div v-if="subtypes.length" class="mt-filter-group">
+      <div v-if="draftSubtypes.length" class="mt-filter-group">
         <label>分类</label>
         <div>
-          <button type="button" :class="{ on: !subtype }" @click="pickSubtype('', false)">全部</button>
-          <button v-for="sub in subtypes.slice(0, 18)" :key="sub.name" type="button" :class="{ on: subtype === sub.name }" @click="pickSubtype(sub.name, false)">
+          <button type="button" :class="{ on: !draftSubtype }" @click="draftSubtype = ''">全部</button>
+          <button v-for="sub in draftSubtypes.slice(0, 18)" :key="sub.name" type="button" :class="{ on: draftSubtype === sub.name }" @click="draftSubtype = sub.name">
             {{ sub.name }}
           </button>
         </div>
@@ -119,8 +119,8 @@
       <div class="mt-filter-group">
         <label>年份</label>
         <div>
-          <button type="button" :class="{ on: !year }" @click="pickYear('')">全部</button>
-          <button v-for="row in years.slice(0, 12)" :key="row.year" type="button" :class="{ on: year === row.year }" @click="pickYear(row.year)">
+          <button type="button" :class="{ on: !draftYear }" @click="draftYear = ''">全部</button>
+          <button v-for="row in years.slice(0, 12)" :key="row.year" type="button" :class="{ on: draftYear === row.year }" @click="draftYear = row.year">
             {{ row.year }}
           </button>
         </div>
@@ -128,7 +128,7 @@
       <div class="mt-filter-group">
         <label>排序</label>
         <div>
-          <button v-for="item in filterSorts" :key="item.value" type="button" :class="{ on: sort === item.value }" @click="pickSort(item.value, false)">
+          <button v-for="item in filterSorts" :key="item.value" type="button" :class="{ on: draftSort === item.value }" @click="draftSort = item.value">
             {{ item.label }}
           </button>
         </div>
@@ -161,6 +161,10 @@ const loading = ref(true)
 const rankLoading = ref(true)
 const filterOpen = ref(false)
 const draftKw = ref('')
+const draftType = ref('')
+const draftSubtype = ref('')
+const draftYear = ref('')
+const draftSort = ref('recent')
 const page = ref(1)
 const hasMore = ref(false)
 const headBg = ref(0)
@@ -173,6 +177,11 @@ const sort = computed(() => String(route.query.sort || 'recent'))
 const year = computed(() => String(route.query.year || ''))
 const kw = computed(() => String(route.query.kw || ''))
 const topSubtypes = computed(() => subtypes.value.slice(0, 8))
+const draftSubtypes = computed(() => {
+  if (!draftType.value || draftType.value === type.value) return subtypes.value
+  const category = categories.value.find(item => item.name === draftType.value)
+  return (category?.children || category?.subtypes || []).map(item => typeof item === 'string' ? { name: item, count: 0 } : item)
+})
 const rankTitle = computed(() => type.value ? `${type.value}热播榜` : '全站热播榜')
 const listTitle = computed(() => {
   if (kw.value) return `搜索“${kw.value}”`
@@ -287,6 +296,29 @@ function pickYear(next) {
   pushQuery({ year: next })
 }
 
+function syncFilterDraft() {
+  draftType.value = type.value
+  draftSubtype.value = subtype.value
+  draftYear.value = year.value
+  draftSort.value = sort.value
+}
+
+function setDraftType(next) {
+  draftType.value = next
+  draftSubtype.value = ''
+  draftYear.value = ''
+}
+
+function closeFilter() {
+  filterOpen.value = false
+  syncFilterDraft()
+}
+
+function openFilter() {
+  syncFilterDraft()
+  filterOpen.value = true
+}
+
 function submitSearch() {
   router.push({ path: '/m/search', query: cleanQuery({ kw: draftKw.value }) })
 }
@@ -296,11 +328,21 @@ function openSearch() {
 }
 
 function resetFilter() {
+  filterOpen.value = false
   router.push('/m/theater')
 }
 
 function applyFilter() {
   filterOpen.value = false
+  router.push({
+    path: '/m/theater',
+    query: cleanQuery({
+      type: draftType.value,
+      sub: draftSubtype.value,
+      year: draftYear.value,
+      sort: draftSort.value === 'recent' ? '' : draftSort.value,
+    }),
+  })
 }
 
 function goPlay(id) {

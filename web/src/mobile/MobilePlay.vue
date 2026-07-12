@@ -77,7 +77,7 @@
             @touchcancel.stop="cancelRangeSeek"
             @mousedown.stop="beginRangeSeek"
             @mouseup.stop="endRangeSeek"
-            @input="seekVideo"
+            @input="previewRangeSeek"
             @click.stop
           />
           <span class="mp-time">{{ formatTime(duration) }}</span>
@@ -268,6 +268,8 @@ function onImgLoad(event) {
 }
 
 function goBack() {
+  stopPlayback()
+  resetLandscape()
   if (window.history.length > 1) router.back()
   else router.push('/m')
 }
@@ -486,11 +488,8 @@ function toggleMuted() {
   showControls()
 }
 
-function seekVideo(event) {
-  const video = videoEl.value
-  if (!video) return
+function previewRangeSeek(event) {
   const next = Number(event?.target?.value) || 0
-  video.currentTime = next
   currentTime.value = next
   seekPreviewTime.value = next
   keepControlsVisible(3600)
@@ -510,6 +509,10 @@ function beginRangeSeek(event) {
 function endRangeSeek(event) {
   event?.stopPropagation?.()
   if (!seeking.value) return
+  const video = videoEl.value
+  if (video && duration.value) {
+    video.currentTime = Math.max(0, Math.min(duration.value, seekPreviewTime.value))
+  }
   seeking.value = false
   suppressTapUntil = Date.now() + 400
   keepControlsVisible(1800)
@@ -544,11 +547,14 @@ function onPlayerTouchMove(e) {
   if (!video || !t || !duration.value) return
   const dx = t.clientX - touchStartX
   const dy = t.clientY - touchStartY
-  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) touchMoved = true
+  const cssRotatedLandscape = playerLandscape.value && !fullscreenPortrait.value && window.matchMedia?.('(orientation: portrait)')?.matches
+  const seekDelta = cssRotatedLandscape ? dy : dx
+  const crossDelta = cssRotatedLandscape ? dx : dy
+  if (Math.abs(seekDelta) > 10 || Math.abs(crossDelta) > 10) touchMoved = true
   // 方向判定：首次位移超 10px 才锁轴，横>竖认为调进度
   if (!touchAxis) {
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return
-    touchAxis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+    if (Math.abs(seekDelta) < 10 && Math.abs(crossDelta) < 10) return
+    touchAxis = Math.abs(seekDelta) > Math.abs(crossDelta) ? 'h' : 'v'
     // 横滑调进度时隐藏菜单：seek 预览与操作菜单不同时出现
     if (touchAxis === 'h') { seeking.value = true; hideControls() }
   }
@@ -557,7 +563,7 @@ function onPlayerTouchMove(e) {
   // 全屏宽度对应整段时长（一屏横滑 = 全片长），最少按 90s 基准避免短片太敏感
   const w = window.innerWidth || 360
   const span = Math.max(duration.value, 90)
-  const next = Math.max(0, Math.min(duration.value, touchBaseTime + (dx / w) * span))
+  const next = Math.max(0, Math.min(duration.value, touchBaseTime + (seekDelta / w) * span))
   seekPreviewTime.value = next
   currentTime.value = next // 实时更新进度条 UI（不动 video.currentTime，避免频繁 seek 卡顿）
 }

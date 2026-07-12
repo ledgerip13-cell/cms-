@@ -1885,11 +1885,13 @@ onBeforeUnmount(() => {
   filter: blur(28px);
   transform: scale(1.12);
   opacity: .48;
+  z-index: 0;
 }
 .ms-poster {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  z-index: 1;
 }
 .ms-video {
   width: 100%;
@@ -1897,6 +1899,7 @@ onBeforeUnmount(() => {
   object-fit: cover;
   opacity: 0;
   background: #000;
+  z-index: 2;
 }
 .ms-video.contain {
   object-fit: contain;
@@ -1906,6 +1909,9 @@ onBeforeUnmount(() => {
 }
 .ms-video.ready {
   opacity: 1;
+}
+.ms-vignette {
+  z-index: 3;
 }
 .ms-prompt-row {
   position: absolute;
@@ -1983,7 +1989,7 @@ onBeforeUnmount(() => {
 .ms-top.full .ms-top-right {
   display: flex;
   flex: 0 0 auto;
-  gap: 0;
+  gap: 2px;
 }
 .ms-episode-title {
   min-width: 0;
@@ -2013,6 +2019,15 @@ onBeforeUnmount(() => {
   background: transparent;
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
+}
+.ms-top.full .ms-top-right button {
+  width: 48px;
+  height: 48px;
+  margin: -7px -5px;
+}
+.ms-top.full .ms-top-right svg {
+  width: 22px;
+  height: 22px;
 }
 .ms-top svg,
 .ms-play svg,
