@@ -20,6 +20,8 @@
         :poster="poster(vod)"
         playsinline
         webkit-playsinline
+        x-webkit-airplay="allow"
+        airplay="allow"
         @play="isPlaying = true"
         @pause="isPlaying = false"
         @volumechange="syncVideoState"
@@ -110,7 +112,7 @@
 
     <section v-if="vod.id" class="mp-info">
       <div class="mp-title-row">
-        <img class="mp-cover" :src="poster(vod)" :alt="vod.name" @error="hideBrokenImg" />
+        <img class="mp-cover m-img-fade" :src="poster(vod)" :alt="vod.name" @load="onImgLoad" @error="hideBrokenImg" />
         <div>
           <h1>{{ vod.name }}</h1>
           <p>
@@ -148,7 +150,7 @@
         <span>{{ gallery.length }} 张</span>
       </header>
       <div class="mp-stills">
-        <img v-for="img in gallery" :key="img.id || img.url" :src="imgUrl(img.url)" :alt="vod.name" loading="lazy" @error="hideBrokenImg" />
+        <img v-for="img in gallery" :key="img.id || img.url" class="m-img-fade" :src="imgUrl(img.url)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="hideBrokenImg" />
       </div>
     </section>
 
@@ -158,7 +160,7 @@
       </header>
       <div class="mp-related">
         <article v-for="item in related" :key="item.id" @click="router.push(`/m/play/${item.id}`)">
-          <img :src="poster(item)" :alt="item.name" loading="lazy" @error="hideBrokenImg" />
+          <img class="m-img-fade" :src="poster(item)" :alt="item.name" loading="lazy" @load="onImgLoad" @error="hideBrokenImg" />
           <strong>{{ item.name }}</strong>
           <span>{{ item.typeName || '影片' }}<template v-if="item.year"> · {{ item.year }}</template></span>
         </article>
@@ -259,6 +261,10 @@ function poster(row) {
 
 function hideBrokenImg(event) {
   if (event?.target) event.target.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 
 function goBack() {
@@ -428,18 +434,24 @@ async function openCast() {
   const video = videoEl.value
   menuOpen.value = false
   showControls()
+  if (!video || mode.value !== 'hls') {
+    showNotice('当前播放源暂不支持 AirPlay')
+    return
+  }
+  video.setAttribute('x-webkit-airplay', 'allow')
+  video.setAttribute('airplay', 'allow')
   try {
     if (video?.webkitShowPlaybackTargetPicker) {
       video.webkitShowPlaybackTargetPicker()
       return
     }
-    if (video?.remote?.prompt) {
+    if (!/iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || '') && video?.remote?.prompt) {
       await video.remote.prompt()
       return
     }
-    showNotice('当前浏览器暂不支持投屏')
+    showNotice('当前浏览器暂不支持 AirPlay')
   } catch {
-    showNotice('投屏未开启')
+    showNotice('AirPlay 未开启')
   }
 }
 
@@ -641,7 +653,14 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
   nextTick(() => {
     const video = videoEl.value
     if (!video || !isPlaybackCurrent(seq)) return
-    if ((kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)) && Hls.isSupported()) {
+    const isM3u8 = kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)
+    const nativeHls = isM3u8 && video.canPlayType('application/vnd.apple.mpegurl')
+    if (nativeHls) {
+      video.src = url
+      try { video.load() } catch {}
+      video.playbackRate = playbackRate.value
+      startVideo(video, seq)
+    } else if (isM3u8 && Hls.isSupported()) {
       const hlsInstance = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
       hls = hlsInstance
       hlsInstance.attachMedia(video)

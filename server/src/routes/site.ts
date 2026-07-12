@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
-import { getIconPng, iconVersionOf, type IconVariant } from "../pwaIcons.js";
+import { getIconPng, getStartupImagePng, iconVersionOf, type IconVariant } from "../pwaIcons.js";
 
 async function ensureSite() {
   const s = await prisma.siteConfig.findUnique({ where: { id: 1 } });
@@ -304,4 +304,23 @@ export default async function siteRoutes(app: FastifyInstance) {
       return reply.send(buf);
     });
   }
+
+  app.get("/api/pwa/startup-:size.png", async (req, reply) => {
+    const site = await ensureSite();
+    const pwa = normalizePwaConfig((site as any).pwaConfig);
+    if (!pwa.enabled) return reply.code(404).send({ error: "pwa disabled" });
+    const match = String((req.params as any)?.size || "").match(/^(\d{3,4})x(\d{3,4})$/);
+    if (!match) return reply.code(400).send({ error: "bad startup size" });
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    const { buf, version } = await getStartupImagePng({ width, height }, pwa.icon, site.logo || "", pwa.backgroundColor);
+    const etag = `"${version}-startup-${width}x${height}-${pwa.backgroundColor}"`;
+    if ((req.headers["if-none-match"] || "") === etag) {
+      return reply.code(304).send();
+    }
+    reply.header("Content-Type", "image/png");
+    reply.header("Cache-Control", "public, max-age=86400");
+    reply.header("ETag", etag);
+    return reply.send(buf);
+  });
 }

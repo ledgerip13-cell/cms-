@@ -8,15 +8,22 @@
       </form>
     </header>
 
-    <section v-if="rankItems.length" class="mt-section">
+    <section v-if="rankLoading || rankItems.length" class="mt-section">
       <div class="mt-section-head">
         <h2>{{ rankTitle }}</h2>
         <button type="button" @click="pickSort('hot')">更多</button>
       </div>
-      <div class="mt-rank">
+      <div v-if="rankLoading && !rankItems.length" class="mt-rank">
+        <article v-for="i in 6" :key="i" class="mt-rank-sk mt-sk">
+          <div></div>
+          <b></b>
+          <p></p>
+        </article>
+      </div>
+      <div v-else class="mt-rank">
         <article v-for="(vod, index) in rankItems" :key="vod.id" @click="goPlay(vod.id)">
           <div class="mt-rank-poster">
-            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <b>{{ index + 1 }}</b>
           </div>
           <strong>{{ vod.name }}</strong>
@@ -59,7 +66,7 @@
           筛选
         </button>
       </div>
-      <div v-if="loading" class="mt-grid">
+      <div v-if="showListSkeleton" class="mt-grid">
         <div v-for="i in 8" :key="i" class="mt-card mt-sk">
           <div></div>
           <b></b>
@@ -73,7 +80,7 @@
       <div v-else class="mt-grid">
         <article v-for="vod in items" :key="vod.id" class="mt-card" @click="goPlay(vod.id)">
           <div class="mt-poster">
-            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span v-if="vod.remarks">{{ vod.remarks }}</span>
           </div>
           <strong>{{ vod.name }}</strong>
@@ -150,7 +157,8 @@ const subtypes = ref([])
 const years = ref([])
 const rankItems = ref([])
 const items = ref([])
-const loading = ref(false)
+const loading = ref(true)
+const rankLoading = ref(true)
 const filterOpen = ref(false)
 const draftKw = ref('')
 const page = ref(1)
@@ -172,6 +180,7 @@ const listTitle = computed(() => {
   if (type.value) return `${type.value}片库`
   return '全部影片'
 })
+const showListSkeleton = computed(() => loading.value && !items.value.length)
 const quickSorts = [
   { value: 'hot', label: '热播', icon: 'hot' },
   { value: 'recent', label: '新片', icon: 'calendar' },
@@ -231,6 +240,10 @@ function poster(vod) {
 function onImgError(event) {
   const img = event?.target
   if (img) img.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 
 function compactCount(value) {
@@ -354,6 +367,7 @@ async function loadRank() {
   const cached = cacheGet(key)
   const requestId = ++rankRequestId
   if (cached) rankItems.value = cached
+  rankLoading.value = !cached && !rankItems.value.length
   try {
     const res = await api.vods(params)
     if (requestId !== rankRequestId || key !== cacheKey('rank', cleanQuery({ page: 1, size: 6, type: type.value, sort: 'hot' }))) return
@@ -362,6 +376,8 @@ async function loadRank() {
     cacheSet(key, data)
   } catch {
     if (!cached) rankItems.value = []
+  } finally {
+    if (requestId === rankRequestId) rankLoading.value = false
   }
 }
 

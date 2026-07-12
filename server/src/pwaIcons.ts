@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 
 export type IconVariant = "192" | "512" | "maskable" | "apple";
+export type StartupImageSize = { width: number; height: number };
 
 type SourceResult = { buf: Buffer; version: string } | null;
 
@@ -140,6 +141,41 @@ export async function getIconPng(
   const cached = renderCache.get(key);
   if (cached) return { buf: cached, version };
   const buf = await renderIcon(variant, src?.buf || null, backgroundHex);
+  renderCache.set(key, buf);
+  pruneCache();
+  return { buf, version };
+}
+
+export async function getStartupImagePng(
+  size: StartupImageSize,
+  icon: string,
+  logo: string,
+  backgroundHex: string,
+): Promise<{ buf: Buffer; version: string }> {
+  const width = Math.max(1, Math.min(4096, Math.floor(Number(size.width) || 0)));
+  const height = Math.max(1, Math.min(4096, Math.floor(Number(size.height) || 0)));
+  const src = await loadIconSource(icon, logo);
+  const version = src?.version || "empty";
+  const key = `${version}:startup:${width}x${height}:${backgroundHex}`;
+  const cached = renderCache.get(key);
+  if (cached) return { buf: cached, version };
+
+  const bg = hexToRgb(backgroundHex);
+  const canvas = sharp({
+    create: { width, height, channels: 4, background: { ...bg, alpha: 1 } },
+  });
+  let buf: Buffer;
+  if (src?.buf) {
+    const markSize = Math.max(96, Math.min(220, Math.round(Math.min(width, height) * 0.18)));
+    const mark = await sharp(src.buf)
+      .resize(markSize, markSize, { fit: "cover" })
+      .flatten({ background: bg })
+      .png()
+      .toBuffer();
+    buf = await canvas.composite([{ input: mark, gravity: "centre" }]).png().toBuffer();
+  } else {
+    buf = await canvas.png().toBuffer();
+  }
   renderCache.set(key, buf);
   pruneCache();
   return { buf, version };

@@ -82,6 +82,22 @@ let previousColorScheme = ''
 let chromeObserver = null
 let chromeSnapshotTaken = false
 
+function isStandalonePwa() {
+  return window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true
+}
+
+function onDocumentEdgeTouchStart(event) {
+  if (!blockEdgeSwipe.value || !isStandalonePwa()) return
+  const touch = event.touches?.[0]
+  if (!touch) return
+  const edgeWidth = 25
+  const width = window.innerWidth || document.documentElement.clientWidth || 0
+  const x = Number(touch.pageX ?? touch.clientX) || 0
+  if (x <= edgeWidth || (width > 0 && x >= width - edgeWidth)) {
+    event.preventDefault()
+  }
+}
+
 function ensureMeta(name) {
   let tag = document.querySelector(`meta[name="${name}"]`)
   if (!tag) {
@@ -104,9 +120,9 @@ function mobileChromeSettings() {
   }
   if (route.path === '/m') {
     return {
-      themeColor: '#ffe1db',
-      appleStatusBar: 'default',
-      htmlBg: '#ffe1db',
+      themeColor: '#fff4f1',
+      appleStatusBar: 'black-translucent',
+      htmlBg: '#fff4f1',
       bodyBg: '#f7f7f8',
       colorScheme: 'light',
     }
@@ -123,7 +139,7 @@ function mobileChromeSettings() {
   if (route.path.startsWith('/m/search') || route.path.startsWith('/m/theater')) {
     return {
       themeColor: '#fff4f1',
-      appleStatusBar: 'default',
+      appleStatusBar: 'black-translucent',
       htmlBg: '#fff4f1',
       bodyBg: '#f7f7f8',
       colorScheme: 'light',
@@ -131,7 +147,7 @@ function mobileChromeSettings() {
   }
   return {
     themeColor: '#fff4f1',
-    appleStatusBar: 'default',
+    appleStatusBar: 'black-translucent',
     htmlBg: '#f7f7f8',
     bodyBg: '#f7f7f8',
     colorScheme: 'light',
@@ -179,6 +195,7 @@ function restoreChrome() {
 
 onMounted(() => {
   applyMobileChrome()
+  document.addEventListener('touchstart', onDocumentEdgeTouchStart, { passive: false, capture: true })
   chromeObserver = new MutationObserver(() => {
     const theme = document.querySelector('meta[name="theme-color"]')
     if (theme?.getAttribute('content') !== mobileChromeSettings().themeColor) applyMobileChrome()
@@ -192,7 +209,10 @@ watch(() => route.path, () => {
   applyMobileChrome()
   window.setTimeout(applyMobileChrome, 0)
 })
-onBeforeUnmount(restoreChrome)
+onBeforeUnmount(() => {
+  document.removeEventListener('touchstart', onDocumentEdgeTouchStart, true)
+  restoreChrome()
+})
 </script>
 
 <style scoped>
@@ -272,7 +292,7 @@ onBeforeUnmount(restoreChrome)
   left: 0;
   right: 0;
   bottom: 0;
-  height: calc(62px + env(safe-area-inset-bottom));
+  min-height: 62px;
   padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
   display: grid;
   grid-template-columns: repeat(4, 1fr);

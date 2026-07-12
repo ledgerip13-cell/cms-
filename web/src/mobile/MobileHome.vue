@@ -15,53 +15,59 @@
     </section>
 
     <div v-if="hero" class="mh-hero-stage">
-      <Transition name="mh-hero-swap">
-        <section
-          :key="hero.id"
-          class="mh-hero"
-          @click="onHeroClick(hero.id)"
-          @touchstart.passive="onHeroTouchStart"
-          @touchend.passive="onHeroTouchEnd"
-        >
-          <img class="mh-hero-img" :src="poster(hero, true)" :alt="hero.name" @error="onImgError($event, poster(hero))" />
-          <div class="mh-hero-shade"></div>
-          <div class="mh-hero-content">
-            <div class="mh-kicker">
-              <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
-              <span>热门推荐</span>
-            </div>
-            <h1>{{ hero.name }}</h1>
-            <p class="mh-meta">
-              <span v-if="hero.typeName">{{ hero.typeName }}</span>
-              <span v-if="hero.year">{{ hero.year }}</span>
-              <span v-if="hero.remarks">{{ hero.remarks }}</span>
-            </p>
-            <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
-            <div class="mh-actions">
-              <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
-                <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-                立即播放
-              </button>
-              <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
-                <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
-                追剧
-              </button>
-            </div>
+      <section
+        class="mh-hero"
+        @click="onHeroClick(hero.id)"
+        @touchstart.passive="onHeroTouchStart"
+        @touchend.passive="onHeroTouchEnd"
+      >
+        <Transition name="mh-hero-img-swap">
+          <img
+            :key="hero.id"
+            class="mh-hero-img m-img-fade"
+            :src="poster(hero, true)"
+            :alt="hero.name"
+            @load="onImgLoad"
+            @error="onImgError($event, poster(hero))"
+          />
+        </Transition>
+        <div class="mh-hero-shade"></div>
+        <div class="mh-hero-content">
+          <div class="mh-kicker">
+            <svg viewBox="0 0 24 24" v-html="icon('hot')"></svg>
+            <span>热门推荐</span>
           </div>
-          <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
-            <div class="mh-hero-dots" aria-label="推荐切换">
-              <button
-                v-for="(item, index) in heroSlides"
-                :key="`hero-dot-${item.id}`"
-                type="button"
-                :class="{ on: index === heroIndex }"
-                :aria-label="`切换到${item.name}`"
-                @click="pickHero(index)"
-              ></button>
-            </div>
+          <h1>{{ hero.name }}</h1>
+          <p class="mh-meta">
+            <span v-if="hero.typeName">{{ hero.typeName }}</span>
+            <span v-if="hero.year">{{ hero.year }}</span>
+            <span v-if="hero.remarks">{{ hero.remarks }}</span>
+          </p>
+          <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
+          <div class="mh-actions">
+            <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
+              <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
+              立即播放
+            </button>
+            <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
+              <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
+              追剧
+            </button>
           </div>
-        </section>
-      </Transition>
+        </div>
+        <div v-if="heroSlides.length > 1" class="mh-hero-controls" @click.stop>
+          <div class="mh-hero-dots" aria-label="推荐切换">
+            <button
+              v-for="(item, index) in heroSlides"
+              :key="`hero-dot-${item.id}`"
+              type="button"
+              :class="{ on: index === heroIndex }"
+              :aria-label="`切换到${item.name}`"
+              @click="pickHero(index)"
+            ></button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <section v-if="historyItems.length" class="mh-section">
@@ -75,7 +81,7 @@
       <div class="mh-continue">
         <article v-for="item in historyItems" :key="item.id || item.vodId" class="mh-history" @click="goPlay(item.vodId || item.vod?.id)">
           <div class="mh-history-cover">
-            <img v-if="item.vod" :src="poster(item.vod)" :alt="item.vod.name" @error="onImgError($event)" />
+            <img v-if="item.vod" class="m-img-fade" :src="poster(item.vod)" :alt="item.vod.name" @load="onImgLoad" @error="onImgError($event)" />
             <div class="mh-progress"><i :style="{ width: historyProgress(item) }"></i></div>
           </div>
           <strong>{{ item.vod?.name || '继续观看' }}</strong>
@@ -95,7 +101,7 @@
       <div class="mh-grid">
         <article v-for="vod in block.items" :key="`${block.key}-${vod.id}`" class="mh-card" @click="goPlay(vod.id)">
           <div class="mh-poster">
-            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span v-if="vod.remarks" class="mh-mark">{{ vod.remarks }}</span>
             <span v-if="vod.rating" class="mh-score">{{ vod.rating }}</span>
           </div>
@@ -157,6 +163,10 @@ function onImgError(event, fallback = '') {
     return
   }
   if (img) img.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 
 function historyProgress(item) {
@@ -368,41 +378,42 @@ onBeforeUnmount(() => {
 .mh-skeleton {
   margin-top: 4px;
 }
-.mh-hero-swap-enter-active,
-.mh-hero-swap-leave-active {
-  transition:
-    opacity .32s ease,
-    transform .32s cubic-bezier(.22, .61, .36, 1);
+.mh-hero-img-swap-enter-active,
+.mh-hero-img-swap-leave-active {
+  transition: opacity .32s ease, transform .32s cubic-bezier(.22, .61, .36, 1);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
 }
-.mh-hero-swap-enter-active {
+.mh-hero-img-swap-enter-active {
   z-index: 2;
 }
-.mh-hero-swap-leave-active {
+.mh-hero-img-swap-leave-active {
   position: absolute;
   z-index: 1;
   inset: 0;
   width: 100%;
   pointer-events: none;
 }
-.mh-hero-swap-enter-from,
-.mh-hero-swap-leave-to {
+.mh-hero-img-swap-enter-from,
+.mh-hero-img-swap-leave-to {
   opacity: 0;
 }
-.hero-next .mh-hero-swap-enter-from {
+.hero-next .mh-hero-img-swap-enter-from {
   transform: translateX(12px);
 }
-.hero-next .mh-hero-swap-leave-to {
+.hero-next .mh-hero-img-swap-leave-to {
   transform: translateX(-8px);
 }
-.hero-prev .mh-hero-swap-enter-from {
+.hero-prev .mh-hero-img-swap-enter-from {
   transform: translateX(-12px);
 }
-.hero-prev .mh-hero-swap-leave-to {
+.hero-prev .mh-hero-img-swap-leave-to {
   transform: translateX(8px);
 }
 .mh-hero-img {
   position: absolute;
   inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -410,27 +421,20 @@ onBeforeUnmount(() => {
 .mh-hero-shade {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
     linear-gradient(90deg, rgba(12, 9, 8, .88) 0%, rgba(12, 9, 8, .56) 44%, rgba(12, 9, 8, .18) 100%),
     linear-gradient(0deg, rgba(12, 9, 8, .82) 0%, transparent 55%);
 }
 .mh-hero-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   min-height: 214px;
   padding: 18px 16px 16px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   color: #fff;
-  transition: opacity .26s ease .08s, transform .26s ease .08s;
-}
-.mh-hero-swap-enter-from .mh-hero-content {
-  opacity: 0;
-  transform: translateX(8px);
-}
-.hero-prev .mh-hero-swap-enter-from .mh-hero-content {
-  transform: translateX(-8px);
 }
 .mh-kicker {
   display: flex;
@@ -504,7 +508,7 @@ onBeforeUnmount(() => {
 }
 .mh-hero-controls {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   right: 12px;
   bottom: 12px;
   height: 22px;

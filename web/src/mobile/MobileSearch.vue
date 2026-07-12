@@ -53,7 +53,7 @@
         <div v-else class="msr-rank-grid">
           <article v-for="(vod, index) in rankItems" :key="vod.id" class="msr-rank-card" @click="goVod(vod)">
             <div class="msr-rank-poster">
-              <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+              <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
               <span class="msr-rank-no">{{ index + 1 }}</span>
               <span class="msr-rank-tag" :class="rankTag(vod).type">{{ rankTag(vod).label }}</span>
             </div>
@@ -86,7 +86,7 @@
         <div v-else class="msr-card-grid">
           <article v-for="vod in resultItems" :key="vod.id" class="msr-card" @click="goVod(vod)">
             <div class="msr-poster">
-              <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+              <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
               <span v-if="vod.remarks">{{ vod.remarks }}</span>
             </div>
             <strong>{{ vod.name }}</strong>
@@ -254,6 +254,10 @@ function poster(vod) {
 function onImgError(event) {
   const img = event?.target
   if (img) img.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 
 function heatValue(vod) {

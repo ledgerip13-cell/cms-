@@ -9,7 +9,7 @@
     >
       <article v-for="(unit, index) in displayUnits" :key="unit.key" class="ms-card">
         <div class="ms-bg" :style="posterStyle(unit)"></div>
-        <img class="ms-poster" :src="poster(unit)" :alt="unit.vod.name" loading="lazy" @error="hideBrokenImg" />
+        <img class="ms-poster m-img-fade" :src="poster(unit)" :alt="unit.vod.name" loading="lazy" @load="onImgLoad" @error="hideBrokenImg" />
         <video
           v-if="isActiveDisplay(index) && playingKey === unit.key && playUrl && !accessBlock"
           ref="videoEl"
@@ -276,7 +276,7 @@
     <aside v-if="episodeDrawerOpen && activeUnit" class="ms-episode-drawer">
       <div class="ms-drag"></div>
       <header class="ms-drawer-head">
-        <img :src="poster(activeUnit)" :alt="activeUnit.vod.name" @error="hideBrokenImg" />
+        <img class="m-img-fade" :src="poster(activeUnit)" :alt="activeUnit.vod.name" @load="onImgLoad" @error="hideBrokenImg" />
         <div>
           <h2>{{ activeUnit.vod.name }}</h2>
           <p>{{ activeUnit.vod.remarks || `共${activeUnit.total || 1}集` }}</p>
@@ -319,7 +319,7 @@
         <div v-else-if="!relatedItems.length" class="ms-related-state">暂无相关推荐</div>
         <div v-else class="ms-related-grid">
           <article v-for="vod in relatedItems" :key="vod.id" @click="openRelated(vod)">
-            <img :src="vodPoster(vod)" :alt="vod.name" @error="hideBrokenImg" />
+            <img class="m-img-fade" :src="vodPoster(vod)" :alt="vod.name" @load="onImgLoad" @error="hideBrokenImg" />
             <strong>{{ vod.name }}</strong>
             <span>{{ vod.typeName || '影片' }}</span>
           </article>
@@ -552,6 +552,10 @@ function intro(unit) {
 
 function hideBrokenImg(event) {
   if (event?.target) event.target.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 
 function buildUnit(item) {

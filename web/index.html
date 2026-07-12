@@ -3,16 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0b0f" />
+  <meta name="theme-color" content="#fff4f1" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="/api/pwa/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/api/pwa/apple-touch-icon.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1170x2532.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1179x2556.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1290x2796.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1284x2778.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1242x2688.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" href="/api/pwa/startup-828x1792.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" href="/api/pwa/startup-1125x2436.png" />
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" href="/api/pwa/startup-750x1334.png" />
   <title></title>
-  <style>html,body,#app{min-height:100%;background:#0a0b0f}</style>
+  <style>
+    html,body,#app{width:100%;min-height:100%;background:#fff4f1}
+    html,body{margin:0;background-color:#fff4f1}
+    body{min-height:100vh;min-height:100dvh}
+  </style>
   <script>
     (function () {
+      var MOBILE_HOME_CHROME = '#fff4f1'
+      var MOBILE_DARK_CHROME = '#050505'
+      var MOBILE_PLAY_CHROME = '#08090d'
       function isPhoneDevice() {
         var ua = navigator.userAgent || ''
         var platform = navigator.platform || ''
@@ -51,6 +66,20 @@
         }
         return '#/m'
       }
+      function mobileChromeColor(route) {
+        var path = route.path || ''
+        if (path.indexOf('/m/shorts') === 0) return MOBILE_DARK_CHROME
+        if (path.indexOf('/m/play') === 0) return MOBILE_PLAY_CHROME
+        return MOBILE_HOME_CHROME
+      }
+      function paintMobileChrome(route) {
+        var color = mobileChromeColor(route || hashRoute())
+        meta('theme-color', color)
+        document.documentElement.style.background = color
+        document.documentElement.style.backgroundColor = color
+        document.body.style.background = color
+        document.body.style.backgroundColor = color
+      }
       function redirectMobile(site) {
         var target = mobileTemplateTarget(site)
         if (!target || target === window.location.hash) return false
@@ -62,7 +91,12 @@
         meta('description', site.description)
         meta('keywords', site.keywords)
         var pwa = site.pwaConfig || {}
-        if (pwa.themeColor) meta('theme-color', pwa.themeColor)
+        var mobileTemplate = site.homeConfig && site.homeConfig.mobileTemplate === 'shortDrama'
+        if (isPhoneDevice() && mobileTemplate) {
+          paintMobileChrome(hashRoute())
+        } else if (pwa.themeColor) {
+          meta('theme-color', pwa.themeColor)
+        }
         var icon = pwa.icon || site.logo
         if (icon) {
           // 仅动态设浏览器 tab 图标；apple-touch-icon 由静态 link 指向服务端端点，避免异步注入不可靠
@@ -85,6 +119,7 @@
         }
         tag.content = content
       }
+      if (isPhoneDevice()) paintMobileChrome(hashRoute())
       try {
         var raw = localStorage.getItem('vcms.site')
         if (raw) {

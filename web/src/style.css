@@ -65,11 +65,69 @@
   --shadow: 0 14px 40px rgba(0,0,0,.5);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { background: var(--bg); color: var(--text); overflow-x: hidden;
+html, body { background: var(--bg); color: var(--text); overflow-x: hidden; overscroll-behavior-x: none;
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased; }
 a { color: inherit; text-decoration: none; }
 img { display: block; }
+.m-img-fade {
+  opacity: 0;
+  transform: translateZ(0) scale(1.018);
+  transition: opacity .22s ease, transform .28s cubic-bezier(.22, .61, .36, 1);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+.m-img-fade.is-loaded {
+  opacity: 1;
+  transform: translateZ(0) scale(1);
+  will-change: auto;
+}
+.mh-hero:has(> img.m-img-fade:not(.is-loaded))::before,
+.mh-history-cover:has(> img.m-img-fade:not(.is-loaded))::before,
+.mh-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mt-rank-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mt-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.msr-rank-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.msr-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mme-watch-cover:has(> img.m-img-fade:not(.is-loaded))::before,
+.mme-card div:has(> img.m-img-fade:not(.is-loaded))::before,
+.mp-stills:has(img.m-img-fade:not(.is-loaded)) img.m-img-fade:not(.is-loaded),
+.mp-related article:has(> img.m-img-fade:not(.is-loaded)) img.m-img-fade:not(.is-loaded),
+.ms-related-grid article:has(> img.m-img-fade:not(.is-loaded)) img.m-img-fade:not(.is-loaded) {
+  background: linear-gradient(90deg, #e8eaee, #f7f7f9, #e8eaee);
+  background-size: 200% 100%;
+  animation: m-img-skel 1.1s linear infinite;
+}
+.mh-hero:has(> img.m-img-fade:not(.is-loaded))::before,
+.mh-history-cover:has(> img.m-img-fade:not(.is-loaded))::before,
+.mh-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mt-rank-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mt-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.msr-rank-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.msr-poster:has(> img.m-img-fade:not(.is-loaded))::before,
+.mme-watch-cover:has(> img.m-img-fade:not(.is-loaded))::before,
+.mme-card div:has(> img.m-img-fade:not(.is-loaded))::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.m-img-fade {
+  position: relative;
+  z-index: 1;
+}
+@keyframes m-img-skel {
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-img-fade {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    will-change: auto;
+  }
+}
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: #262a35; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #333846; }

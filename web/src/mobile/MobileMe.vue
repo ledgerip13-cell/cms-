@@ -60,7 +60,7 @@
       <div v-else class="mme-watch-list">
         <article v-for="item in visibleHistories" :key="item.id || item.vodId" class="mme-watch" @click="goPlay(item.vod?.id || item.vodId)">
           <div class="mme-watch-cover">
-            <img v-if="item.vod" :src="poster(item.vod)" :alt="item.vod.name" loading="lazy" @error="onImgError($event)" />
+            <img v-if="item.vod" class="m-img-fade" :src="poster(item.vod)" :alt="item.vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span>{{ item.epName || `第${Number(item.epIndex || 0) + 1}集` }}</span>
           </div>
           <div>
@@ -82,7 +82,7 @@
       <div v-if="user && visibleFollows.length" class="mme-grid">
         <article v-for="row in visibleFollows" :key="row.id" class="mme-card" @click="goPlay(row.vod?.id)">
           <div>
-            <img v-if="row.vod" :src="poster(row.vod)" :alt="row.vod.name" loading="lazy" @error="onImgError($event)" />
+            <img v-if="row.vod" class="m-img-fade" :src="poster(row.vod)" :alt="row.vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span v-if="row.vod?.remarks">{{ row.vod.remarks }}</span>
           </div>
           <strong>{{ row.vod?.name || '追剧内容' }}</strong>
@@ -103,7 +103,7 @@
       <div class="mme-grid">
         <article v-for="vod in recs.slice(0, 6)" :key="vod.id" class="mme-card" @click="goPlay(vod.id)">
           <div>
-            <img :src="poster(vod)" :alt="vod.name" loading="lazy" @error="onImgError($event)" />
+            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span v-if="vod.rating">{{ vod.rating }}</span>
           </div>
           <strong>{{ vod.name }}</strong>
@@ -155,6 +155,10 @@ function poster(vod) {
 function onImgError(event) {
   const img = event?.target
   if (img) img.style.visibility = 'hidden'
+}
+
+function onImgLoad(event) {
+  event?.target?.classList?.add('is-loaded')
 }
 function progressWidth(item) {
   const progress = Number(item?.progressSec) || 0
