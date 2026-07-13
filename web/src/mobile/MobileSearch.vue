@@ -40,11 +40,11 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M13.5 2.6c.4 2.9 2.7 4.4 4 6.4 1.1 1.6 1.8 3.1 1.8 5.1 0 4.2-3.2 7.3-7.3 7.3s-7.3-3.1-7.3-7.3c0-2.8 1.5-5.2 3.6-6.7-.1 2.1.6 3.5 1.9 4.2.1-3.7 1.5-6.5 3.3-9z"/>
                 </svg>
-                {{ heatValue(vod) }}
+                热度值 {{ heatValue(vod) }}
               </span>
             </div>
             <strong>{{ vod.name }}</strong>
-            <span>{{ vod.typeName || '影片' }}</span>
+            <span>{{ suggestMeta(vod) }}</span>
           </article>
         </div>
       </section>
@@ -278,6 +278,20 @@ function heatValue(vod) {
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
   return String(n)
+}
+
+function episodeTotal(vod) {
+  const direct = Number(vod?.epCount || vod?.episodeCount || vod?.totalEpisodes || vod?.total || vod?._count?.episodes || 0)
+  if (direct > 0) return direct
+  const text = String(vod?.remarks || '')
+  const matched = text.match(/全\s*(\d+)\s*(集|话|期|回)|更新至\s*第?\s*(\d+)\s*(集|话|期|回)/i)
+  return Number(matched?.[1] || matched?.[3] || 0)
+}
+
+function suggestMeta(vod) {
+  const type = vod?.typeName || '影片'
+  const total = episodeTotal(vod)
+  return total ? `${type} · 全${total}集` : type
 }
 
 function isDoneVod(vod) {
@@ -579,7 +593,7 @@ onBeforeUnmount(() => {
 }
 .msr-heat {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   left: 7px;
   bottom: 7px;
   display: inline-flex;
@@ -588,7 +602,7 @@ onBeforeUnmount(() => {
   max-width: calc(100% - 14px);
   color: #fff;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 500;
   line-height: 1;
   text-shadow: 0 1px 4px rgba(0,0,0,.48);
 }
@@ -616,6 +630,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.msr-suggest-cards .msr-heat {
+  display: inline-flex;
+  margin-top: 0;
+  color: #fff;
 }
 .msr-rank-panel {
   margin-top: 20px;
@@ -650,7 +669,7 @@ onBeforeUnmount(() => {
 .msr-rank-tabs button {
   height: 34px;
   padding: 0 4px;
-  color: rgba(33, 6, 6, .6);
+  color: rgba(33, 6, 6, .5);
   font-size: 16px;
 }
 .msr-rank-tabs button.on,

@@ -1,16 +1,19 @@
 <template>
   <div class="hls-wrap">
-    <div class="card">
-      <div class="toolbar">
-        <div>
-          <div class="sec-title">HLS 广告清洗</div>
-          <div class="hint">采集期预清洗，播放时只返回 clean m3u8，TS 仍直连源站。</div>
-        </div>
-        <div class="actions">
-          <el-button :icon="Refresh" @click="load" :loading="loading">刷新</el-button>
-          <el-button type="primary" :icon="Check" @click="saveConfig" :loading="saving">保存配置</el-button>
-        </div>
+    <div class="toolbar">
+      <div>
+        <div class="sec-title">HLS 广告清洗</div>
+        <div class="hint">采集期预清洗，播放时只返回 clean m3u8，TS 仍直连源站。</div>
       </div>
+      <div class="actions">
+        <el-button :icon="Refresh" @click="load" :loading="loading">刷新</el-button>
+        <el-button type="primary" :icon="Check" @click="saveConfig" :loading="saving">保存配置</el-button>
+      </div>
+    </div>
+
+    <el-tabs v-model="htab" class="hls-tabs">
+    <el-tab-pane label="配置与策略" name="config">
+    <div class="card">
 
       <el-form :model="cfg" label-width="132px" class="cfg-form">
         <el-form-item label="总开关">
@@ -51,7 +54,9 @@
         </el-form-item>
       </el-form>
     </div>
+    </el-tab-pane>
 
+    <el-tab-pane label="手动清洗" name="task">
     <div class="card">
       <div class="toolbar">
         <div>
@@ -160,7 +165,9 @@
         </div>
       </el-form>
     </div>
+    </el-tab-pane>
 
+    <el-tab-pane label="源/分类策略" name="policy">
     <div class="card">
       <div class="toolbar">
         <div>
@@ -201,7 +208,9 @@
         </el-tab-pane>
       </el-tabs>
     </div>
+    </el-tab-pane>
 
+    <el-tab-pane label="清洗结果" name="results">
     <div class="card">
       <div class="toolbar">
         <div>
@@ -298,6 +307,8 @@
         />
       </div>
     </div>
+    </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -306,6 +317,7 @@ import { computed, defineComponent, h, onMounted, ref, resolveComponent } from '
 import { Check, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
+const htab = ref('config')
 
 const PolicyMode = defineComponent({
   props: { modelValue: { type: String, default: 'inherit' } },

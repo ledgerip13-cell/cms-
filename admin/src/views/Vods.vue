@@ -633,15 +633,16 @@ async function openCleanAdsDialog(mode, vodId = 0) {
 async function submitCleanAds() {
   cleanSubmitting.value = true
   try {
-    // 收集这些影片下所有线路的 playId
-    const params = { vodIds: cleanTargetIds.value, size: cleanTargetIds.value.length * 20 }
-    const r = await api.adminVods(params)
-    const vods = r.list || []
+    // 逐部查详情(含 plays)，收集所有 playId
     const allPlayIds = []
-    for (const v of vods) {
-      for (const p of (v.plays || [])) {
-        if (p.id) allPlayIds.push(p.id)
-      }
+    for (const vid of cleanTargetIds.value) {
+      try {
+        const vod = await api.vod(vid)
+        for (const line of (vod.lines || [])) {
+          if (line.id) allPlayIds.push(line.id)
+          if (line.channels) for (const ch of line.channels) { if (ch.id) allPlayIds.push(ch.id) }
+        }
+      } catch { /* skip failed fetch */ }
     }
     if (!allPlayIds.length) return ElMessage.error('未找到有效线路')
     await api.hlsCleanTask({
