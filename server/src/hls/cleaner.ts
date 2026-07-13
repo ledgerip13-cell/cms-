@@ -81,6 +81,11 @@ export const HLS_STRATEGIES: HlsStrategy[] = [
     label: "异源广告块指纹",
     description: "识别短时长、异源路径、PTS 重置的广告块，同一广告块出现在中插或尾部都会清洗",
   },
+  {
+    id: "duration_pattern_fingerprint_v1",
+    label: "时长序列指纹",
+    description: "同路径同编码重编码广告：靠 DISCONTINUITY 块内 EXTINF 时长序列指纹识别（段名重复=铁证；跨块高区分度时长前缀复用=同款广告），纯清单解析零额外流量",
+  },
 ];
 
 const DEFAULT_STRATEGY_IDS = ["discontinuity_profile_v1"];
@@ -455,6 +460,124 @@ function detectForeignAdBlockGroups(groups: GroupInfo[], mainPath: string) {
   return ads;
 }
 
+// 时长序列指纹策略：不依赖路径/编码画像差异，纯靠 DISCONTINUITY 块内 EXTINF 时长序列识别
+// 同路径同编码重编码广告（如意源类型）。零额外流量：不 probe、不下载 ts。
+const DUR_SIG_TOL = 0.03;              // 时长比较容差(秒)
+const DUR_SIG_TARGET = 4.0;            // 该类 CDN 常见正片段时长基准
+const DUR_SIG_ANOMALY = 0.30;          // 偏离基准视为“异常值”
+const DUR_SIG_MIN_ANOMALIES = 2;       // 指纹前缀至少含几个异常值才算高区分度
+const DUR_SIG_PREFIX_MIN = 4;          // 指纹前缀最少段数
+const DUR_SIG_BLOCK_MIN_SEG = 3;
+const DUR_SIG_BLOCK_MAX_SEG = 12;
+const DUR_SIG_BLOCK_MIN_DUR = 12;
+const DUR_SIG_BLOCK_MAX_DUR = 45;
+
+function durSigSegName(seg: Segment) {
+  return segmentFileName(seg);
+}
+
+function durSigIsCandidate(g: GroupInfo) {
+  const n = g.segments.length;
+  return n >= DUR_SIG_BLOCK_MIN_SEG && n <= DUR_SIG_BLOCK_MAX_SEG
+    && g.duration >= DUR_SIG_BLOCK_MIN_DUR && g.duration <= DUR_SIG_BLOCK_MAX_DUR;
+}
+
+function durSigDurations(g: GroupInfo) {
+  return g.segments.map((s) => Math.round(s.duration * 100) / 100);
+}
+
+function durSigDistinctive(prefix: number[]) {
+  const anom = prefix.filter((x) => Math.abs(x - DUR_SIG_TARGET) > DUR_SIG_ANOMALY).length;
+  return anom >= DUR_SIG_MIN_ANOMALIES;
+}
+
+function durSigPrefixMatch(seq: number[], prefix: number[]) {
+  if (seq.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) {
+    if (Math.abs(seq[i] - prefix[i]) >= DUR_SIG_TOL) return false;
+  }
+  return true;
+}
+
+function durSigPrefixKey(pref: number[]) {
+  return pref.map((x) => x.toFixed(2)).join(",");
+}
+
+export function parseDurSigPrefix(key: string): number[] {
+  return String(key || "")
+    .split(",")
+    .map((x) => Number(x))
+    .filter((x) => Number.isFinite(x));
+}
+
+// 检测结果：命中广告块 + 本次从“段名重复铁证块”自学到的高区分度指纹（供持久化入库）
+interface DurationPatternResult {
+  ads: Array<{ group: GroupInfo; confidence: number; reasons: string[] }>;
+  learned: Array<{ prefix: number[]; segCount: number }>;
+}
+
+// externalLib: 来自源级指纹库（DB）的已知广告指纹前缀，用于匹配单次插入广告
+function detectDurationPatternAdGroups(groups: GroupInfo[], externalLib: number[][] = []): DurationPatternResult {
+  const ads: Array<{ group: GroupInfo; confidence: number; reasons: string[] }> = [];
+  const byGroupId = new Map<number, { confidence: number; reasons: string[] }>();
+  const learned: Array<{ prefix: number[]; segCount: number }> = [];
+
+  // 全片段名计数（Tier1：同段在清单内重复引用 = 循环插入广告）
+  const nameCount = new Map<string, number>();
+  for (const g of groups) {
+    for (const s of g.segments) {
+      const nm = durSigSegName(s);
+      nameCount.set(nm, (nameCount.get(nm) || 0) + 1);
+    }
+  }
+
+  // 指纹库 = 外部源级库(DB) ∪ 本集自学到的高区分度前缀
+  const lib: number[][] = [];
+  const libKeys = new Set<string>();
+  const addLib = (pref: number[]) => {
+    const key = durSigPrefixKey(pref);
+    if (!libKeys.has(key)) { libKeys.add(key); lib.push(pref); }
+  };
+  for (const p of externalLib) {
+    if (p.length >= DUR_SIG_PREFIX_MIN && durSigDistinctive(p)) addLib(p);
+  }
+
+  // Tier1：候选块内绝大多数段是重复段 → 铁证广告；并抽取高区分度时长前缀，入库+登记为自学指纹
+  for (const g of groups) {
+    if (!durSigIsCandidate(g)) continue;
+    const rep = g.segments.filter((s) => (nameCount.get(durSigSegName(s)) || 0) > 1).length;
+    if (rep >= Math.max(3, g.segments.length - 1)) {
+      byGroupId.set(g.id, { confidence: 95, reasons: ["块内多数段在清单内重复出现（循环插入广告，铁证）"] });
+      const seq = durSigDurations(g);
+      for (let L = DUR_SIG_PREFIX_MIN; L <= seq.length; L++) {
+        const pref = seq.slice(0, L);
+        if (durSigDistinctive(pref)) {
+          if (!libKeys.has(durSigPrefixKey(pref))) learned.push({ prefix: pref, segCount: g.segments.length });
+          addLib(pref);
+          break;
+        }
+      }
+    }
+  }
+
+  // Tier2：用指纹库（含外部源级库）扫全片候选块，覆盖单次插入的同款广告
+  if (lib.length) {
+    for (const g of groups) {
+      if (byGroupId.has(g.id) || !durSigIsCandidate(g)) continue;
+      const seq = durSigDurations(g);
+      if (lib.some((p) => durSigPrefixMatch(seq, p))) {
+        byGroupId.set(g.id, { confidence: 90, reasons: ["时长序列前缀匹配已知广告指纹"] });
+      }
+    }
+  }
+
+  for (const g of groups) {
+    const hit = byGroupId.get(g.id);
+    if (hit) ads.push({ group: g, confidence: hit.confidence, reasons: hit.reasons });
+  }
+  return { ads, learned };
+}
+
 function cleanPlaylist(parsed: ParsedPlaylist, removeGroups: Set<number>, baseUrl: string) {
   const out: string[] = [];
   const push = (line: string) => {
@@ -555,6 +678,7 @@ async function analyzeManifest(
   minConfidence: number,
   strategyIds: string[],
   masterChain: any[] = [],
+  durSigLib: number[][] = [],
 ) {
   const parsed = parsePlaylist(manifestText, manifestUrl);
   if (parsed.isMaster) throw new Error("暂不清洗 master playlist，请清洗具体码率 media playlist");
@@ -566,10 +690,19 @@ async function analyzeManifest(
   const attempts: Array<{ strategyId: string; matched: number; maxConfidence: number }> = [];
   let matchedStrategyId = "";
   let detected: Array<{ group: GroupInfo; confidence: number; reasons: string[] }> = [];
+  let learnedFingerprints: Array<{ prefix: number[]; segCount: number }> = [];
   for (const strategyId of strategyIds) {
-    const raw = strategyId === "foreign_ad_block_fingerprint_v1"
-      ? detectForeignAdBlockGroups(groups, mainPath)
-      : detectProfileAdGroups(groups, mainKey);
+    let raw: Array<{ group: GroupInfo; confidence: number; reasons: string[] }>;
+    if (strategyId === "foreign_ad_block_fingerprint_v1") {
+      raw = detectForeignAdBlockGroups(groups, mainPath);
+    } else if (strategyId === "duration_pattern_fingerprint_v1") {
+      const r = detectDurationPatternAdGroups(groups, durSigLib);
+      raw = r.ads;
+      // 自学指纹无论该策略是否最终命中都应沉淀（下游决定是否入库）
+      learnedFingerprints = r.learned;
+    } else {
+      raw = detectProfileAdGroups(groups, mainKey);
+    }
     const qualified = raw.filter((x) => x.confidence >= minConfidence);
     attempts.push({
       strategyId,
@@ -626,6 +759,7 @@ async function analyzeManifest(
     adRanges,
     evidence,
     confidence: adRanges.reduce((m, r) => Math.max(m, r.confidence), 0),
+    learnedFingerprints,
   };
 }
 
@@ -637,6 +771,33 @@ function rewriteWholePlaylist(parsed: ParsedPlaylist, baseUrl: string) {
   }
   out.push(...parsed.tail);
   return out.join("\n") + "\n";
+}
+
+// 加载源级广告时长指纹库（duration_pattern_fingerprint_v1 自学习用）
+async function loadDurSigLib(sourceId: number): Promise<number[][]> {
+  try {
+    const rows = await prisma.hlsAdFingerprint.findMany({ where: { sourceId }, select: { prefix: true } });
+    return rows.map((r) => parseDurSigPrefix(r.prefix)).filter((p) => p.length >= DUR_SIG_PREFIX_MIN);
+  } catch {
+    return [];
+  }
+}
+
+// 沉淀本次自学到的广告指纹到源级库（存在则 seenCount+1）
+async function persistDurSigLib(sourceId: number, learned: Array<{ prefix: number[]; segCount: number }>) {
+  for (const item of learned) {
+    const prefix = durSigPrefixKey(item.prefix);
+    if (!prefix) continue;
+    try {
+      await prisma.hlsAdFingerprint.upsert({
+        where: { sourceId_prefix: { sourceId, prefix } },
+        update: { seenCount: { increment: 1 }, segCount: item.segCount },
+        create: { sourceId, prefix, segCount: item.segCount, seenCount: 1 },
+      });
+    } catch {
+      // 指纹沉淀失败不影响清洗主流程
+    }
+  }
 }
 
 export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
@@ -681,7 +842,14 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
     const rootManifestText = await fetchTextSafe(resolved.url, ep.url);
     const media = await resolveMediaManifest(resolved.url, rootManifestText, ep.url);
     const m3u8Hash = hashText(`${resolved.url}\n${rootManifestText}\n${media.manifestUrl}\n${media.manifestText}`);
-    const analysis = await analyzeManifest(media.manifestUrl, media.manifestText, minConfidence, strategyIds, media.chain);
+    // duration_pattern 策略：加载源级指纹库（自学习）；其他策略不受影响
+    const useDurSig = strategyIds.includes("duration_pattern_fingerprint_v1");
+    const durSigLib = useDurSig ? await loadDurSigLib(play.sourceId) : [];
+    const analysis = await analyzeManifest(media.manifestUrl, media.manifestText, minConfidence, strategyIds, media.chain, durSigLib);
+    // 沉淀本次自学到的广告指纹到源级库（铁证块才会产生 learned）
+    if (useDurSig && analysis.learnedFingerprints?.length) {
+      await persistDurSigLib(play.sourceId, analysis.learnedFingerprints);
+    }
     const hasAds = analysis.adRanges.length > 0;
     const status = dryRun ? "dry_run" : hasAds ? "clean" : "no_ads";
     return prisma.hlsCleanResult.upsert({

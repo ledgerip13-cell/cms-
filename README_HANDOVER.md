@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-13 (GMT+8)｜**对应提交**：待提交（移动模板筛选/播放器手势修复）
+> **最后更新**：2026-07-13 (GMT+8)｜**对应提交**：待提交（HLS 时长序列指纹清洗策略 + 移动模板修复）
 
 ---
 
@@ -108,7 +108,7 @@ video-cms/
 │       │   └── drivers/        #   源驱动
 │       │
 │       └── hls/                # 【HLS 处理】
-│           ├── cleaner.ts      #   ★(28KB) m3u8 清洗/去广告
+│           ├── cleaner.ts      #   ★(37KB) m3u8 清洗/去广告（3 策略：编码画像/异源路径/时长序列指纹）
 │           └── tsProbe.ts      #   TS 分片探测
 │
 ├── admin/                      # 运营后台(Vue3 + Element Plus)
@@ -122,7 +122,7 @@ video-cms/
 ```
 
 ### Prisma 数据模型（26 个）
-`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `AccessAudit` `Vod` `VodAlias` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
+`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `AccessAudit` `Vod` `VodAlias` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
 
 ---
 
@@ -168,8 +168,10 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-13 HLS 时长序列指纹清洗策略（新增第3策略 + 源级自学习指纹库）断点**：新增第 3 个清洗策略 `duration_pattern_fingerprint_v1`（`server/src/hls/cleaner.ts`），**不动**现有 `discontinuity_profile_v1` / `foreign_ad_block_fingerprint_v1` 两策略。**定因**：如意源（`ryiplay18/ryplay1x` 系）贴片广告与正片**同目录同前缀、同 1920×1080 同编码**，原两策略的准入门槛（路径差异/编码画像差异）全部撞墙 → 广告 100% 漏检（《金特务》1121 号 6 集全被误判 no_ads，实为每集含 1~2 处 21s 赌博贴片）。**判据**：纯解析 m3u8 文本（EXTINF 时长序列 + DISCONTINUITY 分块 + 段名重复），**零额外流量**（不 probe、不下载 ts）。两级：①Tier1 铁证——块内多数段在清单内**重复引用**（循环插入广告）→ conf95，并抽取该块**高区分度时长前缀**（前缀含 ≥2 个偏离 4.00s 基准的异常值，如 `4.00,5.48,4.00,3.24`）自学入库；②Tier2——用**源级指纹库**扫全片候选块，命中单次插入的同款广告 → conf90。**源级自学习**：新增独立表 `HlsAdFingerprint(sourceId, prefix, segCount, seenCount)`，`runHlsCleanForEpisode` 清洗前 `loadDurSigLib(sourceId)` 载入、清洗后 `persistDurSigLib` 沉淀铁证块指纹；同源跨片复用（同一条广告在整源内时长指纹恒定）。**误杀防线**：前缀区分度门槛（杜绝 `4,4,4` 通用序列入库）+ 块形态门槛（3~12 段、12~45s）+ 保留 30% 安全阀 + `minConfidence` 门槛。**验证**：①离线 6 集逐段指纹比对；②容器内**真实** `runHlsCleanForEpisode` 端到端（走完整 DB 链路）：第5集 Tier1 自学入库→第4/1集靠库 conf90 命中，全片 10 处广告位精确命中、正片 0 误杀；③跨片验证 5 部同源片（蓝海/风险社会/至死不渝/度假季/疾患）命中位置均为典型广告位、风险社会指纹+段名重复双确认。已 `pnpm --dir server build`、`prisma db push`、`git diff --check`、`docker compose up -d --build server` 通过；全局默认策略链已追加该策略（`HlsCleanConfig.defaultStrategy = discontinuity_profile_v1,foreign_ad_block_fingerprint_v1,duration_pattern_fingerprint_v1`）。⚠️ **接班切入点**：一个指纹只覆盖“同一条广告”，覆盖率随清洗量自增长（源内出现循环插入实例即自动扩库）；已清洗过的旧结果需**重扫一次**才会用上新策略/新指纹（旧 `HlsCleanResult.strategyId` 不含新策略）。如需对存量批量补扫，走后台 HLS 清洗任务重新排队即可。
+
 **代码状态**：移动模板筛选/播放器手势修复待提交｜上一代码提交：`fix: polish mobile pwa experience`
-**运行状态**：4 容器全在线（postgres healthy / server·web 已于 2026-07-13 通过 `docker compose up -d --build web` 重建，admin 未重建）
+**运行状态**：4 容器全在线（postgres healthy / server 已于 2026-07-13 通过 `docker compose up -d --build server` 重建上线 HLS 第3策略 / web 已重建，admin 未重建）
 
 ### 🟢 100% 已完成
 - **后端全链路 API**：采集源管理、采集任务引擎(taskRunner)+ 定时调度、MacCMS 适配、元数据补全（豆瓣/TMDB）、分类/去重、**HLS 清洗去广告**、播放解析(resolve)+代理(hlsProxy/playProxy)。

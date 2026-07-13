@@ -173,6 +173,22 @@ model HlsCleanResult {
   @@index([playId, sourceUrlHash, status, checkedAt])
 }
 
+// HLS 源级广告时长指纹库（duration_pattern_fingerprint_v1 专用，自学习）
+// 同一条广告在同一采集源内跨片复用，时长序列前缀恒定；
+// 从“段名重复循环插入”铁证块学到指纹后入库，供单次插入广告块匹配。
+model HlsAdFingerprint {
+  id        Int      @id @default(autoincrement())
+  sourceId  Int
+  prefix    String // 时长序列前缀，如 "4.00,5.48,4.00,3.24"
+  segCount  Int      @default(0) // 学到时样本块的段数（参考）
+  seenCount Int      @default(1) // 被多少个铁证实例印证（越高越可信）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sourceId, prefix])
+  @@index([sourceId])
+}
+
 // 后台用户
 model User {
   id        Int       @id @default(autoincrement())
