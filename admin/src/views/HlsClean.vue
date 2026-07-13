@@ -235,21 +235,31 @@
           <template #default="{ row }">
             <div class="ep-detail" v-loading="row._loading">
               <el-table :data="row._episodes || []" size="small" stripe>
-                <el-table-column prop="epName" label="集数" width="120" show-overflow-tooltip />
-                <el-table-column label="策略" min-width="220" show-overflow-tooltip>
-                  <template #default="{ row: e }">{{ strategyChainLabel(e.strategyId) }}</template>
+                <el-table-column prop="epName" label="集数" width="110" show-overflow-tooltip />
+                <el-table-column label="命中策略" min-width="170" show-overflow-tooltip>
+                  <template #default="{ row: e }">
+                    <el-tag v-if="e.status==='clean' && e.evidence?.matchedStrategy" size="small" type="success">{{ matchedStrategyLabel(e) }}</el-tag>
+                    <span v-else class="muted">{{ matchedStrategyLabel(e) }}</span>
+                  </template>
                 </el-table-column>
-                <el-table-column label="状态" width="90">
+                <el-table-column label="状态" width="84">
                   <template #default="{ row: e }"><el-tag size="small" :type="statusType(e.status)">{{ e.status }}</el-tag></template>
                 </el-table-column>
-                <el-table-column prop="confidence" label="置信度" width="80" />
-                <el-table-column label="广告段" min-width="160">
+                <el-table-column prop="confidence" label="置信" width="66" />
+                <el-table-column label="广告位置" min-width="280">
                   <template #default="{ row: e }">
-                    <span v-if="e.adRanges?.length">{{ e.adRanges.map(r => `${r.start}-${r.end}s`).join(' / ') }}</span>
+                    <div v-if="adRangeLines(e).length" class="ad-ranges">
+                      <div v-for="(a, i) in adRangeLines(e)" :key="i" class="ad-range-item">
+                        <el-tag size="small" type="danger" effect="plain">{{ a.range }}</el-tag>
+                        <span class="ad-dur">{{ a.dur }}</span>
+                        <span class="ad-conf">置信{{ a.conf }}</span>
+                        <span v-if="a.reason" class="ad-reason" :title="a.reason">{{ a.reason }}</span>
+                      </div>
+                    </div>
                     <span v-else class="muted">—</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="时间" width="160">
+                <el-table-column label="时间" width="150">
                   <template #default="{ row: e }">{{ fmt(e.checkedAt) }}</template>
                 </el-table-column>
               </el-table>
@@ -389,6 +399,40 @@ function strategyChainLabel(value) {
   const map = new Map(strategies.value.map(s => [s.id, s.label]))
   const ids = normalizeStrategyIds(value, [])
   return ids.length ? ids.map(id => map.get(id) || id).join(' → ') : '继承全局'
+}
+
+// 单个策略 id → 中文名
+function strategyLabel(id) {
+  if (!id) return ''
+  const map = new Map(strategies.value.map(s => [s.id, s.label]))
+  return map.get(id) || id
+}
+
+// 实际命中策略：优先用 evidence.matchedStrategy（真正产生广告判定的那个策略）
+function matchedStrategyLabel(e) {
+  const m = e?.evidence?.matchedStrategy
+  if (m) return strategyLabel(m)
+  // 无命中（no_ads/failed）时展示试过的策略链
+  return e?.status === 'clean' ? (strategyLabel(e?.strategyId) || '—') : '—'
+}
+
+// 秒 → mm:ss
+function secToClock(s) {
+  const n = Math.max(0, Math.floor(Number(s) || 0))
+  const m = Math.floor(n / 60)
+  const ss = String(n % 60).padStart(2, '0')
+  return `${m}:${ss}`
+}
+
+// 广告段汇总行：起止(mm:ss) · 时长 · 置信 · 原因
+function adRangeLines(e) {
+  if (!Array.isArray(e?.adRanges) || !e.adRanges.length) return []
+  return e.adRanges.map(r => ({
+    range: `${secToClock(r.start)}~${secToClock(r.end)}`,
+    dur: `${Math.round(r.duration || (r.end - r.start))}s`,
+    conf: r.confidence,
+    reason: r.reason || '',
+  }))
 }
 
 async function load() {
@@ -605,6 +649,11 @@ onMounted(() => { load(); loadResults(1) })
 .result-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .result-pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 .ep-detail { padding: 8px 16px; }
+.ad-ranges { display: flex; flex-direction: column; gap: 4px; }
+.ad-range-item { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; line-height: 1.4; }
+.ad-range-item .ad-dur { color: var(--text-2); font-size: 12px; }
+.ad-range-item .ad-conf { color: #e6a23c; font-size: 12px; }
+.ad-range-item .ad-reason { color: var(--text-3); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vod-option { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .vod-option em { color: var(--text-3); font-style: normal; font-size: 12px; white-space: nowrap; }
 .line-panel { margin: -2px 0 18px 90px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
