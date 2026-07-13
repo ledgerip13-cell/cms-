@@ -107,6 +107,7 @@ export const api = {
   deleteHlsCleanPolicy: (id) => http.delete(`/admin/hls-clean/policy/${id}`),
   createHlsCleanTask: (d) => http.post('/admin/hls-clean/tasks', d),
   hlsCleanResults: (params) => http.get('/admin/hls-clean/results', { params }),
+  hlsCleanTask: (d) => http.post('/admin/hls-clean/tasks', d),
   // users
   adminUsers: (params) => http.get('/admin/users', { params }),
   adminUser: (id) => http.get(`/admin/users/${id}`),

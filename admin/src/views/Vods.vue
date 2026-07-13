@@ -80,6 +80,7 @@
       <span>已选 {{ selected.length }} 项</span>
       <el-button size="small" type="primary" plain @click="batchMetaMatch">批量匹配元数据</el-button>
       <el-button size="small" type="primary" :disabled="selected.length < 2" @click="openMergeDlg">合并片源</el-button>
+      <el-button size="small" @click="openCleanAdsDialog('batch')" :icon="VideoPlay">清洗广告</el-button>
       <el-button size="small" type="warning" @click="batchAction('offline')">批量下架</el-button>
       <el-button size="small" type="success" @click="batchAction('online')">批量上架</el-button>
       <el-button size="small" type="danger" @click="batchAction('delete')">批量删除</el-button>
@@ -135,6 +136,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
                   <el-dropdown-item command="refresh" :disabled="row._refreshing">采集更新</el-dropdown-item>
+                  <el-dropdown-item command="clean">清洗广告</el-dropdown-item>
                   <el-dropdown-item command="status" divided>{{ row.status==='online'?'下架':'上架' }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -508,11 +510,34 @@
       <el-button v-if="diag.result?.url" type="primary" @click="openUrl(diag.result.url)">新窗口打开</el-button>
     </template>
   </el-dialog>
+
+  <!-- 清洗广告对话框 -->
+  <el-dialog v-model="cleanDlg" :title="cleanDlgTitle" width="520">
+    <el-form label-width="80px">
+      <el-form-item label="清洗策略">
+        <el-select v-model="cleanForm.strategyIds" multiple collapse-tags collapse-tags-tooltip placeholder="空 = 默认策略链" style="width:100%">
+          <el-option v-for="s in cleanStrategies" :key="s.id" :label="s.label" :value="s.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="集数">
+        <el-radio-group v-model="cleanForm.epMode">
+          <el-radio label="all">全部集</el-radio>
+          <el-radio label="first">仅第1集</el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
+    <el-alert type="info" :closable="false" style="margin-bottom:0"
+      title="清洗在后台排队执行，完成后可在「播放治理」查看结果。" />
+    <template #footer>
+      <el-button @click="cleanDlg=false">取消</el-button>
+      <el-button type="primary" :loading="cleanSubmitting" @click="submitCleanAds">提交清洗（{{ cleanTargetCount }} 部片）</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
 import { computed, ref, reactive, onMounted, watch } from 'vue'
-import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus, MoreFilled } from '@element-plus/icons-vue'
+import { Search, MagicStick, StarFilled, EditPen, Refresh, CollectionTag, Plus, MoreFilled, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
@@ -590,6 +615,47 @@ const vodMenuOpenedAt = ref({})
 const diagOpen = ref(false)
 const diag = ref({ loading: false, line: null, ep: null, epIndex: 0, result: null, probe: '' })
 const cleanupDlg = ref(false)
+
+// 清洗广告
+const cleanDlg = ref(false); const cleanForm = reactive({ strategyIds: [], epMode: 'all' }); const cleanSubmitting = ref(false)
+const cleanMode = ref('batch'); const cleanTargetIds = ref([]); const cleanStrategies = ref([])
+const cleanDlgTitle = computed(() => `清洗广告${cleanMode.value === 'batch' ? '（批量）' : ''}`)
+const cleanTargetCount = computed(() => cleanMode.value === 'batch' ? cleanTargetIds.value.length : 1)
+function loadCleanStrategies() {
+  api.hlsCleanOverview().then(o => { cleanStrategies.value = o.strategies || [] }).catch(() => {})
+}
+async function openCleanAdsDialog(mode, vodId = 0) {
+  cleanMode.value = mode; cleanForm.strategyIds = []; cleanForm.epMode = 'all';
+  cleanTargetIds.value = mode === 'batch' ? selected.value.map(r => r.id) : (vodId ? [vodId] : []);
+  if (!cleanTargetIds.value.length && mode === 'batch') return ElMessage.warning('请先勾选影片')
+  loadCleanStrategies(); cleanDlg.value = true
+}
+async function submitCleanAds() {
+  cleanSubmitting.value = true
+  try {
+    // 收集这些影片下所有线路的 playId
+    const params = { vodIds: cleanTargetIds.value, size: cleanTargetIds.value.length * 20 }
+    const r = await api.adminVods(params)
+    const vods = r.list || []
+    const allPlayIds = []
+    for (const v of vods) {
+      for (const p of (v.plays || [])) {
+        if (p.id) allPlayIds.push(p.id)
+      }
+    }
+    if (!allPlayIds.length) return ElMessage.error('未找到有效线路')
+    await api.hlsCleanTask({
+      playIds: allPlayIds,
+      rangeMode: 'vod',
+      episodeMode: cleanForm.epMode,
+      strategyIds: cleanForm.strategyIds?.length ? cleanForm.strategyIds : undefined,
+      limit: 5000,
+    })
+    ElMessage.success(`已提交清洗任务：${allPlayIds.length} 条线路`)
+    cleanDlg.value = false
+  } catch (e) { ElMessage.error(e?.response?.data?.error || e.message || '提交失败') }
+  finally { cleanSubmitting.value = false }
+}
 const cleanupLoading = ref(false)
 const cleanupPreview = ref(null)
 const cleanupExcludedIds = ref(new Set())
@@ -854,6 +920,7 @@ function handleVodCommand(cmd, row) {
   if (Date.now() - openedAt < 250) return
   if (cmd === 'edit') return openEdit(row)
   if (cmd === 'refresh') return refreshOne(row)
+  if (cmd === 'clean') return openCleanAdsDialog('single', row.id)
   if (cmd === 'status') return toggleStatus(row)
 }
 function noteVodMenuVisibility(row, visible) {
