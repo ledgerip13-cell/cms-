@@ -215,13 +215,13 @@
       <div class="toolbar">
         <div>
           <div class="sec-title">清洗结果（按影片+源聚合）</div>
-          <div class="hint">clean 可用于播放；dry_run / failed / no_ads 不会替换原始源。点展开看逐集明细。</div>
+          <div class="hint">已清洗（clean）可用于播放；仅检测/无广告/失败不会替换原始源。点展开看逐集明细。</div>
         </div>
         <div class="stat-line">
-          <el-tag type="success">clean {{ stats.clean || 0 }}</el-tag>
-          <el-tag>no_ads {{ stats.no_ads || 0 }}</el-tag>
-          <el-tag type="warning">dry_run {{ stats.dry_run || 0 }}</el-tag>
-          <el-tag type="danger">failed {{ stats.failed || 0 }}</el-tag>
+          <el-tag type="success">已清洗 {{ stats.clean || 0 }}</el-tag>
+          <el-tag>无广告 {{ stats.no_ads || 0 }}</el-tag>
+          <el-tag type="warning">仅检测 {{ stats.dry_run || 0 }}</el-tag>
+          <el-tag type="danger">失败 {{ stats.failed || 0 }}</el-tag>
         </div>
       </div>
       <div class="result-filters">
@@ -230,11 +230,11 @@
           <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
         <el-select v-model="resultFilter.status" clearable placeholder="全部状态" style="width:140px" @change="loadResults(1)">
-          <el-option label="clean" value="clean" />
-          <el-option label="no_ads" value="no_ads" />
-          <el-option label="dry_run" value="dry_run" />
-          <el-option label="failed" value="failed" />
-          <el-option label="uncertain" value="uncertain" />
+          <el-option label="已清洗" value="clean" />
+          <el-option label="无广告" value="no_ads" />
+          <el-option label="仅检测" value="dry_run" />
+          <el-option label="失败" value="failed" />
+          <el-option label="待定" value="uncertain" />
         </el-select>
         <el-button :icon="Refresh" @click="loadResults(1)">刷新</el-button>
         <span class="muted">共 {{ resultTotal }} 条线路</span>
@@ -252,7 +252,7 @@
                   </template>
                 </el-table-column>
                 <el-table-column label="状态" width="84">
-                  <template #default="{ row: e }"><el-tag size="small" :type="statusType(e.status)">{{ e.status }}</el-tag></template>
+                  <template #default="{ row: e }"><el-tag size="small" :type="statusType(e.status)">{{ statusLabel(e.status) }}</el-tag></template>
                 </el-table-column>
                 <el-table-column prop="confidence" label="置信" width="66" />
                 <el-table-column label="广告位置" min-width="280">
@@ -286,11 +286,11 @@
         <el-table-column prop="episodes" label="集数" width="80" />
         <el-table-column label="清洗分布" min-width="200">
           <template #default="{ row }">
-            <el-tag v-if="row.statusCounts.clean" size="small" type="success">clean {{ row.statusCounts.clean }}</el-tag>
-            <el-tag v-if="row.statusCounts.no_ads" size="small" style="margin-left:4px">no_ads {{ row.statusCounts.no_ads }}</el-tag>
-            <el-tag v-if="row.statusCounts.dry_run" size="small" type="warning" style="margin-left:4px">dry_run {{ row.statusCounts.dry_run }}</el-tag>
-            <el-tag v-if="row.statusCounts.failed" size="small" type="danger" style="margin-left:4px">failed {{ row.statusCounts.failed }}</el-tag>
-            <el-tag v-if="row.statusCounts.uncertain" size="small" type="info" style="margin-left:4px">uncertain {{ row.statusCounts.uncertain }}</el-tag>
+            <el-tag v-if="row.statusCounts.clean" size="small" type="success">已清洗 {{ row.statusCounts.clean }}</el-tag>
+            <el-tag v-if="row.statusCounts.no_ads" size="small" style="margin-left:4px">无广告 {{ row.statusCounts.no_ads }}</el-tag>
+            <el-tag v-if="row.statusCounts.dry_run" size="small" type="warning" style="margin-left:4px">仅检测 {{ row.statusCounts.dry_run }}</el-tag>
+            <el-tag v-if="row.statusCounts.failed" size="small" type="danger" style="margin-left:4px">失败 {{ row.statusCounts.failed }}</el-tag>
+            <el-tag v-if="row.statusCounts.uncertain" size="small" type="info" style="margin-left:4px">待定 {{ row.statusCounts.uncertain }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="最近清洗" width="160">
@@ -384,6 +384,7 @@ const categoryRows = computed(() => categories.value.map(c => {
 
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 const statusType = (s) => ({ clean: 'success', failed: 'danger', dry_run: 'warning', no_ads: 'info' }[s] || 'info')
+const statusLabel = (s) => ({ clean: '已清洗', no_ads: '无广告', dry_run: '仅检测', failed: '失败', uncertain: '待定', pending: '待处理' }[s] || s)
 const vodLabel = (v) => `${v.name} #${v.id}${v.year ? ' · ' + v.year : ''}`
 const confidenceAdvice = computed(() => {
   const n = Number(cfg.value.minConfidence) || 0
