@@ -34,7 +34,15 @@
         </div>
         <div class="msr-suggest-cards">
           <article v-for="vod in suggestItems" :key="vod.id" @click="goVod(vod)">
-            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
+            <div class="msr-suggest-poster">
+              <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
+              <span v-if="heatValue(vod)" class="msr-heat">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M13.5 2.6c.4 2.9 2.7 4.4 4 6.4 1.1 1.6 1.8 3.1 1.8 5.1 0 4.2-3.2 7.3-7.3 7.3s-7.3-3.1-7.3-7.3c0-2.8 1.5-5.2 3.6-6.7-.1 2.1.6 3.5 1.9 4.2.1-3.7 1.5-6.5 3.3-9z"/>
+                </svg>
+                {{ heatValue(vod) }}
+              </span>
+            </div>
             <strong>{{ vod.name }}</strong>
             <span>{{ vod.typeName || '影片' }}</span>
           </article>
@@ -516,7 +524,7 @@ onBeforeUnmount(() => {
 .msr-word-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
+  gap: 0;
 }
 .msr-word-grid button {
   min-width: 0;
@@ -544,13 +552,50 @@ onBeforeUnmount(() => {
   min-width: 0;
   touch-action: manipulation;
 }
+.msr-suggest-poster {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #e7e9ee;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
+}
+.msr-suggest-poster::after,
+.msr-rank-poster::after,
+.msr-poster::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36%;
+  background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.34));
+  pointer-events: none;
+}
 .msr-suggest-cards img {
   width: 100%;
   aspect-ratio: 3 / 4.1;
-  border-radius: 12px;
   object-fit: cover;
-  background: #e7e9ee;
-  box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
+}
+.msr-heat {
+  position: absolute;
+  z-index: 3;
+  left: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 14px);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(0,0,0,.48);
+}
+.msr-heat svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
 }
 .msr-suggest-cards strong {
   display: -webkit-box;
@@ -574,8 +619,10 @@ onBeforeUnmount(() => {
 }
 .msr-rank-panel {
   margin-top: 20px;
-  padding: 12px;
-  border-radius: 18px;
+  margin-left: -14px;
+  margin-right: -14px;
+  padding: 12px 14px;
+  border-radius: 12px;
   background:
     linear-gradient(180deg, rgba(255, 238, 231, .95), rgba(255, 255, 255, .96)),
     #fff;
@@ -603,6 +650,7 @@ onBeforeUnmount(() => {
 .msr-rank-tabs button {
   height: 34px;
   padding: 0 4px;
+  color: rgba(33, 6, 6, .6);
   font-size: 16px;
 }
 .msr-rank-tabs button.on,
@@ -635,6 +683,7 @@ onBeforeUnmount(() => {
 .msr-rank-tag,
 .msr-poster span {
   position: absolute;
+  z-index: 3;
   color: #fff;
   font-weight: 900;
 }
