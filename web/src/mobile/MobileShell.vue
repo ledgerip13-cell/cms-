@@ -143,7 +143,7 @@ function mobileChromeSettings() {
       themeColor: '#fff4f1',
       appleStatusBar: 'black-translucent',
       htmlBg: '#fff4f1',
-      bodyBg: '#f7f7f8',
+      bodyBg: route.path.startsWith('/m/search') ? '#fffefe' : '#f7f7f8',
       colorScheme: 'light',
     }
   }
@@ -232,6 +232,9 @@ onBeforeUnmount(() => {
 .search-shell,
 .play-shell {
   background: #f7f7f8;
+}
+.search-shell {
+  background: #fffefe;
 }
 .shorts-shell {
   background: #050505;

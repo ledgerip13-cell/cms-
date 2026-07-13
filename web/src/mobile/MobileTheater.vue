@@ -559,6 +559,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #1f232b;
   font-size: 14px;
+  font-weight: 500;
 }
 .mt button:focus-visible,
 .mt input:focus-visible {

@@ -25,15 +25,19 @@
         </div>
       </section>
 
-      <section class="msr-section">
+      <section v-if="suggestItems.length" class="msr-section">
         <div class="msr-section-head">
           <h2>猜你想搜</h2>
           <button type="button" aria-label="换一批" @click="refreshSuggest">
             <svg viewBox="0 0 24 24" v-html="icon('refresh')"></svg>
           </button>
         </div>
-        <div class="msr-word-grid msr-suggest-grid">
-          <button v-for="word in suggestWords" :key="word" type="button" @click="pickWord(word)">{{ word }}</button>
+        <div class="msr-suggest-cards">
+          <article v-for="vod in suggestItems" :key="vod.id" @click="goVod(vod)">
+            <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
+            <strong>{{ vod.name }}</strong>
+            <span>{{ vod.typeName || '影片' }}</span>
+          </article>
         </div>
       </section>
 
@@ -116,7 +120,7 @@ const router = useRouter()
 const inputEl = ref(null)
 const draftKw = ref('')
 const historyWords = ref([])
-const baseSuggestWords = ref([])
+const baseSuggestItems = ref([])
 const suggestOffset = ref(0)
 const rankTab = ref('hot')
 const rankItems = ref([])
@@ -148,10 +152,11 @@ const resultTabs = [
 ]
 
 const activeKw = computed(() => String(route.query.kw || '').trim())
-const suggestWords = computed(() => {
-  const words = uniqueWords([...baseSuggestWords.value, '热门短剧', '动漫', '电影', '电视剧', '热播', '上新'])
-  const start = Math.min(suggestOffset.value, Math.max(0, words.length - 1))
-  return [...words.slice(start), ...words.slice(0, start)].slice(0, 4)
+const suggestItems = computed(() => {
+  const items = baseSuggestItems.value.filter(vod => vod?.id && vod?.name)
+  if (!items.length) return []
+  const start = Math.min(suggestOffset.value, Math.max(0, items.length - 1))
+  return [...items.slice(start), ...items.slice(0, start)].slice(0, 3)
 })
 
 function uniqueWords(words) {
@@ -180,8 +185,8 @@ function clearHistory() {
 }
 
 function refreshSuggest() {
-  const len = Math.max(1, baseSuggestWords.value.length)
-  suggestOffset.value = (suggestOffset.value + 4) % len
+  const len = Math.max(1, baseSuggestItems.value.length)
+  suggestOffset.value = (suggestOffset.value + 3) % len
 }
 
 function clearDraft() {
@@ -285,9 +290,9 @@ function rankTag(vod) {
 async function loadSuggest() {
   try {
     const hot = await api.hot(14)
-    baseSuggestWords.value = uniqueWords((hot || []).map(v => v.name))
+    baseSuggestItems.value = Array.isArray(hot) ? hot.filter(vod => vod?.id && vod?.name) : []
   } catch {
-    baseSuggestWords.value = []
+    baseSuggestItems.value = []
   }
 }
 
@@ -395,7 +400,7 @@ onBeforeUnmount(() => {
 .msearch {
   min-height: 100dvh;
   padding: calc(env(safe-area-inset-top) + 62px) 14px 28px;
-  background: #f7f7f8;
+  background: #fffefe;
   color: #1f232b;
 }
 .msr-head {
@@ -463,6 +468,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #1f232b;
   font-size: 14px;
+  font-weight: 500;
 }
 .msr-form input::placeholder {
   color: #a1a6af;
@@ -514,26 +520,57 @@ onBeforeUnmount(() => {
 }
 .msr-word-grid button {
   min-width: 0;
-  height: 38px;
+  height: 34px;
   border: 0;
   border-radius: 12px;
-  padding: 0 12px;
-  background: #fff;
+  padding: 0 8px;
+  background: transparent;
   color: #3c424d;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.1;
   text-align: left;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  box-shadow: 0 8px 20px rgba(17, 24, 39, .04);
-}
-.msr-suggest-grid {
-  gap: 0;
-}
-.msr-suggest-grid button {
-  background: transparent;
   box-shadow: none;
+}
+.msr-suggest-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.msr-suggest-cards article {
+  min-width: 0;
+  touch-action: manipulation;
+}
+.msr-suggest-cards img {
+  width: 100%;
+  aspect-ratio: 3 / 4.1;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #e7e9ee;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
+}
+.msr-suggest-cards strong {
+  display: -webkit-box;
+  margin-top: 7px;
+  color: #20242d;
+  font-size: 13px;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msr-suggest-cards span {
+  display: block;
+  margin-top: 3px;
+  color: #8c929d;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .msr-rank-panel {
   margin-top: 20px;
@@ -566,7 +603,7 @@ onBeforeUnmount(() => {
 .msr-rank-tabs button {
   height: 34px;
   padding: 0 4px;
-  font-size: 15px;
+  font-size: 16px;
 }
 .msr-rank-tabs button.on,
 .msr-result-tabs button.on {
@@ -638,14 +675,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
   margin-top: 7px;
   color: #20242d;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.25;
 }
 .msr-rank-card p,
 .msr-card p {
   margin: 4px 0 0;
   color: #8c929d;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.25;
 }
 .msr-result-tabs {

@@ -223,7 +223,8 @@
       <div v-if="filterOpen" class="ms-filter-mask" @click="filterOpen = false"></div>
     </transition>
     <transition name="ms-bottom-sheet">
-    <aside v-if="filterOpen" class="ms-filter open">
+    <aside v-if="filterOpen" class="ms-filter">
+      <div class="ms-drag"></div>
       <div class="ms-filter-head">
         <h2>刷剧筛选</h2>
         <button type="button" aria-label="关闭筛选" @click="filterOpen = false">
@@ -430,6 +431,7 @@ let scrollRaf = 0
 let activeTimer = 0
 let fullCommitTimer = 0
 let pendingFullEpIndex = null
+let fullNextPrefetchKey = ''
 let historySaveAt = 0
 let playingUnit = null
 let pendingUnmute = false
@@ -821,6 +823,19 @@ function prefetchUnitPlayback(unit) {
       if (result?.ok && result.url) warmupManifest(result.url, result.kind || '')
     })
     .catch(() => {})
+}
+
+function prefetchFullNextPlayback() {
+  if (!fullMode.value || accessBlock.value) return
+  const unit = activeUnit.value
+  const nextIndex = Number(unit?.epIndex || 0) + 1
+  if (!unit || nextIndex >= (unit.total || 1)) return
+  const next = seriesUnit(nextIndex)
+  if (!next) return
+  const key = resolveCacheKey(next)
+  if (!key || key === fullNextPrefetchKey) return
+  fullNextPrefetchKey = key
+  prefetchUnitPlayback(next)
 }
 
 function ensureMoreAhead() {
@@ -1299,6 +1314,7 @@ function onPlaying() {
   videoReady.value = true
   paused.value = false
   needsTap.value = false
+  prefetchFullNextPlayback()
 }
 
 function onPause(event) {
@@ -1730,6 +1746,7 @@ async function refreshViewerRuntime(options = {}) {
   const resumePlayback = Boolean(options?.resumePlayback)
   cancelPendingPlayback({ stop: true })
   accessBlock.value = null
+  fullNextPrefetchKey = ''
   resolveCache.clear()
   resolveInflight.clear()
   vodDetailCache.clear()
@@ -2574,13 +2591,8 @@ onBeforeUnmount(() => {
   border-radius: 22px 22px 0 0;
   background: #fff;
   color: #16181d;
-  transform: translateY(105%);
-  transition: transform .22s ease;
   overflow-y: auto;
   box-shadow: 0 -18px 48px rgba(0,0,0,.28);
-}
-.ms-filter.open {
-  transform: translateY(0);
 }
 .ms-filter-head {
   height: 44px;

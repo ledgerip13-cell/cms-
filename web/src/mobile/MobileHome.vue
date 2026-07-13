@@ -327,6 +327,7 @@ onBeforeUnmount(() => {
   color: #8b9098;
   box-shadow: 0 10px 26px rgba(43, 20, 18, .06);
   font-size: 14px;
+  font-weight: 500;
   text-align: left;
   touch-action: manipulation;
   transition: transform .16s ease, box-shadow .16s ease;
