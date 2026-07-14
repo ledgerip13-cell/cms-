@@ -448,8 +448,8 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .msr-back {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -465,6 +465,10 @@ onBeforeUnmount(() => {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.msr-back svg {
+  width: 23px;
+  height: 23px;
 }
 .msr-form {
   height: 44px;
@@ -643,7 +647,7 @@ onBeforeUnmount(() => {
   margin-left: -14px;
   margin-right: -14px;
   padding: 14px 14px 15px;
-  border-radius: 0;
+  border-radius: 10px 10px 0 0;
   background:
     linear-gradient(118deg, rgba(255, 239, 235, .96) 0%, rgba(242, 250, 246, .98) 50%, rgba(226, 244, 236, .98) 100%),
     #fff;
@@ -724,6 +728,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, .14);
   font-size: 12px;
   font-style: italic;
+  overflow: hidden;
 }
 .msr-rank-card:nth-child(1) .msr-rank-no {
   background: linear-gradient(135deg, #ff4b3e, #ff8a4a);
@@ -734,6 +739,17 @@ onBeforeUnmount(() => {
 .msr-rank-card:nth-child(3) .msr-rank-no {
   background: linear-gradient(135deg, #ffbd36, #ffe07a);
   color: #6a4300;
+}
+.msr-rank-card:nth-child(-n + 3) .msr-rank-no::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: -10px;
+  width: 23px;
+  height: 35px;
+  transform: rotate(38deg);
+  background: linear-gradient(90deg, rgba(255,255,255,.86), rgba(255,255,255,.22), rgba(255,255,255,0));
+  pointer-events: none;
 }
 .msr-rank-tag {
   right: 5px;
