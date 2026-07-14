@@ -640,12 +640,12 @@ onBeforeUnmount(() => {
 }
 .msr-rank-panel {
   margin-top: 20px;
-  margin-left: -8px;
-  margin-right: -8px;
-  padding: 14px 12px 15px;
-  border-radius: 16px;
+  margin-left: -14px;
+  margin-right: -14px;
+  padding: 14px 14px 15px;
+  border-radius: 0;
   background:
-    linear-gradient(118deg, rgba(255, 239, 235, .96) 0%, rgba(244, 250, 255, .98) 48%, rgba(255, 255, 255, .98) 100%),
+    linear-gradient(118deg, rgba(255, 239, 235, .96) 0%, rgba(242, 250, 246, .98) 50%, rgba(226, 244, 236, .98) 100%),
     #fff;
   box-shadow: 0 10px 28px rgba(33, 38, 48, .06);
 }
@@ -672,8 +672,12 @@ onBeforeUnmount(() => {
   height: 34px;
   padding: 0 5px;
   font-size: 16px;
+  font-weight: 500;
 }
-.msr-rank-tabs button.on,
+.msr-rank-tabs button.on {
+  color: #15171c;
+  font-weight: 500;
+}
 .msr-result-tabs button.on {
   color: #15171c;
   font-weight: 900;
