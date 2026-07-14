@@ -1,4 +1,5 @@
 let waitingWorker = null
+let userActivatedUpdate = false
 const LOCKED_VIEWPORT = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'
 
 export function enforcePwaViewportLock() {
@@ -22,6 +23,7 @@ function preventMultiTouchZoom(event) {
 function activateWaitingWorker(worker) {
   if (!worker) return false
   waitingWorker = worker
+  userActivatedUpdate = true
   worker.postMessage({ type: 'SKIP_WAITING' })
   return true
 }
@@ -73,6 +75,7 @@ export function setupPwaUpdates(onUpdate) {
   else window.addEventListener('load', register, { once: true })
   let refreshing = false
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!userActivatedUpdate) return
     if (refreshing) return
     refreshing = true
     window.location.reload()
