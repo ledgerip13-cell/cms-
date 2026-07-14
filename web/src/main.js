@@ -17,7 +17,7 @@ import './style.css'
 
 const router = createRouter({
   history: createWebHashHistory(),
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: (to, from, savedPosition) => savedPosition || { top: 0 },
   routes: [
     { path: '/', component: Home },
     { path: '/play/:id', component: Play },

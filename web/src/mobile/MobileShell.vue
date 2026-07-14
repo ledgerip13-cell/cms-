@@ -61,7 +61,52 @@ function primaryLevel(path) {
 }
 const blockEdgeSwipe = computed(() => primaryLevel(route.path))
 let previousPath = route.path
+// —— 方案B：手势返回判定（边缘触摸 + 横向位移 + popstate），命中则本次导航跳过 transition ——
+let edgeSwipeTracking = false
+let edgeSwipeStartX = 0
+let gestureSwipeAt = 0
+let pendingGestureBack = false
+let pendingGestureBackTimer = 0
+
+function onGestureTouchStart(event) {
+  edgeSwipeTracking = false
+  if (!secondaryLevel(route.path)) return
+  const touch = event.touches?.[0]
+  if (!touch) return
+  const width = window.innerWidth || document.documentElement.clientWidth || 0
+  const x = Number(touch.pageX ?? touch.clientX) || 0
+  const edgeWidth = 30
+  if (x <= edgeWidth || (width > 0 && x >= width - edgeWidth)) {
+    edgeSwipeTracking = true
+    edgeSwipeStartX = x
+  }
+}
+function onGestureTouchMove(event) {
+  if (!edgeSwipeTracking) return
+  const touch = event.touches?.[0]
+  if (!touch) return
+  const x = Number(touch.pageX ?? touch.clientX) || 0
+  if (Math.abs(x - edgeSwipeStartX) > 12) {
+    gestureSwipeAt = Date.now()
+  }
+}
+function onGesturePopstate() {
+  if (Date.now() - gestureSwipeAt < 1500) {
+    pendingGestureBack = true
+    window.clearTimeout(pendingGestureBackTimer)
+    pendingGestureBackTimer = window.setTimeout(() => { pendingGestureBack = false }, 900)
+  }
+}
+
 function syncPageTransition(nextPath, prevPath = previousPath) {
+  if (pendingGestureBack) {
+    // 系统已播过快照动画，这次导航不再播 transition，同步换页压掉空窗闪动
+    pendingGestureBack = false
+    window.clearTimeout(pendingGestureBackTimer)
+    pageTransitionName.value = 'm-page-none'
+    previousPath = nextPath
+    return
+  }
   if (nextPath.startsWith('/m/shorts') || prevPath.startsWith('/m/shorts')) {
     pageTransitionName.value = 'm-page-none'
   } else if (secondaryLevel(nextPath) && !secondaryLevel(prevPath)) {
@@ -198,6 +243,9 @@ function restoreChrome() {
 onMounted(() => {
   applyMobileChrome()
   document.addEventListener('touchstart', onDocumentEdgeTouchStart, { passive: false, capture: true })
+  document.addEventListener('touchstart', onGestureTouchStart, { passive: true, capture: true })
+  document.addEventListener('touchmove', onGestureTouchMove, { passive: true, capture: true })
+  window.addEventListener('popstate', onGesturePopstate)
   chromeObserver = new MutationObserver(() => {
     const theme = document.querySelector('meta[name="theme-color"]')
     if (theme?.getAttribute('content') !== mobileChromeSettings().themeColor) applyMobileChrome()
@@ -214,6 +262,10 @@ watch(() => route.path, () => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('touchstart', onDocumentEdgeTouchStart, true)
+  document.removeEventListener('touchstart', onGestureTouchStart, true)
+  document.removeEventListener('touchmove', onGestureTouchMove, true)
+  window.removeEventListener('popstate', onGesturePopstate)
+  window.clearTimeout(pendingGestureBackTimer)
   restoreChrome()
 })
 </script>

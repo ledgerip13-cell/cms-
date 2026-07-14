@@ -168,6 +168,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-15 手势返回闪动·方案B断点**：落地「压缩空窗期」方案。① `web/src/mobile/MobileShell.vue`：新增手势返回判定（二级页 `/m/play`、`/m/search` 上边缘 30px 内 touchstart + 横向位移 >12px 记录时间戳，1.5s 内收到 `popstate` 即判定为系统手势返回），命中后 `syncPageTransition` 将本次导航 transition 置为 `m-page-none`（同步换页，不再二次播 `m-pop` 动画）；程序化返回按钮不受影响，仍播 `m-pop`。② `web/src/main.js`：`scrollBehavior` 改为 `savedPosition || { top: 0 }`，浏览器返回（popstate）时还原列表滚动位置，配合已有 keep-alive 消除「返回像刷新」。无 `beforeEach` 异步守卫，无需跳过项。已 `pnpm --dir web build` 通过并 `docker compose up -d --build web` 部署。遗留：方案B是缓解不是根除，低端机极端情况仍可能一帧闪；治本需方案A（二级页 overlay 层叠路由），待老大拍板。
 - **2026-07-14 移动首页卡片标题样式断点**：`web/src/mobile/MobileHome.vue` 中 `/m` 首页普通影片卡片与继续观看卡片标题（`.mh-card strong` / `.mh-history strong`）从 `13px` 调整为 `14px`，并显式设置 `font-weight: 500`；副文本样式未动。已 `pnpm --dir web build` 通过。
 - **2026-07-14 移动端卡片标题单行断点**：移动模板卡片下方影片标题统一最多一行，超出显示省略号：覆盖首页/继续看（`MobileHome.vue`）、剧场榜单/列表（`MobileTheater.vue`）、搜索推荐/榜单/结果（`MobileSearch.vue`）、刷剧相关推荐（`MobileShorts.vue`）。播放页相关推荐与我的页卡片此前已是单行省略。已 `pnpm --dir web build` 通过。
 - **2026-07-14 移动搜索页样式断点**：`web/src/mobile/MobileSearch.vue` 搜索栏调整为浅灰底 44px 圆角胶囊输入框，右侧“搜索”为黑色粗体；热榜文案改为“综合热搜榜/短剧热榜/动漫热榜/电影热榜”，榜单面板改浅粉浅青背景，tab 选中黑色粗体、未选中灰色，前三名序号标记使用独立高亮样式；搜索页卡片标题统一 `14px / 500`。
