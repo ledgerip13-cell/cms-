@@ -5,7 +5,7 @@ import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { resolveShareUrl } from "../collector/resolver.js";
-import { enabledPlayableSourceIds, enabledTypeNames, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
+import { enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
@@ -71,7 +71,7 @@ function withHeroImage(vod: any) {
   const { images, ...rest } = vod;
   const heroImages = heroImageCandidates(vod);
   const heroImage = heroImages[0] || { url: "", wide: false };
-  return { ...cleanVodTextFields(rest), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
+  return { ...cleanVodTextFields(rest), rating: formatPublicRating(rest.rating), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
 }
 
 function publicVodCard(vod: any) {

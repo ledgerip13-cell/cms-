@@ -220,6 +220,13 @@ export function publicPlayableFilter(sourceIds?: number[]) {
     : { plays: { some: { source: { enabled: true } } } };
 }
 
+export function formatPublicRating(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round((n + Number.EPSILON) * 10) / 10;
+}
+
 export function publicPlayCountSelect(sourceIds?: number[]) {
   return sourceIds
     ? { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } }

@@ -1,12 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard, checkPassword, hashPassword, signWebToken, webUserGuard } from "../auth.js";
-import { enabledTypeNames, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
+import { enabledTypeNames, formatPublicRating, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
 import { ensureDefaultVipLevel, isVipLevelActive, publicVipLevel } from "../vipLevels.js";
 import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
 
 const RECOMMENDATION_CACHE_TTL_MS = 60_000;
 const recommendationCache = new Map<string, { ts: number; data: any }>();
+
+function formatRecommendationVod(vod: any) {
+  return { ...vod, rating: formatPublicRating(vod?.rating) };
+}
 
 function recommendationCacheKey(userId: number, take: number) {
   return `${userId}:${take}`;
@@ -421,7 +425,7 @@ export default async function userRoutes(app: FastifyInstance) {
       include: { _count: { select: publicPlayCountSelect() } },
     });
     if (list.length >= take) {
-      const data = { ...picked, list };
+      const data = { ...picked, list: list.map(formatRecommendationVod) };
       setRecommendationCache(mid, take, data);
       return data;
     }
@@ -431,7 +435,7 @@ export default async function userRoutes(app: FastifyInstance) {
       take: take - list.length,
       include: { _count: { select: publicPlayCountSelect() } },
     });
-    const data = { ...picked, list: [...list, ...more] };
+    const data = { ...picked, list: [...list, ...more].map(formatRecommendationVod) };
     setRecommendationCache(mid, take, data);
     return data;
   });
