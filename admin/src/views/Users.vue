@@ -53,7 +53,7 @@
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row)">详情</el-button>
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -61,6 +61,7 @@
               {{ row.enabled ? '禁用' : '启用' }}
             </el-button>
             <el-button size="small" type="danger" plain @click="openPwd(row)">重置密码</el-button>
+            <el-button size="small" type="danger" plain :icon="Delete" @click="deleteUser(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -154,7 +155,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Delete, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
@@ -258,6 +259,20 @@ async function toggle(row) {
     ElMessage.success(`${text}成功`)
     await load()
   } catch (e) { ElMessage.error(e.message || `${text}失败`) }
+}
+
+async function deleteUser(row) {
+  const ok = await ElMessageBox.confirm(
+    `确认删除用户「${row.username}」？删除后该用户的追剧、观看历史会一并清理，操作不可恢复。`,
+    '删除用户',
+    { type: 'warning' }
+  ).then(() => true).catch(() => false)
+  if (!ok) return
+  try {
+    await api.deleteAdminUser(row.id)
+    ElMessage.success('用户已删除')
+    await load()
+  } catch (e) { ElMessage.error(e.message || '删除失败') }
 }
 
 async function savePwd() {

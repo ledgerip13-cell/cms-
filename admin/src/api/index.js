@@ -113,6 +113,7 @@ export const api = {
   adminUser: (id) => http.get(`/admin/users/${id}`),
   updateAdminUser: (id, d) => http.patch(`/admin/users/${id}`, d),
   resetAdminUserPassword: (id, d) => http.post(`/admin/users/${id}/password`, d),
+  deleteAdminUser: (id) => http.delete(`/admin/users/${id}`),
   invites: () => http.get('/admin/invites'),
   createInvites: (d) => http.post('/admin/invites', d),
   updateInvite: (id, d) => http.patch(`/admin/invites/${id}`, d),

@@ -27,7 +27,7 @@
           <form class="auth-form" novalidate @submit.prevent="submit">
             <label :class="{invalid: errors.username}">
               <span>账号</span>
-              <input v-model.trim="form.username" autocomplete="username" placeholder="3-32位字母/数字/下划线" @input="clearField('username')" />
+              <input v-model.trim="form.username" autocomplete="username" placeholder="4-32位字母/数字/下划线，不能纯数字" @input="clearField('username')" />
               <em v-if="errors.username">{{ errors.username }}</em>
             </label>
             <label v-if="authDialog.mode === 'register'" :class="{invalid: errors.nickname}">

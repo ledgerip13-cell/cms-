@@ -55,6 +55,23 @@ function normalizeTypes(value: unknown): string[] {
   return [...new Set(value.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 12);
 }
 
+function normalizeUsername(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function validateUsername(username: string) {
+  if (!/^[a-z0-9_]{4,32}$/.test(username)) return "账号需为4-32位字母、数字或下划线";
+  if (/^\d+$/.test(username)) return "账号不能为纯数字";
+  return "";
+}
+
+async function findWebUserByUsername(username: string, include: any = undefined) {
+  return prisma.webUser.findFirst({
+    where: { username: { equals: username, mode: "insensitive" } },
+    ...(include ? { include } : {}),
+  });
+}
+
 function publicUser(u: { id: number; username: string; nickname: string; favoriteTypes: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
   return {
     id: u.id,
@@ -240,6 +257,18 @@ export default async function userRoutes(app: FastifyInstance) {
     }
   });
 
+  app.delete("/api/admin/users/:id", { preHandler: authGuard }, async (req, reply) => {
+    const id = Number((req.params as any).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: "用户ID无效" });
+    try {
+      await prisma.webUser.delete({ where: { id } });
+      invalidateUserRecommendation(id);
+      return { ok: true };
+    } catch {
+      return reply.code(404).send({ error: "用户不存在" });
+    }
+  });
+
   app.get("/api/user/register-config", async () => {
     const site = await ensureSite();
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
@@ -253,26 +282,27 @@ export default async function userRoutes(app: FastifyInstance) {
     const site = await ensureSite();
     if (!site.allowRegister) return reply.code(403).send({ error: "暂未开放注册" });
     const b = (req.body as any) || {};
-    const username = String(b.username || "").trim();
+    const username = normalizeUsername(b.username);
     const password = String(b.password || "");
     const nickname = String(b.nickname || username).trim().slice(0, 32);
     const inviteCode = String(b.inviteCode || "").trim();
-    if (!/^[A-Za-z0-9_]{4,32}$/.test(username)) {
-      return reply.code(400).send({ error: "账号需为4-32位字母、数字或下划线" });
-    }
-    if (/^\d+$/.test(username)) {
-      return reply.code(400).send({ error: "账号不能为纯数字" });
-    }
+    const usernameError = validateUsername(username);
+    if (usernameError) return reply.code(400).send({ error: usernameError });
     if (password.length < 6) return reply.code(400).send({ error: "密码至少6位" });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
     if (invitePoolCount > 0 && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
-    const exists = await prisma.webUser.findUnique({ where: { username } });
+    const exists = await findWebUserByUsername(username);
     if (exists) return reply.code(409).send({ error: "账号已存在" });
     const defaultLevel = await ensureDefaultVipLevel();
-    const u = await prisma.webUser.create({
-      data: { username, nickname, password: await hashPassword(password), vipLevelId: defaultLevel.id },
-      include: { vipLevel: true },
-    });
+    let u: any;
+    try {
+      u = await prisma.webUser.create({
+        data: { username, nickname, password: await hashPassword(password), vipLevelId: defaultLevel.id },
+        include: { vipLevel: true },
+      });
+    } catch {
+      return reply.code(409).send({ error: "账号已存在" });
+    }
     if (invitePoolCount > 0 && !(await consumeInviteCode(inviteCode, u.id))) {
       await prisma.webUser.delete({ where: { id: u.id } });
       return reply.code(400).send({ error: "邀请码无效或已失效" });
@@ -283,12 +313,12 @@ export default async function userRoutes(app: FastifyInstance) {
 
   app.post("/api/user/login", async (req, reply) => {
     const b = (req.body as any) || {};
-    const username = String(b.username || "").trim();
+    const username = normalizeUsername(b.username);
     const password = String(b.password || "");
     if (!username) return reply.code(400).send({ error: "请输入账号" });
     if (!password) return reply.code(400).send({ error: "请输入密码" });
     if (rejectLimitedLogin(req, reply, "web", username)) return reply;
-    const u = await prisma.webUser.findUnique({ where: { username }, include: { vipLevel: true } });
+    const u = await findWebUserByUsername(username, { vipLevel: true });
     if (!u || !u.enabled) {
       recordLoginFailure(req, "web", username);
       return reply.code(401).send({ error: "账号不存在或已禁用" });
