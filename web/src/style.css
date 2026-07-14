@@ -340,7 +340,7 @@ button { font-family: inherit; }
 .badge { position: absolute; right: 8px; top: 8px; background: rgba(8,9,13,.72); backdrop-filter: blur(6px);
   color: var(--text); font-size: 11.5px; font-weight: var(--small-text-max-weight); padding: 3px 8px; border-radius: 7px; z-index: 2; }
 .score-badge { position: absolute; right: 8px; bottom: 8px; z-index: 2; min-width: 32px; text-align: center;
-  background: var(--badge-score-bg); color: var(--badge-score-text); font-size: 11.5px; font-weight: var(--small-text-max-weight);
+  background: var(--badge-score-bg); color: var(--badge-score-text); font-size: 11.5px; font-weight: 600;
   padding: 3px 8px; border-radius: 7px; box-shadow: 0 4px 12px rgba(0,0,0,.28); }
 .c-info { padding: 11px 3px 0; }
 .c-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .2px; }

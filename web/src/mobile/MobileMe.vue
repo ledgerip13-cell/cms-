@@ -494,7 +494,7 @@ onActivated(load)
   color: #fff;
   font-size: 10px;
   font-style: normal;
-  font-weight: var(--small-text-max-weight);
+  font-weight: 600;
 }
 .mme-card strong {
   margin-top: 8px;

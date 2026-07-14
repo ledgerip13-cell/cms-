@@ -99,7 +99,7 @@
           <article v-for="vod in resultItems" :key="vod.id" class="msr-card" @click="goVod(vod)">
             <div class="msr-poster">
               <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
-              <span v-if="vod.remarks">{{ vod.remarks }}</span>
+              <span v-if="posterTag(vod)">{{ posterTag(vod) }}</span>
             </div>
             <strong>{{ vod.name }}</strong>
             <p>
@@ -164,7 +164,7 @@ const suggestItems = computed(() => {
   const items = baseSuggestItems.value.filter(vod => vod?.id && vod?.name)
   if (!items.length) return []
   const start = Math.min(suggestOffset.value, Math.max(0, items.length - 1))
-  return [...items.slice(start), ...items.slice(0, start)].slice(0, 3)
+  return [...items.slice(start), ...items.slice(0, start)].slice(0, 4)
 })
 
 function uniqueWords(words) {
@@ -194,7 +194,7 @@ function clearHistory() {
 
 function refreshSuggest() {
   const len = Math.max(1, baseSuggestItems.value.length)
-  suggestOffset.value = (suggestOffset.value + 3) % len
+  suggestOffset.value = (suggestOffset.value + 4) % len
 }
 
 function clearDraft() {
@@ -280,22 +280,24 @@ function heatValue(vod) {
   return String(n)
 }
 
-function episodeTotal(vod) {
-  const direct = Number(vod?.epCount || vod?.episodeCount || vod?.totalEpisodes || vod?.total || vod?._count?.episodes || 0)
-  if (direct > 0) return direct
+function vodStatus(vod) {
   const text = String(vod?.remarks || '')
-  const matched = text.match(/全\s*(\d+)\s*(集|话|期|回)|更新至\s*第?\s*(\d+)\s*(集|话|期|回)/i)
-  return Number(matched?.[1] || matched?.[3] || 0)
+  const full = text.match(/全\s*(\d+)\s*(集|话|期|回)/i)
+  if (full) return { label: `全${full[1]}集`, type: 'done' }
+  if (/完结|已完结|全集|大结局|终章/i.test(text)) return { label: '完结', type: 'done' }
+  const updating = text.match(/(?:更新至|更新到|更至)\s*第?\s*(\d+)\s*(集|话|期|回)?|^第\s*(\d+)\s*(集|话|期|回)$/i)
+  if (updating) return { label: `更新至${updating[1] || updating[3]}集`, type: 'updating' }
+  return null
 }
 
 function suggestMeta(vod) {
   const type = vod?.typeName || '影片'
-  const total = episodeTotal(vod)
-  return total ? `${type} · 全${total}集` : type
+  const status = vodStatus(vod)
+  return status ? `${type} · ${status.label}` : type
 }
 
-function isDoneVod(vod) {
-  return /完结|已完结|全集|全\s*\d+\s*(集|话|期|回)|大结局|终章/i.test(String(vod?.remarks || ''))
+function posterTag(vod) {
+  return vodStatus(vod)?.label || String(vod?.remarks || '').trim()
 }
 
 function isFreshVod(vod) {
@@ -304,14 +306,15 @@ function isFreshVod(vod) {
 }
 
 function rankTag(vod) {
-  if (isDoneVod(vod)) return { label: '完结', type: 'done' }
+  const status = vodStatus(vod)
+  if (status) return status
   if (isFreshVod(vod)) return { label: '新剧', type: 'fresh' }
   return { label: '热门', type: 'hot' }
 }
 
 async function loadSuggest() {
   try {
-    const hot = await api.hot(14)
+    const hot = await api.hot(16)
     baseSuggestItems.value = Array.isArray(hot) ? hot.filter(vod => vod?.id && vod?.name) : []
   } catch {
     baseSuggestItems.value = []
@@ -564,8 +567,8 @@ onBeforeUnmount(() => {
 }
 .msr-suggest-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 .msr-suggest-cards article {
   min-width: 0;
@@ -764,6 +767,9 @@ onBeforeUnmount(() => {
   background: rgba(240, 68, 56, .92);
 }
 .msr-rank-tag.fresh {
+  background: rgba(31, 119, 255, .9);
+}
+.msr-rank-tag.updating {
   background: rgba(31, 119, 255, .9);
 }
 .msr-rank-tag.done {
