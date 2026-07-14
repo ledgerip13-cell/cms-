@@ -750,6 +750,7 @@ onBeforeUnmount(() => {
 }
 .mt-rank-poster b {
   position: absolute;
+  z-index: 2;
   left: 6px;
   top: 6px;
   min-width: 22px;
@@ -804,6 +805,7 @@ onBeforeUnmount(() => {
 }
 .mt-poster span {
   position: absolute;
+  z-index: 2;
   left: 7px;
   bottom: 7px;
   max-width: calc(100% - 14px);
