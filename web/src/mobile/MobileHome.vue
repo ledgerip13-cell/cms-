@@ -46,12 +46,16 @@
           <p v-if="hero.officialIntro || hero.blurb" class="mh-desc">{{ hero.officialIntro || hero.blurb }}</p>
           <div class="mh-actions">
             <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
-              <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-              <span class="mh-action-label">立即播放</span>
+              <span class="mh-action-inner">
+                <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
+                <span class="mh-action-label">立即播放</span>
+              </span>
             </button>
             <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
-              <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
-              <span class="mh-action-label">追剧</span>
+              <span class="mh-action-inner">
+                <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
+                <span class="mh-action-label">追剧</span>
+              </span>
             </button>
           </div>
         </div>
@@ -493,12 +497,21 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   font-size: 14px;
   font-weight: 800;
   line-height: 1;
   touch-action: manipulation;
   transition: transform .16s ease, filter .16s ease;
+}
+.mh-action-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  line-height: 1;
+}
+.mh-action-inner svg {
+  display: block;
 }
 .mh-action-label {
   display: block;

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-14 (GMT+8)｜**对应提交**：待提交（前台评分展示统一 1 位小数）
+> **最后更新**：2026-07-14 (GMT+8)｜**对应提交**：待提交（移动首页 Hero 按钮内部整体居中）
 
 ---
 
@@ -177,6 +177,7 @@ docker compose up -d --build
 - **2026-07-14 移动首页 Hero 按钮对齐断点**：`MobileHome.vue` Hero “立即播放/追剧”按钮文字用 `.mh-action-label` 包裹，配合 `inline-flex + justify-content:center + align-items:center` 让图标与文字作为整体居中；图标文字间距从 `5px` 收到 `3px`，按钮文字字重从 `900` 降为 `800`。
 - **2026-07-14 移动搜索页返回与热榜角标断点**：`MobileSearch.vue` 搜索页返回按钮点击区从 `30px` 增至 `34px`，返回图标从 `20px` 增至 `23px`；热榜贴屏面板保留顶部 `10px` 小圆角；前三名榜单角标增加左上角斜向高光伪元素，形成光束照射效果。
 - **2026-07-14 前台评分格式断点**：新增 `server/src/publicVod.ts::formatPublicRating`，前台公开影片序列化与用户推荐接口统一将评分最多保留 1 位小数并四舍五入（如 `8.12 -> 8.1`、`8.25 -> 8.3`），无有效评分仍返回 `null`；后台管理编辑原始评分逻辑不变。
+- **2026-07-14 移动首页 Hero 按钮整体居中断点**：`MobileHome.vue` Hero “立即播放/追剧”按钮改成按钮容器内只放一个 `.mh-action-inner`，由该内部元素包裹图标与文字并统一 `inline-flex + align-items:center + justify-content:center`；按钮本身只负责容器居中，避免 svg 与文字分别参与按钮布局导致视觉不齐。
 - **2026-07-14 时长指纹二次扫断点**：`server/src/hls/cleaner.ts` 在 `duration_pattern_fingerprint_v1` 自学习后，将本次新入库源级指纹数量写入 `evidence.durationPattern.newFingerprints`；`server/src/collector/taskRunner.ts` 在同一 HLS 清洗任务第一轮完成后，若某采集源本轮新增了时长指纹，会把该源第一轮结果为 `no_ads/uncertain` 的集数追加二次扫。最终任务统计按每集最后一次状态计算，不重复累计；无新增指纹、非时长指纹策略、失败结果不触发二次扫。已 `pnpm --dir server build` 通过。
 - **2026-07-13 HLS 时长序列指纹清洗策略（新增第3策略 + 源级自学习指纹库）断点**：新增第 3 个清洗策略 `duration_pattern_fingerprint_v1`（`server/src/hls/cleaner.ts`），**不动**现有 `discontinuity_profile_v1` / `foreign_ad_block_fingerprint_v1` 两策略。**定因**：如意源（`ryiplay18/ryplay1x` 系）贴片广告与正片**同目录同前缀、同 1920×1080 同编码**，原两策略的准入门槛（路径差异/编码画像差异）全部撞墙 → 广告 100% 漏检（《金特务》1121 号 6 集全被误判 no_ads，实为每集含 1~2 处 21s 赌博贴片）。**判据**：纯解析 m3u8 文本（EXTINF 时长序列 + DISCONTINUITY 分块 + 段名重复），**零额外流量**（不 probe、不下载 ts）。两级：①Tier1 铁证——块内多数段在清单内**重复引用**（循环插入广告）→ conf95，并抽取该块**高区分度时长前缀**（前缀含 ≥2 个偏离 4.00s 基准的异常值，如 `4.00,5.48,4.00,3.24`）自学入库；②Tier2——用**源级指纹库**扫全片候选块，命中单次插入的同款广告 → conf90。**源级自学习**：新增独立表 `HlsAdFingerprint(sourceId, prefix, segCount, seenCount)`，`runHlsCleanForEpisode` 清洗前 `loadDurSigLib(sourceId)` 载入、清洗后 `persistDurSigLib` 沉淀铁证块指纹；同源跨片复用（同一条广告在整源内时长指纹恒定）。**误杀防线**：前缀区分度门槛（杜绝 `4,4,4` 通用序列入库）+ 块形态门槛（3~12 段、12~45s）+ 保留 30% 安全阀 + `minConfidence` 门槛。**验证**：①离线 6 集逐段指纹比对；②容器内**真实** `runHlsCleanForEpisode` 端到端（走完整 DB 链路）：第5集 Tier1 自学入库→第4/1集靠库 conf90 命中，全片 10 处广告位精确命中、正片 0 误杀；③跨片验证 5 部同源片（蓝海/风险社会/至死不渝/度假季/疾患）命中位置均为典型广告位、风险社会指纹+段名重复双确认。已 `pnpm --dir server build`、`prisma db push`、`git diff --check`、`docker compose up -d --build server` 通过；全局默认策略链已追加该策略（`HlsCleanConfig.defaultStrategy = discontinuity_profile_v1,foreign_ad_block_fingerprint_v1,duration_pattern_fingerprint_v1`）。⚠️ **接班切入点**：一个指纹只覆盖“同一条广告”，覆盖率随清洗量自增长（源内出现循环插入实例即自动扩库）；已清洗过的旧结果需**重扫一次**才会用上新策略/新指纹（旧 `HlsCleanResult.strategyId` 不含新策略）。如需对存量批量补扫，走后台 HLS 清洗任务重新排队即可。
 - **2026-07-13 影片库清洗广告入口断点**：`admin/src/views/Vods.vue` 影片库新增两处清洗广告入口：①每行**操作菜单**（`···` 下拉）-> “清洗广告”；②**批量操作栏**（勾选多部影片后）-> “清洗广告”按钮。点击弹出清洗对话框——**清洗策略**多选（空=默认策略链，可选禁用/指定单策略）、**集数**（全部集/仅第1集）、提交后 `GET /admin/vods` 拉线路 `playIds` → `POST /admin/hls-clean/tasks` 后台排队执行。`admin/src/api/index.js` 新增 `hlsCleanTask` 接口。已 `npm run build`、`docker compose up -d --build admin` 通过；5151 新包 `index-mNMR9xNO.js` 已含“清洗广告”字样。
