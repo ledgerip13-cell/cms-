@@ -26,6 +26,13 @@ function activateWaitingWorker(worker) {
   return true
 }
 
+function markUpdateReady(worker, onUpdate) {
+  if (!worker) return false
+  waitingWorker = worker
+  onUpdate?.()
+  return true
+}
+
 export function setupPwaViewportLock() {
   enforcePwaViewportLock()
   window.addEventListener('pageshow', enforcePwaViewportLock)
@@ -44,14 +51,13 @@ export function setupPwaUpdates(onUpdate) {
   const register = () => {
     navigator.serviceWorker.register('/sw.js').then((registration) => {
       const checkForUpdate = () => registration.update().catch(() => {})
-      if (registration.waiting) activateWaitingWorker(registration.waiting)
+      if (registration.waiting) markUpdateReady(registration.waiting, onUpdate)
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing
         if (!worker) return
         worker.addEventListener('statechange', () => {
           if (worker.state === 'installed' && navigator.serviceWorker.controller) {
-            activateWaitingWorker(worker)
-            onUpdate?.()
+            markUpdateReady(worker, onUpdate)
           }
         })
       })
