@@ -47,11 +47,11 @@
           <div class="mh-actions">
             <button class="mh-primary" type="button" @click.stop="goPlay(hero.id)">
               <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-              立即播放
+              <span class="mh-action-label">立即播放</span>
             </button>
             <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
               <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
-              追剧
+              <span class="mh-action-label">追剧</span>
             </button>
           </div>
         </div>
@@ -493,12 +493,16 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 3px;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1;
   touch-action: manipulation;
   transition: transform .16s ease, filter .16s ease;
+}
+.mh-action-label {
+  display: block;
+  line-height: 1;
 }
 .mh-primary {
   color: #fff;
