@@ -15,6 +15,46 @@ function parseJson(value: string, fallback: any) {
   try { return JSON.parse(value || ""); } catch { return fallback; }
 }
 
+function buildStrategyStats(rows: Array<{ strategyId: string; status: string; confidence: number; evidence: string }>) {
+  const stats = new Map<string, { attempts: number; matched: number; clean: number; maxConfidence: number }>();
+  const ensure = (strategyId: string) => {
+    const id = String(strategyId || "").trim();
+    if (!id) return null;
+    const row = stats.get(id) || { attempts: 0, matched: 0, clean: 0, maxConfidence: 0 };
+    stats.set(id, row);
+    return row;
+  };
+  for (const row of rows) {
+    const evidence = parseJson(row.evidence, {});
+    const attempts = Array.isArray(evidence?.attempts) ? evidence.attempts : [];
+    if (attempts.length) {
+      for (const attempt of attempts) {
+        const stat = ensure(attempt?.strategyId);
+        if (!stat) continue;
+        stat.attempts += 1;
+        stat.maxConfidence = Math.max(stat.maxConfidence, Number(attempt?.maxConfidence || 0));
+      }
+    } else {
+      for (const id of normalizeHlsStrategyIds(row.strategyId, [])) {
+        const stat = ensure(id);
+        if (!stat) continue;
+        stat.attempts += 1;
+        stat.maxConfidence = Math.max(stat.maxConfidence, Number(row.confidence || 0));
+      }
+    }
+    const matched = String(evidence?.matchedStrategy || "").trim();
+    if (matched) {
+      const stat = ensure(matched);
+      if (stat) {
+        stat.matched += 1;
+        if (row.status === "clean") stat.clean += 1;
+        stat.maxConfidence = Math.max(stat.maxConfidence, Number(row.confidence || 0));
+      }
+    }
+  }
+  return Object.fromEntries(stats);
+}
+
 export default async function hlsCleanRoutes(app: FastifyInstance) {
   // 公开 clean m3u8，下发文本；TS 行已经是源站绝对地址，视频流量不走 Node
   app.get("/api/hls-clean/:id/index.m3u8", async (req, reply) => {
@@ -48,7 +88,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
     admin.put("/api/admin/hls-clean/config", async (req) => updateHlsCleanConfig(req.body));
 
     admin.get("/api/admin/hls-clean/overview", async () => {
-      const [rawConfig, rawPolicies, sources, categories, statsRows, recent] = await Promise.all([
+      const [rawConfig, rawPolicies, sources, categories, statsRows, recent, strategyRows] = await Promise.all([
         ensureHlsCleanConfig(),
         prisma.hlsCleanPolicy.findMany({ orderBy: [{ scope: "asc" }, { targetName: "asc" }] }),
         prisma.source.findMany({ select: { id: true, name: true, enabled: true }, orderBy: { priority: "asc" } }),
@@ -62,6 +102,9 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
             confidence: true, strategyId: true, error: true, checkedAt: true, adRanges: true,
           },
         }),
+        prisma.hlsCleanResult.findMany({
+          select: { strategyId: true, status: true, confidence: true, evidence: true },
+        }),
       ]);
       const stats = Object.fromEntries(statsRows.map((r) => [r.status, r._count._all]));
       const config = { ...rawConfig, defaultStrategies: normalizeHlsStrategyIds(rawConfig.defaultStrategy) };
@@ -73,6 +116,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
         sources,
         categories,
         stats,
+        strategyStats: buildStrategyStats(strategyRows),
         recent: recent.map((r) => ({ ...r, adRanges: parseJson(r.adRanges, []) })),
       };
     });

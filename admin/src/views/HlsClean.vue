@@ -56,6 +56,46 @@
     </div>
     </el-tab-pane>
 
+    <el-tab-pane label="策略管理" name="strategies">
+    <div class="card">
+      <div class="toolbar">
+        <div>
+          <div class="sec-title">策略管理</div>
+          <div class="hint">这里控制全局默认策略链；单源、分类、单线路仍可在“源/分类策略”里覆盖。</div>
+        </div>
+        <el-tag type="info">执行顺序：{{ strategyChainLabel(cfg.defaultStrategies) }}</el-tag>
+      </div>
+      <el-table :data="strategyRows" stripe>
+        <el-table-column label="启用" width="86">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.enabled"
+              :loading="strategySaving === row.id"
+              inline-prompt
+              active-text="启"
+              inactive-text="停"
+              @change="(v) => setStrategyEnabled(row, v)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column prop="label" label="策略" min-width="190" />
+        <el-table-column prop="description" label="说明" min-width="420" show-overflow-tooltip />
+        <el-table-column label="执行次数" width="108">
+          <template #default="{ row }">{{ row.attempts }}</template>
+        </el-table-column>
+        <el-table-column label="命中次数" width="108">
+          <template #default="{ row }">{{ row.matched }}</template>
+        </el-table-column>
+        <el-table-column label="生成 clean" width="108">
+          <template #default="{ row }">{{ row.clean }}</template>
+        </el-table-column>
+        <el-table-column label="最高置信" width="100">
+          <template #default="{ row }">{{ row.maxConfidence || '—' }}</template>
+        </el-table-column>
+      </el-table>
+    </div>
+    </el-tab-pane>
+
     <el-tab-pane label="手动清洗" name="task">
     <div class="card">
       <div class="toolbar">
@@ -341,9 +381,11 @@ const PolicyMode = defineComponent({
 const loading = ref(false)
 const saving = ref(false)
 const starting = ref(false)
+const strategySaving = ref('')
 const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
 const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
 const strategies = ref([])
+const strategyStats = ref({})
 const sources = ref([])
 const categories = ref([])
 const policies = ref([])
@@ -381,6 +423,20 @@ const categoryRows = computed(() => categories.value.map(c => {
   const p = policyMap.value.get(`category:${c.name}`)
   return { ...c, mode: p?.mode || 'inherit', strategyIds: normalizeStrategyIds(p?.strategyIds || p?.strategyId, []), policyId: p?.id }
 }))
+const strategyRows = computed(() => {
+  const enabled = new Set(cfg.value.defaultStrategies || [])
+  return strategies.value.map(s => {
+    const stat = strategyStats.value?.[s.id] || {}
+    return {
+      ...s,
+      enabled: enabled.has(s.id),
+      attempts: stat.attempts || 0,
+      matched: stat.matched || 0,
+      clean: stat.clean || 0,
+      maxConfidence: stat.maxConfidence || 0,
+    }
+  })
+})
 
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'
 const statusType = (s) => ({ clean: 'success', failed: 'danger', dry_run: 'warning', no_ads: 'info' }[s] || 'info')
@@ -458,6 +514,7 @@ async function load() {
     categories.value = o.categories || []
     policies.value = o.policies || []
     stats.value = o.stats || {}
+    strategyStats.value = o.strategyStats || {}
     recent.value = o.recent || []
     if (!job.value.strategyIds?.length && strategies.value[0]) job.value.strategyIds = [strategies.value[0].id]
   } catch (e) { ElMessage.error(e.message || '加载失败') }
@@ -500,6 +557,30 @@ async function saveConfig() {
     ElMessage.success('清洗配置已保存')
   } catch (e) { ElMessage.error(e.message || '保存失败') }
   finally { saving.value = false }
+}
+
+async function setStrategyEnabled(row, enabled) {
+  const id = row?.id
+  if (!id) return
+  const next = normalizeStrategyIds(cfg.value.defaultStrategies, [])
+  const exists = next.includes(id)
+  const nextIds = enabled
+    ? (exists ? next : [...next, id])
+    : next.filter(x => x !== id)
+  if (!nextIds.length) {
+    ElMessage.warning('默认策略链至少保留一个策略')
+    return
+  }
+  strategySaving.value = id
+  try {
+    cfg.value = normalizeConfig(await api.updateHlsCleanConfig({ ...cfg.value, defaultStrategies: nextIds }))
+    ElMessage.success('策略状态已保存')
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    strategySaving.value = ''
+  }
 }
 
 async function savePolicy(scope, row) {

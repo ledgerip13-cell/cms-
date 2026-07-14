@@ -2883,14 +2883,14 @@ onBeforeUnmount(() => {
   background: #f1f2f4;
 }
 .ms-related-grid strong {
-  display: -webkit-box;
+  display: block;
   margin-top: 6px;
   color: #252a33;
   font-size: 12px;
   line-height: 1.28;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .ms-related-grid span {
   display: block;

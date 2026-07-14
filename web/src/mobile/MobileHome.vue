@@ -615,15 +615,15 @@ onBeforeUnmount(() => {
 }
 .mh-history strong,
 .mh-card strong {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
+  display: block;
   overflow: hidden;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   margin-top: 7px;
   color: #1f232b;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1.25;
-  min-height: 32px;
 }
 .mh-history span,
 .mh-card p {

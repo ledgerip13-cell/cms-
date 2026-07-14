@@ -612,14 +612,14 @@ onBeforeUnmount(() => {
   fill: currentColor;
 }
 .msr-suggest-cards strong {
-  display: -webkit-box;
+  display: block;
   margin-top: 7px;
   color: #20242d;
   font-size: 13px;
   line-height: 1.25;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .msr-suggest-cards span {
   display: block;
@@ -737,10 +737,10 @@ onBeforeUnmount(() => {
 }
 .msr-rank-card strong,
 .msr-card strong {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: block;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   margin-top: 7px;
   color: #20242d;
   font-size: 14px;

@@ -435,7 +435,6 @@ async function runHlsCleanTask(taskId: number, opts: {
     const workerCount = Math.max(1, Math.min(12, Number((cfg as any).workerConcurrency) || 3));
     const sourceLimit = Math.max(1, Math.min(4, Number((cfg as any).sourceConcurrency) || 1));
     const sourceActive = new Map<number, number>();
-    let nextIndex = 0;
     async function withSourceLimit<T>(sourceId: number, fn: () => Promise<T>): Promise<T> {
       while ((sourceActive.get(sourceId) || 0) >= sourceLimit) {
         if (canceled.has(taskId) || paused.has(taskId)) throw new Error(canceled.has(taskId) ? "__CANCELED__" : "__PAUSED__");
@@ -448,49 +447,94 @@ async function runHlsCleanTask(taskId: number, opts: {
         sourceActive.set(sourceId, Math.max(0, (sourceActive.get(sourceId) || 1) - 1));
       }
     }
-    async function worker() {
-      while (true) {
-        if (canceled.has(taskId)) throw new Error("__CANCELED__");
-        if (paused.has(taskId)) throw new Error("__PAUSED__");
-        const i = nextIndex++;
-        if (i >= units.length) return;
-        const u = units[i];
-        let status = "failed";
-        try {
-          const r = await withSourceLimit(u.sourceId, () => runHlsCleanForEpisode({
-            playId: u.playId,
-            epIndex: u.epIndex,
-            strategyIds: opts.strategyIds,
-            strategyId: opts.strategyId || cfg.defaultStrategy,
-            dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
-            minConfidence: cfg.minConfidence,
-          }));
-          status = r.status;
-        } catch (e: any) {
-          if (String(e?.message || "").includes("__CANCELED__") || String(e?.message || "").includes("__PAUSED__")) throw e;
-          status = "failed";
-        }
-        processed++;
-        if (status === "clean") clean++;
-        else if (status === "no_ads") noAds++;
-        else if (status === "dry_run" || status === "uncertain") uncertain++;
-        else failed++;
-        const progress = Math.round((processed / units.length) * 100);
-        await taskUpdate({
-          where: { id: taskId },
-          data: {
-            progress,
-            pageNow: processed,
-            pageTotal: units.length,
-            added: clean,
-            updated: failed,
-            merged: noAds,
-            message: `并发清洗 ${Math.min(workerCount, units.length)} worker：${u.title} · clean ${clean} / no_ads ${noAds} / failed ${failed}`,
-          },
-        });
+    const keyOf = (u: { playId: number; epIndex: number }) => `${u.playId}:${u.epIndex}`;
+    const finalStatus = new Map<string, string>();
+    const retryCandidatesBySource = new Map<number, typeof units>();
+    const sourcesWithNewDurSig = new Set<number>();
+    let totalWork = units.length;
+    function counts() {
+      let c = 0, n = 0, u = 0, f = 0;
+      for (const status of finalStatus.values()) {
+        if (status === "clean") c++;
+        else if (status === "no_ads") n++;
+        else if (status === "dry_run" || status === "uncertain") u++;
+        else f++;
       }
+      return { clean: c, noAds: n, uncertain: u, failed: f };
     }
-    await Promise.all(Array.from({ length: Math.min(workerCount, units.length) }, () => worker()));
+    function parseEvidence(value: unknown) {
+      try { return JSON.parse(String(value || "{}")); } catch { return {}; }
+    }
+    async function processUnit(u: typeof units[number], round: 1 | 2) {
+      let status = "failed";
+      let newFingerprints = 0;
+      try {
+        const r = await withSourceLimit(u.sourceId, () => runHlsCleanForEpisode({
+          playId: u.playId,
+          epIndex: u.epIndex,
+          strategyIds: opts.strategyIds,
+          strategyId: opts.strategyId || cfg.defaultStrategy,
+          dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
+          minConfidence: cfg.minConfidence,
+        }));
+        status = r.status;
+        const evidence = parseEvidence((r as any).evidence);
+        newFingerprints = Number(evidence?.durationPattern?.newFingerprints || 0);
+        if (newFingerprints > 0) sourcesWithNewDurSig.add(u.sourceId);
+      } catch (e: any) {
+        if (String(e?.message || "").includes("__CANCELED__") || String(e?.message || "").includes("__PAUSED__")) throw e;
+        status = "failed";
+      }
+      finalStatus.set(keyOf(u), status);
+      if (round === 1 && ["no_ads", "uncertain"].includes(status)) {
+        const rows = retryCandidatesBySource.get(u.sourceId) || [];
+        rows.push(u);
+        retryCandidatesBySource.set(u.sourceId, rows);
+      }
+      processed++;
+      const s = counts();
+      clean = s.clean; noAds = s.noAds; uncertain = s.uncertain; failed = s.failed;
+      const progress = Math.min(99, Math.round((processed / totalWork) * 100));
+      await taskUpdate({
+        where: { id: taskId },
+        data: {
+          progress,
+          pageNow: processed,
+          pageTotal: totalWork,
+          added: clean,
+          updated: failed,
+          merged: noAds,
+          message: `${round === 2 ? "时长指纹二次扫" : "并发清洗"} ${Math.min(workerCount, totalWork)} worker：${u.title} · clean ${clean} / no_ads ${noAds} / failed ${failed}`,
+        },
+      });
+    }
+    async function runQueue(queue: typeof units, round: 1 | 2) {
+      let nextIndex = 0;
+      async function worker() {
+        while (true) {
+          if (canceled.has(taskId)) throw new Error("__CANCELED__");
+          if (paused.has(taskId)) throw new Error("__PAUSED__");
+          const i = nextIndex++;
+          if (i >= queue.length) return;
+          await processUnit(queue[i], round);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(workerCount, queue.length) }, () => worker()));
+    }
+    await runQueue(units, 1);
+    const retryUnits = [...sourcesWithNewDurSig]
+      .flatMap((sourceId) => retryCandidatesBySource.get(sourceId) || []);
+    if (retryUnits.length) {
+      totalWork += retryUnits.length;
+      await taskUpdate({
+        where: { id: taskId },
+        data: {
+          pageTotal: totalWork,
+          message: `源级时长指纹新增，追加二次扫 ${retryUnits.length} 集`,
+        },
+      });
+      await runQueue(retryUnits, 2);
+    }
     if (canceled.has(taskId)) {
       await taskUpdate({
         where: { id: taskId },

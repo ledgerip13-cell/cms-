@@ -783,21 +783,25 @@ async function loadDurSigLib(sourceId: number): Promise<number[][]> {
   }
 }
 
-// 沉淀本次自学到的广告指纹到源级库（存在则 seenCount+1）
+// 沉淀本次自学到的广告指纹到源级库（存在则 seenCount+1），返回本次新入库数量
 async function persistDurSigLib(sourceId: number, learned: Array<{ prefix: number[]; segCount: number }>) {
+  let created = 0;
   for (const item of learned) {
     const prefix = durSigPrefixKey(item.prefix);
     if (!prefix) continue;
     try {
+      const exists = await prisma.hlsAdFingerprint.findUnique({ where: { sourceId_prefix: { sourceId, prefix } }, select: { id: true } });
       await prisma.hlsAdFingerprint.upsert({
         where: { sourceId_prefix: { sourceId, prefix } },
         update: { seenCount: { increment: 1 }, segCount: item.segCount },
         create: { sourceId, prefix, segCount: item.segCount, seenCount: 1 },
       });
+      if (!exists) created++;
     } catch {
       // 指纹沉淀失败不影响清洗主流程
     }
   }
+  return created;
 }
 
 export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
@@ -847,9 +851,14 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
     const durSigLib = useDurSig ? await loadDurSigLib(play.sourceId) : [];
     const analysis = await analyzeManifest(media.manifestUrl, media.manifestText, minConfidence, strategyIds, media.chain, durSigLib);
     // 沉淀本次自学到的广告指纹到源级库（铁证块才会产生 learned）
+    let newDurSigFingerprints = 0;
     if (useDurSig && analysis.learnedFingerprints?.length) {
-      await persistDurSigLib(play.sourceId, analysis.learnedFingerprints);
+      newDurSigFingerprints = await persistDurSigLib(play.sourceId, analysis.learnedFingerprints);
     }
+    (analysis.evidence as any).durationPattern = {
+      learnedFingerprints: analysis.learnedFingerprints?.length || 0,
+      newFingerprints: newDurSigFingerprints,
+    };
     const hasAds = analysis.adRanges.length > 0;
     const status = dryRun ? "dry_run" : hasAds ? "clean" : "no_ads";
     return prisma.hlsCleanResult.upsert({

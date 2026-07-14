@@ -761,15 +761,14 @@ onBeforeUnmount(() => {
 }
 .mt-rank strong,
 .mt-card strong {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: block;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   margin-top: 7px;
   color: #1f232b;
   font-size: 13px;
   line-height: 1.25;
-  min-height: 32px;
 }
 .mt-rank span,
 .mt-card p {
