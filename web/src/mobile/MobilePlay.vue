@@ -993,7 +993,7 @@ onDeactivated(() => {
   overflow: hidden;
   color: rgba(255,255,255,.94);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   line-height: 1.2;
   text-overflow: ellipsis;
   text-shadow: 0 1px 8px rgba(0,0,0,.72);
@@ -1034,7 +1034,7 @@ onDeactivated(() => {
   gap: 10px;
   color: rgba(255,255,255,.9);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-state div {
   width: 30px;
@@ -1193,7 +1193,7 @@ onDeactivated(() => {
   flex: 0 0 auto;
   color: rgba(255,255,255,.82);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -1223,7 +1223,7 @@ onDeactivated(() => {
   color: rgba(255,255,255,.84);
   background: rgba(255,255,255,.1);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-menu-speeds button.on {
   color: #fff;
@@ -1284,7 +1284,7 @@ onDeactivated(() => {
   background: rgba(0,0,0,.56);
   backdrop-filter: blur(12px);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   white-space: nowrap;
 }
 .mp-seek-preview {
@@ -1348,7 +1348,7 @@ onDeactivated(() => {
   gap: 6px;
   color: #767b86;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-title-row p span {
   padding: 4px 7px;
@@ -1368,7 +1368,7 @@ onDeactivated(() => {
   color: #f04438;
   background: #fff0ed;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-follow.on {
   color: #fff;
@@ -1411,7 +1411,7 @@ onDeactivated(() => {
 .mp-panel header span {
   color: #8a8f99;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-episode-grid {
   display: grid;
@@ -1426,7 +1426,7 @@ onDeactivated(() => {
   color: #4b515c;
   background: #f2f3f5;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1480,7 +1480,7 @@ onDeactivated(() => {
   margin-top: 3px;
   color: #8a8f99;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

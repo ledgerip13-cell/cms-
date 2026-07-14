@@ -1956,7 +1956,7 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, .44);
   backdrop-filter: blur(14px);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
   touch-action: manipulation;
   white-space: nowrap;
@@ -2085,7 +2085,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: rgba(255,255,255,.9);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   text-align: left;
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease;
@@ -2195,7 +2195,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   color: rgba(255,255,255,.94);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   text-shadow: 0 2px 8px rgba(0,0,0,.45);
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
@@ -2249,7 +2249,7 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.16);
   color: rgba(255,255,255,.88);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-meta p {
   margin: 0 0 11px;
@@ -2629,7 +2629,7 @@ onBeforeUnmount(() => {
   background: #fff0ed;
   color: #f04438;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   touch-action: manipulation;
 }
 .ms-filter-tags svg {
@@ -2649,7 +2649,7 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
   color: #6d7480;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-filter-group div {
   display: flex;
@@ -2676,7 +2676,7 @@ onBeforeUnmount(() => {
   color: inherit;
   opacity: .6;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-filter-actions {
   position: sticky;
@@ -2768,12 +2768,12 @@ onBeforeUnmount(() => {
   margin: 0 0 6px;
   color: #4b5563;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-drawer-head span {
   color: #8a9099;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-drawer-tabs {
   position: sticky;
@@ -2849,7 +2849,7 @@ onBeforeUnmount(() => {
   background: #f3f4f6;
   color: #303641;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
 }
@@ -2863,7 +2863,7 @@ onBeforeUnmount(() => {
   place-items: center;
   color: #858c96;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-related-grid {
   display: grid;

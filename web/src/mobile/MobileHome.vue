@@ -447,7 +447,7 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
   color: #ffd0c8;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .mh-hero h1 {
   max-width: 94%;
@@ -471,7 +471,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: rgba(255, 255, 255, .16);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: var(--small-text-max-weight);
 }
 .mh-desc {
   max-width: 86%;
@@ -691,7 +691,7 @@ onBeforeUnmount(() => {
   color: #fff;
   background: rgba(0, 0, 0, .52);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

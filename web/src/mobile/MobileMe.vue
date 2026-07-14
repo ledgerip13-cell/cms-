@@ -276,7 +276,7 @@ onActivated(load)
   padding: 4px 8px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mme-login,
 .mme-logout {
@@ -313,7 +313,7 @@ onActivated(load)
   display: block;
   color: #9a6038;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mme-vip strong {
   display: block;
@@ -358,7 +358,7 @@ onActivated(load)
   margin-top: 7px;
   color: #808691;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
 }
 .mme-stats.muted {
   opacity: .62;
@@ -384,7 +384,7 @@ onActivated(load)
   background: transparent;
   color: #f04438;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mme-watch-list {
   display: grid;
@@ -426,7 +426,7 @@ onActivated(load)
   background: rgba(0, 0, 0, .58);
   color: #fff;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   text-align: center;
 }
 .mme-watch strong,
@@ -494,7 +494,7 @@ onActivated(load)
   color: #fff;
   font-size: 10px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
 }
 .mme-card strong {
   margin-top: 8px;

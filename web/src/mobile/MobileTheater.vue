@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
   color: #f04438;
   background: #fff0ed;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   transition: transform .16s ease, background .16s ease;
 }
 .mt-search button:active,
@@ -613,7 +613,8 @@ onBeforeUnmount(() => {
   padding: 0 14px;
   color: #3d414a;
   background: #fff;
-  font-weight: 800;
+  font-size: var(--mobile-control-text-size);
+  font-weight: var(--mobile-control-text-weight);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
 }
@@ -635,7 +636,8 @@ onBeforeUnmount(() => {
   gap: 5px;
   color: #616773;
   background: #fff;
-  font-weight: 800;
+  font-size: var(--mobile-control-text-size);
+  font-weight: var(--mobile-control-text-weight);
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease, background .16s ease;
 }
@@ -698,7 +700,7 @@ onBeforeUnmount(() => {
   max-width: 100%;
   color: #262a33;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--small-text-max-weight);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -810,7 +812,7 @@ onBeforeUnmount(() => {
   color: #fff;
   background: rgba(0, 0, 0, .54);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: var(--small-text-max-weight);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -845,7 +847,7 @@ onBeforeUnmount(() => {
 .mt-empty span {
   color: #9a9fa8;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--small-text-max-weight);
 }
 .mt-sk div,
 .mt-sk b,
@@ -931,8 +933,8 @@ onBeforeUnmount(() => {
   display: block;
   margin-bottom: 10px;
   color: #6d7480;
-  font-size: 13px;
-  font-weight: 900;
+  font-size: var(--mobile-control-text-size);
+  font-weight: var(--mobile-control-text-weight);
 }
 .mt-filter-group div {
   display: flex;
@@ -946,7 +948,8 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   color: #5f6570;
   background: #f4f5f7;
-  font-weight: 800;
+  font-size: var(--mobile-control-text-size);
+  font-weight: var(--mobile-control-text-weight);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
 }
@@ -967,7 +970,8 @@ onBeforeUnmount(() => {
   height: 42px;
   border: 0;
   border-radius: 999px;
-  font-weight: 900;
+  font-size: var(--mobile-control-text-size);
+  font-weight: var(--mobile-control-text-weight);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease;
 }

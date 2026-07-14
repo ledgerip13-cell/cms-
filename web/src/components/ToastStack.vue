@@ -29,7 +29,7 @@ import { dismissToast, toasts } from '../feedback'
   cursor: pointer; pointer-events: auto; }
 .toast-icon { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
 .toast-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.toast-text { min-width: 0; font-size: 13px; line-height: 1.55; font-weight: 650; overflow-wrap: anywhere; }
+.toast-text { min-width: 0; font-size: 13px; line-height: 1.55; font-weight: var(--small-text-max-weight); overflow-wrap: anywhere; }
 .toast-item.success .toast-icon { color: #5be0a5; }
 .toast-item.error .toast-icon { color: #ff7a88; }
 .toast-item.warning .toast-icon { color: #ffd166; }

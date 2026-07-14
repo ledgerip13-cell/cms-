@@ -457,7 +457,7 @@ onBeforeUnmount(() => unlockPageScroll(true))
 .auth-sub { min-height: 22px; color: #d3d8e3; font-size: 13px; line-height: 1.7; margin-bottom: 20px; }
 .auth-sub.muted { color: var(--muted); }
 .auth-form { display: flex; flex-direction: column; gap: 13px; }
-.auth-form label span { display: block; margin-bottom: 7px; color: var(--muted2); font-size: 12px; font-weight: 700; }
+.auth-form label span { display: block; margin-bottom: 7px; color: var(--muted2); font-size: 12px; font-weight: var(--small-text-max-weight); }
 .auth-form input { width: 100%; height: 43px; border-radius: 10px; border: 1px solid rgba(255,255,255,.09);
   background: rgba(9,10,15,.58); color: var(--text); outline: none; padding: 0 13px; font-size: 16px;
   backdrop-filter: blur(10px); }

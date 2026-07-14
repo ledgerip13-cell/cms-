@@ -775,7 +775,7 @@ onBeforeUnmount(() => {
 .now-playing b { color: var(--text); }
 .episode-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .episode-nav button { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--card); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: 700; transition: .15s; }
+  background: var(--card); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: var(--small-text-max-weight); transition: .15s; }
 .episode-nav button:not(:disabled):hover { border-color: var(--play-episode-active-bg); color: #fff; }
 .episode-nav button:disabled { opacity: .38; cursor: not-allowed; }
 .lines-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 16px 0;
@@ -804,7 +804,7 @@ onBeforeUnmount(() => {
 .eps-groups { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
 .eps-groups::-webkit-scrollbar { display: none; }
 .eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line);
-  background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; }
+  background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: var(--small-text-max-weight); }
 .eps-groups button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }
 .eps-groups button.on { box-shadow: none; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px;
@@ -826,7 +826,7 @@ onBeforeUnmount(() => {
 .rec-poster img { width: 100%; height: 100%; object-fit: cover; }
 .rec-poster .noimg { width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#455068;font-size:11px; }
 .rec-score { position: absolute; right: 3px; bottom: 3px; background: linear-gradient(90deg,#ff8a00,#ff5c8a);
-  color: #fff; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 5px; }
+  color: #fff; font-size: 11px; font-weight: var(--small-text-max-weight); padding: 1px 5px; border-radius: 5px; }
 .rec-info { min-width: 0; flex: 1; padding-top: 3px; }
 .rec-name { font-size: 14px; font-weight: 600; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

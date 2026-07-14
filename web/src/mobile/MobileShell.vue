@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
   color: #8a8f99;
   font-size: 11px;
   line-height: 1.1;
-  font-weight: 700;
+  font-weight: var(--small-text-max-weight);
 }
 .mtab svg {
   width: 22px;

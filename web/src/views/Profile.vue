@@ -263,7 +263,7 @@ watch([historyPageCount, followPageCount], () => {
 .profile-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 14px; }
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 .pager button { height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line);
-  background: var(--bg2); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: 800; }
+  background: var(--bg2); color: var(--text); cursor: pointer; font-size: 12.5px; font-weight: var(--small-text-max-weight); }
 .pager button:not(:disabled):hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
 .pager button:disabled { opacity: .42; cursor: not-allowed; }
 .pager span { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
