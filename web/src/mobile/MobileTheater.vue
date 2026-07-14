@@ -81,7 +81,8 @@
         <article v-for="vod in items" :key="vod.id" class="mt-card" @click="goPlay(vod.id)">
           <div class="mt-poster">
             <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
-            <span v-if="vod.remarks">{{ vod.remarks }}</span>
+            <span v-if="vod.remarks" class="mt-mark">{{ vod.remarks }}</span>
+            <span v-if="vod.rating" class="mt-score">{{ vod.rating }}</span>
           </div>
           <strong>{{ vod.name }}</strong>
           <p>{{ vod.typeName || '未分类' }}<template v-if="vod.year"> · {{ vod.year }}</template></p>
@@ -803,7 +804,8 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   box-shadow: 0 8px 22px rgba(17, 24, 39, .08);
 }
-.mt-poster span {
+.mt-mark,
+.mt-score {
   position: absolute;
   z-index: 2;
   left: 7px;
@@ -818,6 +820,13 @@ onBeforeUnmount(() => {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.mt-score {
+  left: auto;
+  right: 7px;
+  top: 7px;
+  bottom: auto;
+  background: #ff6048;
 }
 .mt-more {
   width: 100%;
