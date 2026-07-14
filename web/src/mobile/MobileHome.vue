@@ -492,8 +492,11 @@ onBeforeUnmount(() => {
   padding: 0 14px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
+  font-size: 14px;
   font-weight: 900;
+  line-height: 1;
   touch-action: manipulation;
   transition: transform .16s ease, filter .16s ease;
 }
@@ -567,7 +570,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #9a9fa8;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 500;
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
 }

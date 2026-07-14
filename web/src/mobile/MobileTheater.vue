@@ -669,7 +669,7 @@ onBeforeUnmount(() => {
   color: #9a9fa8;
   background: transparent;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 500;
   touch-action: manipulation;
   transition: transform .16s ease, color .16s ease;
 }
