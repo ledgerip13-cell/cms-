@@ -436,8 +436,10 @@ onActivated(load)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
-  line-height: 1.25;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
 }
 .mme-watch p,
 .mme-card p {
@@ -496,7 +498,6 @@ onActivated(load)
 }
 .mme-card strong {
   margin-top: 8px;
-  font-size: 13px;
 }
 .mme-empty {
   display: grid;

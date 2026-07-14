@@ -1467,8 +1467,10 @@ onDeactivated(() => {
 .mp-related strong {
   display: block;
   margin-top: 7px;
-  font-size: 13px;
-  line-height: 1.25;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

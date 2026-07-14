@@ -146,10 +146,10 @@ let rankRequestId = 0
 let headRaf = 0
 
 const rankTabs = [
-  { key: 'hot', label: '热门榜' },
-  { key: 'short', label: '短剧榜', type: '短剧' },
-  { key: 'anime', label: '动漫榜', type: '动漫' },
-  { key: 'movie', label: '电影榜', type: '电影' },
+  { key: 'hot', label: '综合热搜榜' },
+  { key: 'short', label: '短剧热榜', type: '短剧' },
+  { key: 'anime', label: '动漫热榜', type: '动漫' },
+  { key: 'movie', label: '电影热榜', type: '电影' },
 ]
 const resultTabs = [
   { key: 'all', label: '综合' },
@@ -432,12 +432,12 @@ onBeforeUnmount(() => {
   right: 0;
   top: 0;
   margin: 0;
-  padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  padding: calc(env(safe-area-inset-top) + 8px) 15px 10px;
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 44px;
+  grid-template-columns: 30px minmax(0, 1fr) 46px;
   align-items: center;
-  gap: 8px;
-  background: rgb(255 244 241 / var(--msr-head-bg));
+  gap: 9px;
+  background: rgb(255 255 255 / calc(.9 + var(--msr-head-bg) * .1));
   backdrop-filter: blur(9px);
   transition: background .16s ease;
 }
@@ -448,8 +448,8 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .msr-back {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -467,20 +467,20 @@ onBeforeUnmount(() => {
   stroke-linejoin: round;
 }
 .msr-form {
-  height: 40px;
+  height: 44px;
   min-width: 0;
-  border-radius: 999px;
-  padding: 0 8px 0 13px;
+  border-radius: 22px;
+  padding: 0 9px 0 15px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 10px 24px rgba(56, 31, 24, .06);
+  gap: 9px;
+  background: #f2f3f5;
+  box-shadow: none;
 }
 .msr-form svg {
   width: 18px;
   height: 18px;
-  color: #9aa0aa;
+  color: #8f96a3;
 }
 .msr-form input {
   min-width: 0;
@@ -489,11 +489,11 @@ onBeforeUnmount(() => {
   outline: 0;
   background: transparent;
   color: #1f232b;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
 }
 .msr-form input::placeholder {
-  color: #a1a6af;
+  color: #a6abb4;
 }
 .msr-clear {
   width: 24px;
@@ -506,11 +506,12 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 .msr-submit {
-  height: 36px;
+  height: 40px;
   padding: 0;
-  color: #f04438;
-  font-size: 14px;
-  font-weight: 900;
+  color: #111318;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 .msr-section {
   margin-top: 18px;
@@ -614,9 +615,10 @@ onBeforeUnmount(() => {
 .msr-suggest-cards strong {
   display: block;
   margin-top: 7px;
-  color: #20242d;
-  font-size: 13px;
-  line-height: 1.25;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -638,14 +640,14 @@ onBeforeUnmount(() => {
 }
 .msr-rank-panel {
   margin-top: 20px;
-  margin-left: -14px;
-  margin-right: -14px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  margin-left: -8px;
+  margin-right: -8px;
+  padding: 14px 12px 15px;
+  border-radius: 16px;
   background:
-    linear-gradient(180deg, rgba(255, 238, 231, .95), rgba(255, 255, 255, .96)),
+    linear-gradient(118deg, rgba(255, 239, 235, .96) 0%, rgba(244, 250, 255, .98) 48%, rgba(255, 255, 255, .98) 100%),
     #fff;
-  box-shadow: 0 12px 30px rgba(88, 30, 20, .08);
+  box-shadow: 0 10px 28px rgba(33, 38, 48, .06);
 }
 .msr-rank-tabs,
 .msr-result-tabs {
@@ -663,21 +665,21 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
-  color: #2106069e;
-  font-weight: 900;
+  color: #8b919c;
+  font-weight: 700;
 }
 .msr-rank-tabs button {
   height: 34px;
-  padding: 0 4px;
-  color: rgba(33, 6, 6, .5);
+  padding: 0 5px;
   font-size: 16px;
 }
 .msr-rank-tabs button.on,
 .msr-result-tabs button.on {
-  color: #f04438;
+  color: #15171c;
+  font-weight: 900;
 }
 .msr-rank-grid {
-  margin-top: 10px;
+  margin-top: 9px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px 8px;
@@ -707,15 +709,27 @@ onBeforeUnmount(() => {
   font-weight: 900;
 }
 .msr-rank-no {
-  left: 5px;
-  top: 5px;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 7px;
+  left: 0;
+  top: 0;
+  min-width: 25px;
+  height: 24px;
+  border-radius: 10px 0 10px 0;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #ff7b4c, #f04438);
-  font-size: 11px;
+  background: rgba(30, 34, 42, .72);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .14);
+  font-size: 12px;
+  font-style: italic;
+}
+.msr-rank-card:nth-child(1) .msr-rank-no {
+  background: linear-gradient(135deg, #ff4b3e, #ff8a4a);
+}
+.msr-rank-card:nth-child(2) .msr-rank-no {
+  background: linear-gradient(135deg, #ff8c2f, #ffc247);
+}
+.msr-rank-card:nth-child(3) .msr-rank-no {
+  background: linear-gradient(135deg, #ffbd36, #ffe07a);
+  color: #6a4300;
 }
 .msr-rank-tag {
   right: 5px;
@@ -742,9 +756,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   margin-top: 7px;
-  color: #20242d;
-  font-size: 14px;
-  line-height: 1.25;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
 }
 .msr-rank-card p,
 .msr-card p {

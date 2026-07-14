@@ -766,9 +766,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
   margin-top: 7px;
-  color: #1f232b;
-  font-size: 13px;
-  line-height: 1.25;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
 }
 .mt-rank span,
 .mt-card p {

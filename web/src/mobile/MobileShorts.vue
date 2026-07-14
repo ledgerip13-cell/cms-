@@ -2885,9 +2885,10 @@ onBeforeUnmount(() => {
 .ms-related-grid strong {
   display: block;
   margin-top: 6px;
-  color: #252a33;
-  font-size: 12px;
-  line-height: 1.28;
+  color: var(--mobile-vod-card-title-color);
+  font-size: var(--mobile-vod-card-title-size);
+  font-weight: var(--mobile-vod-card-title-weight);
+  line-height: var(--mobile-vod-card-title-line);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;

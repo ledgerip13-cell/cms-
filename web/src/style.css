@@ -59,6 +59,10 @@
   --onboarding-bg: linear-gradient(135deg, var(--accent-soft), rgba(32,36,52,.78));
   --sidebar-w: 214px;
   --topbar-h: 76px;
+  --mobile-vod-card-title-size: 14px;
+  --mobile-vod-card-title-weight: 500;
+  --mobile-vod-card-title-line: 1.25;
+  --mobile-vod-card-title-color: #1f232b;
   --grad: linear-gradient(120deg, #e5a00d, #f5c842);
   --radius: 12px;
   --radius-sm: 9px;
@@ -890,12 +894,14 @@ button { font-family: inherit; }
   .score-badge { right: 7px; bottom: 7px; font-size: 11px; padding: 3px 7px; }
   .c-info { padding-top: 9px; }
   .c-name {
-    font-size: 14px;
-    line-height: 1.35;
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    color: var(--mobile-vod-card-title-color);
+    font-size: var(--mobile-vod-card-title-size);
+    font-weight: var(--mobile-vod-card-title-weight);
+    line-height: var(--mobile-vod-card-title-line);
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .c-sub { font-size: 12px; margin-top: 4px; }
   .section-title {
