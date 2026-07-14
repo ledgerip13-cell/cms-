@@ -211,6 +211,7 @@ function shortsOrderBy(sortMode: string) {
   if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { ratingCount: "desc" as const }, { id: "desc" as const }];
   if (sortMode === "rating") return [{ rating: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
   if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "popularity") return [{ popularity: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
   return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
 }
 
@@ -677,6 +678,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     // 排序：recent 最近更新 / hot 热门(评分) / rating 高分 / year 年份新到旧
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
     if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
+    else if (q.sort === "popularity") orderBy = [{ popularity: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     const withTotal = q.withTotal === "1" || q.withTotal === "true";

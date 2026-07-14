@@ -336,6 +336,7 @@ model Vod {
   metaSourceId  String         @default("") // 实际命中的源内ID
   rating        Float? // 元数据评分
   ratingCount   Int            @default(0) // 评分人数
+  popularity    Float? // TMDB 热度值(popularity)
   officialPic   String         @default("") // 元数据高清封面
   officialIntro String         @default("") // 元数据简介
   genres        String         @default("") // 类型标签(逗号分隔)

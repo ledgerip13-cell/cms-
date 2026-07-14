@@ -26,6 +26,7 @@ export interface DoubanMeta {
   title: string;
   rating: number | null;
   ratingCount: number;
+  popularity?: number;
   pic: string;
   intro: string;
   genres: string[];

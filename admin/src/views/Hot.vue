@@ -92,6 +92,7 @@ const cfg = ref({ typeNames: [], sortMode: 'hot', timeWindowDays: 0, minRating: 
 
 const sortModes = [
   { value: 'hot', label: '热度优先' },
+  { value: 'popularity', label: 'TMDB热度' },
   { value: 'rating', label: '高分优先' },
   { value: 'recent', label: '最新更新' },
   { value: 'created', label: '最近入库' },

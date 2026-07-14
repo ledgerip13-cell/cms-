@@ -199,6 +199,7 @@ export async function tmdbDetail(id: string, creds: TmdbCredentials): Promise<Do
     title,
     rating: Number(d.vote_average) > 0 ? Number(d.vote_average) : null,
     ratingCount: Number(d.vote_count) || 0,
+    popularity: Number(d.popularity) || undefined,
     pic: poster,
     intro: String(d.overview || ""),
     genres: Array.isArray(d.genres) ? d.genres.map((x: any) => String(x?.name || "")).filter(Boolean) : [],

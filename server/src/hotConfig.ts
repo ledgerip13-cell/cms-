@@ -1,7 +1,7 @@
 import { prisma } from "./db.js";
 import { enabledTypeNames, publicPlayableFilter, publicTypeFilter, requestedPublicType, type AccessViewer } from "./publicVod.js";
 
-export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned"] as const;
+export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned", "popularity"] as const;
 type HotSortMode = (typeof HOT_SORT_MODES)[number];
 
 export interface HotConfigDto {
@@ -88,6 +88,7 @@ function orderByFor(sortMode: HotSortMode): any[] {
   if (sortMode === "rating") return [ratingDesc, { ratingCount: "desc" }, { updatedAt: "desc" }];
   if (sortMode === "recent") return [{ updatedAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
   if (sortMode === "created") return [{ createdAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
+  if (sortMode === "popularity") return [{ popularity: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
   if (sortMode === "pinned") return [{ pinned: "desc" }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
   return [{ ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
 }
@@ -118,6 +119,7 @@ export async function hotVodQuery(cat = "hot", limit?: number, viewer: AccessVie
   if (config.timeWindowDays > 0) where.updatedAt = { gte: new Date(Date.now() - config.timeWindowDays * 24 * 60 * 60 * 1000) };
   if (config.minRating > 0) where.rating = { gte: config.minRating };
   else if (config.sortMode === "hot" || config.sortMode === "rating") where.rating = { not: null };
+  if (config.sortMode === "popularity") where.popularity = { not: null };
   if (config.minRatingCount > 0) where.ratingCount = { gte: config.minRatingCount };
 
   return {
