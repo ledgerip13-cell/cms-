@@ -7,6 +7,7 @@ import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { resolveShareUrl } from "../collector/resolver.js";
+import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived } from "../jinpaiPlay.js";
 import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
@@ -1138,13 +1139,40 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (!id || !playId) return reply.code(400).send({ ok: false, error: "缺少诊断参数" });
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true, source: { select: { id: true, name: true, enabled: true, driver: true } } },
+        include: { vod: true, source: { select: { id: true, name: true, enabled: true, driver: true, apiUrl: true, signKey: true } } },
       });
       if (!play || play.vodId !== id) return reply.code(404).send({ ok: false, error: "线路不存在" });
       const episodes = parseEpisodes(play.episodes);
       const ep = episodes[epIndex];
       if (!ep?.url) return { ok: false, error: "播放集数不存在", source: play.source.name, epIndex };
-      const result = await resolveShareUrl(ep.url);
+      // 金牌影院系（jinpai）：ep.url 存的是该集 nid（纯数字），不能丢给通用分享页解析器，
+      // 否则 new URL(nid) 报错→“非法地址”→诊断永远失败。需走与 /api/resolve 同源的签名解析。
+      let result: any;
+      if (play.flag === JINPAI_FLAG) {
+        const nid = String(ep.url).trim();
+        const vodSvid = String(play.sourceVodId);
+        if (play.vod.archiveStatus === "done" && isEpisodeArchived(vodSvid, nid)) {
+          result = { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "jinpai_local" };
+        } else {
+          try {
+            const list = await fetchEpisodeUrls({
+              apiUrl: (play.source as any).apiUrl,
+              signKey: (play.source as any).signKey,
+              vodId: vodSvid,
+              nid,
+              clientIp: clientIpOf(req),
+            });
+            const best = pickBest(list);
+            result = best?.url
+              ? { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution }
+              : { ok: false, error: "源站无可播地址" };
+          } catch (e: any) {
+            result = { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };
+          }
+        }
+      } else {
+        result = await resolveShareUrl(ep.url);
+      }
       return {
         ...result,
         rawUrl: ep.url,
