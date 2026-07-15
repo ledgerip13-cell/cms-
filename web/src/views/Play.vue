@@ -15,6 +15,15 @@
         <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError">
           <track v-for="(s,i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i===0" />
         </video>
+        <button v-if="!accessBlock && mode==='hls' && qualities.length" class="quality-toggle"
+          :class="{on: qualityOpen}" :title="'清晰度：' + (curQualityLabel)" @click.stop="qualityOpen = !qualityOpen">
+          <span class="qt-label">{{ curQualityLabel }}</span>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div v-if="!accessBlock && mode==='hls' && qualities.length && qualityOpen" class="quality-menu" @click.stop>
+          <button type="button" :class="{on: preferredRes===0}" @click="switchQuality(0); qualityOpen=false">自动</button>
+          <button v-for="q in qualities" :key="q.resolution" type="button" :class="{on: preferredRes===q.resolution}" @click="switchQuality(q.resolution); qualityOpen=false">{{ q.name || (q.resolution + 'P') }}</button>
+        </div>
         <button v-if="!accessBlock && mode==='hls' && subtitles.length" class="sub-toggle"
           :class="{on: subSyncOpen}" title="字幕设置" @click.stop="subSyncOpen = !subSyncOpen">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 15h3M7 11h6M14 15h3" stroke-linecap="round"/></svg>
@@ -121,10 +130,7 @@
       <div class="eps-box" v-if="curChannel">
         <div class="eps-head">
           <span>选集 <em>{{ curChannel.episodes.length }} 集</em></span>
-          <div v-if="qualities.length >= 1" class="quality-picker">
-            <button type="button" :class="{on: preferredRes===0}" @click="switchQuality(0)">自动</button>
-            <button v-for="q in qualities" :key="q.resolution" type="button" :class="{on: preferredRes===q.resolution}" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
-          </div>
+
           <div v-if="episodeGroups.length > 1" class="eps-groups">
             <button v-for="(g, i) in episodeGroups" :key="g.start" type="button"
               :class="{on: activeEpGroupIndex===i}" @click="activeEpGroupIndex=i">
@@ -234,7 +240,13 @@ const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const subtitles = ref([]); const subtitleOffset = ref(0); const subSyncOpen = ref(false)
-const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
+const qualities = ref([]); const preferredRes = ref(0); const qualityOpen = ref(false) // 0=自动(最高清)；用户选择跨集持续
+const curQualityLabel = computed(() => {
+  if (!qualities.value.length) return ''
+  if (preferredRes.value === 0) return '自动'
+  const hit = qualities.value.find(q => q.resolution === preferredRes.value)
+  return hit ? (hit.name || (hit.resolution + 'P')) : '自动'
+})
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
@@ -829,10 +841,13 @@ onBeforeUnmount(() => {
 .eps-head em { color: var(--muted); font-style: normal; font-size: 13px; font-weight: 400; margin-left: 8px; }
 .eps-groups { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
 .eps-groups::-webkit-scrollbar { display: none; }
-.quality-picker { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.quality-picker button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
-.quality-picker button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }
-.quality-picker button.on { box-shadow: none; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
+.quality-toggle { position: absolute; right: 12px; top: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; height: 30px; border: 1px solid rgba(255,255,255,.28); background: rgba(0,0,0,.5); color: rgba(255,255,255,.9); border-radius: 8px; cursor: pointer; z-index: 6; font-size: 12px; }
+.quality-toggle:hover, .quality-toggle.on { background: rgba(0,0,0,.72); color: #fff; }
+.quality-toggle .qt-label { line-height: 1; }
+.quality-menu { position: absolute; right: 12px; top: 50px; display: flex; flex-direction: column; gap: 4px; padding: 6px; background: rgba(0,0,0,.82); backdrop-filter: blur(8px); border-radius: 10px; z-index: 6; min-width: 88px; }
+.quality-menu button { border: 0; background: transparent; color: rgba(255,255,255,.85); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; text-align: center; }
+.quality-menu button:hover { background: rgba(255,255,255,.16); color: #fff; }
+.quality-menu button.on { background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line);
   background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: var(--small-text-max-weight); }
 .eps-groups button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }
