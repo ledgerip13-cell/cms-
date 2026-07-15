@@ -308,7 +308,7 @@ async function upsertVod(
     include: { vod: true },
   });
   const existing = direct || alias?.vod || null;
-  const subType = cleanText(raw.type_name); // 原始小类
+  const subType = cleanText(raw.sub_type ?? raw.type_name); // 原始小类(jinpai 用 sub_type=vodClass；maccms 回退 type_name)
   const rawPic = raw.vod_pic || "";
   let localPic = "";
   if (opts.localizeImages && rawPic) {

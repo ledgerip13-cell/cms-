@@ -93,12 +93,15 @@ function toRawVod(item: any, episodes?: { name: string; nid: string }[]): RawVod
   })();
   // type_id 用顶级分类 typeId1（与 fetchClasses 的 ClassItem.typeId 对齐，供 resolveCategory 映射）
   const t1 = String(item.typeId1 ?? "");
+  // 大类名取顶级分类名(电影/电视剧/...)，保证分类映射表显示干净大类，而非被子类文本覆盖
+  const topName = TOP_CATEGORIES.find((c) => String(c.type1) === t1)?.name || "";
   const raw: RawVod = {
     vod_id: String(item.vodId ?? ""),
     vod_name: String(item.vodName || "").trim(),
     type_id: t1,
-    // type_name 用 vodClass（子类名，如 "剧情,爱情"）→ 落 subType，后台可下钻
-    type_name: String(item.vodClass || "").trim(),
+    // type_name 用大类名供 SourceTypeMap 映射；vodClass 子类另存 sub_type 供前台下钻
+    type_name: topName,
+    sub_type: String(item.vodClass || "").trim(),
     vod_year: year,
     vod_pic: String(item.vodPic || ""),
     vod_actor: String(item.vodActor || ""),

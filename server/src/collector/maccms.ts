@@ -7,6 +7,7 @@ export interface RawVod {
   vod_name: string;
   type_id?: number | string;
   type_name?: string;
+  sub_type?: string; // 子分类文本(如 jinpai 的 vodClass)；与 type_name(大类名)分开，防污染分类映射表
   vod_year?: string;
   vod_pic?: string;
   vod_actor?: string;
