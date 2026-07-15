@@ -65,6 +65,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         cronExpr: b.cronExpr || "0 * * * *",
         signKey: String(b.signKey || "").trim(),
         autoArchive: b.autoArchive ?? false,
+        archiveRes: [0, 480, 720, 1080].includes(Number(b.archiveRes)) ? Number(b.archiveRes) : 720,
       },
     });
     await reloadSchedules();
@@ -91,6 +92,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       cronExpr: b.cronExpr,
       signKey: b.signKey !== undefined ? String(b.signKey || "").trim() : undefined,
       autoArchive: b.autoArchive,
+      archiveRes: b.archiveRes !== undefined && [0, 480, 720, 1080].includes(Number(b.archiveRes)) ? Number(b.archiveRes) : undefined,
     };
     if (Array.isArray(b.apiUrls)) {
       const apiUrls = b.apiUrls.map((s: string) => String(s || "").trim()).filter(Boolean);

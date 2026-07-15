@@ -104,6 +104,15 @@
       </el-form-item>
       <el-form-item label="播放标识"><el-input v-model="form.flag" placeholder="rym3u8（可留空）" /></el-form-item>
       <el-form-item label="签名密钥" v-if="form.driver === 'jinpai'"><el-input v-model="form.signKey" placeholder="留空=用驱动内置默认（仅源站改算法时才填）" /></el-form-item>
+      <el-form-item label="转存清晰度" v-if="form.driver === 'jinpai'">
+        <el-select v-model="form.archiveRes" style="width:260px">
+          <el-option label="最高清（体积最大）" :value="0" />
+          <el-option label="1080P 蓝光" :value="1080" />
+          <el-option label="720P 高清（默认）" :value="720" />
+          <el-option label="480P 标清（最省盘）" :value="480" />
+        </el-select>
+        <small style="margin-left:8px;color:#9aa4b2">本地转存下载的清晰度上限；CDN 按IP限速，降清晰度提速省盘。若无此档取≤上限最高一档。</small>
+      </el-form-item>
       <el-form-item label="回源模式" v-if="form.driver !== 'nbflix'">
         <el-select v-model="form.proxyMode" style="width:260px">
           <el-option label="跟随全局（默认）" value="inherit" />
@@ -386,7 +395,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', signKey:'', proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', signKey:'', archiveRes:720, proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {

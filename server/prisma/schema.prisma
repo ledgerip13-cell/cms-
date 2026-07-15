@@ -16,6 +16,7 @@ model Source {
   apiUrls      String          @default("[]") // JSON数组：多个API入口(主备)，按序尝试failover，空则回退用apiUrl
   driver       String          @default("maccms") // 采集驱动: maccms(苹果CMS标准) / nbflix(iCloud系源站) / jinpai(金牌影院系)
   signKey      String          @default("") // jinpai 等需签名的源：接口签名密钥(前端改算法时后台可改，空=用驱动内置默认)
+  archiveRes   Int             @default(720) // 本地转存下载清晰度上限: 0=最高清 / 1080 / 720 / 480（源级，默认720）
   autoArchive  Boolean         @default(false) // 方案A：该源采集入库的新片是否自动排队转存(最高清)到本地硬盘
   activeApiUrl String          @default("") // 最近一次采集实际生效的url(运维可见性)
   playDomains  String          @default("[]") // JSON数组：该源已入库播放地址域名统计，供后台快速展示/替换

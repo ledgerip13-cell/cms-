@@ -133,7 +133,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
       if (play.flag === JINPAI_FLAG) {
         const nid = String(url).trim();
         const vodSvid = String(play.sourceVodId);
-        // 客户端 IP 签名 → CDN 直连
+        // 客户端 IP 签名 → CDN 直连；返回全部清晰度供前台切换
         try {
           const list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,
@@ -144,7 +144,8 @@ export default async function resolveRoutes(app: FastifyInstance) {
           });
           const best = pickBest(list);
           if (!best?.url) return { ok: false, error: "源站无可播地址" };
-          return { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution };
+          const qualities = list.map((x) => ({ resolution: x.resolution, name: x.resolutionName, url: x.url }));
+          return { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution, qualities };
         } catch (e: any) {
           return { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };
         }

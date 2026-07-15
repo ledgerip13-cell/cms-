@@ -452,7 +452,7 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
   }
   const vod = await prisma.vod.findUnique({
     where: { id: vodId },
-    include: { plays: { include: { source: { select: { apiUrl: true, signKey: true, driver: true, enabled: true } } } } },
+    include: { plays: { include: { source: { select: { apiUrl: true, signKey: true, driver: true, enabled: true, archiveRes: true } } } } },
   });
   if (!vod) {
     await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "影片不存在", finishedAt: new Date() } });
@@ -476,9 +476,19 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
 
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), pageTotal: eps.length, pageNow: 0, progress: 0, message: `转存「${vod.name}」共 ${eps.length} 集` } });
   await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "running" } }).catch(() => {});
-  // 转存清晰度上限(全局配置，0=最高清)
+  // 转存清晰度上限：源级 archiveRes 优先；源级为 null/未设则回退全局 playConfig.archiveResolution
   let preferRes = 720;
-  try { const site = await prisma.siteConfig.findUnique({ where: { id: 1 }, select: { playConfig: true } }); preferRes = (normalizePlayConfig((site as any)?.playConfig) as any).archiveResolution ?? 720; } catch {}
+  try {
+    const srcRes = (play.source as any).archiveRes;
+    if (typeof srcRes === "number" && [0, 480, 720, 1080].includes(srcRes)) {
+      preferRes = srcRes;
+    } else {
+      const site = await prisma.siteConfig.findUnique({ where: { id: 1 }, select: { playConfig: true } });
+      preferRes = (normalizePlayConfig((site as any)?.playConfig) as any).archiveResolution ?? 720;
+    }
+  } catch {}
+  // 防封/提速：可配国内 IP 签名(拿 blbtgg 阿里云线)，空=服务器自身 IP
+  const archiveClientIp = (process.env.ARCHIVE_CLIENT_IP || "").trim() || null;
 
   let doneEps = 0, failEps = 0, totalMb = 0, bestRes = 0;
   const archivedEps: { name: string; nid: string }[] = []; // 已成功归档的集，用于生成本地源线路
@@ -493,7 +503,8 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
       return;
     }
     const ep = eps[i];
-    const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force, preferRes });
+    if (i > 0) await new Promise((r) => setTimeout(r, 300 + Math.floor(Math.random() * 900))); // 防封：集间轻微 jitter
+    const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force, preferRes, clientIp: archiveClientIp });
     if (r.ok) {
       doneEps++;
       archivedEps.push({ name: ep.name, nid: ep.nid });

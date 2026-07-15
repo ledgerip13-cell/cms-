@@ -121,6 +121,10 @@
       <div class="eps-box" v-if="curChannel">
         <div class="eps-head">
           <span>选集 <em>{{ curChannel.episodes.length }} 集</em></span>
+          <div v-if="qualities.length > 1" class="quality-picker">
+            <button type="button" :class="{on: preferredRes===0}" @click="switchQuality(0)">自动</button>
+            <button v-for="q in qualities" :key="q.resolution" type="button" :class="{on: preferredRes===q.resolution}" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+          </div>
           <div v-if="episodeGroups.length > 1" class="eps-groups">
             <button v-for="(g, i) in episodeGroups" :key="g.start" type="button"
               :class="{on: activeEpGroupIndex===i}" @click="activeEpGroupIndex=i">
@@ -230,6 +234,7 @@ const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const subtitles = ref([]); const subtitleOffset = ref(0); const subSyncOpen = ref(false)
+const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
@@ -481,10 +486,18 @@ async function playResolvedEp(i, opts = {}) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
       subSyncOpen.value = false
+      // 多清晰度（金牌直连源）：记录可选档，按用户偏好选 URL
+      const qs = Array.isArray(r.qualities) ? r.qualities : []
+      qualities.value = qs
+      let playUrl = r.url
+      if (preferredRes.value && qs.length) {
+        const hit = qs.find((q) => q.resolution === preferredRes.value)
+        if (hit?.url) playUrl = hit.url
+      }
       // iCloud 链必须等 Service Worker 接管页面后才能发起请求（否则请求会绕过 SW 直接打到 iCloud 拿到网页而非视频）；
       // 首次访问时 App.vue 的 SW 注册与本组件加载存在竞态，实测确认过这个时序问题。
-      if (isIcloudUrl(r.url)) await waitForServiceWorker()
-      playDirectUrl(r.url, r.kind)
+      if (isIcloudUrl(playUrl)) await waitForServiceWorker()
+      playDirectUrl(playUrl, r.kind)
       saveWatchHistory(i, pendingSeekSec || 0)
       return
     }
@@ -496,6 +509,19 @@ async function playResolvedEp(i, opts = {}) {
   finally { resolving.value = false }
   cleanFallbackUrl.value = ''
   tryNextPlayback()
+}
+
+// 切换清晰度：保留当前播放位置重新加载选定档 URL
+function switchQuality(res) {
+  if (res === preferredRes.value) return
+  preferredRes.value = res
+  const qs = qualities.value || []
+  const hit = res ? qs.find((q) => q.resolution === res) : qs[0]
+  const url = hit?.url
+  if (!url) return
+  const video = videoEl.value
+  pendingSeekSec = Math.floor(Number(video?.currentTime) || 0)
+  playDirectUrl(url, 'm3u8')
 }
 
 function tryNextPlayback() {
@@ -803,6 +829,10 @@ onBeforeUnmount(() => {
 .eps-head em { color: var(--muted); font-style: normal; font-size: 13px; font-weight: 400; margin-left: 8px; }
 .eps-groups { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
 .eps-groups::-webkit-scrollbar { display: none; }
+.quality-picker { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.quality-picker button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.quality-picker button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }
+.quality-picker button.on { box-shadow: none; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-groups button { flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 0; box-shadow: inset 0 0 0 1px var(--line);
   background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: var(--small-text-max-weight); }
 .eps-groups button:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: var(--text); }

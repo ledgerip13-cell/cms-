@@ -93,6 +93,7 @@ export async function archiveEpisode(opts: {
   nid: string | number;
   force?: boolean;
   preferRes?: number; // 清晰度上限(0=最高清)
+  clientIp?: string | null; // 签名时伪装客户端 IP(传国内 IP → 拿 blbtgg 阿里云线)
   onLog?: (s: string) => void;
 }): Promise<ArchiveEpResult> {
   const vodId = String(opts.vodId);
@@ -105,10 +106,10 @@ export async function archiveEpisode(opts: {
     return { nid, ok: true, skipped: true };
   }
 
-  // 拿最高清 m3u8（服务器自身 IP 签名，不带 clientIp）
+  // 拿清晰度列表（clientIp 传入则伪装该 IP 签名，影响源站返回的 CDN 线路）
   let list;
   try {
-    list = await fetchEpisodeUrls({ apiUrl: opts.apiUrl, signKey: opts.signKey, vodId, nid, timeoutMs: 15000 });
+    list = await fetchEpisodeUrls({ apiUrl: opts.apiUrl, signKey: opts.signKey, vodId, nid, clientIp: opts.clientIp, timeoutMs: 15000 });
   } catch (e: any) {
     return { nid, ok: false, error: `签名/取址失败: ${String(e?.message || e).slice(0, 100)}` };
   }

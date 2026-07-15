@@ -12,7 +12,10 @@ import path from "node:path";
 import { buildJinpaiHeaders } from "./collector/jinpaiSign.js";
 
 const API_PREFIX = "/api/mw-movie/anonymous";
-const DEVICE_ID = crypto.randomUUID();
+// 防封：每次签名轮换 deviceId(不再进程级固定)，降低源站按设备风控封禁概率
+function rollDeviceId(): string {
+  return crypto.randomUUID();
+}
 export const ARCHIVE_DIR = process.env.ARCHIVE_DIR || "/app/archive";
 
 export interface EpisodeUrlItem {
@@ -51,7 +54,7 @@ export async function fetchEpisodeUrls(opts: {
     }
   })();
   const params = { clientType: "1", id: String(opts.vodId), nid: String(opts.nid) };
-  const headers = buildJinpaiHeaders(params, { signKey: opts.signKey, deviceId: DEVICE_ID, clientIp: opts.clientIp });
+  const headers = buildJinpaiHeaders(params, { signKey: opts.signKey, deviceId: rollDeviceId(), clientIp: opts.clientIp });
   const qs = Object.entries(params)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
