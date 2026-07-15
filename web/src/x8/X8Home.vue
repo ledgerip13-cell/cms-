@@ -233,6 +233,14 @@
           <div class="x8-player">
             <video v-if="playKind !== 'iframe'" ref="videoEl" controls playsinline webkit-playsinline :poster="heroImage(vod)"></video>
             <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+            <button v-if="playUrl && playKind !== 'iframe' && qualities.length" class="x8-quality-toggle" :class="{ on: qualityOpen }" :title="'清晰度：' + curQualityLabel" @click.stop="qualityOpen = !qualityOpen">
+              <span>{{ curQualityLabel }}</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div v-if="playUrl && playKind !== 'iframe' && qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
+              <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
+              <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+            </div>
             <button v-if="!playUrl" class="x8-player-empty" type="button" @click="playCurrent">
               <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
               <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
@@ -383,6 +391,10 @@ const playUrl = ref('')
 const playKind = ref('')
 const resolving = ref(false)
 const videoEl = ref(null)
+const qualities = ref([])
+const preferredRes = ref(0)
+const qualityOpen = ref(false)
+const defaultQualityUrl = ref('')
 let heroTouchX = 0
 let heroTimer = 0
 let hls = null
@@ -440,6 +452,16 @@ const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}`
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
+const showAutoQuality = computed(() => qualities.value.length > 1)
+const curQualityLabel = computed(() => {
+  if (!qualities.value.length) return ''
+  if (preferredRes.value === 0) {
+    if (qualities.value.length === 1) return qualities.value[0]?.name || `${qualities.value[0]?.resolution || ''}P`
+    return '自动'
+  }
+  const hit = qualities.value.find(q => q.resolution === preferredRes.value)
+  return hit ? (hit.name || `${hit.resolution}P`) : '自动'
+})
 
 const X8Panel = defineComponent({
   name: 'X8Panel',
@@ -733,11 +755,43 @@ async function playCurrent() {
   const ep = episodes.value[currentEpIndex.value]
   if (!vod.value?.id || !line || !ep) return
   resolving.value = true
+  qualityOpen.value = false
+  qualities.value = []
+  defaultQualityUrl.value = ''
   try {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value })
-    if (result?.ok !== false && result?.url) attachVideo(result.url, result.kind || line.playKind || '')
+    if (result?.ok !== false && result?.url) {
+      // 多清晰度（金牌直连源）：记录可选档位，按用户偏好选 URL
+      const qs = Array.isArray(result.qualities) ? result.qualities : []
+      qualities.value = qs
+      defaultQualityUrl.value = result.url
+      let playHere = result.url
+      if (preferredRes.value && qs.length) {
+        const hit = qs.find((q) => q.resolution === preferredRes.value)
+        if (hit?.url) playHere = hit.url
+      }
+      qualityOpen.value = false
+      attachVideo(playHere, result.kind || line.playKind || '')
+    }
   } finally {
     resolving.value = false
+  }
+}
+// X8 播放器切换清晰度：保留当前播放位重新加载选定档 URL
+function switchQuality(res) {
+  qualityOpen.value = false
+  if (res === preferredRes.value) return
+  preferredRes.value = res
+  const qs = qualities.value || []
+  const hit = res ? qs.find((q) => q.resolution === res) : null
+  const url = hit?.url || defaultQualityUrl.value || qs[0]?.url
+  if (!url) return
+  const video = videoEl.value
+  const seekTo = Math.floor(Number(video?.currentTime) || 0)
+  attachVideo(url, '')
+  if (video && seekTo > 3) {
+    const onLoaded = () => { try { video.currentTime = seekTo } catch {} video.removeEventListener('loadedmetadata', onLoaded) }
+    video.addEventListener('loadedmetadata', onLoaded)
   }
 }
 function selectLine(id) {
@@ -858,6 +912,9 @@ async function loadVod(withPlay = false) {
   loading.value = true
   destroyHls()
   playUrl.value = ''
+  qualityOpen.value = false
+  qualities.value = []
+  defaultQualityUrl.value = ''
   try {
     await ensureTypes()
     const id = Number(route.params.id)
@@ -2051,6 +2108,61 @@ onBeforeUnmount(() => {
   min-height: 560px;
   display: block;
   background: #000;
+}
+.x8-quality-toggle {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 8px;
+  background: rgba(0,0,0,.5);
+  color: rgba(255,255,255,.9);
+  font-size: 12px;
+  cursor: pointer;
+}
+.x8-quality-toggle:hover,
+.x8-quality-toggle.on {
+  background: rgba(0,0,0,.72);
+  color: #fff;
+}
+.x8-quality-menu {
+  position: absolute;
+  right: 12px;
+  top: 50px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 88px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.x8-quality-menu button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: rgba(255,255,255,.85);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+.x8-quality-menu button:hover {
+  background: rgba(255,255,255,.16);
+  color: #fff;
+}
+.x8-quality-menu button.on {
+  background: #fff;
+  color: #111;
 }
 .x8-player-empty {
   position: absolute;

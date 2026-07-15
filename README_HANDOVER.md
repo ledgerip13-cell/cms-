@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-15 (GMT+8)｜**对应提交**：待提交（X8 模板整站前端重构）
+> **最后更新**：2026-07-16 (GMT+8)｜**对应提交**：待提交（X8 播放器清晰度切换）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-16 X8 播放器清晰度切换断点**：`web/src/x8/X8Home.vue` 补齐 X8 播放页播放器内右上角清晰度浮层，消费 `/api/resolve` 返回的 `qualities`。多档金牌线路显示“自动”并可下拉切换蓝光/高清/标清；单档线路也显示实际档名（如“高清”）。切换清晰度时保留当前播放进度，重新 attach 对应 URL 后在 `loadedmetadata` 回跳。已 `npm run build`（web）、`docker compose up -d --build web` 部署，`5150 /health`、`5152` 新包 `assets/index-ChgheZbP.js`、resolve API 与浏览器本地 X8 页面实测通过：`#/x8/play/921` 金牌显示“自动/蓝光/高清/标清”，`#/x8/play/184923` 显示“高清”。
 - **2026-07-15 X8 模板整站前端重构断点**：按实时参考站 `https://www.x8kb9k8.com/` 重新抓取首页 HTML、Next.js 静态资源清单与 styled-components 样式，确认页面体系为：首页 `/`、分类 `/vod/show/id/:id`、详情 `/detail/:id`、播放 `/vod/play/:id/sid/:sid`、排行 `/rank`、登录 `/login`。`web/src/x8/X8Home.vue` 已从旧单页皮肤重构为 X8 整站前端壳：固定透明顶部导航、搜索胶囊、全屏 Banner、`正在热播` 海报卡墙、`新片预告` 左视频框 + 右品牌水印 + 缩略图、`最新电影/电视剧/综艺/动漫/短剧 + 对应热榜` 的左右布局，以及分类/搜索、排行榜、详情、播放、登录壳。删除旧版自创首页小卡条/分类面板/错误 trailer 右侧榜单等参考站没有的模块。`web/src/main.js` 新增 `/x8/show/:type`、`/x8/detail/:id`、`/x8/login` 路由。已 `pnpm --dir web build`、`docker compose up -d --build web`、`5150 /health`、`5152` 200、`git diff --check` 通过；浏览器实测桌面首页首屏、热播/预告、最新+热榜、排行、分类页与移动宽度非空正常。注意：截图中出现的“发现新版本”是现有 PWA 更新提示，不属于 X8 模板。
 - **2026-07-15 X8 字号/列数二次对齐断点**：根据参考站 styled-components 断点复核：热播网格 `.golOll` 为桌面 `7`、`max-width:1750` 为 `6`；带右侧短热榜的普通分区卡片使用 short-rank-card 档位，标题/评分在 `1400-1749` 宽度降为 `14px/16px`。`web/src/x8/X8Home.vue` 已调整：1440 宽实测热播 6 列、分区左侧 6 列；section 标题修正为 `28px/600`（之前被 `.x8-page button { font: inherit }` 覆盖成 16px），热播卡名/评分为 `16px/18px`，分区卡名/评分为 `14px/16px`，gap 对齐 `19.9px/16px`。已重新 `pnpm --dir web build`、`docker compose up -d --build web`、`5150 /health`、`git diff --check`，浏览器计算值复测通过。
 - **2026-07-15 X8 卡片高度/热播填充断点**：继续按参考站卡片 CSS 对齐：`1400-1749` 桌面段普通热播卡片固定视觉高度 `347.53px`，带右侧短榜分区卡片固定 `300px`，不再按自然海报比例压矮。`正在热播` 展示数量改为按当前列数自动取两排（`>=1750:7*2`、`1025-1749:6*2`、`721-1024:4*2`、移动 `2*2`）；当 `/api/hot` 返回不足时，自动用首页 hero 与各分区列表去重补足，避免出现一排半或第三排残项。1440 宽浏览器实测：热播 `12` 条、`6+6` 两排，热播卡片 `347.52px`，分区卡片 `12` 条、`6` 列、`300px`。已 `pnpm --dir web build`、`docker compose up -d --build web`、`5150 /health`、`git diff --check` 通过。
