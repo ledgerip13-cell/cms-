@@ -99,10 +99,10 @@ function toRawVod(item: any, episodes?: { name: string; nid: string }[]): RawVod
     vod_id: String(item.vodId ?? ""),
     vod_name: String(item.vodName || "").trim(),
     type_id: t1,
-    // type_name 用大类名供 SourceTypeMap 映射；vodClass 只取首个主类型落 sub_type
-    // (源站 vodClass 是逗号多标签串如"剧情,悬疑,犯罪"，整串存会让前台二级分类出现几百个组合标签)
+    // type_name 用大类名供 SourceTypeMap 映射；vodClass 完整多标签串存 sub_type，
+    // 由 upsertVod 拆分入 VodSubType 多标签表(主类型取首个写 Vod.subType)
     type_name: topName,
-    sub_type: String(item.vodClass || "").split(",")[0].trim(),
+    sub_type: String(item.vodClass || "").trim(),
     vod_year: year,
     vod_pic: String(item.vodPic || ""),
     vod_actor: String(item.vodActor || ""),

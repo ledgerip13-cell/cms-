@@ -308,7 +308,10 @@ async function upsertVod(
     include: { vod: true },
   });
   const existing = direct || alias?.vod || null;
-  const subType = cleanText(raw.sub_type ?? raw.type_name); // 原始小类(jinpai 用 sub_type=vodClass；maccms 回退 type_name)
+  // 拆分多分类标签：sub_type(jinpai=vodClass 完整串) / 回退 type_name；主类型(subType)取首个
+  const subTags = [...new Set(cleanText(raw.sub_type ?? raw.type_name).split(/[,，]/).map((s) => s.trim()).filter(Boolean))];
+  const subType = subTags[0] || "";
+
   const rawPic = raw.vod_pic || "";
   let localPic = "";
   if (opts.localizeImages && rawPic) {
@@ -402,6 +405,17 @@ async function upsertVod(
     if (contentChanged) vodPatch.contentUpdatedAt = now;
     if (Object.keys(vodPatch).length) {
       vod = await prisma.vod.update({ where: { id: existing.id }, data: vodPatch });
+    }
+  }
+
+  // 同步多分类标签(追加式并集，跨源不互删)：一部片可属多个子类型
+  if (subTags.length) {
+    for (const name of subTags) {
+      await prisma.vodSubType.upsert({
+        where: { vodId_name: { vodId: vod.id, name } },
+        create: { vodId: vod.id, name },
+        update: {},
+      }).catch(() => {});
     }
   }
 

@@ -161,7 +161,7 @@ function parseSubtypeRules(value: unknown, limit = 120) {
 function shortFeedTypeWhere(publicTypes: string[], q: any, cfg: any) {
   if (q.type) {
     const typeName = requestedPublicType(publicTypes, String(q.type));
-    return q.sub ? { typeName, subType: String(q.sub) } : { typeName };
+    return q.sub ? { typeName, subTypes: { some: { name: String(q.sub) } } } : { typeName };
   }
   const hasQueryScope = typeof q.types !== "undefined" || typeof q.subKeys !== "undefined" || typeof q.subs !== "undefined";
   const queryTypes = parseStringList(q.types);
@@ -171,7 +171,7 @@ function shortFeedTypeWhere(publicTypes: string[], q: any, cfg: any) {
   const preferredSubtypes = hasQueryScope ? querySubtypes : parseSubtypeRules(cfg?.preferredSubtypes);
   const subtypeFilters = preferredSubtypes
     .filter((item) => isPublicType(publicTypes, item.type))
-    .map((item) => ({ typeName: item.type, subType: item.name }));
+    .map((item) => ({ typeName: item.type, subTypes: { some: { name: item.name } } }));
   const filters: any[] = [];
   if (typeNames.length) filters.push({ typeName: { in: typeNames } });
   filters.push(...subtypeFilters);
@@ -197,12 +197,12 @@ function shortsSubtypeScopeForType(cfg: any, type: string) {
 function vodListTypeWhere(publicTypes: string[], q: any) {
   if (q.type) {
     const typeName = requestedPublicType(publicTypes, String(q.type));
-    return q.sub ? { typeName, subType: String(q.sub) } : { typeName };
+    return q.sub ? { typeName, subTypes: { some: { name: String(q.sub) } } } : { typeName };
   }
   const typeNames = parseStringList(q.types).filter((type) => isPublicType(publicTypes, type));
   const subtypeFilters = parseSubtypeRules(q.subs)
     .filter((item) => isPublicType(publicTypes, item.type))
-    .map((item) => ({ typeName: item.type, subType: item.name }));
+    .map((item) => ({ typeName: item.type, subTypes: { some: { name: item.name } } }));
   const filters: any[] = [];
   if (typeNames.length) filters.push({ typeName: { in: typeNames } });
   filters.push(...subtypeFilters);
@@ -799,18 +799,20 @@ export default async function vodRoutes(app: FastifyInstance) {
     const subtypes: Record<string, Array<{ name: string; count: number }>> = {};
     await Promise.all(types.map(async (type) => {
       const allowedNames = shortsSubtypeScopeForType(cfg, type.name);
-      const rows = await prisma.vod.groupBy({
-        by: ["subType"],
+      const rows = await prisma.vodSubType.groupBy({
+        by: ["name"],
         where: {
-          status: "online",
-          typeName: type.name,
-          subType: allowedNames ? { in: allowedNames.length ? allowedNames : ["__NO_SUBTYPE__"] } : { not: "" },
-          ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+          name: allowedNames ? { in: allowedNames.length ? allowedNames : ["__NO_SUBTYPE__"] } : { not: "" },
+          vod: {
+            status: "online",
+            typeName: type.name,
+            ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+          },
         },
         _count: { _all: true },
-        orderBy: { _count: { subType: "desc" } },
+        orderBy: { _count: { name: "desc" } },
       });
-      subtypes[type.name] = rows.map((row) => ({ name: row.subType, count: row._count._all })).filter((row) => row.name);
+      subtypes[type.name] = rows.map((row) => ({ name: row.name, count: row._count._all })).filter((row) => row.name);
     }));
     return { types, subtypes };
   });
@@ -984,7 +986,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     // 2) 同小类
     if (sub) {
       pushRows(await prisma.vod.findMany({
-        where: { ...baseWhere, subType: sub },
+        where: { ...baseWhere, subTypes: { some: { name: sub } } },
         orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
         take, include: { _count: { select: publicPlayCountSelect() } },
       }));
@@ -1084,13 +1086,13 @@ export default async function vodRoutes(app: FastifyInstance) {
     const cacheKey = JSON.stringify({ scope: "subtypes", type, publicTypes, sourceIds, cleanOnlySourceIds });
     const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
-    const rows = await prisma.vod.groupBy({
-      by: ["subType"],
-      where: { typeName: type, subType: { not: "" }, ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) },
+    const rows = await prisma.vodSubType.groupBy({
+      by: ["name"],
+      where: { name: { not: "" }, vod: { typeName: type, ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) } },
       _count: { _all: true },
-      orderBy: { _count: { subType: "desc" } },
+      orderBy: { _count: { name: "desc" } },
     });
-    const data = rows.map((r) => ({ name: r.subType, count: r._count._all }));
+    const data = rows.map((r) => ({ name: r.name, count: r._count._all }));
     aggregateCacheSet(cacheKey, data);
     return data;
   });
@@ -1229,7 +1231,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         ];
       }
       if (q.type) where.typeName = q.type;
-      if (q.sub) where.subType = q.sub;
+      if (q.sub) where.subTypes = { some: { name: q.sub } };
       if (q.sourceId) {
         const sourceId = Number(q.sourceId);
         if (Number.isInteger(sourceId) && sourceId > 0) where.plays = { some: { sourceId } };

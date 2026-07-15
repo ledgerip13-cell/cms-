@@ -373,6 +373,7 @@ model Vod {
   images                   VodImage[]
   follows                  UserFollow[]
   histories                WatchHistory[]
+  subTypes                 VodSubType[]   // 多分类标签(源站 vodClass 拆分)；subType 仅存主类型(首个)
   contentUpdatedAt         DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
   updatedAt                DateTime       @updatedAt
   createdAt                DateTime       @default(now())
@@ -402,6 +403,18 @@ model VodAlias {
   note        String   @default("")
   createdAt   DateTime @default(now())
 
+  @@index([vodId])
+}
+
+// 多分类标签：一部片可属多个子类型(源站 vodClass 如"剧情,悬疑,犯罪"拆分)
+model VodSubType {
+  id    Int    @id @default(autoincrement())
+  vod   Vod    @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId Int
+  name  String // 单个子类型名(如 剧情/悬疑/犯罪)
+
+  @@unique([vodId, name])
+  @@index([name])
   @@index([vodId])
 }
 
