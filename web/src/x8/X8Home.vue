@@ -487,7 +487,7 @@ const hotSkeletonCount = computed(() => hotCols.value * 2)
 const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice(0, hotCols.value * 2))
 const navItems = computed(() => {
   const byName = new Map(types.value.map(item => [item.name, item]))
-  const ordered = navOrder.map(name => byName.get(name) || { name }).filter(Boolean)
+  const ordered = navOrder.map(name => byName.get(name)).filter(Boolean)
   const rest = types.value.filter(item => !navOrder.includes(item.name))
   return [...ordered, ...rest].slice(0, 6)
 })

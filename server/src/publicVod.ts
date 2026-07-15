@@ -171,7 +171,7 @@ export async function watchableTypeNames(viewer: AccessViewer = null) {
 }
 
 export async function enabledTypeNames(viewer: AccessViewer = null) {
-  return visibleTypeNames(viewer);
+  return watchableTypeNames(viewer);
 }
 
 export async function accessForType(typeName: string, action: AccessAction, viewer: AccessViewer = null) {
