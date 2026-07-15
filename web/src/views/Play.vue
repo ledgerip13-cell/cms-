@@ -121,7 +121,7 @@
       <div class="eps-box" v-if="curChannel">
         <div class="eps-head">
           <span>选集 <em>{{ curChannel.episodes.length }} 集</em></span>
-          <div v-if="qualities.length > 1" class="quality-picker">
+          <div v-if="qualities.length >= 1" class="quality-picker">
             <button type="button" :class="{on: preferredRes===0}" @click="switchQuality(0)">自动</button>
             <button v-for="q in qualities" :key="q.resolution" type="button" :class="{on: preferredRes===q.resolution}" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
           </div>
