@@ -8,6 +8,7 @@ import { applyDoubanAssets, localizeMetaImages } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 import { archiveEpisode, removeVodArchive } from "./archive.js";
 import { JINPAI_FLAG } from "./drivers/jinpai.js";
+import { upsertLocalPlay, removeLocalPlay } from "./localSource.js";
 import { cleanText } from "../textClean.js";
 import { enabledMetaProviders, metaProviderByKey, type MetaProviderConfig } from "../metaProviders.js";
 
@@ -476,6 +477,7 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
   await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "running" } }).catch(() => {});
 
   let doneEps = 0, failEps = 0, totalMb = 0, bestRes = 0;
+  const archivedEps: { name: string; nid: string }[] = []; // 已成功归档的集，用于生成本地源线路
   for (let i = 0; i < eps.length; i++) {
     // 取消检查
     const cur = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
@@ -483,12 +485,14 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
       await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: `已中止（完成 ${doneEps}/${eps.length} 集）`, finishedAt: new Date() } });
       canceled.delete(taskId);
       await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: doneEps > 0 ? "done" : "none", archiveEps: doneEps, archiveSize: totalMb, archiveRes: bestRes || 0 } }).catch(() => {});
+      if (archivedEps.length) await upsertLocalPlay(vodId, play.sourceVodId, archivedEps).catch(() => {}); // 部分完成也生成本地源线路
       return;
     }
     const ep = eps[i];
     const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force });
     if (r.ok) {
       doneEps++;
+      archivedEps.push({ name: ep.name, nid: ep.nid });
       if (r.sizeMb) totalMb += r.sizeMb;
       if (r.resolution && r.resolution > bestRes) bestRes = r.resolution;
     } else {
@@ -505,6 +509,8 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
     where: { id: vodId },
     data: { archiveStatus: finalStatus, archiveEps: doneEps, archiveSize: totalMb, archiveRes: bestRes || 0, archivedAt: new Date() },
   }).catch(() => {});
+  // 转存成功 → 生成/更新本地源独立线路(金牌原线路保留)
+  if (doneEps > 0 && archivedEps.length) await upsertLocalPlay(vodId, play.sourceVodId, archivedEps).catch(() => {});
   await taskUpdate({
     where: { id: taskId },
     data: { status: finalStatus === "done" ? "done" : "failed", progress: 100, message: `转存完成：${doneEps} 集成功 / ${failEps} 失败，共 ${totalMb} MB`, finishedAt: new Date() },
@@ -550,6 +556,7 @@ export async function removeArchive(vodId: number) {
     const nids = episodes.map((e) => String(e.url || "").trim()).filter(Boolean);
     await removeVodArchive(play.sourceVodId, nids);
   }
+  await removeLocalPlay(vodId).catch(() => {}); // 删本地源线路
   await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "off", archiveEps: 0, archiveSize: 0, archiveRes: 0, archivedAt: null } }).catch(() => {});
   emitTaskChange();
 }

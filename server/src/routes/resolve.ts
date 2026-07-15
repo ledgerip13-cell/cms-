@@ -11,6 +11,7 @@ import { isICloudShareUrl, resolveICloudDirect } from "../icloud.js";
 import { normalizeShortsConfig } from "./site.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR } from "../jinpaiPlay.js";
+import { LOCAL_FLAG } from "../collector/localSource.js";
 import fsp from "node:fs";
 import nodePath from "node:path";
 
@@ -116,17 +117,23 @@ export default async function resolveRoutes(app: FastifyInstance) {
         } catch { /* 字幕失败不阻断播放 */ }
         return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client", subtitles };
       }
+      // 本地源（转存产物独立线路）：url 存该集 nid，直接服务本站本地 HLS。
+      // 只在文件在时可播；本地源 Source 默认 enabled=false，故默认不对前台开放(publicPlayableFilter 已过滤)。
+      if (play.flag === LOCAL_FLAG) {
+        const nid = String(url).trim();
+        const vodSvid = String(play.sourceVodId);
+        if (isEpisodeArchived(vodSvid, nid)) {
+          return { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "local_archive" };
+        }
+        return { ok: false, error: "本地文件不存在(可能已删除或未转存该集)" };
+      }
       // 金牌影院系源（jinpai）：url 存的是该集 nid，vodId 取 play.sourceVodId。
-      //  ① 若该集已本地转存(archiveStatus=done 且文件在) → 走本站本地 HLS（离线可播、零源站依赖）
-      //  ② 否则用「客户端真实 IP」向源站签名换 CDN m3u8，前端直连（whip 绑客户端/国内 auth_key 不绑）。
+      // 用「客户端真实 IP」向源站签名换 CDN m3u8，前端直连（whip 绑客户端/国内 auth_key 不绑）。
+      // 注：转存产物不再在此透明替换，改为独立「本地源」线路(flag=LOCAL_FLAG)显式播放。
       if (play.flag === JINPAI_FLAG) {
         const nid = String(url).trim();
         const vodSvid = String(play.sourceVodId);
-        // ① 本地转存优先
-        if (play.vod.archiveStatus === "done" && isEpisodeArchived(vodSvid, nid)) {
-          return { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "jinpai_local" };
-        }
-        // ② 客户端 IP 签名 → CDN 直连
+        // 客户端 IP 签名 → CDN 直连
         try {
           const list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,

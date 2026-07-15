@@ -3,7 +3,7 @@ import { prisma } from "../db.js";
 import { ping, fetchClasses, fetchTypeTotal, resolveApiUrls, withFailover } from "../collector/maccms.js";
 import { getDriver, listDrivers } from "../collector/drivers/index.js";
 
-const DRIVER_IDS = listDrivers().map((d) => d.value);
+const DRIVER_IDS = [...listDrivers().map((d) => d.value), "local"]; // local=本地源(自动创建、不入新增下拉，但允许编辑/启用保留 driver)
 function normDriver(v: unknown): string { const s = String(v || "").trim(); return DRIVER_IDS.includes(s) ? s : "maccms"; }
 import { syncSource } from "../collector/sync.js";
 import { createCollectTask } from "../collector/taskRunner.js";

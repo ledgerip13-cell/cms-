@@ -101,6 +101,10 @@
         <template #default="{ row }">
           <span style="font-weight:600">{{ row.name }}</span>
           <el-tag v-if="row.pinned" size="small" type="warning" style="margin-left:6px">置顶</el-tag>
+          <el-tag v-if="row.archiveStatus==='done'" size="small" type="success" style="margin-left:6px" :title="`已转存 ${row.archiveEps||0}集 / ${row.archiveRes||'?'}P / ${row.archiveSize||0}MB`">已下载{{ row.archiveRes?('·'+row.archiveRes+'P'):'' }}</el-tag>
+          <el-tag v-else-if="row.archiveStatus==='running'" size="small" style="margin-left:6px">转存中</el-tag>
+          <el-tag v-else-if="row.archiveStatus==='pending'" size="small" type="info" style="margin-left:6px">待转存</el-tag>
+          <el-tag v-else-if="row.archiveStatus==='failed'" size="small" type="danger" style="margin-left:6px">转存失败</el-tag>
           <div v-if="aliasNamesText(row)" class="alias-line">别名：{{ aliasNamesText(row) }}</div>
         </template>
       </el-table-column>
