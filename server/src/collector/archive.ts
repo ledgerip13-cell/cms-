@@ -92,6 +92,7 @@ export async function archiveEpisode(opts: {
   vodId: string | number;
   nid: string | number;
   force?: boolean;
+  preferRes?: number; // 清晰度上限(0=最高清)
   onLog?: (s: string) => void;
 }): Promise<ArchiveEpResult> {
   const vodId = String(opts.vodId);
@@ -111,7 +112,7 @@ export async function archiveEpisode(opts: {
   } catch (e: any) {
     return { nid, ok: false, error: `签名/取址失败: ${String(e?.message || e).slice(0, 100)}` };
   }
-  const best = pickBest(list);
+  const best = pickBest(list, opts.preferRes);
   if (!best?.url) return { nid, ok: false, error: "无可下载地址" };
 
   try {

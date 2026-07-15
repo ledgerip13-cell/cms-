@@ -45,7 +45,9 @@ const DEFAULT_SHORTS_CONFIG = {
 const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
   proxyMode: "direct", // 全局默认回源模式: direct/key/proxy（源级 inherit 回落此值）
+  archiveResolution: 720, // 本地转存下载清晰度上限: 0=最高清 / 1080 / 720 / 480（IP限速下降清晰度提速省盘）
 };
+const ARCHIVE_RES_OPTIONS = [0, 480, 720, 1080];
 
 const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [] as string[],
@@ -142,11 +144,13 @@ export function normalizePlayConfig(value: any) {
     }
   }
   const proxyMode = ["direct", "key", "proxy"].includes(String(raw?.proxyMode)) ? raw.proxyMode : "direct";
+  const archiveResolution = ARCHIVE_RES_OPTIONS.includes(Number(raw?.archiveResolution)) ? Number(raw.archiveResolution) : 720;
   return {
     ...DEFAULT_PLAY_CONFIG,
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
     proxyMode,
+    archiveResolution,
   };
 }
 

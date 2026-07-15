@@ -71,14 +71,18 @@ export async function fetchEpisodeUrls(opts: {
   }
 }
 
-/** 选最高清晰度（needLogin 实测服务端不真拦，一律可用） */
+/**
+ * 选清晰度。preferRes=0/空 → 最高清；preferRes>0 → 不超过上限的最高一档，若均高于上限则取最低。
+ * (needLogin 实测服务端不真拦，一律可用；列表已按分辨率降序)
+ */
 export function pickBest(list: EpisodeUrlItem[], preferRes?: number): EpisodeUrlItem | null {
   if (!list.length) return null;
-  if (preferRes) {
-    const hit = list.find((x) => x.resolution === preferRes);
-    if (hit) return hit;
-  }
-  return list[0]; // 已降序，[0] 即最高清
+  if (!preferRes) return list[0]; // 0/空 = 最高清
+  const exact = list.find((x) => x.resolution === preferRes);
+  if (exact) return exact;
+  const under = list.filter((x) => x.resolution <= preferRes);
+  if (under.length) return under[0]; // 已降序 → ≤上限的最高一档
+  return list[list.length - 1]; // 均高于上限 → 取最低
 }
 
 // ---- 本地转存路径 ----

@@ -176,6 +176,15 @@
               </el-select>
               <div class="hint inline">采集源回源模式选“跟随全局”时使用此默认值。默认 direct 不下载任何 TS；需藏源/处理加密源才逐源或全局调高。</div>
             </el-form-item>
+            <el-form-item label="本地转存清晰度">
+              <el-select v-model="form.playConfig.archiveResolution" style="width:300px">
+                <el-option label="最高清（体积最大）" :value="0" />
+                <el-option label="1080P 蓝光" :value="1080" />
+                <el-option label="720P 高清（推荐，体积约减半）" :value="720" />
+                <el-option label="480P 标清（最省盘）" :value="480" />
+              </el-select>
+              <div class="hint inline">金牌等源本地转存时下载的清晰度上限。CDN 按 IP 限速下，降清晰度可成倍提速并省磁盘（一部 1080P 剧约 90G，720P 约减半）。若无所选清晰度则取≤上限的最高一档。</div>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
 

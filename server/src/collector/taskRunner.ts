@@ -9,6 +9,7 @@ import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
 import { archiveEpisode, removeVodArchive } from "./archive.js";
 import { JINPAI_FLAG } from "./drivers/jinpai.js";
 import { upsertLocalPlay, removeLocalPlay } from "./localSource.js";
+import { normalizePlayConfig } from "../routes/site.js";
 import { cleanText } from "../textClean.js";
 import { enabledMetaProviders, metaProviderByKey, type MetaProviderConfig } from "../metaProviders.js";
 
@@ -475,6 +476,9 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
 
   await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), pageTotal: eps.length, pageNow: 0, progress: 0, message: `转存「${vod.name}」共 ${eps.length} 集` } });
   await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "running" } }).catch(() => {});
+  // 转存清晰度上限(全局配置，0=最高清)
+  let preferRes = 720;
+  try { const site = await prisma.siteConfig.findUnique({ where: { id: 1 }, select: { playConfig: true } }); preferRes = (normalizePlayConfig((site as any)?.playConfig) as any).archiveResolution ?? 720; } catch {}
 
   let doneEps = 0, failEps = 0, totalMb = 0, bestRes = 0;
   const archivedEps: { name: string; nid: string }[] = []; // 已成功归档的集，用于生成本地源线路
@@ -489,7 +493,7 @@ async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: bo
       return;
     }
     const ep = eps[i];
-    const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force });
+    const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force, preferRes });
     if (r.ok) {
       doneEps++;
       archivedEps.push({ name: ep.name, nid: ep.nid });

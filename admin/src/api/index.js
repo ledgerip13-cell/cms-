@@ -204,6 +204,7 @@ export const DEFAULT_SHORTS_CONFIG = {
 export const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
   proxyMode: 'direct',
+  archiveResolution: 720,
 }
 
 export const DEFAULT_HOME_CONFIG = {
@@ -324,6 +325,7 @@ export function normalizePlayConfig(config) {
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
     proxyMode: ['direct', 'key', 'proxy'].includes(raw?.proxyMode) ? raw.proxyMode : 'direct',
+    archiveResolution: [0, 480, 720, 1080].includes(Number(raw?.archiveResolution)) ? Number(raw.archiveResolution) : 720,
   }
 }
 
