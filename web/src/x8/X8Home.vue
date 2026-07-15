@@ -62,7 +62,7 @@
           >
             <div class="x8-banner-track" :style="{ transform: `translate3d(-${heroIdx * 100}%, 0, 0)` }">
               <article v-for="item in heroItems" :key="`hero-${item.id}`" class="x8-hero-slide">
-                <button class="x8-hero-link" type="button" @click="goPlay(item.id)">
+                <button class="x8-hero-link" type="button" @click="goDetail(item.id)">
                   <img class="x8-bg-img-container" :src="heroImage(item)" :alt="item.name" @error="onImgError" />
                   <span class="x8-slide-content"></span>
                   <span class="x8-slide-action">
@@ -99,7 +99,7 @@
 
         <x8-panel title="正在热播" :changeable="true" @change="shuffleHot" @more="goRank">
           <div class="x8-card-grid hot">
-            <x8-card v-for="item in hotShowcase" :key="`hot-${item.id}`" :item="item" @open="goPlay" @follow="goLogin" />
+            <x8-card v-for="item in hotShowcase" :key="`hot-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
             <template v-if="loading && !hotShowcase.length">
               <x8-card-skeleton v-for="index in hotSkeletonCount" :key="`hot-sk-${index}`" />
             </template>
@@ -120,7 +120,7 @@
               <button type="button">预约</button>
             </div>
             <div class="x8-trailer-flex">
-              <button class="x8-trailer-player" type="button" @click="activeTrailer && goPlay(activeTrailer.id)">
+              <button class="x8-trailer-player" type="button" @click="activeTrailer && goDetail(activeTrailer.id)">
                 <span class="x8-play-icon">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg>
                 </span>
@@ -151,13 +151,13 @@
                 <button class="x8-change" type="button" @click="refreshSection(section)">换一换</button>
               </div>
               <div class="x8-card-grid section">
-                <x8-card v-for="item in section.items" :key="`${section.key}-${item.id}`" :item="item" short @open="goPlay" @follow="goLogin" />
+                <x8-card v-for="item in section.items" :key="`${section.key}-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
                 <template v-if="loading && !section.items.length">
                   <x8-card-skeleton v-for="index in 12" :key="`${section.key}-sk-${index}`" short />
                 </template>
               </div>
             </div>
-            <x8-rank-card :title="section.rankTitle" :items="section.rank" :loading="loading" @open="goPlay" @more="goRank" />
+            <x8-rank-card :title="section.rankTitle" :items="section.rank" :loading="loading" @open="goDetail" @more="goRank" />
           </section>
         </template>
       </template>
@@ -190,7 +190,7 @@
           </div>
         </div>
         <div class="x8-card-grid browse">
-          <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" @open="goPlay" @follow="goLogin" />
+          <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
         </div>
         <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
         <div class="x8-pager" v-if="page > 1 || hasMore">
@@ -206,26 +206,69 @@
           <p>完整排行榜</p>
         </div>
         <div class="x8-rank-grid">
-          <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" static @open="goPlay" />
+          <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" static @open="goDetail" />
         </div>
       </section>
 
       <section v-else-if="pageMode === 'detail'" class="x8-page-panel x8-detail">
-        <div class="x8-detail-cover" :style="{ backgroundImage: `url(${heroImage(vod)})` }"></div>
-        <div class="x8-detail-body">
-          <img v-if="poster(vod)" :src="poster(vod)" :alt="vod.name" @error="onImgError" />
-          <div>
-            <h1>{{ vod.name || '影片详情' }}</h1>
-            <div class="x8-detail-score">
-              <b v-if="vod.rating">{{ vod.rating }}</b>
-              <span v-if="vod.remarks">{{ vod.remarks }}</span>
+        <div class="x8-detail-info">
+          <button class="x8-detail-poster" type="button" @click="goPlay(vod.id)">
+            <span class="x8-detail-poster-bg"></span>
+            <img v-if="poster(vod)" :src="poster(vod)" :alt="vod.name" @error="onImgError" />
+            <span class="x8-detail-play-mask"><span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span></span>
+          </button>
+          <div class="x8-detail-main">
+            <div class="x8-detail-meta">
+              <h1>{{ vod.name || '影片详情' }}</h1>
+              <div class="x8-detail-tags">
+                <button v-for="tag in detailTags" :key="tag" type="button" @click="setBrowse({ type: vod.typeName, sub: tag, page: 1 })">{{ tag }}</button>
+              </div>
+              <div v-if="vod.director" class="x8-detail-row"><span>导演:</span><p>{{ vod.director }}</p></div>
+              <div v-if="vod.actor" class="x8-detail-row"><span>主演:</span><p>{{ vod.actor }}</p></div>
+              <div v-if="detailAliases.length" class="x8-detail-row"><span>别名:</span><p>{{ detailAliases.join(' / ') }}</p></div>
+              <div v-if="vod.area || vod.language" class="x8-detail-row"><span>语言:</span><p>{{ [vod.language, vod.area].filter(Boolean).join(' / ') }}</p></div>
             </div>
-            <p>{{ [vod.typeName, vod.subType, vod.year].filter(Boolean).join(' · ') }}</p>
-            <p v-if="vod.actor">主演：{{ vod.actor }}</p>
-            <p class="intro">{{ vod.blurb || vod.officialIntro || vod.content || '暂无简介' }}</p>
-            <button type="button" @click="goPlay(vod.id)">立即播放</button>
+            <div class="x8-detail-actions">
+              <div class="x8-detail-action-top">
+                <button class="x8-detail-play-btn" type="button" @click="goPlay(vod.id)">
+                  <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
+                  立即播放
+                </button>
+                <button class="x8-icon-btn" type="button" @click="goLogin">♡</button>
+                <button class="x8-icon-btn" type="button" @click="goLogin">＋</button>
+                <button class="x8-icon-btn" type="button" @click="goLogin">↗</button>
+              </div>
+              <div class="x8-detail-stats">
+                <div><strong>{{ vod.rating || '暂无' }}</strong><span>评分</span></div>
+                <i></i>
+                <div><strong>{{ heatValue(vod) || '热度' }}</strong><span>{{ heatValue(vod) ? '人' : '热度' }}</span></div>
+                <i></i>
+                <div><strong>{{ vod.year || '未知' }}</strong><span>上映时间</span></div>
+                <i></i>
+                <div><strong>{{ detailDuration }}</strong><span>片长</span></div>
+              </div>
+            </div>
           </div>
         </div>
+        <div class="x8-detail-intro">
+          <p>简介：{{ vod.blurb || vod.officialIntro || vod.content || '暂无简介' }}</p>
+        </div>
+        <section v-if="vod.lines?.length" class="x8-detail-play-list">
+          <div class="x8-detail-list-head">
+            <span>{{ currentLine?.sourceName || currentLine?.flag || '播放器' }}播放器</span>
+            <button type="button" @click="goPlay(vod.id)">排序</button>
+          </div>
+          <div class="x8-detail-episodes">
+            <button v-for="(ep, index) in episodes" :key="`detail-ep-${index}`" type="button" @click="goPlay(vod.id, index)">
+              {{ ep.name || index + 1 }}
+            </button>
+          </div>
+        </section>
+        <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" @change="refreshRelated" @more="goRank">
+          <div class="x8-card-grid section">
+            <x8-card v-for="item in related.slice(0, 12)" :key="`detail-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
+          </div>
+        </x8-panel>
       </section>
 
       <section v-else-if="pageMode === 'play'" class="x8-play">
@@ -273,7 +316,7 @@
               <button class="x8-panel-title" type="button"><span>相关推荐</span></button>
             </div>
             <div class="x8-related-list">
-              <button v-for="item in related" :key="`rel-${item.id}`" type="button" @click="goPlay(item.id)">
+              <button v-for="item in related" :key="`rel-${item.id}`" type="button" @click="goDetail(item.id)">
                 <img v-if="poster(item)" :src="poster(item)" :alt="item.name" @error="onImgError" />
                 <span>{{ item.name }}</span>
                 <b v-if="item.rating">{{ item.rating }}</b>
@@ -452,6 +495,26 @@ const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}`
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
+const detailTags = computed(() => {
+  const rows = [vod.value?.subType, vod.value?.typeName]
+    .flatMap(value => String(value || '').split(/[，,、/|]+/))
+    .map(value => value.trim())
+    .filter(Boolean)
+  return [...new Set(rows)].slice(0, 6)
+})
+const detailAliases = computed(() => {
+  const rows = Array.isArray(vod.value?.aliases) ? vod.value.aliases : []
+  return rows
+    .map(alias => String(alias?.note || alias?.name || alias?.title || '').trim())
+    .filter(Boolean)
+    .slice(0, 5)
+})
+const detailDuration = computed(() => {
+  const text = String(vod.value?.duration || vod.value?.runtime || '').trim()
+  if (text) return text
+  const count = episodes.value.length || Number(currentLine.value?.epCount || 0)
+  return count ? `共${count}集` : '未知'
+})
 const showAutoQuality = computed(() => qualities.value.length > 1)
 const curQualityLabel = computed(() => {
   if (!qualities.value.length) return ''
@@ -663,9 +726,14 @@ function doSearch() {
   if (!kw.value) return
   router.push({ path: routeBase(), query: { kw: kw.value } })
 }
-function goPlay(id) {
+function goDetail(id) {
   if (!id) return
-  router.push(route.path.startsWith('/x8') ? `/x8/play/${id}` : `/play/${id}`)
+  router.push(route.path.startsWith('/x8') ? `/x8/detail/${id}` : `/detail/${id}`)
+}
+function goPlay(id, epIndex = 0) {
+  if (!id) return
+  const path = route.path.startsWith('/x8') ? `/x8/play/${id}` : `/play/${id}`
+  router.push(epIndex ? { path, query: { ep: epIndex + 1 } } : path)
 }
 function setBrowse(next) {
   router.push({ path: routeBase(), query: cleanQuery({ ...route.query, ...next }) })
@@ -808,6 +876,11 @@ async function refreshSection(section) {
   section.items = res?.list || section.items
   section.page = 1 + ((section.page || 1) % 3)
 }
+async function refreshRelated() {
+  if (!vod.value?.id) return
+  const rows = await api.related({ id: vod.value.id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => [])
+  related.value = rows || related.value
+}
 async function ensureTypes() {
   if (types.value.length) return types.value
   types.value = await api.types().catch(() => [])
@@ -920,7 +993,7 @@ async function loadVod(withPlay = false) {
     const id = Number(route.params.id)
     vod.value = await api.vod(id).catch(() => ({}))
     currentLineId.value = vod.value?.lines?.[0]?.id || 0
-    currentEpIndex.value = 0
+    currentEpIndex.value = Math.max(0, Number(route.query.ep || 1) - 1)
     related.value = await api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => [])
     if (withPlay && currentLineId.value) playCurrent()
   } finally {
@@ -2017,76 +2090,237 @@ onBeforeUnmount(() => {
   width: auto;
 }
 .x8-detail {
+  padding-bottom: 80px;
+}
+.x8-detail-info {
+  display: flex;
   position: relative;
+  margin-bottom: 27px;
 }
-.x8-detail-cover {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 520px;
-  opacity: .22;
-  background-size: cover;
-  background-position: center;
-  filter: blur(16px);
+.x8-detail-poster {
+  position: sticky;
+  top: 96px;
+  flex: 0 0 236px;
+  width: 236px;
+  height: 340px;
+  margin-right: 24px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  background: #111;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.x8-detail-cover::after {
-  content: "";
+.x8-detail-poster-bg {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(31,31,31,0), #1f1f1f);
-}
-.x8-detail-body {
-  position: relative;
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 32px;
-  align-items: start;
-}
-.x8-detail-body > img {
-  width: 260px;
-  aspect-ratio: 356 / 498;
   border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0,0,0,.3);
+  transform: scale(1.015, 1.01) translateY(.1px);
+  pointer-events: none;
+}
+.x8-detail-poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  box-shadow: 0 12px 80px rgba(0,0,0,.5);
+  transition: transform .25s ease;
 }
-.x8-detail-body h1 {
-  margin: 0 0 18px;
-  font-size: 44px;
+.x8-detail-play-mask {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,.36);
+  opacity: 0;
+  transition: opacity .25s ease;
 }
-.x8-detail-score {
+.x8-detail-poster:hover img {
+  transform: scale(1.05);
+}
+.x8-detail-poster:hover .x8-detail-play-mask {
+  opacity: 1;
+}
+.x8-detail-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.x8-detail-meta h1 {
+  margin: -4px 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-size: 36px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.x8-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.x8-detail-tags button {
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 9px;
+  color: #fff;
+  background: rgba(255,255,255,.12);
+  font-size: 13px;
+  cursor: pointer;
+}
+.x8-detail-tags button:hover {
+  background: rgba(255,255,255,.22);
+}
+.x8-detail-row {
+  display: flex;
+  min-height: 28px;
+  align-items: flex-start;
+  color: #fff;
+  font-size: 14px;
+  line-height: 22px;
+}
+.x8-detail-row span {
+  flex: 0 0 44px;
+  color: rgba(255,255,255,.6);
+}
+.x8-detail-row p {
+  margin: 0;
+  color: #fff;
+}
+.x8-detail-actions {
+  margin-top: 32px;
+}
+.x8-detail-action-top {
+  display: flex;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
-.x8-detail-score b {
-  font-size: 42px;
-  font-weight: 700;
+.x8-detail-play-btn,
+.x8-icon-btn {
+  height: 48px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 20px;
+  cursor: pointer;
 }
-.x8-detail-score span {
-  height: 28px;
+.x8-detail-play-btn {
+  flex: 0 0 180px;
   display: inline-flex;
   align-items: center;
-  border-radius: 4px;
-  padding: 0 8px;
-  background: #6d83f2;
+  justify-content: center;
+  gap: 8px;
+  background: #fff;
+  color: #121212;
+  font-weight: 700;
 }
-.x8-detail-body p,
+.x8-detail-play-btn .x8-play-icon {
+  width: 22px;
+  height: 22px;
+}
+.x8-icon-btn {
+  flex: 0 0 48px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+.x8-icon-btn:hover {
+  background: rgba(255,255,255,.16);
+}
+.x8-detail-stats {
+  display: flex;
+  width: min(760px, 100%);
+  min-height: 72px;
+  align-items: center;
+  gap: 22px;
+  color: #fff;
+}
+.x8-detail-stats div {
+  min-width: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x8-detail-stats strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+}
+.x8-detail-stats span {
+  color: rgba(255,255,255,.54);
+  font-size: 13px;
+}
+.x8-detail-stats i {
+  width: 1px;
+  height: 44px;
+  background: rgba(255,255,255,.12);
+}
+.x8-detail-intro {
+  margin-bottom: 30px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 22px;
+}
+.x8-detail-intro p {
+  margin: 0;
+  max-width: 1120px;
+}
+.x8-detail-play-list {
+  position: relative;
+  padding-bottom: 30px;
+  margin-bottom: 26px;
+}
+.x8-detail-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.x8-detail-list-head span {
+  font-size: 18px;
+  font-weight: 600;
+}
+.x8-detail-list-head button {
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+}
+.x8-detail-episodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.x8-detail-episodes button {
+  min-width: 56px;
+  height: 34px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.86);
+  font-size: 14px;
+}
+.x8-detail-episodes button:hover {
+  background: #fff;
+  color: #111;
+}
 .x8-play-info p {
   color: rgba(255,255,255,.68);
   line-height: 1.7;
 }
-.x8-detail-body .intro,
 .x8-play-info .intro {
   max-width: 820px;
-}
-.x8-detail-body button {
-  width: 180px;
-  height: 48px;
-  border: 0;
-  border-radius: 8px;
-  color: #111;
-  background: #fff;
-  font-weight: 700;
 }
 .x8-player-box {
   display: grid;
@@ -2679,12 +2913,33 @@ onBeforeUnmount(() => {
   .x8-trailer-thumbs {
     gap: 6px;
   }
-  .x8-rank-grid,
-  .x8-detail-body {
+  .x8-rank-grid {
     grid-template-columns: 1fr;
   }
-  .x8-detail-body > img {
+  .x8-detail-info {
+    flex-direction: column;
+  }
+  .x8-detail-poster {
+    position: relative;
+    top: auto;
     width: 180px;
+    height: 259px;
+    flex-basis: auto;
+    margin: 0 0 18px;
+  }
+  .x8-detail-meta h1 {
+    white-space: normal;
+    font-size: 28px;
+  }
+  .x8-detail-action-top {
+    flex-wrap: wrap;
+  }
+  .x8-detail-stats {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .x8-detail-stats i {
+    display: none;
   }
   .x8-player {
     min-height: 240px;
