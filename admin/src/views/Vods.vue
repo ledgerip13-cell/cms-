@@ -137,6 +137,8 @@
                   <el-dropdown-item command="edit">编辑资料</el-dropdown-item>
                   <el-dropdown-item command="refresh" :disabled="row._refreshing">采集更新</el-dropdown-item>
                   <el-dropdown-item command="clean">清洗广告</el-dropdown-item>
+                  <el-dropdown-item v-if="row.hasArchivable" command="archive" divided>{{ ['done','running','pending'].includes(row.archiveStatus) ? '重新转存' : '转存到本地' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="row.hasArchivable && row.archiveStatus && !['none','off'].includes(row.archiveStatus)" command="unarchive">取消/删除转存</el-dropdown-item>
                   <el-dropdown-item command="status" divided>{{ row.status==='online'?'下架':'上架' }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -922,7 +924,27 @@ function handleVodCommand(cmd, row) {
   if (cmd === 'edit') return openEdit(row)
   if (cmd === 'refresh') return refreshOne(row)
   if (cmd === 'clean') return openCleanAdsDialog('single', row.id)
+  if (cmd === 'archive') return archiveOne(row)
+  if (cmd === 'unarchive') return unarchiveOne(row)
   if (cmd === 'status') return toggleStatus(row)
+}
+async function archiveOne(row) {
+  const redo = ['done','running','pending'].includes(row.archiveStatus)
+  try {
+    if (redo) await ElMessageBox.confirm(`「${row.name}」已有转存记录，确认重新转存？`, '重新转存', { type: 'warning' })
+    const r = await api.archiveVod(row.id, redo)
+    if (r?.ok === false) return ElMessage.error(r.error || '转存提交失败')
+    row.archiveStatus = 'pending'
+    ElMessage.success('转存任务已提交，可到「采集任务」查看进度')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('转存失败: ' + (e?.response?.data?.error || e.message || e)) }
+}
+async function unarchiveOne(row) {
+  try {
+    await ElMessageBox.confirm(`确认取消「${row.name}」的本地转存并删除已下载文件？`, '取消转存', { type: 'warning' })
+    await api.cancelArchiveVod(row.id)
+    row.archiveStatus = 'off'
+    ElMessage.success('已取消转存并清理本地文件')
+  } catch (e) { if (e !== 'cancel') ElMessage.error('取消失败: ' + (e?.response?.data?.error || e.message || e)) }
 }
 function noteVodMenuVisibility(row, visible) {
   if (!row?.id || !visible) return

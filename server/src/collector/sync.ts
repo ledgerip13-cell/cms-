@@ -22,6 +22,7 @@ export interface SyncOptions {
   autoRun?: boolean;
   metaAfterCollect?: boolean;
   cleanAfterCollect?: boolean;
+  archiveAfterCollect?: boolean; // 采集完自动转存到本地(仅 jinpai 系线路)，在采集时决定
   detailConcurrency?: number;
   localizeImages?: boolean;
   encryptLocalImages?: boolean;

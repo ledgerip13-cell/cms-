@@ -116,7 +116,6 @@
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
       <el-form-item label="启用"><el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
       <el-form-item label="仅清洗"><el-switch v-model="form.cleanOnly" inline-prompt active-text="是" inactive-text="否" /><small style="margin-left:8px;color:#9aa4b2">开启后前台只展示该源已HLS清洗的影片</small></el-form-item>
-      <el-form-item label="自动转存"><el-switch v-model="form.autoArchive" inline-prompt active-text="开启" inactive-text="关闭" /><small style="margin-left:8px;color:#9aa4b2">该源采集入库的新片自动排队转存(最高清)到本地硬盘</small></el-form-item>
       <el-divider>定时自动采集</el-divider>
       <el-form-item label="自动采集"><el-switch v-model="form.autoSync" inline-prompt active-text="开启" inactive-text="关闭" /></el-form-item>
       <template v-if="form.autoSync">
@@ -279,6 +278,8 @@
         <div class="post-actions">
           <el-checkbox v-model="syncForm.metaAfterCollect">采集后元数据匹配</el-checkbox>
           <el-checkbox v-model="syncForm.cleanAfterCollect" :disabled="isNbflixSync" :title="isNbflixSync ? 'iCloud 客户端解析链无法清洗' : ''">采集后HLS清洗{{ isNbflixSync ? '（iCloud源不适用）' : '' }}</el-checkbox>
+          <el-checkbox v-if="isJinpaiSync" v-model="syncForm.archiveAfterCollect">采集后转存到本地</el-checkbox>
+          <div v-if="isJinpaiSync" class="form-help">勾选后，本次采集入库的新片自动排队转存(最高清)到本地硬盘（仅金牌/jinpai 系线路支持）。</div>
           <div class="form-help">HLS 清洗只在这里勾选时提交；全局自动清洗仅用于定时自动更新采集。</div>
         </div>
       </el-form-item>
@@ -317,9 +318,10 @@ const formRules = {
   }, trigger: 'blur' }],
 }
 const syncDlg = ref(false); const syncing = ref(false)
-const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, typeIds: [] })
+const syncForm = ref({ mode: 'incr', hours: 24, maxPages: 5, detailConcurrency: 3, localizeImages: false, encryptLocalImages: true, archiveAfterCollect: false, typeIds: [] })
 const syncTarget = ref(null)
 const isNbflixSync = computed(() => syncTarget.value?.driver === 'nbflix')
+const isJinpaiSync = computed(() => syncTarget.value?.driver === 'jinpai')
 const selectedSyncTypeIds = computed(() => {
   const ids = Array.isArray(syncForm.value.typeIds)
     ? syncForm.value.typeIds.map(v => String(v || '').trim()).filter(Boolean)
@@ -384,7 +386,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', signKey:'', autoArchive:false, proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', signKey:'', proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {
@@ -542,6 +544,7 @@ async function openSync(row) {
     yearEnd: currentYear,
     metaAfterCollect: true,
     cleanAfterCollect: false,
+    archiveAfterCollect: false,
   }
   if (row.driver === 'nbflix') syncForm.value.mode = 'full' // iCloud 源无增量概念，固定全量
   estText.value = ''

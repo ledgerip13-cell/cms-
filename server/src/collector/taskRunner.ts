@@ -112,15 +112,17 @@ async function queueHlsCleanForVods(vodIds: unknown[] | undefined, opts: { prior
   return playIds.length;
 }
 
-// 方案A：采集完自动转存。仅对「源 autoArchive=true 的 jinpai 线路」且尚未转存/未手动关闭的剧排队。
-async function queueAutoArchiveForVods(vodIds: unknown[] | undefined) {
+// 采集完自动转存。anySource=true(采集时勾选转存): 对所有 jinpai 线路排队；
+// anySource=false(定时采集/默认): 回退仅对 source.autoArchive=true 的 jinpai 线路。均跳过已转存/手动关闭的剧。
+async function queueAutoArchiveForVods(vodIds: unknown[] | undefined, opts: { anySource?: boolean } = {}) {
   const ids = uniqueVodIds(vodIds);
   if (!ids.length) return 0;
+  const sourceWhere = opts.anySource ? { enabled: true } : { autoArchive: true, enabled: true };
   const vods = await prisma.vod.findMany({
     where: {
       id: { in: ids },
       archiveStatus: "none", // off(手动关)/done/pending/running 不重复排
-      plays: { some: { flag: JINPAI_FLAG, source: { autoArchive: true, enabled: true } } },
+      plays: { some: { flag: JINPAI_FLAG, source: sourceWhere } },
     },
     select: { id: true },
     take: 200,
@@ -870,7 +872,7 @@ async function runKeywordConfirmTask(
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `入库${s.added}` : "失败"}`).join(" | ");
     const metaQueued = boolOpt(opts.metaAfterCollect, true) ? await queueAutoMetaMatch(r.vodIds) : 0;
     const hlsQueued = boolOpt(opts.cleanAfterCollect, false) ? await queueHlsCleanForVods(r.vodIds) : 0;
-    const archiveQueued = await queueAutoArchiveForVods(r.vodIds).catch(() => 0);
+    const archiveQueued = await queueAutoArchiveForVods(r.vodIds, { anySource: boolOpt((opts as any).archiveAfterCollect, false) }).catch(() => 0);
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -1404,7 +1406,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
       }
     }
     // 方案A：源级自动转存
-    const archiveQueued = !wasCanceled && !wasPaused && r.ok ? await queueAutoArchiveForVods(r.vodIds).catch(() => 0) : 0;
+    const archiveQueued = !wasCanceled && !wasPaused && r.ok ? await queueAutoArchiveForVods(r.vodIds, { anySource: boolOpt((opts as any).archiveAfterCollect, false) }).catch(() => 0) : 0;
     await taskUpdate({
       where: { id: taskId },
       data: {

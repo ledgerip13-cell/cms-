@@ -1220,10 +1220,10 @@ export default async function vodRoutes(app: FastifyInstance) {
           orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
           skip: (page - 1) * size,
           take: size,
-          include: { aliases: { orderBy: { createdAt: "asc" } }, _count: { select: { plays: true } } },
+          include: { aliases: { orderBy: { createdAt: "asc" } }, _count: { select: { plays: true } }, plays: { where: { flag: JINPAI_FLAG }, take: 1, select: { id: true } } },
         }),
       ]);
-      return { total, page, size, list: list.map((vod) => ({ ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean) })) };
+      return { total, page, size, list: list.map((vod) => ({ ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), hasArchivable: (vod.plays?.length || 0) > 0, plays: undefined })) };
     });
 
     // 批量操作：下架/上架/删除，传 ids 数组，支持多选

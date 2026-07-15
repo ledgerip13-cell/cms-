@@ -243,6 +243,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       yearEnd: b.yearEnd,
       metaAfterCollect: b.metaAfterCollect !== false,
       cleanAfterCollect: Boolean(b.cleanAfterCollect),
+      archiveAfterCollect: Boolean(b.archiveAfterCollect),
       detailConcurrency: b.detailConcurrency,
       localizeImages: Boolean(b.localizeImages),
       encryptLocalImages: b.encryptLocalImages !== false,
