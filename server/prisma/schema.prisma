@@ -14,7 +14,9 @@ model Source {
   name         String // 源名称，如 "如意资源网"
   apiUrl       String // 采集API地址（主用/兼容旧数据，实际请求优先用 apiUrls）
   apiUrls      String          @default("[]") // JSON数组：多个API入口(主备)，按序尝试failover，空则回退用apiUrl
-  driver       String          @default("maccms") // 采集驱动: maccms(苹果CMS标准) / nbflix(iCloud系源站)
+  driver       String          @default("maccms") // 采集驱动: maccms(苹果CMS标准) / nbflix(iCloud系源站) / jinpai(金牌影院系)
+  signKey      String          @default("") // jinpai 等需签名的源：接口签名密钥(前端改算法时后台可改，空=用驱动内置默认)
+  autoArchive  Boolean         @default(false) // 方案A：该源采集入库的新片是否自动排队转存(最高清)到本地硬盘
   activeApiUrl String          @default("") // 最近一次采集实际生效的url(运维可见性)
   playDomains  String          @default("[]") // JSON数组：该源已入库播放地址域名统计，供后台快速展示/替换
   flag         String          @default("") // from标识，如 rym3u8（可为空，自动探测）
@@ -116,16 +118,16 @@ model HotConfig {
 
 // HLS 广告清洗全局配置（单例 id=1）
 model HlsCleanConfig {
-  id              Int      @id @default(1)
-  enabled         Boolean  @default(false) // 总开关：关闭时播放永远返回原始源
-  autoOnCollect   Boolean  @default(false) // 采集完成后自动排队清洗该源
-  autoQueueOnMiss Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
-  requireCleanPlayback Boolean @default(false) // 开启后缺少 clean 结果不回退原始源
-  minConfidence   Int      @default(80) // 低于该置信度不用于播放
-  defaultStrategy String   @default("discontinuity_profile_v1") // 默认清洗策略
-  workerConcurrency Int    @default(3) // 单个清洗任务内并发 worker 数
-  sourceConcurrency Int    @default(1) // 同一采集源并发探测上限，防止打爆源站
-  updatedAt       DateTime @updatedAt
+  id                   Int      @id @default(1)
+  enabled              Boolean  @default(false) // 总开关：关闭时播放永远返回原始源
+  autoOnCollect        Boolean  @default(false) // 采集完成后自动排队清洗该源
+  autoQueueOnMiss      Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
+  requireCleanPlayback Boolean  @default(false) // 开启后缺少 clean 结果不回退原始源
+  minConfidence        Int      @default(80) // 低于该置信度不用于播放
+  defaultStrategy      String   @default("discontinuity_profile_v1") // 默认清洗策略
+  workerConcurrency    Int      @default(3) // 单个清洗任务内并发 worker 数
+  sourceConcurrency    Int      @default(1) // 同一采集源并发探测上限，防止打爆源站
+  updatedAt            DateTime @updatedAt
 }
 
 // HLS 清洗策略覆盖：支持按源、分类、单线路覆盖开关/策略
@@ -205,19 +207,19 @@ model User {
 
 // 前台用户（观众账号，和后台管理员隔离）
 model WebUser {
-  id            Int            @id @default(autoincrement())
-  username      String         @unique
-  nickname      String         @default("")
+  id            Int                  @id @default(autoincrement())
+  username      String               @unique
+  nickname      String               @default("")
   password      String
-  enabled       Boolean        @default(true)
-  isVip         Boolean        @default(false) // legacy：旧VIP开关，仅用于迁移，不再作为权限来源
+  enabled       Boolean              @default(true)
+  isVip         Boolean              @default(false) // legacy：旧VIP开关，仅用于迁移，不再作为权限来源
   vipExpireAt   DateTime?
-  vipLevel      VipLevel?      @relation(fields: [vipLevelId], references: [id], onDelete: SetNull)
+  vipLevel      VipLevel?            @relation(fields: [vipLevelId], references: [id], onDelete: SetNull)
   vipLevelId    Int?
-  favoriteTypes String         @default("[]") // JSON: ["动漫","电影"]
+  favoriteTypes String               @default("[]") // JSON: ["动漫","电影"]
   lastLogin     DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   follows       UserFollow[]
   histories     WatchHistory[]
   legacyGroups  LegacyWebUserGroup[] // 旧用户分组，仅用于迁移兼容
@@ -246,12 +248,12 @@ model VipLevel {
 }
 
 model LegacyMemberGroup {
-  id        Int            @id @default(autoincrement())
-  name      String         @unique
-  remark    String         @default("")
-  enabled   Boolean        @default(true)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id        Int                  @id @default(autoincrement())
+  name      String               @unique
+  remark    String               @default("")
+  enabled   Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
   members   LegacyWebUserGroup[]
 
   @@map("MemberGroup")
@@ -316,58 +318,64 @@ model AccessAudit {
 
 // 影片（去重后唯一）
 model Vod {
-  id            Int            @id @default(autoincrement())
-  name          String // 片名
-  fingerprint   String         @unique // 去重指纹：normalize(name)|year
-  year          String         @default("")
-  typeName      String         @default("") // 统一大类名（电影/电视剧/…）
-  subType       String         @default("") // 原始小类/标签（剧情片/恐怖片/…）供大类下钻
-  pic           String         @default("") // 封面
-  localPic      String         @default("") // 本地化封面备用图，远程图失败时使用
-  actor         String         @default("")
-  director      String         @default("")
-  area          String         @default("")
-  lang          String         @default("")
-  remarks       String         @default("") // 更新至X集
-  blurb         String         @default("") // 简介
-  heroPic       String         @default("") // 首页/详情横版推荐图(优先级高于海报)
-  status        String         @default("online") // online / offline（下架）
-  pinned        Boolean        @default(false) // 置顶
+  id                       Int            @id @default(autoincrement())
+  name                     String // 片名
+  fingerprint              String         @unique // 去重指纹：normalize(name)|year
+  year                     String         @default("")
+  typeName                 String         @default("") // 统一大类名（电影/电视剧/…）
+  subType                  String         @default("") // 原始小类/标签（剧情片/恐怖片/…）供大类下钻
+  pic                      String         @default("") // 封面
+  localPic                 String         @default("") // 本地化封面备用图，远程图失败时使用
+  actor                    String         @default("")
+  director                 String         @default("")
+  area                     String         @default("")
+  lang                     String         @default("")
+  remarks                  String         @default("") // 更新至X集
+  blurb                    String         @default("") // 简介
+  heroPic                  String         @default("") // 首页/详情横版推荐图(优先级高于海报)
+  status                   String         @default("online") // online / offline（下架）
+  pinned                   Boolean        @default(false) // 置顶
   // 元数据（落库持久化，前端读库不实时抓）
-  doubanId      String? // 旧豆瓣条目id兼容字段
-  metaSource    String         @default("") // 实际命中的元数据源：douban / tmdb
-  metaSourceId  String         @default("") // 实际命中的源内ID
-  rating        Float? // 元数据评分
-  ratingCount   Int            @default(0) // 评分人数
-  popularity    Float? // TMDB 热度值(popularity)
-  officialPic   String         @default("") // 元数据高清封面
-  officialIntro String         @default("") // 元数据简介
-  genres        String         @default("") // 类型标签(逗号分隔)
-  metaMatched   String         @default("none") // none/matched/manual/pending/failed/skip
-  metaScore     Int            @default(0) // 元数据匹配置信分
-  metaReason    String         @default("") // 匹配原因/候选快照(JSON)
-  matchedTitle  String         @default("") // 实际命中的元数据标题
-  matchedYear   String         @default("") // 实际命中的元数据年份
-  metaAt        DateTime? // 元数据抓取时间
+  doubanId                 String? // 旧豆瓣条目id兼容字段
+  metaSource               String         @default("") // 实际命中的元数据源：douban / tmdb
+  metaSourceId             String         @default("") // 实际命中的源内ID
+  rating                   Float? // 元数据评分
+  ratingCount              Int            @default(0) // 评分人数
+  popularity               Float? // TMDB 热度值(popularity)
+  officialPic              String         @default("") // 元数据高清封面
+  officialIntro            String         @default("") // 元数据简介
+  genres                   String         @default("") // 类型标签(逗号分隔)
+  metaMatched              String         @default("none") // none/matched/manual/pending/failed/skip
+  metaScore                Int            @default(0) // 元数据匹配置信分
+  metaReason               String         @default("") // 匹配原因/候选快照(JSON)
+  matchedTitle             String         @default("") // 实际命中的元数据标题
+  matchedYear              String         @default("") // 实际命中的元数据年份
+  metaAt                   DateTime? // 元数据抓取时间
   // 单片自动采集：按影片自身周期重拉现有片源详情，刷新剧集/状态
-  autoCollectEnabled       Boolean   @default(false)
-  autoCollectIntervalHours Int       @default(0)
-  autoCollectMode          String    @default("days") // days / weekdays
-  autoCollectIntervalDays  Int       @default(1)
-  autoCollectWeekdays      String    @default("[]") // JSON: [1..7], 1=周一, 7=周日
+  autoCollectEnabled       Boolean        @default(false)
+  autoCollectIntervalHours Int            @default(0)
+  autoCollectMode          String         @default("days") // days / weekdays
+  autoCollectIntervalDays  Int            @default(1)
+  autoCollectWeekdays      String         @default("[]") // JSON: [1..7], 1=周一, 7=周日
   autoCollectNextAt        DateTime?
   autoCollectLastAt        DateTime?
-  autoCollectMeta          Boolean   @default(true)
-  autoCollectClean         Boolean   @default(false)
-  plays         Play[]
-  aliases       VodAlias[]
-  people        VodPerson[]
-  images        VodImage[]
-  follows       UserFollow[]
-  histories     WatchHistory[]
-  contentUpdatedAt DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
-  updatedAt     DateTime       @updatedAt
-  createdAt     DateTime       @default(now())
+  autoCollectMeta          Boolean        @default(true)
+  autoCollectClean         Boolean        @default(false)
+  // 本地转存(方案B手动 / 方案A自动)：把最高清片源下载切片存本地硬盘，播放优先走本地
+  archiveStatus            String         @default("none") // none/pending/running/done/failed/off(手动关闭,不受源级自动影响)
+  archiveRes               Int            @default(0) // 实际转存清晰度(如1080)
+  archiveSize              Int            @default(0) // 已转存总大小(MB)
+  archiveEps               Int            @default(0) // 已转存集数
+  archivedAt               DateTime? // 最近转存完成时间
+  plays                    Play[]
+  aliases                  VodAlias[]
+  people                   VodPerson[]
+  images                   VodImage[]
+  follows                  UserFollow[]
+  histories                WatchHistory[]
+  contentUpdatedAt         DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
+  updatedAt                DateTime       @updatedAt
+  createdAt                DateTime       @default(now())
 
   @@index([name])
   @@index([typeName])
@@ -382,6 +390,7 @@ model Vod {
   @@index([status, typeName, rating, ratingCount, updatedAt, id])
   @@index([status, typeName, year, updatedAt, id])
   @@index([autoCollectEnabled, autoCollectNextAt])
+  @@index([archiveStatus])
 }
 
 // 手动合并后的去重别名：采集遇到旧指纹时继续归并到主影片
@@ -462,18 +471,18 @@ model UserFollow {
 
 // 用户观看历史（每部片保留最近一次进度）
 model WatchHistory {
-  id        Int      @id @default(autoincrement())
-  user      WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
-  vod       Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
-  vodId     Int
-  lineId    Int?
-  epIndex   Int      @default(0)
-  epName    String   @default("")
-  progressSec Int    @default(0)
-  durationSec Int    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  user        WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  vod         Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId       Int
+  lineId      Int?
+  epIndex     Int      @default(0)
+  epName      String   @default("")
+  progressSec Int      @default(0)
+  durationSec Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([userId, vodId])
   @@index([userId, updatedAt])
@@ -482,23 +491,23 @@ model WatchHistory {
 
 // 播放线路（一部片挂 N 条，来自不同源）
 model Play {
-  id          Int       @id @default(autoincrement())
-  vod         Vod       @relation(fields: [vodId], references: [id], onDelete: Cascade)
-  vodId       Int
-  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  sourceId    Int
-  flag        String // 播放器标识 from(如 rym3u8/wjm3u8)，同源同片可有多条不同flag线路
-  sourceVodId String // 该源内的原始 vod_id（增量更新用）
-  episodes    String    @default("[]") // JSON: [{name,url}] 集数+m3u8
-  epCount     Int       @default(0) // 集数
-  syncedAt    DateTime  @default(now())
+  id             Int       @id @default(autoincrement())
+  vod            Vod       @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId          Int
+  source         Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceId       Int
+  flag           String // 播放器标识 from(如 rym3u8/wjm3u8)，同源同片可有多条不同flag线路
+  sourceVodId    String // 该源内的原始 vod_id（增量更新用）
+  episodes       String    @default("[]") // JSON: [{name,url}] 集数+m3u8
+  epCount        Int       @default(0) // 集数
+  syncedAt       DateTime  @default(now())
   // 探活与健康评分
-  alive       Boolean   @default(true) // 首集探活结果
-  checkMs     Int       @default(0) // 探活响应耗时(ms)
-  lastCheck   DateTime? // 最近探活时间
-  score       Int       @default(0) // 健康评分(越高越优先)
-  playKind    String    @default("hls") // hls(直链) / iframe(分享页) / resolved(已解析)
-  hasCleanResult Boolean @default(false) // 反范式：是否已有 HLS 清洗成功结果
+  alive          Boolean   @default(true) // 首集探活结果
+  checkMs        Int       @default(0) // 探活响应耗时(ms)
+  lastCheck      DateTime? // 最近探活时间
+  score          Int       @default(0) // 健康评分(越高越优先)
+  playKind       String    @default("hls") // hls(直链) / iframe(分享页) / resolved(已解析)
+  hasCleanResult Boolean   @default(false) // 反范式：是否已有 HLS 清洗成功结果
 
   cleanResults HlsCleanResult[] // Prisma 关联（跨表查询用）
 
@@ -511,7 +520,7 @@ model Play {
 // 采集任务（异步执行，前端点击后立即返回，去任务页看进度）
 model Task {
   id          Int       @id @default(autoincrement())
-  type        String    @default("collect") // collect 采集 / probe 探活 / meta 元数据
+  type        String    @default("collect") // collect 采集 / probe 探活 / meta 元数据 / hls_clean / archive(本地转存)
   sourceId    Int? // 关联源（采集任务）
   sourceName  String    @default("")
   mode        String    @default("incr") // incr / full

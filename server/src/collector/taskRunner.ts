@@ -6,6 +6,8 @@ import { doubanDetail, matchDouban, pickOfficialPoster, sleep, type DoubanCandid
 import { matchTmdb, tmdbDetail } from "./tmdb.js";
 import { applyDoubanAssets, localizeMetaImages } from "./metaAssets.js";
 import { ensureHlsCleanConfig, runHlsCleanForEpisode } from "../hls/cleaner.js";
+import { archiveEpisode, removeVodArchive } from "./archive.js";
+import { JINPAI_FLAG } from "./drivers/jinpai.js";
 import { cleanText } from "../textClean.js";
 import { enabledMetaProviders, metaProviderByKey, type MetaProviderConfig } from "../metaProviders.js";
 
@@ -56,6 +58,7 @@ let collectActive = 0;
 let metaRunning = false; // 元数据任务全局串行(限速防封)
 let metaPumpRunning = false;
 let hlsCleanRunning = false; // HLS 清洗任务全局串行，避免集中探测拖垮源站
+let archiveRunning = false; // 本地转存任务全局串行（ffmpeg 吃带宽/CPU，串行避免拖垮机器）
 const canceled = new Set<number>(); // 请求中止的 taskId
 const paused = new Set<number>(); // 请求暂停的 taskId
 
@@ -109,6 +112,26 @@ async function queueHlsCleanForVods(vodIds: unknown[] | undefined, opts: { prior
   return playIds.length;
 }
 
+// 方案A：采集完自动转存。仅对「源 autoArchive=true 的 jinpai 线路」且尚未转存/未手动关闭的剧排队。
+async function queueAutoArchiveForVods(vodIds: unknown[] | undefined) {
+  const ids = uniqueVodIds(vodIds);
+  if (!ids.length) return 0;
+  const vods = await prisma.vod.findMany({
+    where: {
+      id: { in: ids },
+      archiveStatus: "none", // off(手动关)/done/pending/running 不重复排
+      plays: { some: { flag: JINPAI_FLAG, source: { autoArchive: true, enabled: true } } },
+    },
+    select: { id: true },
+    take: 200,
+  });
+  let n = 0;
+  for (const v of vods) {
+    try { await createArchiveTask({ vodId: v.id, priority: 95 }); n++; } catch { /* 单部失败不阻断 */ }
+  }
+  return n;
+}
+
 function isPauseSignal(e: any) {
   return String(e?.message || e || "").includes("__PAUSED__");
 }
@@ -130,6 +153,7 @@ export function wakeTaskQueues() {
   void pumpCollectQueue();
   void pumpHlsCleanQueue();
   void pumpMetaQueue();
+  void pumpArchiveQueue();
 }
 
 async function pauseIfRequested(taskId: number, message = "已暂停") {
@@ -159,6 +183,7 @@ export async function recoverOrphanTasks() {
   let shouldPumpCollect = false;
   let shouldPumpHlsClean = false;
   let shouldPumpMeta = false;
+  let shouldPumpArchive = false;
   for (const t of orphans) {
     if (t.status === "canceling") {
       await taskUpdate({
@@ -195,6 +220,13 @@ export async function recoverOrphanTasks() {
       });
       shouldPumpMeta = true;
       resumed++;
+    } else if (t.type === "archive" && t.resumeCount < MAX_RESUME) {
+      await taskUpdate({
+        where: { id: t.id },
+        data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
+      });
+      shouldPumpArchive = true;
+      resumed++;
     } else {
       await taskUpdate({
         where: { id: t.id },
@@ -206,6 +238,7 @@ export async function recoverOrphanTasks() {
   if (shouldPumpCollect) void pumpCollectQueue();
   if (shouldPumpHlsClean) void pumpHlsCleanQueue();
   if (shouldPumpMeta) void pumpMetaQueue();
+  if (shouldPumpArchive) void pumpArchiveQueue();
   return { resumed, failed, canceled: canceledCount };
 }
 
@@ -372,6 +405,151 @@ async function pumpHlsCleanQueue() {
   } finally {
     hlsCleanRunning = false;
   }
+}
+
+// ===== 本地转存任务（archive）=====
+async function pumpArchiveQueue() {
+  if (archiveRunning) return;
+  archiveRunning = true;
+  try {
+    while (true) {
+      const task = await prisma.task.findFirst({
+        where: { type: "archive", status: "pending" },
+        orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
+      });
+      if (!task) return;
+      let opts: any = {};
+      try { opts = task.params ? JSON.parse(task.params) : {}; } catch {}
+      try {
+        await runArchiveTask(task.id, opts);
+      } catch (e: any) {
+        if (!isMissingTaskError(e)) {
+          await taskUpdate({ where: { id: task.id }, data: { status: "failed", message: e?.message || String(e), finishedAt: new Date() } });
+          if (opts.vodId) await prisma.vod.update({ where: { id: opts.vodId }, data: { archiveStatus: "failed" } }).catch(() => {});
+        }
+      }
+    }
+  } finally {
+    archiveRunning = false;
+  }
+}
+
+// 转存单部剧（Vod 级）：拉取该剧 jinpai 线路的全部集，逐集下载切片存本地硬盘（最高清）。
+async function runArchiveTask(taskId: number, opts: { vodId?: number; force?: boolean }) {
+  const vodId = opts.vodId;
+  if (!vodId) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "缺少 vodId", finishedAt: new Date() } });
+    return;
+  }
+  if (canceled.has(taskId)) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
+    canceled.delete(taskId);
+    return;
+  }
+  const vod = await prisma.vod.findUnique({
+    where: { id: vodId },
+    include: { plays: { include: { source: { select: { apiUrl: true, signKey: true, driver: true, enabled: true } } } } },
+  });
+  if (!vod) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "影片不存在", finishedAt: new Date() } });
+    return;
+  }
+  // 取该剧的 jinpai 线路（转存仅支持 jinpai 系）
+  const play = vod.plays.find((p) => p.flag === JINPAI_FLAG && p.source.enabled && p.source.driver === "jinpai");
+  if (!play) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "该影片无可转存的 jinpai 线路", finishedAt: new Date() } });
+    await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "failed" } }).catch(() => {});
+    return;
+  }
+  let episodes: Array<{ name?: string; url?: string }> = [];
+  try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
+  const eps = episodes.map((e) => ({ name: String(e.name || ""), nid: String(e.url || "").trim() })).filter((e) => e.nid);
+  if (!eps.length) {
+    await taskUpdate({ where: { id: taskId }, data: { status: "failed", message: "无集数信息", finishedAt: new Date() } });
+    await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "failed" } }).catch(() => {});
+    return;
+  }
+
+  await taskUpdate({ where: { id: taskId }, data: { status: "running", startedAt: new Date(), pageTotal: eps.length, pageNow: 0, progress: 0, message: `转存「${vod.name}」共 ${eps.length} 集` } });
+  await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "running" } }).catch(() => {});
+
+  let doneEps = 0, failEps = 0, totalMb = 0, bestRes = 0;
+  for (let i = 0; i < eps.length; i++) {
+    // 取消检查
+    const cur = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+    if (!cur || canceled.has(taskId) || cur.status === "canceling") {
+      await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: `已中止（完成 ${doneEps}/${eps.length} 集）`, finishedAt: new Date() } });
+      canceled.delete(taskId);
+      await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: doneEps > 0 ? "done" : "none", archiveEps: doneEps, archiveSize: totalMb, archiveRes: bestRes || 0 } }).catch(() => {});
+      return;
+    }
+    const ep = eps[i];
+    const r = await archiveEpisode({ apiUrl: play.source.apiUrl, signKey: play.source.signKey, vodId: play.sourceVodId, nid: ep.nid, force: opts.force });
+    if (r.ok) {
+      doneEps++;
+      if (r.sizeMb) totalMb += r.sizeMb;
+      if (r.resolution && r.resolution > bestRes) bestRes = r.resolution;
+    } else {
+      failEps++;
+    }
+    await taskUpdate({
+      where: { id: taskId },
+      data: { pageNow: i + 1, progress: Math.round(((i + 1) / eps.length) * 100), message: `转存中 ${i + 1}/${eps.length}（成功${doneEps} 失败${failEps}）`, added: doneEps, updated: failEps },
+    }).catch(() => {});
+  }
+
+  const finalStatus = doneEps > 0 ? "done" : "failed";
+  await prisma.vod.update({
+    where: { id: vodId },
+    data: { archiveStatus: finalStatus, archiveEps: doneEps, archiveSize: totalMb, archiveRes: bestRes || 0, archivedAt: new Date() },
+  }).catch(() => {});
+  await taskUpdate({
+    where: { id: taskId },
+    data: { status: finalStatus === "done" ? "done" : "failed", progress: 100, message: `转存完成：${doneEps} 集成功 / ${failEps} 失败，共 ${totalMb} MB`, finishedAt: new Date() },
+  });
+  invalidateAggregateCache();
+}
+
+// 创建转存任务（方案A自动/方案B手动共用）。同一 vod 有活动任务则复用。
+export async function createArchiveTask(opts: { vodId: number; force?: boolean; priority?: number }) {
+  const existing = await prisma.task.findFirst({
+    where: { type: "archive", status: { in: ["pending", "running"] }, params: { contains: `\"vodId\":${opts.vodId}` } },
+  });
+  if (existing) return existing;
+  const vod = await prisma.vod.findUnique({ where: { id: opts.vodId }, select: { name: true } });
+  const task = await prisma.task.create({
+    data: {
+      type: "archive",
+      sourceId: null,
+      sourceName: `转存「${vod?.name || opts.vodId}」`,
+      mode: "full",
+      status: "pending",
+      priority: opts.priority ?? 90,
+      params: JSON.stringify({ vodId: opts.vodId, force: !!opts.force }),
+    },
+  });
+  await prisma.vod.update({ where: { id: opts.vodId }, data: { archiveStatus: "pending" } }).catch(() => {});
+  emitTaskChange();
+  void pumpArchiveQueue();
+  return task;
+}
+
+// 取消/删除某剧的本地转存（清文件 + 复位状态）
+export async function removeArchive(vodId: number) {
+  const vod = await prisma.vod.findUnique({
+    where: { id: vodId },
+    include: { plays: { where: { flag: JINPAI_FLAG }, select: { episodes: true, sourceVodId: true } } },
+  });
+  if (!vod) return;
+  const play = vod.plays[0];
+  if (play) {
+    let episodes: Array<{ url?: string }> = [];
+    try { episodes = JSON.parse(play.episodes || "[]"); } catch {}
+    const nids = episodes.map((e) => String(e.url || "").trim()).filter(Boolean);
+    await removeVodArchive(play.sourceVodId, nids);
+  }
+  await prisma.vod.update({ where: { id: vodId }, data: { archiveStatus: "off", archiveEps: 0, archiveSize: 0, archiveRes: 0, archivedAt: null } }).catch(() => {});
+  emitTaskChange();
 }
 
 async function runHlsCleanTask(taskId: number, opts: {
@@ -692,6 +870,7 @@ async function runKeywordConfirmTask(
     const detail = r.perSource.map((s) => `${s.source}:${s.ok ? `入库${s.added}` : "失败"}`).join(" | ");
     const metaQueued = boolOpt(opts.metaAfterCollect, true) ? await queueAutoMetaMatch(r.vodIds) : 0;
     const hlsQueued = boolOpt(opts.cleanAfterCollect, false) ? await queueHlsCleanForVods(r.vodIds) : 0;
+    const archiveQueued = await queueAutoArchiveForVods(r.vodIds).catch(() => 0);
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -700,7 +879,7 @@ async function runKeywordConfirmTask(
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}`,
+        message: `新增${r.added} 更新${r.updated} | ${detail}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗${hlsQueued}条线路` : ""}${archiveQueued ? ` | 已提交自动转存${archiveQueued}部` : ""}`,
         finishedAt: new Date(),
       },
     });
@@ -1224,6 +1403,8 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
         // 后置清洗排队失败不反向影响采集任务
       }
     }
+    // 方案A：源级自动转存
+    const archiveQueued = !wasCanceled && !wasPaused && r.ok ? await queueAutoArchiveForVods(r.vodIds).catch(() => 0) : 0;
     await taskUpdate({
       where: { id: taskId },
       data: {
@@ -1232,7 +1413,7 @@ async function runTask(taskId: number, sourceId: number, opts: SyncOptions, rese
         added: r.added,
         updated: r.updated,
         merged: r.merged,
-        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗任务#${hlsQueued}` : ""}`,
+        message: wasCanceled ? "已手动中止" : wasPaused ? "已暂停" : `${r.message}${metaQueued ? ` | 已提交元数据匹配${metaQueued}部` : ""}${hlsQueued ? ` | 已提交HLS清洗任务#${hlsQueued}` : ""}${archiveQueued ? ` | 已提交自动转存${archiveQueued}部` : ""}`,
         cursor: wasPaused ? undefined : null, // 暂停保留断点，完成/取消 清空断点
         finishedAt: wasPaused ? null : new Date(),
       },

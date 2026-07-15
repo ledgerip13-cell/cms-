@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
+import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
+import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { resolveShareUrl } from "../collector/resolver.js";
 import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
@@ -1377,6 +1379,23 @@ export default async function vodRoutes(app: FastifyInstance) {
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };
     }
+  });
+
+  // 本地转存（方案B 手动）：提交/重转。仅 jinpai 系影片可转。
+  app.post("/api/vods/:id/archive", { preHandler: authGuard }, async (req, reply) => {
+    const id = Number((req.params as any).id);
+    const force = !!(req.body as any)?.force;
+    const play = await prisma.play.findFirst({ where: { vodId: id, flag: JINPAI_FLAG }, select: { id: true } });
+    if (!play) return reply.code(400).send({ ok: false, error: "该影片无 jinpai 线路，不支持转存" });
+    const task = await createArchiveTask({ vodId: id, force, priority: 90 });
+    return { ok: true, taskId: task.id, status: task.status };
+  });
+
+  // 取消/删除本地转存（清文件 + 置 archiveStatus=off，不再受源级自动转存）
+  app.delete("/api/vods/:id/archive", { preHandler: authGuard }, async (req) => {
+    const id = Number((req.params as any).id);
+    await removeArchive(id);
+    return { ok: true };
   });
 
   // 上下架 / 置顶（需登录）

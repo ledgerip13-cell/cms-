@@ -9,6 +9,10 @@ import { createHlsCleanTask } from "../collector/taskRunner.js";
 import { getDriver } from "../collector/drivers/index.js";
 import { isICloudShareUrl, resolveICloudDirect } from "../icloud.js";
 import { normalizeShortsConfig } from "./site.js";
+import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
+import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR } from "../jinpaiPlay.js";
+import fsp from "node:fs";
+import nodePath from "node:path";
 
 // 简单内存缓存（sign 会过期，TTL 取短一点）
 const cache = new Map<string, { at: number; result: any }>();
@@ -73,7 +77,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (playId && vodId) {
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true, source: { select: { enabled: true, proxyMode: true, apiUrl: true, driver: true } } },
+        include: { vod: true, source: { select: { enabled: true, proxyMode: true, apiUrl: true, driver: true, signKey: true } } },
       });
       if (!play || !play.source.enabled || play.vodId !== vodId || play.vod.status !== "online") {
         return { ok: false, error: "播放资源不存在或不可用" };
@@ -111,6 +115,32 @@ export default async function resolveRoutes(app: FastifyInstance) {
           }
         } catch { /* 字幕失败不阻断播放 */ }
         return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client", subtitles };
+      }
+      // 金牌影院系源（jinpai）：url 存的是该集 nid，vodId 取 play.sourceVodId。
+      //  ① 若该集已本地转存(archiveStatus=done 且文件在) → 走本站本地 HLS（离线可播、零源站依赖）
+      //  ② 否则用「客户端真实 IP」向源站签名换 CDN m3u8，前端直连（whip 绑客户端/国内 auth_key 不绑）。
+      if (play.flag === JINPAI_FLAG) {
+        const nid = String(url).trim();
+        const vodSvid = String(play.sourceVodId);
+        // ① 本地转存优先
+        if (play.vod.archiveStatus === "done" && isEpisodeArchived(vodSvid, nid)) {
+          return { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "jinpai_local" };
+        }
+        // ② 客户端 IP 签名 → CDN 直连
+        try {
+          const list = await fetchEpisodeUrls({
+            apiUrl: (play.source as any).apiUrl,
+            signKey: (play.source as any).signKey,
+            vodId: vodSvid,
+            nid,
+            clientIp: clientIpOf(req),
+          });
+          const best = pickBest(list);
+          if (!best?.url) return { ok: false, error: "源站无可播地址" };
+          return { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution };
+        } catch (e: any) {
+          return { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };
+        }
       }
       const fresh = q.fresh === "1" || q.fresh === "true"; // 前端撞 403 时传 fresh=1 强制重解拿新 sign
       const result = await resolveWithCache(`play:${playId}:${epIndex}`, url, fresh);
@@ -182,5 +212,24 @@ export default async function resolveRoutes(app: FastifyInstance) {
     } catch {
       return reply.code(502).send("subtitle error");
     }
+  });
+
+  // jinpai 本地转存 HLS 静态服务：/api/jinpai-local/{vodId}/{nid}/{file}
+  //  index.m3u8 内分片为相对名(seg_xxxxx.ts)，播放器自动拼到同目录 → 命中本路由。
+  app.get("/api/jinpai-local/:vodId/:nid/:file", async (req, reply) => {
+    const p = req.params as any;
+    const vodId = String(p.vodId || "").replace(/[^0-9]/g, "");
+    const nid = String(p.nid || "").replace(/[^0-9]/g, "");
+    const file = String(p.file || "");
+    // 只允许 index.m3u8 / seg_xxxxx.ts / key_x.key，防路径穿越
+    if (!vodId || !nid || !/^(index\.m3u8|seg_\d+\.ts|key_\d+\.key)$/.test(file)) return reply.code(404).send("not found");
+    const full = nodePath.join(archiveEpDir(vodId, nid), file);
+    if (!full.startsWith(ARCHIVE_DIR)) return reply.code(403).send("forbidden");
+    if (!fsp.existsSync(full)) return reply.code(404).send("not found");
+    const ct = file.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : file.endsWith(".key") ? "application/octet-stream" : "video/mp2t";
+    reply.header("content-type", ct);
+    reply.header("cache-control", file.endsWith(".m3u8") ? "no-cache" : "public, max-age=86400");
+    reply.header("access-control-allow-origin", "*");
+    return reply.send(fsp.createReadStream(full));
   });
 }

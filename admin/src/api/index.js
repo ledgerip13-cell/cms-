@@ -56,6 +56,8 @@ export const api = {
   patchVod: (id, d) => http.patch(`/vods/${id}`, d),
   editVod: (id, d) => http.put(`/vods/${id}`, d),
   refreshVod: (id) => http.post(`/vods/${id}/refresh`),
+  archiveVod: (id, force = false) => http.post(`/vods/${id}/archive`, { force }),
+  cancelArchiveVod: (id) => http.delete(`/vods/${id}/archive`),
   resolvePlay: (d) => http.get('/resolve', { params: d }),
   types: () => http.get('/types'),
   adminSubtypes: (type) => http.get('/admin/subtypes', { params: { type } }),

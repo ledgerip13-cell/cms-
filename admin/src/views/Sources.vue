@@ -103,6 +103,7 @@
         </div>
       </el-form-item>
       <el-form-item label="播放标识"><el-input v-model="form.flag" placeholder="rym3u8（可留空）" /></el-form-item>
+      <el-form-item label="签名密钥" v-if="form.driver === 'jinpai'"><el-input v-model="form.signKey" placeholder="留空=用驱动内置默认（仅源站改算法时才填）" /></el-form-item>
       <el-form-item label="回源模式" v-if="form.driver !== 'nbflix'">
         <el-select v-model="form.proxyMode" style="width:260px">
           <el-option label="跟随全局（默认）" value="inherit" />
@@ -115,6 +116,7 @@
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
       <el-form-item label="启用"><el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
       <el-form-item label="仅清洗"><el-switch v-model="form.cleanOnly" inline-prompt active-text="是" inactive-text="否" /><small style="margin-left:8px;color:#9aa4b2">开启后前台只展示该源已HLS清洗的影片</small></el-form-item>
+      <el-form-item label="自动转存"><el-switch v-model="form.autoArchive" inline-prompt active-text="开启" inactive-text="关闭" /><small style="margin-left:8px;color:#9aa4b2">该源采集入库的新片自动排队转存(最高清)到本地硬盘</small></el-form-item>
       <el-divider>定时自动采集</el-divider>
       <el-form-item label="自动采集"><el-switch v-model="form.autoSync" inline-prompt active-text="开启" inactive-text="关闭" /></el-form-item>
       <template v-if="form.autoSync">
@@ -382,7 +384,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', signKey:'', autoArchive:false, proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {

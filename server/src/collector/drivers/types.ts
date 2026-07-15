@@ -6,23 +6,29 @@ import type { RawVod, ListResult, ClassItem } from "../maccms.js";
 export interface CollectorDriver {
   /** 驱动标识，与 Source.driver 对应 */
   name: string;
-  /** 拉列表（分页）。typeId/keyword 可选，具体是否生效由驱动决定 */
+  /** 拉列表（分页）。typeId/keyword 可选，具体是否生效由驱动决定。ctx 可携带源级配置如 signKey(jinpai 签名用) */
   fetchList(
     apiUrl: string,
     page?: number,
     hours?: number,
     timeoutMs?: number,
     typeId?: string | number,
-    keyword?: string
+    keyword?: string,
+    ctx?: DriverCtx
   ): Promise<ListResult>;
   /** 拉详情（含播放地址）。返回顺序不保证与 ids 一致，调用方按 vod_id 匹配 */
-  fetchDetail(apiUrl: string, ids: (number | string)[], timeoutMs?: number): Promise<RawVod[]>;
+  fetchDetail(apiUrl: string, ids: (number | string)[], timeoutMs?: number, ctx?: DriverCtx): Promise<RawVod[]>;
   /** 拉分类树 */
   fetchClasses(apiUrl: string, timeoutMs?: number): Promise<ClassItem[]>;
   /** 按关键词搜索（不分页，取首页命中） */
   searchByKeyword(apiUrl: string, keyword: string, timeoutMs?: number): Promise<RawVod[]>;
   /** 可选：按剧集拉字幕（如 iCloud 系源）。返回字幕轨列表，url 可为源站原始链（前端/SW 再解析） */
   fetchSubtitle?(apiUrl: string, headNo: string, dramaNumber: number, timeoutMs?: number): Promise<SubtitleTrack[]>;
+}
+
+// 驱动上下文：透传源级配置（如 jinpai 的接口签名密钥）。所有字段可选，老驱动忽略即可。
+export interface DriverCtx {
+  signKey?: string | null;
 }
 
 export interface SubtitleTrack {

@@ -63,6 +63,8 @@ export default async function sourceRoutes(app: FastifyInstance) {
         autoTypeId: serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId),
         syncHours: b.syncHours ?? 24,
         cronExpr: b.cronExpr || "0 * * * *",
+        signKey: String(b.signKey || "").trim(),
+        autoArchive: b.autoArchive ?? false,
       },
     });
     await reloadSchedules();
@@ -87,6 +89,8 @@ export default async function sourceRoutes(app: FastifyInstance) {
       autoTypeId: b.autoTypeIds !== undefined || b.autoTypeId !== undefined ? serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId) : undefined,
       syncHours: b.syncHours,
       cronExpr: b.cronExpr,
+      signKey: b.signKey !== undefined ? String(b.signKey || "").trim() : undefined,
+      autoArchive: b.autoArchive,
     };
     if (Array.isArray(b.apiUrls)) {
       const apiUrls = b.apiUrls.map((s: string) => String(s || "").trim()).filter(Boolean);
@@ -289,8 +293,11 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const s = await prisma.source.findUnique({ where: { id } });
     if (!s || !typeIds.length) return { ok: false, total: 0 };
     try {
+      const driver = getDriver(s.driver);
+      const signKey = s.signKey || null;
       const urls = resolveApiUrls(s.apiUrl, s.apiUrls);
-      const { result: classes, usedUrl } = await withFailover(urls, (u) => fetchClasses(u));
+      // 分类树走驱动（非 maccms 源接口/签名不同，不能写死 maccms）
+      const { result: classes, usedUrl } = await withFailover(urls, (u) => driver.fetchClasses(u));
       const targets: string[] = [];
       let expanded = 0;
       for (const t of typeIds) {
@@ -304,7 +311,18 @@ export default async function sourceRoutes(app: FastifyInstance) {
       }
       const uniqTargets = [...new Set(targets)];
       let total = 0;
-      for (const tid of uniqTargets) total += await fetchTypeTotal(usedUrl, tid, hours);
+      if (s.driver === "maccms" || !s.driver) {
+        // maccms 有精确 total 字段，保留原精确路径
+        for (const tid of uniqTargets) total += await fetchTypeTotal(usedUrl, tid, hours);
+      } else {
+        // 其它驱动（jinpai/nbflix）：拉首页，用 pagecount × 首页条数估算
+        for (const tid of uniqTargets) {
+          const r = await driver.fetchList(usedUrl, 1, hours, 15000, tid, undefined, { signKey });
+          const perPage = Array.isArray(r?.list) ? r.list.length : 0;
+          const pages = Number(r?.pagecount || 1);
+          total += perPage ? perPage * pages : 0;
+        }
+      }
       return { ok: true, total, selected: typeIds.length, expanded, targets: uniqTargets.length };
     } catch (e: any) {
       return { ok: false, total: 0, error: e?.message || String(e) };

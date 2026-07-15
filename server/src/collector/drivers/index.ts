@@ -2,6 +2,7 @@
 import * as maccms from "../maccms.js";
 import type { CollectorDriver } from "./types.js";
 import { nbflixDriver } from "./nbflix.js";
+import { jinpaiDriver } from "./jinpai.js";
 
 // 现有 maccms 逻辑原样包成默认驱动（函数引用直接复用，零行为变化）
 const maccmsDriver: CollectorDriver = {
@@ -15,6 +16,7 @@ const maccmsDriver: CollectorDriver = {
 const registry: Record<string, CollectorDriver> = {
   maccms: maccmsDriver,
   nbflix: nbflixDriver,
+  jinpai: jinpaiDriver,
 };
 
 export function getDriver(name?: string | null): CollectorDriver {
@@ -27,6 +29,7 @@ export function listDrivers(): { value: string; label: string }[] {
   return [
     { value: "maccms", label: "苹果CMS (MacCMS 标准)" },
     { value: "nbflix", label: "iCloud 源 (nbflix/apollotec)" },
+    { value: "jinpai", label: "金牌影院系 (jinpai/mw-movie)" },
   ];
 }
 
