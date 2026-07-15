@@ -31,6 +31,7 @@ export const api = {
   addSource: (d) => http.post('/sources', d),
   updateSource: (id, d) => http.put(`/sources/${id}`, d),
   delSource: (id) => http.delete(`/sources/${id}`),
+  batchCleanOnlySources: (enabled, ids) => http.post('/sources/cleanOnly/batch', { enabled, ids }),
   pingSource: (id) => http.post(`/sources/${id}/ping`),
   syncSource: (id, d) => http.post(`/sources/${id}/sync`, d),
   sourceLogs: (id) => http.get(`/sources/${id}/logs`),
@@ -206,6 +207,8 @@ export const DEFAULT_PLAY_CONFIG = {
 export const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [],
   mobileTemplate: 'responsive',
+  adaptiveTemplate: 'default',
+  showHomeLogo: true,
 }
 
 export const DEFAULT_PWA_CONFIG = {
@@ -331,6 +334,9 @@ export function normalizeHomeConfig(config) {
   const mobileTemplate = ['responsive', 'shortDrama'].includes(String(raw?.mobileTemplate || ''))
     ? raw.mobileTemplate
     : DEFAULT_HOME_CONFIG.mobileTemplate
+  const adaptiveTemplate = ['default', 'x8'].includes(String(raw?.adaptiveTemplate || ''))
+    ? raw.adaptiveTemplate
+    : DEFAULT_HOME_CONFIG.adaptiveTemplate
   const cleanList = (value, limit = 20) => {
     const rows = Array.isArray(value) ? value : String(value || '').split(',')
     return [...new Set(rows.map(item => String(item || '').trim()).filter(Boolean))].slice(0, limit)
@@ -339,6 +345,8 @@ export function normalizeHomeConfig(config) {
     ...DEFAULT_HOME_CONFIG,
     ...rest,
     mobileTemplate,
+    adaptiveTemplate,
+    showHomeLogo: raw?.showHomeLogo !== false,
     dailyUpdateTypes: cleanList(raw?.dailyUpdateTypes),
   }
 }

@@ -1,5 +1,6 @@
 <template>
-  <router-view v-if="isShortsRoute || isMobileTemplateRoute" />
+  <X8Home v-if="isX8HomeRoute" />
+  <router-view v-else-if="isShortsRoute || isMobileTemplateRoute || isX8PreviewRoute" />
   <div v-else class="layout" :class="{'home-cover-sidebar': isHomeRoot}">
     <!-- 移动端遮罩 -->
     <div v-if="drawer" class="sb-backdrop" @click="drawer=false"></div>
@@ -137,6 +138,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import ToastStack from './components/ToastStack.vue'
+import X8Home from './x8/X8Home.vue'
 import { api, imgUrl } from './api'
 import { applySiteHead, applySiteTheme, readCachedCategories, readCachedSite, themePageFromRoute, writeCachedCategories, writeCachedSite } from './siteConfig'
 import { openAuthDialog } from './authDialog'
@@ -168,6 +170,8 @@ const isHomeRoute = computed(() => route.path === '/')
 const isHomeRoot = computed(() => isHomeRoute.value && !curType.value && !isSearch.value)
 const isShortsRoute = computed(() => route.path === '/shorts')
 const isMobileTemplateRoute = computed(() => route.path === '/m' || route.path.startsWith('/m/'))
+const isX8PreviewRoute = computed(() => route.path === '/x8' || route.path.startsWith('/x8/'))
+const isX8HomeRoute = computed(() => site.value?.homeConfig?.adaptiveTemplate === 'x8' && (route.path === '/' || route.path.startsWith('/play/')))
 const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
 const mobileTemplateEnabled = computed(() => site.value?.homeConfig?.mobileTemplate === 'shortDrama')
 

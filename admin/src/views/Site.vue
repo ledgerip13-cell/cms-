@@ -60,6 +60,19 @@
 
         <el-tab-pane label="首页设置" name="home">
           <el-form :model="form.homeConfig" label-width="130px" class="site-form">
+            <el-form-item label="自适应首页模板">
+              <el-radio-group v-model="form.homeConfig.adaptiveTemplate">
+                <el-radio-button label="default">默认自适应</el-radio-button>
+                <el-radio-button label="x8">X8 影院模板</el-radio-button>
+              </el-radio-group>
+              <div class="hint inline">X8 模板为新建前台模板，可先访问前台 <code>#/x8</code> 预览；切换后桌面/平板首页使用该模板。</div>
+            </el-form-item>
+
+            <el-form-item label="首页显示图标">
+              <el-switch v-model="form.homeConfig.showHomeLogo" inline-prompt active-text="显示" inactive-text="隐藏" />
+              <div class="hint inline">关闭后，首页头部只显示网站名称，不显示基础设置里的网站图标。</div>
+            </el-form-item>
+
             <el-form-item label="移动端模板">
               <el-radio-group v-model="form.homeConfig.mobileTemplate">
                 <el-radio-button label="responsive">自适应影视站</el-radio-button>

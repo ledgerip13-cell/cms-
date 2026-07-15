@@ -18,6 +18,23 @@ import { invalidatePublicVodCaches } from "../publicVod.js";
 export default async function sourceRoutes(app: FastifyInstance) {
   // 采集源管理全部需要登录（含列表，避免泄露源站）
   app.addHook("preHandler", authGuard);
+
+  // 批量设置 cleanOnly
+  app.post("/api/sources/cleanOnly/batch", async (req) => {
+    const b = (req.body as any) || {};
+    const enabled = Boolean(b.enabled);
+    const ids: number[] = Array.isArray(b.ids)
+      ? b.ids.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+      : [];
+    if (ids.length) {
+      await prisma.source.updateMany({ where: { id: { in: ids } }, data: { cleanOnly: enabled } });
+    } else {
+      await prisma.source.updateMany({ data: { cleanOnly: enabled } });
+    }
+    invalidatePublicVodCaches("source");
+    return { ok: true, cleanOnly: enabled, count: ids.length || undefined };
+  });
+
   // 列表
   app.get("/api/sources", async () => {
     const rows = await prisma.source.findMany({ orderBy: { priority: "asc" } });
@@ -42,6 +59,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         priority: b.priority ?? 100,
         enabled: b.enabled ?? true,
         autoSync: b.autoSync ?? false,
+        cleanOnly: b.cleanOnly ?? false,
         autoTypeId: serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId),
         syncHours: b.syncHours ?? 24,
         cronExpr: b.cronExpr || "0 * * * *",
@@ -65,6 +83,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
       priority: b.priority,
       enabled: b.enabled,
       autoSync: b.autoSync,
+      cleanOnly: b.cleanOnly,
       autoTypeId: b.autoTypeIds !== undefined || b.autoTypeId !== undefined ? serializeAutoTypeIds(b.autoTypeIds ?? b.autoTypeId) : undefined,
       syncHours: b.syncHours,
       cronExpr: b.cronExpr,
@@ -140,6 +159,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
         set
           episodes = replace(episodes, ${oldUrl.origin}, ${newUrl.origin}),
           alive = true,
+          "hasCleanResult" = false,
           score = 0,
           "checkMs" = 0,
           "lastCheck" = null

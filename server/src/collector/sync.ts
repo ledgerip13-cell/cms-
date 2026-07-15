@@ -218,6 +218,7 @@ export async function refreshVod(vodId: number) {
           episodes: nextEpisodes,
           epCount: line.episodes.length,
           playKind: kind,
+          hasCleanResult: changed ? false : p.hasCleanResult,
           syncedAt: new Date(),
         },
       });
@@ -373,7 +374,14 @@ async function upsertVod(
       syncedAt: new Date(),
     };
     const before = await prisma.play.findUnique({ where: key });
-    await prisma.play.upsert({ where: key, create: payload, update: payload });
+    const updatePayload = before && (
+      before.episodes !== payload.episodes
+      || before.epCount !== payload.epCount
+      || before.playKind !== payload.playKind
+    )
+      ? { ...payload, hasCleanResult: false }
+      : payload;
+    await prisma.play.upsert({ where: key, create: payload, update: updatePayload });
     if (before) {
       const changed = before.episodes !== payload.episodes
         || before.epCount !== payload.epCount

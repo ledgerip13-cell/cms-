@@ -243,7 +243,9 @@ button { font-family: inherit; }
 /* ============ Hero 全屏贯穿 ============ */
 .home-hero { position: relative; margin: calc(-1 * (var(--topbar-h) + 12px)) -32px 4px; height: 680px; overflow: hidden; }
 .hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center center;
-  filter: brightness(.72) saturate(1.08); transform: none; transition: background-image .7s, filter .35s, transform .35s; }
+  filter: brightness(.72) saturate(1.08); transform: none; transition: opacity .42s ease, filter .35s, transform .35s; }
+.hero-bg-layer { opacity: 0; }
+.hero-bg-layer.on { opacity: 1; }
 .hero-bg.fallback { filter: blur(18px) brightness(.6) saturate(1.25); transform: scale(1.2); }
 .hero-mask { position: absolute; inset: 0;
   background: linear-gradient(90deg, var(--hero-mask-side-strong) 0%, var(--hero-mask-side-mid) 34%, var(--hero-mask-side-soft) 72%, var(--hero-mask-side-mid) 100%),

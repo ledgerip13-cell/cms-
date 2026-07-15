@@ -21,6 +21,7 @@ model Source {
   proxyMode    String          @default("inherit") // 回源模式: inherit(跟随全局)/direct(直连源站)/key(仅代理key)/proxy(TS中转)
   priority     Int             @default(100) // 线路优先级，越小越靠前
   enabled      Boolean         @default(true) // 开关
+  cleanOnly    Boolean         @default(false) // 仅展示已清洗线路；用于广告源过滤
   status       String          @default("unknown") // ok / fail / unknown（测活结果）
   lastError    String? // 最近错误
   lastSyncAt   DateTime? // 最近采集时间
@@ -119,6 +120,7 @@ model HlsCleanConfig {
   enabled         Boolean  @default(false) // 总开关：关闭时播放永远返回原始源
   autoOnCollect   Boolean  @default(false) // 采集完成后自动排队清洗该源
   autoQueueOnMiss Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
+  requireCleanPlayback Boolean @default(false) // 开启后缺少 clean 结果不回退原始源
   minConfidence   Int      @default(80) // 低于该置信度不用于播放
   defaultStrategy String   @default("discontinuity_profile_v1") // 默认清洗策略
   workerConcurrency Int    @default(3) // 单个清洗任务内并发 worker 数
@@ -146,6 +148,7 @@ model HlsCleanPolicy {
 model HlsCleanResult {
   id            Int      @id @default(autoincrement())
   vodId         Int
+  play          Play     @relation(fields: [playId], references: [id], onDelete: Cascade)
   playId        Int
   sourceId      Int
   epIndex       Int      @default(0)
@@ -495,6 +498,9 @@ model Play {
   lastCheck   DateTime? // 最近探活时间
   score       Int       @default(0) // 健康评分(越高越优先)
   playKind    String    @default("hls") // hls(直链) / iframe(分享页) / resolved(已解析)
+  hasCleanResult Boolean @default(false) // 反范式：是否已有 HLS 清洗成功结果
+
+  cleanResults HlsCleanResult[] // Prisma 关联（跨表查询用）
 
   @@unique([sourceId, sourceVodId, flag]) // 同源同片同 flag 唯一，允许同源多 flag 并存
   @@index([vodId])

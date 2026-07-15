@@ -5,7 +5,7 @@ import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { resolveShareUrl } from "../collector/resolver.js";
-import { enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
+import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
@@ -650,9 +650,9 @@ export default async function vodRoutes(app: FastifyInstance) {
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Number(q.size) || 20);
     const viewer = await viewerFromRequest(req);
-    const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
-    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
+    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) };
     const and: any[] = [];
     if (q.kw) {
       const kw = String(q.kw);
@@ -689,7 +689,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         orderBy,
         skip: (page - 1) * size,
         take: size + 1,
-        include: { _count: { select: publicPlayCountSelect(sourceIds) } },
+        include: { _count: { select: publicPlayCountSelect(sourceIds, cleanOnlySourceIds) } },
       }),
     ]);
     const hasMore = rows.length > size;
@@ -701,18 +701,19 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.get("/api/years", async (req) => {
     const q = req.query as any;
     const viewer = await viewerFromRequest(req);
-    const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
     const cacheKey = JSON.stringify({
       scope: "years",
       publicTypes,
       sourceIds,
+      cleanOnlySourceIds,
       type: String(q.type || ""),
       sub: String(q.sub || ""),
       kw: String(q.kw || ""),
     });
     const cached = aggregateCacheGet<{ year: string; count: number }[]>(cacheKey);
     if (cached) return cached;
-    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) };
+    const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) };
     const and: any[] = [];
     if (q.kw) {
       const kw = String(q.kw);
@@ -780,12 +781,12 @@ export default async function vodRoutes(app: FastifyInstance) {
     const cfg = await siteShortsConfig();
     if (!cfg.enabled) return { types: [], subtypes: {} };
     const viewer = await viewerFromRequest(req);
-    const [visibleTypes, sourceIds] = await Promise.all([visibleTypeNames(viewer), enabledPlayableSourceIds()]);
+    const [visibleTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([visibleTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
     const typeNames = shortsConfiguredTypeNames(cfg, visibleTypes);
     if (!typeNames.length) return { types: [], subtypes: {} };
     const counts = await prisma.vod.groupBy({
       by: ["typeName"],
-      where: { status: "online", typeName: { in: typeNames }, ...publicPlayableFilter(sourceIds) },
+      where: { status: "online", typeName: { in: typeNames }, ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) },
       _count: { _all: true },
     });
     const countMap = new Map(counts.map((row) => [row.typeName, row._count._all]));
@@ -801,7 +802,7 @@ export default async function vodRoutes(app: FastifyInstance) {
           status: "online",
           typeName: type.name,
           subType: allowedNames ? { in: allowedNames.length ? allowedNames : ["__NO_SUBTYPE__"] } : { not: "" },
-          ...publicPlayableFilter(sourceIds),
+          ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
         },
         _count: { _all: true },
         orderBy: { _count: { subType: "desc" } },
@@ -1076,12 +1077,13 @@ export default async function vodRoutes(app: FastifyInstance) {
     const publicTypes = await enabledTypeNames(viewer);
     if (!isPublicType(publicTypes, type)) return [];
     const sourceIds = await enabledPlayableSourceIds();
-    const cacheKey = JSON.stringify({ scope: "subtypes", type, publicTypes, sourceIds });
+    const cleanOnlySourceIds = await enabledCleanOnlySourceIds();
+    const cacheKey = JSON.stringify({ scope: "subtypes", type, publicTypes, sourceIds, cleanOnlySourceIds });
     const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["subType"],
-      where: { typeName: type, subType: { not: "" }, ...publicPlayableFilter(sourceIds) },
+      where: { typeName: type, subType: { not: "" }, ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) },
       _count: { _all: true },
       orderBy: { _count: { subType: "desc" } },
     });
@@ -1093,13 +1095,13 @@ export default async function vodRoutes(app: FastifyInstance) {
   // 分类聚合
   app.get("/api/types", async (req) => {
     const viewer = await viewerFromRequest(req);
-    const [publicTypes, sourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds()]);
-    const cacheKey = JSON.stringify({ scope: "types", publicTypes, sourceIds });
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const cacheKey = JSON.stringify({ scope: "types", publicTypes, sourceIds, cleanOnlySourceIds });
     const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
     const rows = await prisma.vod.groupBy({
       by: ["typeName"],
-      where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds) },
+      where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) },
       _count: { _all: true },
       orderBy: { _count: { typeName: "desc" } },
     });
@@ -1390,13 +1392,192 @@ export default async function vodRoutes(app: FastifyInstance) {
   });
 
   // 概览统计（后台首页）
-  app.get("/api/stats", async () => {
-    const [vods, plays, sources, online] = await Promise.all([
+  app.get("/api/stats", { preHandler: authGuard }, async () => {
+    const today = shanghaiDateRange(recentShanghaiDates(1)[0]);
+    const weekStart = new Date(today.start);
+    weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+    const recentSelect = {
+      id: true,
+      name: true,
+      year: true,
+      typeName: true,
+      subType: true,
+      status: true,
+      remarks: true,
+      rating: true,
+      createdAt: true,
+      contentUpdatedAt: true,
+      plays: {
+        take: 1,
+        orderBy: [{ sourceId: "asc" as const }, { id: "asc" as const }],
+        include: { source: { select: { name: true } } },
+      },
+      _count: { select: { plays: true } },
+    };
+    const [sourceIds, cleanOnlySourceIds] = await Promise.all([
+      enabledPlayableSourceIds(),
+      enabledCleanOnlySourceIds(),
+    ]);
+    const playableWhere = {
+      status: "online",
+      ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+    };
+    const [
+      vods,
+      plays,
+      sources,
+      online,
+      playable,
+      todayAdded,
+      todayUpdated,
+      weekAdded,
+      weekUpdated,
+      sourceSummaryRows,
+      emptyPlays,
+      allDead,
+      noCover,
+      noOfficialPic,
+      metaPending,
+      hlsFailed,
+      categoryTotalRows,
+      categoryOnlineRows,
+      categoryPlayableRows,
+      categoryTodayAddedRows,
+      categoryTodayUpdatedRows,
+      recentAddedRows,
+      recentUpdatedRows,
+      sourceRows,
+      sourceStatsRows,
+    ] = await Promise.all([
       prisma.vod.count(),
       prisma.play.count(),
       prisma.source.count(),
       prisma.vod.count({ where: { status: "online" } }),
+      prisma.vod.count({ where: playableWhere }),
+      prisma.vod.count({ where: { createdAt: { gte: today.start, lt: today.end } } }),
+      prisma.vod.count({ where: { contentUpdatedAt: { gte: today.start, lt: today.end } } }),
+      prisma.vod.count({ where: { createdAt: { gte: weekStart, lt: today.end } } }),
+      prisma.vod.count({ where: { contentUpdatedAt: { gte: weekStart, lt: today.end } } }),
+      prisma.source.findMany({ select: { enabled: true, status: true, cleanOnly: true } }),
+      prisma.vod.count({ where: { plays: { none: {} } } }),
+      prisma.vod.count({ where: { plays: { some: {} }, NOT: { plays: { some: { alive: true } } } } }),
+      prisma.vod.count({ where: { pic: "", officialPic: "", localPic: "" } }),
+      prisma.vod.count({ where: { officialPic: "" } }),
+      prisma.vod.count({ where: { metaMatched: { in: ["none", "pending", "failed"] } } }),
+      prisma.hlsCleanResult.count({ where: { status: "failed" } }),
+      prisma.vod.groupBy({ by: ["typeName"], _count: { _all: true } }),
+      prisma.vod.groupBy({ by: ["typeName"], where: { status: "online" }, _count: { _all: true } }),
+      prisma.vod.groupBy({ by: ["typeName"], where: playableWhere, _count: { _all: true } }),
+      prisma.vod.groupBy({ by: ["typeName"], where: { createdAt: { gte: today.start, lt: today.end } }, _count: { _all: true } }),
+      prisma.vod.groupBy({ by: ["typeName"], where: { contentUpdatedAt: { gte: today.start, lt: today.end } }, _count: { _all: true } }),
+      prisma.vod.findMany({ orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 10, select: recentSelect }),
+      prisma.vod.findMany({
+        where: { contentUpdatedAt: { not: null } },
+        orderBy: [{ contentUpdatedAt: "desc" }, { id: "desc" }],
+        take: 10,
+        select: recentSelect,
+      }),
+      prisma.source.findMany({
+        orderBy: [{ priority: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          enabled: true,
+          status: true,
+          cleanOnly: true,
+          priority: true,
+          lastSyncAt: true,
+          syncCount: true,
+          _count: { select: { plays: true } },
+        },
+      }),
+      prisma.$queryRaw<Array<{ sourceId: number; vods: bigint; todayAdded: bigint; todayUpdated: bigint }>>`
+        SELECT
+          p."sourceId" AS "sourceId",
+          COUNT(DISTINCT p."vodId")::bigint AS "vods",
+          COUNT(DISTINCT CASE WHEN v."createdAt" >= ${today.start} AND v."createdAt" < ${today.end} THEN v.id END)::bigint AS "todayAdded",
+          COUNT(DISTINCT CASE WHEN v."contentUpdatedAt" >= ${today.start} AND v."contentUpdatedAt" < ${today.end} THEN v.id END)::bigint AS "todayUpdated"
+        FROM "Play" p
+        JOIN "Vod" v ON v.id = p."vodId"
+        GROUP BY p."sourceId"
+      `,
     ]);
-    return { vods, plays, sources, online };
+
+    const countByType = (rows: Array<{ typeName: string; _count: { _all: number } }>) =>
+      new Map(rows.map((row) => [row.typeName || "未分类", row._count._all]));
+    const totalByType = countByType(categoryTotalRows);
+    const onlineByType = countByType(categoryOnlineRows);
+    const playableByType = countByType(categoryPlayableRows);
+    const addedByType = countByType(categoryTodayAddedRows);
+    const updatedByType = countByType(categoryTodayUpdatedRows);
+    const categories = [...totalByType.entries()]
+      .map(([name, total]) => {
+        const playableCount = playableByType.get(name) || 0;
+        return {
+          name,
+          total,
+          online: onlineByType.get(name) || 0,
+          playable: playableCount,
+          todayAdded: addedByType.get(name) || 0,
+          todayUpdated: updatedByType.get(name) || 0,
+          playableRate: total ? Math.round((playableCount / total) * 1000) / 10 : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+    const sourceStats = new Map(sourceStatsRows.map((row) => [Number(row.sourceId), row]));
+    const dashboardVod = (vod: any) => ({
+      id: vod.id,
+      name: cleanText(vod.name, 80),
+      year: vod.year,
+      typeName: vod.typeName || "未分类",
+      subType: vod.subType,
+      status: vod.status,
+      remarks: vod.remarks,
+      rating: formatPublicRating(vod.rating),
+      createdAt: vod.createdAt,
+      contentUpdatedAt: vod.contentUpdatedAt,
+      playCount: vod._count?.plays || 0,
+      sourceName: vod.plays?.[0]?.source?.name || "",
+    });
+    return {
+      vods,
+      plays,
+      sources,
+      online,
+      playable,
+      todayAdded,
+      todayUpdated,
+      weekAdded,
+      weekUpdated,
+      sourceSummary: {
+        enabled: sourceSummaryRows.filter((s) => s.enabled).length,
+        disabled: sourceSummaryRows.filter((s) => !s.enabled).length,
+        ok: sourceSummaryRows.filter((s) => s.status === "ok").length,
+        fail: sourceSummaryRows.filter((s) => s.status === "fail").length,
+        unknown: sourceSummaryRows.filter((s) => s.status !== "ok" && s.status !== "fail").length,
+        cleanOnly: sourceSummaryRows.filter((s) => s.cleanOnly).length,
+      },
+      issues: { emptyPlays, allDead, noCover, noOfficialPic, metaPending, hlsFailed },
+      categories,
+      recentAdded: recentAddedRows.map(dashboardVod),
+      recentUpdated: recentUpdatedRows.map(dashboardVod),
+      sourcesOverview: sourceRows.map((source) => {
+        const item = sourceStats.get(source.id);
+        return {
+          id: source.id,
+          name: source.name,
+          enabled: source.enabled,
+          status: source.status,
+          cleanOnly: source.cleanOnly,
+          priority: source.priority,
+          lastSyncAt: source.lastSyncAt,
+          syncCount: source.syncCount,
+          plays: source._count.plays,
+          vods: Number(item?.vods || 0),
+          todayAdded: Number(item?.todayAdded || 0),
+          todayUpdated: Number(item?.todayUpdated || 0),
+        };
+      }),
+    };
   });
 }

@@ -13,6 +13,7 @@ import MobileShorts from './mobile/MobileShorts.vue'
 import MobileSearch from './mobile/MobileSearch.vue'
 import MobileMe from './mobile/MobileMe.vue'
 import MobilePlay from './mobile/MobilePlay.vue'
+import X8Home from './x8/X8Home.vue'
 import './style.css'
 
 const router = createRouter({
@@ -22,6 +23,12 @@ const router = createRouter({
     { path: '/', component: Home },
     { path: '/play/:id', component: Play },
     { path: '/shorts', component: Shorts },
+    { path: '/x8', component: X8Home },
+    { path: '/x8/rank', component: X8Home },
+    { path: '/x8/show/:type', component: X8Home },
+    { path: '/x8/detail/:id', component: X8Home },
+    { path: '/x8/play/:id', component: X8Home },
+    { path: '/x8/login', component: X8Home },
     { path: '/auth', component: Auth },
     { path: '/me', component: Profile },
     {

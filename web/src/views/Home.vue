@@ -27,7 +27,13 @@
 
       <!-- Hero 全屏贯穿 -->
       <section class="home-hero" v-if="hero.length" @mouseenter="pauseHeroLoop" @mouseleave="resumeHeroLoop">
-        <div class="hero-bg" :class="{wide: heroImageWide(cur), fallback: !heroImageWide(cur)}" :style="{ backgroundImage: `url(${heroPic(cur)})` }"></div>
+        <div
+          v-for="(h, i) in hero"
+          :key="`hero-bg-${h.id}`"
+          class="hero-bg hero-bg-layer"
+          :class="{ on: i === activeHeroBgIdx, wide: heroImageWide(h), fallback: !heroImageWide(h) }"
+          :style="{ backgroundImage: `url(${heroPic(h)})` }"
+        ></div>
         <div class="hero-mask"></div>
         <div class="hero-in">
           <span class="hero-badge">
@@ -59,7 +65,7 @@
         <div class="hero-rail" :style="heroRailStyle">
           <div class="hero-rail-track">
             <div v-for="(h,i) in hero" :key="h.id" class="hero-thumb" :class="{on: i===heroIdx}"
-              @click.stop="selectHero(i)" @touchstart.passive="pauseHeroLoop" @mouseenter="heroIdx=i; pauseHeroLoop()">
+              @click.stop="selectHero(i)" @touchstart.passive="pauseHeroLoop" @mouseenter="selectHero(i, false)">
               <img :src="thumbPic(h)" :alt="h.name" @error="onErr($event, fallbackPic(h))" />
             </div>
           </div>
@@ -283,6 +289,8 @@ function withRandomHeroImage(v) {
 /* ---------- 发现模式 ---------- */
 const types = ref([])
 const hero = ref([]); const heroIdx = ref(0)
+const activeHeroBgIdx = ref(0)
+const heroImageReady = ref({})
 const cur = computed(() => hero.value[heroIdx.value] || {})
 const heroRailStyle = computed(() => {
   const maxOffset = Math.max(hero.value.length - 4, 0)
@@ -342,6 +350,9 @@ async function loadDiscover() {
   // Hero：保留后台返回的全部有封面候选，移动端只通过可视窗口裁切
   const hot = await api.hot(12)
   hero.value = hot.map(withRandomHeroImage).filter(v => v.heroImage || v.heroPic || v.officialPic || v.pic || v.localPic)
+  heroIdx.value = 0
+  activeHeroBgIdx.value = 0
+  warmHeroImages(hero.value)
   startHeroLoop()
   // 分行：前 6 个大类各取 12 部最近更新
   const top = types.value.filter(t => t.count > 0).slice(0, 6)
@@ -370,7 +381,7 @@ function startHeroLoop() {
   if (heroTimer) clearInterval(heroTimer)
   if (!discover.value || hero.value.length <= 1) return
   heroTimer = setInterval(() => {
-    if (hero.value.length) heroIdx.value = (heroIdx.value + 1) % hero.value.length
+    if (hero.value.length) setHeroIndex(heroIdx.value + 1)
   }, 5000)
 }
 function stopHeroLoop() {
@@ -380,11 +391,53 @@ function stopHeroLoop() {
 }
 function pauseHeroLoop() { stopHeroLoop() }
 function resumeHeroLoop() { startHeroLoop() }
-function selectHero(i) {
-  heroIdx.value = i
+function selectHero(i, restart = true) {
+  setHeroIndex(i)
   pauseHeroLoop()
-  if (heroManualTimer) clearTimeout(heroManualTimer)
+  if (heroManualTimer) {
+    clearTimeout(heroManualTimer)
+    heroManualTimer = null
+  }
+  if (!restart) return
   heroManualTimer = setTimeout(() => resumeHeroLoop(), 8000)
+}
+
+function setHeroIndex(index) {
+  if (!hero.value.length) return
+  const next = (index + hero.value.length) % hero.value.length
+  heroIdx.value = next
+  const url = heroPic(hero.value[next])
+  if (!url || heroImageReady.value[url]) {
+    activeHeroBgIdx.value = next
+    return
+  }
+  preloadHeroImage(url).then(() => {
+    if (heroIdx.value === next) activeHeroBgIdx.value = next
+  })
+}
+
+function warmHeroImages(list) {
+  list.forEach((item, index) => {
+    const url = heroPic(item)
+    if (!url) return
+    preloadHeroImage(url).then(() => {
+      if (index === 0 && activeHeroBgIdx.value === 0) activeHeroBgIdx.value = 0
+    })
+  })
+}
+
+function preloadHeroImage(url) {
+  if (!url || heroImageReady.value[url]) return Promise.resolve()
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = async () => {
+      try { await img.decode?.() } catch {}
+      heroImageReady.value = { ...heroImageReady.value, [url]: true }
+      resolve()
+    }
+    img.onerror = () => resolve()
+    img.src = url
+  })
 }
 
 /* ---------- 浏览模式 ---------- */

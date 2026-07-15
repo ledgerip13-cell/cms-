@@ -140,6 +140,13 @@ export default async function resolveRoutes(app: FastifyInstance) {
       if (cfg.autoQueueOnMiss) {
         void createHlsCleanTask({ playId: play.id, epIndex, episodeMode: "first", limit: 1 }).catch(() => {});
       }
+      if (cfg.requireCleanPlayback) {
+        return {
+          ok: false,
+          code: "hls_clean_missing",
+          error: cfg.autoQueueOnMiss ? "该线路尚未完成清洗，已提交后台清洗任务" : "该线路尚未完成清洗",
+        };
+      }
       return result;
     }
 

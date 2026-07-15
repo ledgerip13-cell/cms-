@@ -827,7 +827,7 @@ onBeforeUnmount(() => {
   top: 7px;
   bottom: auto;
   background: #ff6048;
-  font-weight: 600;
+  font-weight: 700;
 }
 .mt-more {
   width: 100%;

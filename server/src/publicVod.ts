@@ -13,6 +13,7 @@ const LEGACY_ACCESS_MODE_MAP: Record<string, string> = {
 };
 let categoryCache: { ts: number; rows: any[] } | null = null;
 let enabledSourceIdCache: { ts: number; ids: number[] } | null = null;
+let cleanOnlySourceIdCache: { ts: number; ids: number[] } | null = null;
 
 export type AccessAction = "display" | "watch";
 export type AccessViewer = {
@@ -70,7 +71,7 @@ async function cachedCategories() {
 
 export function invalidatePublicVodCaches(scope: "category" | "source" | "all" = "all") {
   if (scope === "category" || scope === "all") categoryCache = null;
-  if (scope === "source" || scope === "all") enabledSourceIdCache = null;
+  if (scope === "source" || scope === "all") { enabledSourceIdCache = null; cleanOnlySourceIdCache = null; }
 }
 
 function toViewer(user: any): AccessViewer {
@@ -214,10 +215,36 @@ export async function enabledPlayableSourceIds() {
   return ids;
 }
 
-export function publicPlayableFilter(sourceIds?: number[]) {
-  return sourceIds
-    ? { plays: { some: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } }
-    : { plays: { some: { source: { enabled: true } } } };
+export async function enabledCleanOnlySourceIds() {
+  if (cleanOnlySourceIdCache && fresh(cleanOnlySourceIdCache.ts)) return cleanOnlySourceIdCache.ids;
+  const rows = await prisma.source.findMany({
+    where: { enabled: true, cleanOnly: true },
+    select: { id: true },
+  });
+  const ids = rows.map((r) => r.id);
+  cleanOnlySourceIdCache = { ts: Date.now(), ids };
+  return ids;
+}
+
+export function publicPlayableFilter(sourceIds?: number[], cleanOnlySourceIds?: number[]) {
+  const cleanSet = new Set(cleanOnlySourceIds?.length ? cleanOnlySourceIds : []);
+  if (sourceIds) {
+    const normalIds = sourceIds.filter((id) => !cleanSet.has(id));
+    const cleanIds = sourceIds.filter((id) => cleanSet.has(id));
+    if (!cleanIds.length) {
+      return { plays: { some: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } };
+    }
+    const conditions: any[] = [];
+    if (normalIds.length) conditions.push({ sourceId: { in: normalIds } });
+    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true });
+    return { plays: { some: { OR: conditions } } };
+  }
+  const normalSources = { source: { enabled: true, cleanOnly: false } };
+  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true };
+  if (cleanSet.size > 0) {
+    return { plays: { some: { OR: [normalSources, cleanSources] } } };
+  }
+  return { plays: { some: { source: { enabled: true } } } };
 }
 
 export function formatPublicRating(value: unknown) {
@@ -227,10 +254,25 @@ export function formatPublicRating(value: unknown) {
   return Math.round((n + Number.EPSILON) * 10) / 10;
 }
 
-export function publicPlayCountSelect(sourceIds?: number[]) {
-  return sourceIds
-    ? { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } }
-    : { plays: { where: { source: { enabled: true } } } };
+export function publicPlayCountSelect(sourceIds?: number[], cleanOnlySourceIds?: number[]) {
+  const cleanSet = new Set(cleanOnlySourceIds?.length ? cleanOnlySourceIds : []);
+  if (sourceIds) {
+    const normalIds = sourceIds.filter((id) => !cleanSet.has(id));
+    const cleanIds = sourceIds.filter((id) => cleanSet.has(id));
+    if (!cleanIds.length) {
+      return { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } };
+    }
+    const conditions: any[] = [];
+    if (normalIds.length) conditions.push({ sourceId: { in: normalIds } });
+    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true });
+    return { plays: { where: { OR: conditions } } };
+  }
+  const normalSources = { source: { enabled: true, cleanOnly: false } };
+  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true };
+  if (cleanSet.size > 0) {
+    return { plays: { where: { OR: [normalSources, cleanSources] } } };
+  }
+  return { plays: { where: { source: { enabled: true } } } };
 }
 
 export function requestedPublicType(types: string[], type: string) {

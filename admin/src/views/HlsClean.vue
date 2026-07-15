@@ -26,7 +26,11 @@
         </el-form-item>
         <el-form-item label="播放缺失时排队">
           <el-switch v-model="cfg.autoQueueOnMiss" inline-prompt active-text="开启" inactive-text="关闭" />
-          <span class="unit">缺少 clean 结果时仍先回退原始源</span>
+          <span class="unit">找不到 clean 结果时自动提交后台清洗任务</span>
+        </el-form-item>
+        <el-form-item label="只播 clean 片源">
+          <el-switch v-model="cfg.requireCleanPlayback" inline-prompt active-text="开启" inactive-text="关闭" />
+          <span class="unit">开启后缺少 clean 结果不回退原始源</span>
         </el-form-item>
         <el-form-item label="默认策略链">
           <el-select v-model="cfg.defaultStrategies" multiple collapse-tags collapse-tags-tooltip style="width:360px">
@@ -383,7 +387,7 @@ const saving = ref(false)
 const starting = ref(false)
 const strategySaving = ref('')
 const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
-const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
+const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, requireCleanPlayback: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
 const strategies = ref([])
 const strategyStats = ref({})
 const sources = ref([])
@@ -460,6 +464,7 @@ function normalizeStrategyIds(value, fallback = DEFAULT_STRATEGIES) {
 function normalizeConfig(config) {
   return {
     ...config,
+    requireCleanPlayback: Boolean(config?.requireCleanPlayback),
     defaultStrategies: normalizeStrategyIds(config?.defaultStrategies || config?.defaultStrategy),
   }
 }

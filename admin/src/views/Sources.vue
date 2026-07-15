@@ -5,6 +5,8 @@
       <div>
         <el-button @click="load" :icon="Refresh">刷新</el-button>
         <el-button type="warning" :loading="probing" @click="doProbe">探活线路</el-button>
+        <el-button type="success" :loading="batchCleaning" @click="batchCleanOnly(true)">全部开启仅清洗</el-button>
+        <el-button type="danger" :loading="batchCleaning" @click="batchCleanOnly(false)">全部关闭仅清洗</el-button>
         <el-button type="primary" :icon="Plus" @click="openAdd">新增采集源</el-button>
       </div>
     </div>
@@ -41,6 +43,18 @@
       <el-table-column label="启用" width="60">
         <template #default="{ row }">
           <el-switch v-model="row.enabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggle(row)" />
+        </template>
+      </el-table-column>
+      <el-table-column label="仅清洗" width="76">
+        <template #default="{ row }">
+          <el-switch
+            v-model="row.cleanOnly"
+            inline-prompt
+            active-text="是"
+            inactive-text="否"
+            active-color="#67c23a"
+            @change="toggleCleanOnly(row)"
+          />
         </template>
       </el-table-column>
       <el-table-column label="定时采集" width="110">
@@ -100,6 +114,7 @@
       </el-form-item>
       <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="1" :max="999" /><small style="margin-left:8px;color:#9aa4b2">越小线路越靠前</small></el-form-item>
       <el-form-item label="启用"><el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
+      <el-form-item label="仅清洗"><el-switch v-model="form.cleanOnly" inline-prompt active-text="是" inactive-text="否" /><small style="margin-left:8px;color:#9aa4b2">开启后前台只展示该源已HLS清洗的影片</small></el-form-item>
       <el-divider>定时自动采集</el-divider>
       <el-form-item label="自动采集"><el-switch v-model="form.autoSync" inline-prompt active-text="开启" inactive-text="关闭" /></el-form-item>
       <template v-if="form.autoSync">
@@ -330,6 +345,7 @@ const filteredManageDomains = computed(() => {
   return manageDomains.value.filter(d => `${d.host} ${d.origin}`.toLowerCase().includes(kw))
 })
 const probing = ref(false)
+const batchCleaning = ref(false)
 async function doProbe() {
   probing.value = true
   try { const r = await api.probe({ limit: 80 })
@@ -366,7 +382,7 @@ function autoTypeSummary(row) {
 }
 function openAdd() {
   autoSrcTypes.value = []; autoClassTree.value = []
-  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', proxyMode:'inherit', priority:100, enabled:true, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
+  form.value = { name:'', apiUrl:'', apiUrls:[''], driver:'maccms', flag:'', proxyMode:'inherit', priority:100, enabled:true, cleanOnly:false, autoSync:false, autoTypeId:'', autoTypeIds:[], cronExpr:'0 * * * *', syncHours:24 }
   dlg.value = true
 }
 function openEdit(row) {
@@ -408,6 +424,32 @@ async function toggle(row) {
   const payload = { ...row, autoTypeIds: autoTypeIds(row) }
   await api.updateSource(row.id, payload)
   ElMessage.success(row.enabled?'已启用':'已禁用')
+}
+async function toggleCleanOnly(row) {
+  try {
+    await api.updateSource(row.id, { ...row })
+    ElMessage.success(row.cleanOnly ? '已开启仅清洗' : '已关闭仅清洗')
+  } catch (e) {
+    ElMessage.error('仅清洗切换失败: ' + (e.message || e))
+    load()
+  }
+}
+async function batchCleanOnly(enabled) {
+  try {
+    await ElMessageBox.confirm(
+      enabled ? '确认将全部采集源开启仅清洗？' : '确认将全部采集源关闭仅清洗？',
+      '确认批量操作',
+      { type: 'warning' }
+    )
+    batchCleaning.value = true
+    await api.batchCleanOnlySources(enabled)
+    ElMessage.success(enabled ? '已全部开启仅清洗' : '已全部关闭仅清洗')
+    await load()
+  } catch (e) {
+    if (e !== 'cancel' && e?.message !== 'cancel') ElMessage.error('批量操作失败: ' + (e.message || e))
+  } finally {
+    batchCleaning.value = false
+  }
 }
 async function del(row) {
   await ElMessageBox.confirm(`删除采集源「${row.name}」? 其线路数据一并移除`, '确认', { type: 'warning' })

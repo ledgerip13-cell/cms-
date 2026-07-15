@@ -702,7 +702,7 @@ onBeforeUnmount(() => {
   top: 6px;
   bottom: auto;
   background: #ff6048;
-  font-weight: 600;
+  font-weight: 700;
 }
 .mh-skeleton {
   padding: 18px 16px;

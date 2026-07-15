@@ -156,6 +156,9 @@ export async function recoverOrphanTasks() {
     where: { status: { in: ["running", "pending", "canceling"] } },
   });
   let resumed = 0, failed = 0, canceledCount = 0;
+  let shouldPumpCollect = false;
+  let shouldPumpHlsClean = false;
+  let shouldPumpMeta = false;
   for (const t of orphans) {
     if (t.status === "canceling") {
       await taskUpdate({
@@ -176,21 +179,21 @@ export async function recoverOrphanTasks() {
         where: { id: t.id },
         data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
-      void pumpCollectQueue();
+      shouldPumpCollect = true;
       resumed++;
     } else if (t.type === "hls_clean" && t.resumeCount < MAX_RESUME) {
       await taskUpdate({
         where: { id: t.id },
         data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
-      void pumpHlsCleanQueue();
+      shouldPumpHlsClean = true;
       resumed++;
     } else if (t.type === "meta" && t.resumeCount < MAX_RESUME) {
       await taskUpdate({
         where: { id: t.id },
         data: { status: "pending", resumeCount: { increment: 1 }, message: restartResumeMessage(t.message), finishedAt: null },
       });
-      void pumpMetaQueue();
+      shouldPumpMeta = true;
       resumed++;
     } else {
       await taskUpdate({
@@ -200,6 +203,9 @@ export async function recoverOrphanTasks() {
       failed++;
     }
   }
+  if (shouldPumpCollect) void pumpCollectQueue();
+  if (shouldPumpHlsClean) void pumpHlsCleanQueue();
+  if (shouldPumpMeta) void pumpMetaQueue();
   return { resumed, failed, canceled: canceledCount };
 }
 
@@ -510,16 +516,25 @@ async function runHlsCleanTask(taskId: number, opts: {
     }
     async function runQueue(queue: typeof units, round: 1 | 2) {
       let nextIndex = 0;
+      let stopSignal = "";
       async function worker() {
         while (true) {
-          if (canceled.has(taskId)) throw new Error("__CANCELED__");
-          if (paused.has(taskId)) throw new Error("__PAUSED__");
+          if (stopSignal) return;
+          if (canceled.has(taskId)) { stopSignal = "__CANCELED__"; return; }
+          if (paused.has(taskId)) { stopSignal = "__PAUSED__"; return; }
           const i = nextIndex++;
           if (i >= queue.length) return;
-          await processUnit(queue[i], round);
+          try {
+            await processUnit(queue[i], round);
+          } catch (e: any) {
+            if (String(e?.message || "").includes("__CANCELED__")) { stopSignal = "__CANCELED__"; return; }
+            if (String(e?.message || "").includes("__PAUSED__")) { stopSignal = "__PAUSED__"; return; }
+            throw e;
+          }
         }
       }
       await Promise.all(Array.from({ length: Math.min(workerCount, queue.length) }, () => worker()));
+      if (stopSignal) throw new Error(stopSignal);
     }
     await runQueue(units, 1);
     const retryUnits = [...sourcesWithNewDurSig]

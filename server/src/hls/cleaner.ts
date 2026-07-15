@@ -618,6 +618,7 @@ export async function updateHlsCleanConfig(body: any) {
       enabled: Boolean(body.enabled),
       autoOnCollect: Boolean(body.autoOnCollect),
       autoQueueOnMiss: Boolean(body.autoQueueOnMiss),
+      requireCleanPlayback: Boolean(body.requireCleanPlayback),
       minConfidence: Math.max(0, Math.min(100, Number(body.minConfidence) || 80)),
       defaultStrategy: strategy,
       workerConcurrency: clampInt(body.workerConcurrency, 3, 1, 12),
@@ -861,7 +862,11 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
     };
     const hasAds = analysis.adRanges.length > 0;
     const status = dryRun ? "dry_run" : hasAds ? "clean" : "no_ads";
-    return prisma.hlsCleanResult.upsert({
+
+    // 产出 clean 结果时同步更新 Play.hasCleanResult 反范式标记（供前端列表过滤用）
+    const shouldMarkClean = !dryRun && status === "clean";
+
+    const result = await prisma.hlsCleanResult.upsert({
       where: { playId_epIndex_sourceUrlHash_strategyId: { playId: play.id, epIndex: opts.epIndex, sourceUrlHash, strategyId } },
       update: {
         vodId: play.vodId, sourceId: play.sourceId, epName: ep.name || "", originUrl: ep.url, resolvedUrl: resolved.url,
@@ -875,6 +880,10 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
         cleanM3u8: analysis.cleanM3u8,
       },
     });
+    if (shouldMarkClean) {
+      await prisma.play.update({ where: { id: play.id }, data: { hasCleanResult: true } });
+    }
+    return result;
   } catch (e: any) {
     return prisma.hlsCleanResult.upsert({
       where: { playId_epIndex_sourceUrlHash_strategyId: { playId: play.id, epIndex: opts.epIndex, sourceUrlHash, strategyId } },
