@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 播放器官方 lucide 图标回修）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 播放页线路选择行为回修）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 播放页线路选择行为回修断点**：`web/src/x8/X8Home.vue` 修复从详情页选择线路进入播放页后丢失线路的问题：`goPlay()` 会把当前详情页选中的 `line` 写入播放页 query，`loadVod(true)` 优先按 `route.query.line` 还原播放线路。播放页 `selectLine()` 不再直接调用 `playCurrent()`，只切换线路 tabs/选集列表，用户点击具体选集时才解析播放；`selectEpisode()` 会同步 URL 的 `line/ep`，避免切线后刷新又回到旧线路。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-PmbxN7OH.js / assets/index-DZwTkYo4.css`；浏览器实测详情页选金牌第 2 集进入 `#/x8/play/921?line=450701&ep=2` 后播放页 active 为金牌/第 2 集，播放页再切无尽只切 UI 不新增 `/api/resolve`，点击第 1 集后才发起新解析并更新 URL。
 - **2026-07-17 X8 播放器官方 lucide 图标回修断点**：`web/src/x8/X8Home.vue` 按 lucide 官方 SVG 校正两个误用图标：窗口化按钮使用官方 `PictureInPicture` 路径（`M2 10h6V4`、`m2 4 6 6`、`M21 10...`、`M3 14...`、`rect x=12 y=14 width=10 height=7`），系统全屏按钮使用官方 `Fullscreen` 路径并补中间 `rect x=7 y=8 width=10 height=8`，避免继续与 HLS 的 `Maximize` 四角图标混淆。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-1Bh7r8FL.js / assets/index-DZwTkYo4.css`；无头浏览器实测 `#/x8/play/921` 中 `.x8-icon-picture-in-picture` 与 `.x8-icon-fullscreen` 子节点均为官方路径，图标尺寸仍为 `22x22`。
 - **2026-07-17 前台分类列表展示权限回修断点**：`server/src/publicVod.ts` 将 `enabledTypeNames(viewer)` 恢复为旧模板展示语义，返回 `visibleTypeNames(viewer)`，让 `/api/vods`、详情、相关推荐、年份等前台展示接口按“展示权限”出内容；播放解析仍由 `server/src/routes/resolve.ts` 的 `accessForType(typeName, "watch", viewer)` 拦截观看权限。验证：`pnpm --dir server build`、`docker compose up -d --build server`、`git diff --check` 通过；5150 `/health` 正常；未登录 `/api/vods?type=短剧&size=3` 返回 `404的秘密/殿主归来：为她横扫世家/闺蜜偷换我崽，怎料他爹是大佬`，`/api/vods?type=漫剧&size=3` 返回 `谁说没灵根不能修仙的？之无灵证道第一季/...`；对应 `/api/resolve` 仍返回 `login_required` 与 VIP requirement，确认只恢复展示不放开播放。
 - **2026-07-17 X8 播放器图标统一回修断点**：`web/src/x8/X8Home.vue` 按用户指定名称替换播放器控制图标：播放/暂停为 `Play/Pause`、下一集 `StepForward`、声音 `Volume2/VolumeOff`、设置 `Cog`、窗口化 `PictureInPicture`、HLS 打开/关闭全屏 `Maximize/Minimize`、系统全屏 `Fullscreen`。播放器控制图标 PC 统一 `22x22`，手机断点统一 `20x20`，按钮 hover 取消背景仅保留轻微 `scale(1.06)`，右上角 AirPlay 取消圆形背景与毛玻璃，图标同尺寸体系。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-D9pSyzJj.js / assets/index-DZwTkYo4.css`；无头浏览器实测桌面按钮热区 `34x34`、图标 `22x22`、AirPlay 背景透明，手机按钮热区 `30x30`、图标 `20x20`，hover 背景 `rgba(0,0,0,0)`。

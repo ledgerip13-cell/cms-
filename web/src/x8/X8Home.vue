@@ -991,7 +991,12 @@ function goDetail(id) {
 function goPlay(id, epIndex = 0) {
   if (!id) return
   const path = route.path.startsWith('/x8') ? `/x8/play/${id}` : `/play/${id}`
-  router.push(epIndex ? { path, query: { ep: epIndex + 1 } } : path)
+  const line = currentLineId.value || vod.value?.lines?.[0]?.id || 0
+  const query = cleanQuery({
+    line: line || undefined,
+    ep: epIndex ? epIndex + 1 : undefined,
+  })
+  router.push(Object.keys(query).length ? { path, query } : path)
 }
 function setBrowse(next) {
   router.push({ path: routeBase(), query: cleanQuery({ ...route.query, ...next }) })
@@ -1290,10 +1295,20 @@ function selectLine(id) {
   qualityOpen.value = false
   settingsOpen.value = false
   rateOpen.value = false
-  playCurrent()
 }
 function selectPlayGroup(index) {
   selectedPlayGroupIdx.value = index
+}
+function syncPlayRouteQuery() {
+  if (pageMode.value !== 'play') return
+  const href = router.resolve({
+    path: route.path,
+    query: cleanQuery({
+      line: currentLineId.value || undefined,
+      ep: currentEpIndex.value + 1,
+    }),
+  }).href
+  window.history.replaceState(window.history.state, '', href)
 }
 function selectEpisode(index) {
   currentEpIndex.value = index
@@ -1302,6 +1317,7 @@ function selectEpisode(index) {
   qualityOpen.value = false
   settingsOpen.value = false
   rateOpen.value = false
+  syncPlayRouteQuery()
   playCurrent()
 }
 function onKeydown(event) {
@@ -1459,7 +1475,9 @@ async function loadVod(withPlay = false) {
     await ensureTypes()
     const id = Number(route.params.id)
     vod.value = await api.vod(id).catch(() => ({}))
-    currentLineId.value = vod.value?.lines?.[0]?.id || 0
+    const requestedLineId = Number(route.query.line || 0)
+    const routeLine = (vod.value?.lines || []).find(line => line.id === requestedLineId)
+    currentLineId.value = routeLine?.id || vod.value?.lines?.[0]?.id || 0
     currentEpIndex.value = Math.max(0, Number(route.query.ep || 1) - 1)
     selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
     const [relatedRows, state] = await Promise.all([
