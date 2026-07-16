@@ -168,14 +168,22 @@
           <p>{{ browseSub }}</p>
         </div>
         <div class="x8-filter">
-          <div v-if="subtypes.length" class="x8-filter-line">
+          <div v-if="loading && curType && !subtypes.length" class="x8-filter-line skeleton">
+            <span></span>
+            <i v-for="index in 8" :key="`subtype-sk-${index}`"></i>
+          </div>
+          <div v-else-if="subtypes.length" class="x8-filter-line">
             <span>类型</span>
             <button type="button" :class="{ active: !curSub }" @click="setBrowse({ sub: undefined, page: 1 })">全部</button>
             <button v-for="item in subtypes" :key="item.name" type="button" :class="{ active: curSub === item.name }" @click="setBrowse({ sub: item.name, page: 1 })">
               {{ item.name }}
             </button>
           </div>
-          <div v-if="years.length" class="x8-filter-line">
+          <div v-if="loading && !years.length" class="x8-filter-line skeleton">
+            <span></span>
+            <i v-for="index in 7" :key="`year-sk-${index}`"></i>
+          </div>
+          <div v-else-if="years.length" class="x8-filter-line">
             <span>年份</span>
             <button type="button" :class="{ active: !curYear }" @click="setBrowse({ year: undefined, page: 1 })">全部</button>
             <button v-for="item in years" :key="item.year" type="button" :class="{ active: curYear === item.year }" @click="setBrowse({ year: item.year, page: 1 })">
@@ -190,7 +198,12 @@
           </div>
         </div>
         <div class="x8-card-grid browse">
-          <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
+          <template v-if="loading">
+            <x8-card-skeleton v-for="index in browseSkeletonCount" :key="`browse-sk-${index}`" />
+          </template>
+          <template v-else>
+            <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
+          </template>
         </div>
         <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
         <div class="x8-pager" v-if="page > 1 || hasMore">
@@ -644,6 +657,7 @@ let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
 let controlsTimer = 0
+let browseRequestId = 0
 let hls = null
 
 const sortItems = [
@@ -687,12 +701,21 @@ const hotCols = computed(() => {
   return 2
 })
 const hotSkeletonCount = computed(() => hotCols.value * 2)
+const browseSkeletonCount = computed(() => {
+  if (viewportWidth.value >= 1750) return 14
+  if (viewportWidth.value >= 1025) return 12
+  if (viewportWidth.value >= 721) return 8
+  return 6
+})
 const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice(0, hotCols.value * 2))
 const navItems = computed(() => {
   return types.value.filter(item => item?.name)
 })
 const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}` : (curSub.value || curType.value || '影片'))
-const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
+const browseSub = computed(() => {
+  if (loading.value && pageMode.value === 'show') return '正在加载影片'
+  return list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览'
+})
 const currentSearchHint = computed(() => searchHints.value[searchHintIdx.value % Math.max(1, searchHints.value.length)] || '')
 const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
@@ -1414,6 +1437,7 @@ async function loadHome() {
   }
 }
 async function loadBrowse() {
+  const requestId = ++browseRequestId
   loading.value = true
   try {
     await ensureTypes()
@@ -1432,12 +1456,13 @@ async function loadBrowse() {
       curType.value ? api.subtypes(curType.value).catch(() => []) : Promise.resolve([]),
       api.years({ type: curType.value || '', sub: curSub.value || '', kw: route.query.kw || '' }).catch(() => []),
     ])
+    if (requestId !== browseRequestId || pageMode.value !== 'show') return
     list.value = res?.list || []
     hasMore.value = list.value.length >= 30
     subtypes.value = (subtypeRows || []).filter(item => Number(item.count || 0) > 0).slice(0, 18)
     years.value = (yearRows || []).slice(0, 12)
   } finally {
-    loading.value = false
+    if (requestId === browseRequestId) loading.value = false
   }
 }
 async function loadRanks() {
@@ -2552,6 +2577,28 @@ onBeforeUnmount(() => {
   width: 42px;
   color: rgba(255,255,255,.42);
   font-size: 13px;
+}
+.x8-filter-line.skeleton {
+  pointer-events: none;
+}
+.x8-filter-line.skeleton span,
+.x8-filter-line.skeleton i {
+  display: block;
+  height: 32px;
+  border-radius: 7px;
+  background: linear-gradient(110deg, #242424 8%, #343434 18%, #242424 33%);
+  background-size: 220% 100%;
+  animation: x8-shimmer 1.35s linear infinite;
+}
+.x8-filter-line.skeleton span {
+  width: 42px;
+  opacity: .62;
+}
+.x8-filter-line.skeleton i {
+  width: 68px;
+}
+.x8-filter-line.skeleton i:nth-child(4n) {
+  width: 86px;
 }
 .x8-filter-line button,
 .x8-pager button,

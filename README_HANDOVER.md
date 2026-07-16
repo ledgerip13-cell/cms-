@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索热词点击提交回修）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索分类页骨架屏补齐）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 搜索分类页骨架屏补齐断点**：`web/src/x8/X8Home.vue` 为 X8 show 页（搜索结果、分类/二级分类/年份/排序切换）补齐加载骨架：请求期间 browse 列表直接展示响应式骨架卡，二级分类与年份筛选首次加载时展示胶囊骨架，标题副文案显示“正在加载影片”；`loadBrowse()` 增加请求序号，避免快速切换时旧请求覆盖新结果。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-C3006o8-.js / assets/index-CT23Raxo.css`。
 - **2026-07-17 X8 搜索热词点击提交回修断点**：`web/src/x8/X8Home.vue` 修复 X8 顶部搜索框热门词轮播交互：输入框聚焦后 placeholder 不再从当前热词切换成“搜索”，空输入直接点击搜索会使用当前轮播热词提交；只有用户实际输入内容后才以输入内容覆盖热词搜索。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-BPOp9asv.js / assets/index-DZwTkYo4.css`。
 - **2026-07-17 X8 播放页切线路不跳集回修断点**：`web/src/x8/X8Home.vue` 继续修正播放页右侧切线路行为：`selectLine()` 不再把 `currentEpIndex` 重置为 `0`，只切换当前线路与对应选集列表，并按当前集数定位分组；只有点击具体选集时才调用 `playCurrent()`。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-8i0bAvSN.js / assets/index-DZwTkYo4.css`；浏览器实测 `#/x8/play/921?line=450701&ep=2` 从金牌第 2 集切到无尽后仍 active 第 2 集，video src 不变、`/api/resolve` 不增加，点击第 2 集后才切到无尽播放并更新 URL。
 - **2026-07-17 X8 播放页线路选择行为回修断点**：`web/src/x8/X8Home.vue` 修复从详情页选择线路进入播放页后丢失线路的问题：`goPlay()` 会把当前详情页选中的 `line` 写入播放页 query，`loadVod(true)` 优先按 `route.query.line` 还原播放线路。播放页 `selectLine()` 不再直接调用 `playCurrent()`，只切换线路 tabs/选集列表，用户点击具体选集时才解析播放；`selectEpisode()` 会同步 URL 的 `line/ep`，避免切线后刷新又回到旧线路。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-PmbxN7OH.js / assets/index-DZwTkYo4.css`；浏览器实测详情页选金牌第 2 集进入 `#/x8/play/921?line=450701&ep=2` 后播放页 active 为金牌/第 2 集，播放页再切无尽只切 UI 不新增 `/api/resolve`，点击第 1 集后才发起新解析并更新 URL。
