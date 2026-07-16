@@ -6,7 +6,7 @@
         <span v-else-if="showHomeLogo" class="x8-brand-mark">JP</span>
         <span class="x8-brand-text">
           <b>{{ site.siteName || '金牌影院' }}</b>
-          <em>JPYY21.COM</em>
+          <em>dododmb.com</em>
         </span>
       </button>
       <nav class="x8-nav" aria-label="主导航">
@@ -128,7 +128,7 @@
               <aside class="x8-trailer-right">
                 <div class="x8-watermark">
                   <b>{{ site.siteName || '金牌影院' }}</b>
-                  <span>JPYY21.COM</span>
+                  <span>dododmb.com</span>
                 </div>
                 <div class="x8-trailer-thumbs">
                   <button v-for="(item, index) in trailerItems" :key="`trailer-${item.id}`" type="button" :class="{ active: trailerIdx === index }" @click="trailerIdx = index">

@@ -1100,7 +1100,7 @@ export default async function vodRoutes(app: FastifyInstance) {
   // 分类聚合
   app.get("/api/types", async (req) => {
     const viewer = await viewerFromRequest(req);
-    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([visibleTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
     const cacheKey = JSON.stringify({ scope: "types", publicTypes, sourceIds, cleanOnlySourceIds });
     const cached = aggregateCacheGet<{ name: string; count: number }[]>(cacheKey);
     if (cached) return cached;
@@ -1108,9 +1108,11 @@ export default async function vodRoutes(app: FastifyInstance) {
       by: ["typeName"],
       where: { typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) },
       _count: { _all: true },
-      orderBy: { _count: { typeName: "desc" } },
     });
-    const data = rows.map((r) => ({ name: r.typeName, count: r._count._all }));
+    const countMap = new Map(rows.map((r) => [r.typeName, r._count._all]));
+    const data = publicTypes
+      .map((name) => ({ name, count: countMap.get(name) || 0 }))
+      .filter((item) => item.count > 0);
     aggregateCacheSet(cacheKey, data);
     return data;
   });

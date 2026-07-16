@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 HLS 全屏退出图标回修）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 头部分类与域名回修）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 头部分类与域名回修断点**：`server/src/routes/vods.ts` 将公共 `/api/types` 从观看权限 `enabledTypeNames(viewer)` 调整为展示权限 `visibleTypeNames(viewer)`，并按后台分类配置顺序返回，避免 X8 头部未登录只剩三个可观看分类；`/api/vods` 等内容列表仍按观看权限过滤，未登录访问 `短剧` 仍返回空列表。`web/src/x8/X8Home.vue` 将头部 logo 域名与预告区水印从 `JPYY21.COM` 统一替换为 `dododmb.com`。验证：`pnpm --dir server build`、`npm run build`、`docker compose up -d --build server web`、`git diff --check` 通过；5150 `/health` 正常，未登录 `/api/types` 返回 `电影/电视剧/动漫/短剧/漫剧`，`/api/vods?type=短剧` 返回空列表；无头浏览器实测 `#/x8` 头部为 `首页/电影/电视剧/动漫/短剧/漫剧`，brand 与 watermark 均为 `dododmb.com`。
 - **2026-07-16 X8 播放器设置与全屏图标回修断点**：`web/src/x8/X8Home.vue` 将播放器设置按钮替换为 lucide `<Settings />` 原始路径，不再使用手写齿轮或 bolt；HLS/video 原生全屏未进入时为 `fullscreen`，进入后退出态明确使用 lucide `minimize` 并加 `x8-icon-minimize` class。保持播放器页面最大化为 diagonal maximize，与 HLS 全屏区分。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-BagS8rDd.js / assets/index-CTbZVJT6.css`；浏览器实测 `#/x8/play/921` 设置按钮 title 为“设置”，SVG path 为 lucide Settings 标准路径，HLS 未全屏态为 `x8-icon-fullscreen`。
 - **2026-07-16 X8 HLS 全屏状态回修断点**：`web/src/x8/X8Home.vue` 将 HLS 全屏从 `video.requestFullscreen()` 改为 `.x8-video-container.requestFullscreen()`，确保自定义控制条仍在 fullscreen 元素内；新增 `videoBox` 引用，标准 `fullscreenchange` 与 `webkitfullscreenchange` 均同步 `videoFullscreen`，并补 `webkitbeginfullscreen/webkitendfullscreen` 兼容。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-CVY0wvv_.js / assets/index-CTbZVJT6.css`；浏览器实测点击 `HLS 全屏` 后 `document.fullscreenElement` 为 `.x8-video-container`，按钮 title 切为“退出全屏”，SVG class 切为 `x8-lucide x8-icon-minimize`。
 - **2026-07-16 X8 播放器弹窗比例回修断点**：`web/src/x8/X8Home.vue` 未直接复制参考站私有播放器代码，改为按其播放器内小浮层比例重做自定义 HLS 控制条弹窗。清晰度弹窗从大卡片压为 `168x136`，每项 `152x38` 横向显示 `1080P/蓝光`；设置弹窗压为 `218x118`，三行 `202x32`，14px 文案，36x20 胶囊开关；倍速二级弹窗压为 `154x214`，列表项 `142x26`，13px 文案。统一半透明毛玻璃 `rgba(18,18,18,.68)+blur(16px)`。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-Cb-Fmmos.js / assets/index-CUF5DwdS.css`；浏览器实测 `#/x8/play/921` 设置/倍速/金牌清晰度三类弹窗尺寸均符合上述数值。
