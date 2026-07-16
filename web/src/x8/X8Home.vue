@@ -225,7 +225,12 @@
 
       <section v-else-if="pageMode === 'rank'" class="x8-page-panel x8-rank-page">
         <div class="x8-rank-grid">
-          <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" :loading="loading" static @open="goDetail" />
+          <template v-if="loading && !rankGroups.length">
+            <x8-rank-card v-for="group in rankSkeletonGroups" :key="`rank-sk-${group.key}`" :title="group.title" :items="[]" loading static @open="goDetail" />
+          </template>
+          <template v-else>
+            <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" :loading="loading" static @open="goDetail" />
+          </template>
         </div>
       </section>
 
@@ -680,6 +685,14 @@ const sortItems = [
   { value: 'rating', label: '评分' },
   { value: 'year', label: '年份' },
 ]
+const rankSkeletonGroups = [
+  { key: 'all', title: '综合榜' },
+  { key: 'movie', title: '电影榜' },
+  { key: 'anime', title: '动漫榜' },
+  { key: 'series', title: '电视剧榜' },
+  { key: 'short', title: '短剧榜' },
+  { key: 'comic', title: '漫剧榜' },
+]
 const typeRouteMap = {
   '1': '电影',
   '2': '电视剧',
@@ -976,7 +989,7 @@ const X8RankCard = defineComponent({
           renderRankContent(item, index, false),
           renderRankContent(item, index, true),
         ])
-      }) : (props.loading ? Array.from({ length: 10 }, (_, index) => h('div', { class: ['x8-rank-large-item', 'skeleton', index < 3 ? 'featured' : '', `index-${index}`] }, [
+      }) : (props.loading ? Array.from({ length: 10 }, (_, index) => h('div', { class: ['x8-rank-large-item', 'skeleton', index < 3 ? 'active' : '', `index-${index}`] }, [
         h('span', { class: 'x8-rank-large-no' }, index + 1),
         index < 3 ? h('span', { class: 'x8-rank-large-poster x8-rank-large-poster-skeleton' }) : null,
         h('span', { class: 'x8-rank-large-main' }, [
