@@ -285,6 +285,11 @@
               {{ detailEpDesc ? '升序' : '倒序' }}
             </button>
           </div>
+          <div v-if="(vod.lines || []).length > 1" class="x8-detail-line-tabs">
+            <button v-for="line in vod.lines || []" :key="`detail-line-${line.id}`" type="button" :class="{ active: currentLineId === line.id }" @click="selectDetailLine(line.id)">
+              {{ line.sourceName || line.flag || '线路' }}
+            </button>
+          </div>
           <div class="x8-detail-episodes">
             <button v-for="ep in detailEpisodes" :key="`detail-ep-${ep.index}`" type="button" @click="goPlay(vod.id, ep.index)">
               {{ ep.index + 1 }}
@@ -893,6 +898,11 @@ function switchQuality(res) {
     const onLoaded = () => { try { video.currentTime = seekTo } catch {} video.removeEventListener('loadedmetadata', onLoaded) }
     video.addEventListener('loadedmetadata', onLoaded)
   }
+}
+function selectDetailLine(id) {
+  currentLineId.value = id
+  currentEpIndex.value = 0
+  detailEpDesc.value = false
 }
 function selectLine(id) {
   currentLineId.value = id
@@ -2390,6 +2400,27 @@ onBeforeUnmount(() => {
 .x8-detail-list-head button svg {
   width: 16px;
   height: 16px;
+}
+.x8-detail-line-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.x8-detail-line-tabs button {
+  height: 36px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  padding: 0 18px;
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.72);
+  font-size: 14px;
+  cursor: pointer;
+}
+.x8-detail-line-tabs button.active,
+.x8-detail-line-tabs button:hover {
+  background: #fff;
+  color: #111;
 }
 .x8-detail-episodes {
   display: flex;
