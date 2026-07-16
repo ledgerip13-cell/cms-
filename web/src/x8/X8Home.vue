@@ -338,7 +338,7 @@
                     ></video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-1" /><path d="m8 20 4-5 4 5H8Z" /></svg>
+                      <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" /><path d="m12 15 5 6H7Z" /></svg>
                     </button>
                     <button v-if="!playUrl" class="x8-player-empty" type="button" @click="playCurrent">
                       <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
@@ -349,29 +349,34 @@
                       <div class="x8-control-row">
                         <div class="x8-control-left">
                           <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-                            <svg v-if="playing" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z" /></svg>
-                            <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.6v12.8L18.2 12 8 5.6Z" /></svg>
+                            <svg v-if="playing" class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="M6 5h4v14H6Z" /><path d="M14 5h4v14h-4Z" /></svg>
+                            <svg v-else class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z" /></svg>
                           </button>
                           <button type="button" title="下一集" @click="playNextEpisode">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5.5 14.5 12 5 18.5v-13ZM16 5h3v14h-3V5Z" /></svg>
+                            <svg class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="m6 5 10 7-10 7Z" /><path d="M18 5v14" /></svg>
                           </button>
                           <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
-                            <svg v-if="muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m19 9-4 4" /><path d="m15 9 4 4" /></svg>
-                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8a5 5 0 0 1 0 8" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                            <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="m22 9-6 6" /><path d="m16 9 6 6" /></svg>
+                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
                           </button>
                           <span class="x8-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
                         </div>
                         <div class="x8-control-right">
                           <div class="x8-control-pop">
-                            <button v-if="qualities.length" type="button" :class="{ active: qualityOpen }" @click.stop="qualityOpen = !qualityOpen">{{ curQualityLabel || '清晰度' }}</button>
+                            <button v-if="qualities.length" class="x8-quality-trigger" type="button" :class="{ active: qualityOpen }" @click.stop="toggleQuality">
+                              <span>清晰度</span>
+                              <b>{{ currentQualityResLabel }}</b>
+                            </button>
                             <div v-if="qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
-                              <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
-                              <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+                              <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: activeQualityResolution === q.resolution }" @click="switchQuality(q.resolution)">
+                                <strong>{{ q.resolution }}P</strong>
+                                <span>{{ q.name || `${q.resolution}P` }}</span>
+                              </button>
                             </div>
                           </div>
                           <div class="x8-control-pop">
                             <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
-                              <svg class="x8-bolt-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2.4 4 13.2h7.2L10 21.6l10-12h-7.1l.3-7.2Z" /></svg>
+                              <svg class="x8-lucide x8-bolt-icon" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46L12 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46L11 14Z" /></svg>
                             </button>
                             <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
                               <template v-if="!rateOpen">
@@ -388,13 +393,13 @@
                                 <button class="x8-setting-row" type="button" @click="rateOpen = true">
                                   <span>倍数</span>
                                   <b>{{ playbackRateLabel }}</b>
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
+                                  <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
                                 </button>
                               </template>
                               <div v-else class="x8-rate-panel">
                                 <button class="x8-setting-back" type="button" @click="rateOpen = false">
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>
-                                  <span>倍数</span>
+                                  <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
+                                  <span>播放倍数</span>
                                 </button>
                                 <button v-for="rate in playbackRates" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click="setPlaybackRate(rate)">
                                   {{ rateLabel(rate) }}
@@ -403,14 +408,14 @@
                             </div>
                           </div>
                           <button type="button" title="窗口化" @click="togglePip">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="12" width="7" height="5" rx="1" /></svg>
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M21 10V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6" /><rect width="8" height="6" x="13" y="13" rx="1" /></svg>
                           </button>
                           <button type="button" :title="playerTheater ? '退出最大化' : '播放器最大化'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
-                            <svg v-if="playerTheater" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v6H3" /><path d="M15 3v6h6" /><path d="M9 21v-6H3" /><path d="M15 21v-6h6" /></svg>
-                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M8 21H3v-5" /><path d="M16 21h5v-5" /></svg>
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
                           </button>
-                          <button type="button" title="系统全屏" @click="requestVideoFullscreen">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>
+                          <button type="button" :title="videoFullscreen ? '退出全屏' : 'HLS 全屏'" :class="{ active: videoFullscreen }" @click="requestVideoFullscreen">
+                            <svg v-if="videoFullscreen" class="x8-lucide" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
+                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
                           </button>
                         </div>
                       </div>
@@ -626,10 +631,11 @@ const currentTime = ref(0)
 const duration = ref(0)
 const controlsVisible = ref(false)
 const playerTheater = ref(false)
+const videoFullscreen = ref(false)
 const autoNext = ref(true)
 const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
-const playbackRates = [0.75, 1, 1.25, 1.5, 2]
+const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -749,15 +755,18 @@ const detailDuration = computed(() => {
   const count = episodes.value.length || Number(currentLine.value?.epCount || 0)
   return count ? `共${count}集` : '未知'
 })
-const showAutoQuality = computed(() => qualities.value.length > 1)
-const curQualityLabel = computed(() => {
-  if (!qualities.value.length) return ''
-  if (preferredRes.value === 0) {
-    if (qualities.value.length === 1) return qualities.value[0]?.name || `${qualities.value[0]?.resolution || ''}P`
-    return '自动'
+const activeQuality = computed(() => {
+  if (!qualities.value.length) return null
+  if (preferredRes.value) {
+    const hit = qualities.value.find(q => q.resolution === preferredRes.value)
+    if (hit) return hit
   }
-  const hit = qualities.value.find(q => q.resolution === preferredRes.value)
-  return hit ? (hit.name || `${hit.resolution}P`) : '自动'
+  return [...qualities.value].sort((a, b) => Number(b.resolution || 0) - Number(a.resolution || 0))[0]
+})
+const activeQualityResolution = computed(() => activeQuality.value?.resolution || 0)
+const currentQualityResLabel = computed(() => {
+  const res = activeQualityResolution.value
+  return res ? `${res}P` : '自动'
 })
 const progressPercent = computed(() => {
   if (!duration.value) return 0
@@ -1071,6 +1080,14 @@ function showPlayerControls() {
     }, 2600)
   }
 }
+function toggleQuality() {
+  qualityOpen.value = !qualityOpen.value
+  if (qualityOpen.value) {
+    settingsOpen.value = false
+    rateOpen.value = false
+  }
+  showPlayerControls()
+}
 function hidePlayerControlsSoon() {
   clearTimeout(controlsTimer)
   if (!settingsOpen.value && !qualityOpen.value) {
@@ -1202,7 +1219,9 @@ function setPlaybackRate(rate) {
 }
 function toggleSettings() {
   settingsOpen.value = !settingsOpen.value
+  if (settingsOpen.value) qualityOpen.value = false
   if (!settingsOpen.value) rateOpen.value = false
+  showPlayerControls()
 }
 async function togglePip() {
   const video = videoEl.value
@@ -1214,8 +1233,15 @@ async function togglePip() {
 }
 function requestVideoFullscreen() {
   const video = videoEl.value
+  if (document.fullscreenElement === video && document.exitFullscreen) {
+    document.exitFullscreen()
+    return
+  }
   const fn = video?.requestFullscreen || video?.webkitEnterFullscreen || video?.webkitRequestFullscreen
   if (fn) fn.call(video)
+}
+function syncFullscreenState() {
+  videoFullscreen.value = document.fullscreenElement === videoEl.value
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
@@ -1438,6 +1464,7 @@ onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onResize, { passive: true })
   window.addEventListener('keydown', onKeydown)
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   onResize()
   startHeroTimer()
   startSearchHintTimer()
@@ -1447,6 +1474,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
   clearTimeout(controlsTimer)
@@ -3189,7 +3217,7 @@ onBeforeUnmount(() => {
 }
 .x8-progress {
   width: 100%;
-  height: 12px;
+  height: 10px;
   margin: 0;
   appearance: none;
   -webkit-appearance: none;
@@ -3197,34 +3225,34 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .x8-progress::-webkit-slider-runnable-track {
-  height: 3px;
+  height: 2px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #fff 0%, #fff var(--x8-progress, 0%), rgba(255,255,255,.26) var(--x8-progress, 0%), rgba(255,255,255,.26) 100%);
+  background: linear-gradient(90deg, #fff 0%, #fff var(--x8-progress, 0%), rgba(255,255,255,.24) var(--x8-progress, 0%), rgba(255,255,255,.24) 100%);
 }
 .x8-progress::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 10px;
-  height: 10px;
-  margin-top: -3.5px;
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
   border: 0;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 4px rgba(255,255,255,.16), 0 2px 8px rgba(0,0,0,.45);
+  box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 2px 10px rgba(0,0,0,.45);
 }
 .x8-progress::-moz-range-track {
-  height: 3px;
+  height: 2px;
   border-radius: 999px;
   background: rgba(255,255,255,.26);
 }
 .x8-progress::-moz-range-progress {
-  height: 3px;
+  height: 2px;
   border-radius: 999px;
   background: #fff;
 }
 .x8-progress::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border: 0;
   border-radius: 50%;
   background: #fff;
@@ -3255,28 +3283,41 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 38px;
-  height: 38px;
+  gap: 7px;
+  min-width: 42px;
+  height: 42px;
   border: 0;
-  border-radius: 8px;
-  color: rgba(255,255,255,.82);
+  border-radius: 12px;
+  color: rgba(255,255,255,.9);
   background: transparent;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
+  transition: color .16s ease, background .16s ease, transform .16s ease;
 }
 .x8-video-toolbar button:hover,
 .x8-video-toolbar button.active {
   color: #fff;
-  background: rgba(255,255,255,.12);
+  background: rgba(255,255,255,.11);
+  transform: scale(1.08);
 }
-.x8-video-toolbar svg {
-  width: 24px;
-  height: 24px;
+.x8-video-toolbar .x8-lucide,
+.x8-airplay-btn .x8-lucide {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.x8-video-toolbar .x8-icon-fill {
+  fill: currentColor;
+  stroke: none;
 }
 .x8-video-toolbar .x8-bolt-icon {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
+  stroke-width: 2.5;
 }
 .x8-time {
   color: rgba(255,255,255,.82);
@@ -3291,20 +3332,20 @@ onBeforeUnmount(() => {
 .x8-quality-menu {
   position: absolute;
   right: 0;
-  bottom: 44px;
+  bottom: 58px;
   z-index: 20;
-  min-width: 238px;
-  padding: 12px;
-  border: 1px solid rgba(255,255,255,.16);
-  border-radius: 18px;
-  background: rgba(18,18,18,.58);
-  box-shadow: 0 20px 52px rgba(0,0,0,.42);
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 22px;
+  background: rgba(22,22,22,.78);
+  box-shadow: 0 22px 56px rgba(0,0,0,.46);
+  backdrop-filter: blur(28px) saturate(135%);
+  -webkit-backdrop-filter: blur(28px) saturate(135%);
 }
 .x8-settings-menu {
+  min-width: 364px;
+  padding: 22px;
   display: grid;
-  gap: 8px;
+  gap: 22px;
 }
 .x8-settings-menu .x8-switch-row,
 .x8-settings-menu .x8-setting-row,
@@ -3313,15 +3354,16 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 18px;
   width: 100%;
-  height: 42px;
+  min-height: 54px;
   border: 0;
-  border-radius: 13px;
+  border-radius: 14px;
   padding: 0 10px;
   color: rgba(255,255,255,.9);
   background: transparent;
-  font-size: 14px;
+  font-size: 23px;
+  font-weight: 600;
   line-height: 1;
 }
 .x8-settings-menu .x8-switch-row {
@@ -3332,7 +3374,8 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-setting-row:hover,
 .x8-settings-menu .x8-setting-back:hover,
 .x8-rate-panel button:hover {
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.07);
+  transform: none;
 }
 .x8-settings-menu .x8-switch-row input {
   position: absolute;
@@ -3341,9 +3384,9 @@ onBeforeUnmount(() => {
 }
 .x8-settings-menu .x8-switch-row i {
   position: relative;
-  width: 42px;
-  height: 24px;
-  flex: 0 0 42px;
+  width: 68px;
+  height: 38px;
+  flex: 0 0 68px;
   border-radius: 999px;
   background: rgba(255,255,255,.18);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
@@ -3352,10 +3395,10 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-switch-row i::after {
   content: "";
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 5px;
+  left: 5px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 2px 8px rgba(0,0,0,.35);
@@ -3366,7 +3409,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
 }
 .x8-settings-menu .x8-switch-row input:checked + i::after {
-  transform: translateX(18px);
+  transform: translateX(30px);
   background: #111;
 }
 .x8-settings-menu .x8-setting-row {
@@ -3375,40 +3418,82 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-setting-row b {
   margin-left: auto;
   color: #fff;
-  font-size: 14px;
+  font-size: 23px;
   font-weight: 600;
 }
 .x8-settings-menu .x8-setting-row svg,
 .x8-settings-menu .x8-setting-back svg {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   color: rgba(255,255,255,.62);
 }
 .x8-rate-panel {
+  min-width: 318px;
+  padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .x8-settings-menu .x8-setting-back {
   justify-content: flex-start;
-  color: rgba(255,255,255,.72);
+  height: 58px;
+  margin: -8px -10px 8px;
+  border-radius: 18px 18px 0 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: #fff;
 }
 .x8-rate-panel button {
   justify-content: center;
   font-weight: 600;
+  min-height: 58px;
 }
 .x8-rate-panel button.on,
 .x8-quality-menu button.on {
-  color: #111;
-  background: #fff;
+  color: #fff;
+  background: rgba(255,255,255,.08);
 }
 .x8-quality-menu button {
-  height: 32px;
-  min-width: 54px;
+  width: 100%;
+  min-height: 84px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 12px;
+  padding: 14px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
   color: rgba(255,255,255,.78);
-  background: rgba(255,255,255,.08);
-  font-size: 13px;
+  background: transparent;
+  font-size: 22px;
+  font-weight: 500;
+  transition: background .16s ease, transform .16s ease, color .16s ease;
+}
+.x8-quality-menu {
+  min-width: 330px;
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+.x8-quality-menu button:not(.on) {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.09);
+}
+.x8-quality-menu button:hover {
+  transform: scale(1.02);
+  color: #fff;
+  background: rgba(255,255,255,.07);
+}
+.x8-quality-menu button strong {
+  color: #fff;
+  font-size: 28px;
+  line-height: 1;
+}
+.x8-quality-menu button span {
+  color: rgba(255,255,255,.72);
+  font-size: 20px;
+  line-height: 1.2;
+}
+.x8-quality-trigger b {
+  font-weight: 800;
 }
 .x8-player-detail {
   width: 100%;

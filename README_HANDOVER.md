@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-16 (GMT+8)｜**对应提交**：本次提交（X8 播放页布局对齐）
+> **最后更新**：2026-07-16 (GMT+8)｜**对应提交**：本次提交（X8 播放器弹窗与图标对齐）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-16 X8 播放器弹窗与图标对齐断点**：`web/src/x8/X8Home.vue` 按最新截图重做播放器内三类浮层：清晰度弹窗改为两行卡片式档位（如 `1080P/蓝光`、`720P/高清`、`480P/标清`），按钮显示 `清晰度 1080P`；设置弹窗改为更深半透明毛玻璃，自动跳过片头片尾/自动下一集使用大号胶囊开关；倍数入口保持一级 `倍数 1.0x`，点击后进入二级 `播放倍数` 面板，支持 `0.5x/0.75x/1.0x/1.25x/1.5x/2.0x`。播放器控制图标统一为 lucide 风格 SVG：设置使用 `bolt`，HLS/video 原生全屏使用 `fullscreen`，全屏态切 `minimize`，播放器自身页面最大化使用 `maximize`；控制图标放大到 26px、bolt 28px，按钮 hover 增加 `scale(1.08)`，进度条收细为 2px 轨道与小圆点。已 `npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-BcZ9PAh8.js / assets/index-EKsO0Bb5.css`；浏览器实测 `#/x8/play/921` 切金牌后清晰度弹窗 3 档、设置弹窗胶囊开关、倍速二级面板和图标尺寸/路径均生效。
 - **2026-07-16 X8 播放页布局对齐断点**：按用户截图重新修正 `web/src/x8/X8Home.vue` 播放页：删除下方评论区；上方播放区改为一个深色圆角容器，左侧为 16:9 播放器 + 82px 工具栏，右侧为同高选集栏；外层高度按 `左侧播放器宽度 × 9/16 + 工具栏高度` 锁定，右侧选集在同高区域内滚动，避免选集把容器撑高导致左侧多出黑底。工具栏补齐点赞/点踩/评论/收藏/报错/分享/添加与弹幕输入区域；下方信息区改为 `片名 > 第 N 集`、评分/年份/集数/标签/简介；猜你喜欢继续保留“换一换”，无“更多”。验证：`npm run build`（web）通过，`docker compose up -d --build web` 部署，`5150 /health` 正常，`5152` 新包 `assets/index-BXUeoorl.js / assets/index-CwJX5i8K.css`；2048×1250 浏览器实测 `#/x8/play/921`：外层 `2000x899`、左播放器 `1452x817`、工具栏 `82`、右栏 `548x899`、选集按钮 `64x64`、外层高度差 `0`、右栏高度差 `0`、评论区数量 `0`；`git diff --check` 通过。
 - **2026-07-16 X8 搜索栏与底部导航对齐断点**：按用户最新要求和参考站 `https://www.x8kb9k8.com/` 对齐 X8 首页头部搜索与底部：`web/src/x8/X8Home.vue` 搜索框改为常驻展开，输入字号提升到 14px，未聚焦且无输入时通过现有 `api.hot(12)` 热榜接口轮切热门搜索 placeholder，聚焦时恢复“搜索”；底部下载并本地化参考站背景图与 iconfont 到 `web/public/x8/footer-bg.png`、`web/public/x8/iconfont.woff`，三列快捷导航按参考站图标映射、字号 16px/500、卡片高度 145px、分割线 `rgba(255,255,255,.12)`、毛玻璃 `blur(4px)`、透明度和间距对齐。验证：`git diff --check` 通过，X8 UI 禁用符号扫描无命中，`npm run build`（web）通过，`docker compose up -d --build web` 部署，`5150 /health` 正常，`5152` 新包 `assets/index-egmloh5i.js`，本地资源 `/x8/footer-bg.png` 与 `/x8/iconfont.woff` 返回 200；浏览器实测 `#/x8` 搜索 placeholder 从“吞噬星空”轮切到“牧神记”，聚焦后为“搜索”，搜索框宽 418px、输入 14px，footer 背景本地 URL 生效、快捷区高 308px、padding 60px、卡片 `blur(4px)`、图标字体 20px。
 - **2026-07-16 X8 详情页按钮与选集规范修复断点**：按参考站 `https://www.x8kb9k8.com/detail/145325` 的 `InfoRight / PlayBox / PlayListBox` 细节复核，修正 `web/src/x8/X8Home.vue` 详情页信息区、动作区和选集区：左侧封面为 236x340，右侧 `.x8-detail-main` 锁定 `height/max-height:340px` 并 `justify-content:space-between`；主演行复用自适应模板 `vod.people` 数据，有头像时显示 28px 圆头像，无头像时显示姓名首字占位，点击演员走搜索；立即播放旁只保留一个真实“追剧/已追剧”按钮，加载 `/api/user/vods/:id/state` 状态，未登录点击进 `/x8/login`，已登录调用 follow/unfollow；主按钮图标固定 24x24 实心黑色；统计栏评分/热度图标放大到 19px；头部分类字号从 16px 调整到 17px；选集区支持多线路 tabs、升序/倒序、196px 固定高度滚动。验证：`npm run build`（web）通过，`docker compose up -d --build web` 部署，`5150 /health` 正常，`5152` 新包 `assets/index-DU8u7lmB.js`，浏览器硬刷 `#/x8/detail/921` 实测主演显示 6 个 28px 圆头像、旧三按钮数量为 0、只剩一个 108x60 追剧按钮、统计图标 19px、头部分类 17px，正文无旧符号，`git diff --check` 通过。
