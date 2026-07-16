@@ -2180,9 +2180,12 @@ onBeforeUnmount(() => {
 .x8-detail-main {
   flex: 1;
   min-width: 0;
+  height: 340px;
+  max-height: 340px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  overflow: hidden;
 }
 .x8-detail-meta h1 {
   margin: -4px 0 8px;
@@ -2199,7 +2202,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 26px;
+  margin-bottom: 18px;
 }
 .x8-detail-tags button {
   height: 28px;
@@ -2218,7 +2221,7 @@ onBeforeUnmount(() => {
 .x8-detail-row {
   display: flex;
   min-height: 21px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   align-items: flex-start;
   color: #fff;
   font-size: 14px;
@@ -2243,7 +2246,7 @@ onBeforeUnmount(() => {
   display: none;
 }
 .x8-detail-actions {
-  margin-top: 34px;
+  flex: 0 0 auto;
 }
 .x8-detail-action-top {
   display: flex;
@@ -3031,6 +3034,11 @@ onBeforeUnmount(() => {
     height: 259px;
     flex-basis: auto;
     margin: 0 0 18px;
+  }
+  .x8-detail-main {
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
   .x8-detail-meta h1 {
     white-space: normal;
