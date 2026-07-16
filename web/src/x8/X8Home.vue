@@ -376,7 +376,7 @@
                           </div>
                           <div class="x8-control-pop">
                             <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
-                              <svg class="x8-lucide x8-settings-icon" viewBox="0 0 24 24"><path d="M9.67 2h4.66l.43 2.36a7.8 7.8 0 0 1 1.3.75l2.25-.82 2.33 4.04-1.82 1.55a8 8 0 0 1 0 1.5l1.82 1.55-2.33 4.04-2.25-.82a7.8 7.8 0 0 1-1.3.75L14.33 22H9.67l-.43-2.36a7.8 7.8 0 0 1-1.3-.75l-2.25.82-2.33-4.04 1.82-1.55a8 8 0 0 1 0-1.5L3.36 8.33l2.33-4.04 2.25.82a7.8 7.8 0 0 1 1.3-.75L9.67 2Z" /><circle cx="12" cy="12" r="3" /></svg>
+                              <svg class="x8-lucide x8-settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg>
                             </button>
                             <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
                               <template v-if="!rateOpen">
@@ -414,8 +414,8 @@
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
                           </button>
                           <button type="button" :title="videoFullscreen ? '退出全屏' : 'HLS 全屏'" :class="{ active: videoFullscreen }" @click="requestVideoFullscreen">
-                            <svg v-if="videoFullscreen" class="x8-lucide" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
-                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
+                            <svg v-if="videoFullscreen" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
+                            <svg v-else class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
                           </button>
                         </div>
                       </div>
