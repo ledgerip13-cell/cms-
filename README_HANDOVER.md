@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 播放器空态按钮与时间字重微调）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 HLS 全屏键盘控制）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 HLS 全屏键盘控制断点**：`web/src/x8/X8Home.vue` 为 X8 播放页 HLS 页面内全屏补齐键盘控制：空格播放/暂停，左方向键后退 10 秒，右方向键前进 10 秒；非 HLS 全屏时仅在播放器区域有焦点才接管快捷键，并避开 input/textarea/select/contenteditable，避免影响正常输入。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-DUeccjYr.js / assets/index-CvNkFSt9.css`。
 - **2026-07-17 X8 播放器空态按钮与时间字重微调断点**：`web/src/x8/X8Home.vue` 将播放器控制条时间 `0:00 / 0:00` 字重设为 `500`；播放器中间空态播放按钮去掉圆形背景，只保留播放图标并将图标从通用 `34px` 放大到 `51px`（1.5 倍）；空态按钮文案“立即播放/解析中...”字重设为 `500`。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-DtK_m40a.js / assets/index-CvNkFSt9.css`。
 - **2026-07-17 X8 筛选布局与播放线路焦点优化断点**：`web/src/x8/X8Home.vue` 将 X8 搜索/分类二级页筛选区改为“左侧固定 label + 右侧标签容器”布局，放大类型/年份/排序行距与标签间距，标签过多换行时第二行继续与标签起点对齐，不再顶到最左侧。播放页线路切换、分组切换、选集切换后会把当前 active 线路/分组/选集滚动到可见位置，并对可见侧栏选集做焦点移动，避免切换后后续内容被滚动容器遮住。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-B8qGuRHp.js / assets/index-DYbW19Fc.css`。
 - **2026-07-17 X8 搜索分类页骨架屏补齐断点**：`web/src/x8/X8Home.vue` 为 X8 show 页（搜索结果、分类/二级分类/年份/排序切换）补齐加载骨架：请求期间 browse 列表直接展示响应式骨架卡，二级分类与年份筛选首次加载时展示胶囊骨架，标题副文案显示“正在加载影片”；`loadBrowse()` 增加请求序号，避免快速切换时旧请求覆盖新结果。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-C3006o8-.js / assets/index-CT23Raxo.css`。

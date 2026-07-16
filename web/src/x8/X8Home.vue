@@ -1244,6 +1244,15 @@ function seekVideo(event) {
   video.currentTime = next
   currentTime.value = next
 }
+function seekBy(seconds) {
+  const video = videoEl.value
+  if (!video || playKind.value === 'iframe') return
+  const max = Number(video.duration) || duration.value || 0
+  const next = Math.max(0, max ? Math.min(max, video.currentTime + seconds) : video.currentTime + seconds)
+  video.currentTime = next
+  currentTime.value = next
+  showPlayerControls()
+}
 function formatTime(value) {
   const total = Math.max(0, Math.floor(Number(value) || 0))
   const hours = Math.floor(total / 3600)
@@ -1382,7 +1391,27 @@ function onKeydown(event) {
   if (event.key === 'Escape' && playerTheater.value) {
     playerTheater.value = false
     videoFullscreen.value = false
+    return
   }
+  if (!shouldHandlePlayerHotkey(event)) return
+  if (event.key === ' ' || event.key === 'Spacebar') {
+    event.preventDefault()
+    togglePlay()
+  } else if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    seekBy(-10)
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    seekBy(10)
+  }
+}
+function shouldHandlePlayerHotkey(event) {
+  if (pageMode.value !== 'play' || playKind.value === 'iframe' || !videoEl.value) return false
+  const target = event.target
+  const tag = String(target?.tagName || '').toLowerCase()
+  if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(tag)) return false
+  if (playerTheater.value) return true
+  return Boolean(videoBox.value?.contains?.(document.activeElement))
 }
 async function ensureUser() {
   if (user.value) return user.value
