@@ -412,8 +412,8 @@
                           <button type="button" title="窗口化" @click="togglePip">
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M21 10V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6" /><rect width="8" height="6" x="13" y="13" rx="1" /></svg>
                           </button>
-                          <button type="button" :title="videoFullscreen ? '退出全屏' : 'HLS 全屏'" :class="{ active: videoFullscreen }" @click="requestVideoFullscreen">
-                            <svg v-if="videoFullscreen" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></svg>
+                          <button type="button" :title="playerTheater ? '退出 HLS 全屏' : 'HLS 全屏'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
+                            <svg v-if="playerTheater" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></svg>
                             <svg v-else class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
                           </button>
                           <button type="button" title="系统全屏" @click="requestNativeFullscreen">
@@ -1235,27 +1235,6 @@ async function togglePip() {
     else await video.requestPictureInPicture()
   } catch {}
 }
-async function requestVideoFullscreen() {
-  const target = videoBox.value
-  if (!target) return
-  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
-  if (fullscreenElement === target) {
-    const exit = document.exitFullscreen || document.webkitExitFullscreen
-    if (exit) await exit.call(document)
-    videoFullscreen.value = false
-    return
-  }
-  const fn = target.requestFullscreen || target.webkitRequestFullscreen
-  if (!fn) return
-  try {
-    nativeFullscreen.value = false
-    await fn.call(target)
-    videoFullscreen.value = true
-    showPlayerControls()
-  } catch {
-    syncFullscreenState()
-  }
-}
 async function requestNativeFullscreen() {
   const video = videoEl.value
   if (!video) return
@@ -1279,12 +1258,16 @@ async function requestNativeFullscreen() {
 function syncFullscreenState() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
   const video = videoEl.value
-  videoFullscreen.value = fullscreenElement === videoBox.value
+  videoFullscreen.value = false
   nativeFullscreen.value = fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
   if (!nativeFullscreen.value && video) video.controls = false
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
+  videoFullscreen.value = playerTheater.value
+  nativeFullscreen.value = false
+  const video = videoEl.value
+  if (video) video.controls = false
   showPlayerControls()
 }
 function openAirplay() {
@@ -1324,6 +1307,7 @@ function selectEpisode(index) {
 function onKeydown(event) {
   if (event.key === 'Escape' && playerTheater.value) {
     playerTheater.value = false
+    videoFullscreen.value = false
   }
 }
 async function ensureUser() {
@@ -1492,7 +1476,10 @@ async function loadVod(withPlay = false) {
 
 watch(() => route.fullPath, () => {
   const mode = pageMode.value
-  if (mode !== 'play') playerTheater.value = false
+  if (mode !== 'play') {
+    playerTheater.value = false
+    videoFullscreen.value = false
+  }
   if (mode === 'home') loadHome()
   else if (mode === 'show') loadBrowse()
   else if (mode === 'rank') loadRanks()
