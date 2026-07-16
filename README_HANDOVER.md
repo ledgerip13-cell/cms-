@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜底部 hover 锁定行隐藏）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索热词真实热度与头部样式对齐）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 搜索热词真实热度与头部样式对齐断点**：`web/src/x8/X8Home.vue` 将顶部搜索轮播热词从 `/api/hot` 推荐配置切换为 `/api/vods?sort=hot&size=20`，按 `ratingCount/_count.plays/playCount/viewCount/hits` 真实热度字段二次降序后去重取前 10，避免少量推荐项或无依据数据影响搜索榜单顺序；同步按参考站 `https://www.x8kb9k8.com/` 首页头部调整 X8 顶栏：固定高度 `72px`、`#121212` 黑底、`z-index:100`、导航 `18px/500`，hover/active 放大 `1.11111` 且字重 `700`，搜索框宽度收至 `368px`、按钮区按参考站 46px。验证：本地接口 `/api/vods?page=1&size=12&sort=hot` 返回含 `ratingCount` 的热度排序数据；`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-B9Enepaa.js / assets/index-idr0hPvg.css`。
 - **2026-07-17 X8 排行榜底部 hover 锁定行隐藏断点**：`web/src/x8/X8Home.vue` 修复排行榜从底部 hover 往上顶时锁定行仍可见导致重叠的问题：`locked` 行现在同步设置 `opacity:0`、`visibility:hidden`、`pointer-events:none`，渲染属性补 `aria-hidden=true` 与 `tabindex=-1`，让被顶上去的第 4 名以后行只作为布局位移参与计算但视觉和交互都隐藏。验证：`npm run build`、`git diff --check`、产物 `locked{opacity:0...visibility:hidden` 与 `aria-hidden` 关键字检查通过；新前端包 `assets/index-CNHXO1tn.js / assets/index-B00w6H0Z.css`。
 - **2026-07-17 X8 排行榜十条高度与综合榜补齐断点**：`web/src/x8/X8Home.vue` 修正排行榜卡片固定高度为完整 10 条参考站高度：桌面 `.x8-rank-card.static` 固定 `962px`（60px header + 902px list），移动端固定 `846px`，保证前三名默认展开 + 7 条普通行完整可见；hover 前部条目时只让底部超出裁切，hover 底部条目时保留 `locked` 上移裁切，并补齐 `active-index-8` 的 `translateY(calc(-100% - 8px))` 特殊位移。综合榜由 `/api/hot` 优先，数量不足 10 时用全站 `/api/vods?sort=hot` 去重补齐到 10 条。验证：`npm run build`、`git diff --check`、产物 `962px/846px/active-index-8` 关键字检查通过；新前端包 `assets/index-Bhe1n4Ur.js / assets/index-2VTdN1Bl.css`。
 - **2026-07-17 X8 排行榜卡片固定高度裁切断点**：`web/src/x8/X8Home.vue` 将排行榜静态榜卡改为参考站的固定卡高裁切模型：桌面 `.x8-rank-card.static` 固定 `682px`（60px header + 622px list），移动端固定 `594px`；`.x8-rank-head` 固定 flex-basis，`.x8-rank-large-list` 改为 `flex:1 1 auto + height:100% + min-height:0 + overflow:hidden`，hover/focus 展开只改变内部行高，多出的部分由列表区裁切，不再撑高整张卡片。验证：`npm run build`、`git diff --check`、产物固定高度/overflow 关键字检查通过；新前端包 `assets/index-BdiHDvrt.js / assets/index-EByqeLIg.css`。

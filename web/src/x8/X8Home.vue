@@ -1049,8 +1049,11 @@ function withRandomHeroImage(item) {
   const picked = pool[Math.floor(Math.random() * pool.length)]
   return { ...item, heroImage: picked.url, heroImageWide: wideImages.length > 0 }
 }
+function heatScore(item) {
+  return Number(item?.ratingCount || item?._count?.plays || item?.playCount || item?.viewCount || item?.hits || 0)
+}
 function heatValue(item) {
-  const n = Number(item?.ratingCount || item?._count?.plays || item?.playCount || item?.viewCount || item?.hits || 0)
+  const n = heatScore(item)
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
   return String(n)
@@ -1168,8 +1171,12 @@ function startSearchHintTimer() {
   }, 3200)
 }
 async function loadSearchHints() {
-  const rows = await api.hot(12).catch(() => [])
-  const names = (rows || []).map(item => String(item?.name || '').trim()).filter(Boolean)
+  const rows = await api.vods({ page: 1, size: 20, sort: 'hot' }).catch(() => ({ list: [] }))
+  const names = (rows?.list || [])
+    .filter(item => heatScore(item) > 0)
+    .sort((a, b) => heatScore(b) - heatScore(a))
+    .map(item => String(item?.name || '').trim())
+    .filter(Boolean)
   searchHints.value = [...new Set(names)].slice(0, 10)
 }
 function destroyHls() {
@@ -1698,19 +1705,19 @@ onBeforeUnmount(() => {
 .x8-header {
   position: fixed;
   inset: 0 0 auto;
-  z-index: 80;
-  height: calc(58px + env(safe-area-inset-top));
+  z-index: 100;
+  height: calc(72px + env(safe-area-inset-top));
   display: grid;
-  grid-template-columns: 150px minmax(360px, 1fr) minmax(42px, 420px) auto;
+  grid-template-columns: 150px minmax(360px, 1fr) minmax(182px, 368px) auto;
   align-items: center;
-  gap: 25px;
-  padding: env(safe-area-inset-top) 56px 0;
-  background: linear-gradient(180deg, rgba(0,0,0,.68), rgba(0,0,0,0));
-  transition: background .25s ease, backdrop-filter .25s ease;
+  gap: 30px;
+  padding: env(safe-area-inset-top) 40px 0;
+  background: #121212;
+  transition: background .2s linear;
 }
 .x8-header.solid {
-  background: rgba(18,18,18,.86);
-  backdrop-filter: blur(16px);
+  background: #121212;
+  backdrop-filter: none;
 }
 .x8-brand,
 .x8-nav button,
@@ -1765,32 +1772,33 @@ onBeforeUnmount(() => {
 .x8-nav {
   display: flex;
   align-items: center;
-  gap: 38px;
+  gap: 30px;
   min-width: 0;
 }
 .x8-nav button {
-  color: rgba(255,255,255,.72);
-  font-size: 17px;
+  color: rgba(255,255,255,.85);
+  font-size: 18px;
   font-weight: 500;
+  line-height: 1.5;
   white-space: nowrap;
   transform-origin: center;
-  transition: color .2s ease, transform .2s ease;
+  transition: color .15s ease, transform .15s ease;
 }
 .x8-nav button.active,
 .x8-nav button:hover {
   color: #fff;
-  font-weight: 600;
-  transform: scale(1.08);
+  font-weight: 700;
+  transform: scale(1.11111);
 }
 .x8-search {
   justify-self: end;
-  width: min(420px, 100%);
-  max-width: 420px;
-  min-width: 260px;
+  width: min(368px, 100%);
+  max-width: 368px;
+  min-width: 182px;
   height: 40px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
-  border-radius: 22px;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  border-radius: 20px;
   background: rgba(255,255,255,.08);
   overflow: hidden;
   transition: background .25s ease;
@@ -1802,23 +1810,26 @@ onBeforeUnmount(() => {
 .x8-search input {
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 36px;
   border: 0;
   outline: 0;
-  padding: 0 0 0 18px;
+  padding: 0 0 0 16px;
   color: #fff;
   background: transparent;
   font-size: 14px;
+  line-height: 16px;
   opacity: 1;
+  align-self: center;
 }
 .x8-search svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   display: block;
 }
 .x8-search button {
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 34px;
+  align-self: center;
   display: grid;
   place-items: center;
   padding: 0;
@@ -1830,7 +1841,7 @@ onBeforeUnmount(() => {
 .x8-header-tools {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 30px;
 }
 .x8-header-tools button {
   min-width: 36px;
@@ -1841,8 +1852,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 4px;
   color: rgba(255,255,255,.72);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 10px;
+  font-weight: 400;
   line-height: 1;
   white-space: nowrap;
   transform-origin: center;
@@ -1853,9 +1864,9 @@ onBeforeUnmount(() => {
   transform: scale(1.08);
 }
 .x8-header-tools svg {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   stroke-width: 2;
 }
 .x8-header-tools .x8-login-btn {
@@ -4531,12 +4542,15 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1399px) {
   .x8-header {
-    grid-template-columns: 138px minmax(280px, 1fr) minmax(44px, 260px) auto;
+    grid-template-columns: 138px minmax(280px, 1fr) minmax(182px, 300px) auto;
     gap: 18px;
-    padding: 0 32px;
+    padding: env(safe-area-inset-top) 32px 0;
   }
   .x8-nav {
     gap: 22px;
+  }
+  .x8-header-tools {
+    gap: 20px;
   }
   .x8-card-grid.hot,
   .x8-card-grid.section,
