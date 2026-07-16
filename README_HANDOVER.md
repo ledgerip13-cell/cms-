@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-16 (GMT+8)｜**对应提交**：待提交（X8 详情页演员与追剧按钮）
+> **最后更新**：2026-07-16 (GMT+8)｜**对应提交**：本次提交（X8 搜索与底部导航对齐）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-16 X8 搜索栏与底部导航对齐断点**：按用户最新要求和参考站 `https://www.x8kb9k8.com/` 对齐 X8 首页头部搜索与底部：`web/src/x8/X8Home.vue` 搜索框改为常驻展开，输入字号提升到 14px，未聚焦且无输入时通过现有 `api.hot(12)` 热榜接口轮切热门搜索 placeholder，聚焦时恢复“搜索”；底部下载并本地化参考站背景图与 iconfont 到 `web/public/x8/footer-bg.png`、`web/public/x8/iconfont.woff`，三列快捷导航按参考站图标映射、字号 16px/500、卡片高度 145px、分割线 `rgba(255,255,255,.12)`、毛玻璃 `blur(4px)`、透明度和间距对齐。验证：`git diff --check` 通过，X8 UI 禁用符号扫描无命中，`npm run build`（web）通过，`docker compose up -d --build web` 部署，`5150 /health` 正常，`5152` 新包 `assets/index-egmloh5i.js`，本地资源 `/x8/footer-bg.png` 与 `/x8/iconfont.woff` 返回 200；浏览器实测 `#/x8` 搜索 placeholder 从“吞噬星空”轮切到“牧神记”，聚焦后为“搜索”，搜索框宽 418px、输入 14px，footer 背景本地 URL 生效、快捷区高 308px、padding 60px、卡片 `blur(4px)`、图标字体 20px。
 - **2026-07-16 X8 详情页按钮与选集规范修复断点**：按参考站 `https://www.x8kb9k8.com/detail/145325` 的 `InfoRight / PlayBox / PlayListBox` 细节复核，修正 `web/src/x8/X8Home.vue` 详情页信息区、动作区和选集区：左侧封面为 236x340，右侧 `.x8-detail-main` 锁定 `height/max-height:340px` 并 `justify-content:space-between`；主演行复用自适应模板 `vod.people` 数据，有头像时显示 28px 圆头像，无头像时显示姓名首字占位，点击演员走搜索；立即播放旁只保留一个真实“追剧/已追剧”按钮，加载 `/api/user/vods/:id/state` 状态，未登录点击进 `/x8/login`，已登录调用 follow/unfollow；主按钮图标固定 24x24 实心黑色；统计栏评分/热度图标放大到 19px；头部分类字号从 16px 调整到 17px；选集区支持多线路 tabs、升序/倒序、196px 固定高度滚动。验证：`npm run build`（web）通过，`docker compose up -d --build web` 部署，`5150 /health` 正常，`5152` 新包 `assets/index-DU8u7lmB.js`，浏览器硬刷 `#/x8/detail/921` 实测主演显示 6 个 28px 圆头像、旧三按钮数量为 0、只剩一个 108x60 追剧按钮、统计图标 19px、头部分类 17px，正文无旧符号，`git diff --check` 通过。
 - **2026-07-16 前台分类按观看权限过滤断点**：定位 X8 未登录仍显示/进入 VIP 类内容的根因有两层：① `server/src/publicVod.ts::enabledTypeNames()` 仍返回 `visibleTypeNames(display)`，公共 `/api/types`、`/api/vods`、详情、相关、热榜等内容入口只按展示权限过滤，不按观看权限过滤；后台当前 `短剧/漫剧` 为 `display=public, watch=vip`，所以未登录仍能看到列表数据，只在 resolve 播放时被拦。② `web/src/x8/X8Home.vue` 头部 `navItems` 对 `电影/电视剧/综艺/动漫/短剧` 做了固定 fallback，即使 `/api/types` 没返回也会硬显示。已改为 `enabledTypeNames()` 返回 `watchableTypeNames()`，公共内容列表/详情/分类聚合统一按观看权限过滤；X8 头部只渲染 `/api/types` 实际返回的分类，不再硬补。验证：未登录 `/api/types` 返回 `动漫/电视剧/电影`，`/api/vods?type=短剧` 返回 0 条，浏览器 X8 头部仅显示 `首页/电影/电视剧/动漫`。已 `npm run build`（server/web）、`docker compose up -d --build server web`、`5150 /health`、`5152` 新包 `assets/index-CB3AWIJG.js`、`git diff --check` 通过。
 - **2026-07-16 X8 详情页路由与样式统一断点**：按参考站 `https://www.x8kb9k8.com/detail/145325` 抓取确认详情页结构为 `detail__MovieDetailContainer / InfoBox / CardImg / InfoRight / Info / PlayBox / VideoIntro / PlayListBox`：左侧 sticky 海报，右侧标题、标签、导演/主演/别名/语言，立即播放与收藏/添加/分享按钮，下方评分/热度/上映/片长指标，简介、播放器选集与猜你喜欢。`web/src/x8/X8Home.vue` 已将 X8 首页 Hero、影片卡、分类列表、排行榜、相关推荐的影片点击统一改为进入 `#/x8/detail/:id`，只有详情页“立即播放”、海报播放遮罩和选集按钮进入 `#/x8/play/:id`。详情页样式按参考站补齐海报尺寸、按钮组、指标栏、简介、选集和猜你喜欢；移动断点改为纵向海报+信息。已 `npm run build`（web）、`docker compose up -d --build web`、`5150 /health`、`5152` 新包 `assets/index-B0A6C4XK.js`、`git diff --check` 通过；浏览器本地实测点击 X8 首页第一张卡进入 `#/x8/detail/921`，详情渲染海报/标签/播放按钮/指标/149集选集，再点“立即播放”进入 `#/x8/play/921`。

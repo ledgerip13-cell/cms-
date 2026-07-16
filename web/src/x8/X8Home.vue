@@ -16,7 +16,7 @@
         </button>
       </nav>
       <form class="x8-search" @submit.prevent="doSearch">
-        <input v-model.trim="kw" type="search" placeholder="搜索" />
+        <input v-model.trim="kw" type="search" :placeholder="searchPlaceholder" @focus="searchFocused = true" @blur="searchFocused = false" />
         <button type="submit" aria-label="搜索">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
         </button>
@@ -379,32 +379,32 @@
             <h3>影视分类</h3>
             <div class="x8-footer-card category">
               <div class="top">
-                <button type="button" @click="goShow('电影')">电影</button>
-                <button type="button" @click="goShow('电视剧')">电视剧</button>
+                <button type="button" @click="goShow('电影')"><span class="x8-footer-icon icon-kuaijielianjie11"></span><em>电影</em></button>
+                <button type="button" @click="goShow('电视剧')"><span class="x8-footer-icon icon-kuaijielianjie10"></span><em>电视剧</em></button>
               </div>
               <div class="bottom">
-                <button type="button" @click="goShow('综艺')">综艺</button>
-                <button type="button" @click="goShow('动漫')">动漫</button>
-                <button type="button" @click="goShow('短剧')">短剧</button>
+                <button type="button" @click="goShow('综艺')"><span class="x8-footer-icon icon-kuaijielianjie9"></span><em>综艺</em></button>
+                <button type="button" @click="goShow('动漫')"><span class="x8-footer-icon icon-kuaijielianjie8"></span><em>动漫</em></button>
+                <button type="button" @click="goShow('短剧')"><span class="x8-footer-icon icon-kuaijielianjie7"></span><em>短剧</em></button>
               </div>
             </div>
           </section>
           <section class="x8-footer-nav">
             <h3>内容推荐</h3>
             <div class="x8-footer-card">
-              <button type="button" @click="goShow('电影')">最新上映</button>
-              <button type="button" @click="goRank">热门推荐</button>
-              <button type="button" @click="goRank">评分最高</button>
-              <button type="button" @click="scrollToTrailer">即将上线</button>
+              <button type="button" @click="goShow('电影')"><span class="x8-footer-icon icon-kuaijielianjie6"></span><em>最新上映</em></button>
+              <button type="button" @click="goRank"><span class="x8-footer-icon icon-kuaijielianjie5"></span><em>热门推荐</em></button>
+              <button type="button" @click="goRank"><span class="x8-footer-icon icon-kuaijielianjie4"></span><em>评分最高</em></button>
+              <button type="button" @click="scrollToTrailer"><span class="x8-footer-icon icon-kuaijielianjie3"></span><em>即将上线</em></button>
             </div>
           </section>
           <section class="x8-footer-nav">
             <h3>用户中心</h3>
             <div class="x8-footer-card">
-              <button type="button" @click="goUser('follows')">我的收藏</button>
-              <button type="button" @click="goUser('history')">观看历史</button>
-              <button type="button" @click="goUser('history')">个人中心</button>
-              <button type="button" @click="goLogin">系统设置</button>
+              <button type="button" @click="goUser('follows')"><span class="x8-footer-icon icon-kuaijielianjie12"></span><em>我的收藏</em></button>
+              <button type="button" @click="goUser('history')"><span class="x8-footer-icon icon-kuaijielianjie2"></span><em>观看历史</em></button>
+              <button type="button" @click="goUser('history')"><span class="x8-footer-icon icon-kuaijielianjie1"></span><em>个人中心</em></button>
+              <button type="button" @click="goLogin"><span class="x8-footer-icon icon-kuaijielianjie"></span><em>系统设置</em></button>
             </div>
           </section>
         </div>
@@ -462,6 +462,9 @@ const hasMore = ref(false)
 const loading = ref(false)
 const scrolled = ref(false)
 const kw = ref('')
+const searchFocused = ref(false)
+const searchHints = ref([])
+const searchHintIdx = ref(0)
 const heroIdx = ref(0)
 const trailerIdx = ref(0)
 const hotOffset = ref(0)
@@ -480,6 +483,7 @@ const defaultQualityUrl = ref('')
 const detailEpDesc = ref(false)
 let heroTouchX = 0
 let heroTimer = 0
+let searchHintTimer = 0
 let hls = null
 
 const navOrder = ['电影', '电视剧', '综艺', '动漫', '短剧']
@@ -533,6 +537,10 @@ const navItems = computed(() => {
 })
 const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}` : (curSub.value || curType.value || '影片'))
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
+const searchPlaceholder = computed(() => {
+  if (searchFocused.value) return '搜索'
+  return searchHints.value[searchHintIdx.value % Math.max(1, searchHints.value.length)] || '搜索'
+})
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
 const detailEpisodes = computed(() => {
@@ -840,6 +848,19 @@ function startHeroTimer() {
   clearInterval(heroTimer)
   heroTimer = window.setInterval(() => shiftHero(1), 5200)
 }
+function startSearchHintTimer() {
+  clearInterval(searchHintTimer)
+  searchHintTimer = window.setInterval(() => {
+    if (!searchFocused.value && !kw.value && searchHints.value.length > 1) {
+      searchHintIdx.value = (searchHintIdx.value + 1) % searchHints.value.length
+    }
+  }, 3200)
+}
+async function loadSearchHints() {
+  const rows = await api.hot(12).catch(() => [])
+  const names = (rows || []).map(item => String(item?.name || '').trim()).filter(Boolean)
+  searchHints.value = [...new Set(names)].slice(0, 10)
+}
 function destroyHls() {
   if (hls) {
     hls.destroy()
@@ -1097,11 +1118,14 @@ onMounted(() => {
   window.addEventListener('resize', onResize, { passive: true })
   onResize()
   startHeroTimer()
+  startSearchHintTimer()
+  loadSearchHints()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
   clearInterval(heroTimer)
+  clearInterval(searchHintTimer)
   destroyHls()
 })
 </script>
@@ -1205,20 +1229,19 @@ onBeforeUnmount(() => {
 }
 .x8-search {
   justify-self: end;
-  width: 40px;
+  width: min(420px, 100%);
   max-width: 420px;
-  min-width: 40px;
+  min-width: 260px;
   height: 40px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;
   border-radius: 22px;
   background: rgba(255,255,255,.08);
   overflow: hidden;
-  transition: width .25s ease, background .25s ease;
+  transition: background .25s ease;
 }
 .x8-search:hover,
 .x8-search:focus-within {
-  width: min(420px, 100%);
   background: rgba(255,255,255,.12);
 }
 .x8-search input {
@@ -1227,18 +1250,15 @@ onBeforeUnmount(() => {
   height: 40px;
   border: 0;
   outline: 0;
-  padding: 0 0 0 16px;
+  padding: 0 0 0 18px;
   color: #fff;
   background: transparent;
-  opacity: 0;
-}
-.x8-search:hover input,
-.x8-search:focus-within input {
+  font-size: 14px;
   opacity: 1;
 }
 .x8-search svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 .x8-search button {
@@ -1247,6 +1267,10 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0;
+  border: 0;
+  color: rgba(255,255,255,.82);
+  background: transparent;
+  cursor: pointer;
 }
 .x8-header-tools {
   display: flex;
@@ -2736,10 +2760,12 @@ onBeforeUnmount(() => {
 }
 .x8-footer {
   margin-top: 34px;
-  background:
-    linear-gradient(180deg, rgba(31,31,31,.28), rgba(31,31,31,1)),
-    radial-gradient(circle at 50% 0%, rgba(255,255,255,.08), rgba(255,255,255,0) 42%),
-    #1f1f1f;
+  border-top: 1px solid rgba(255,255,255,.12);
+  color: rgba(255,255,255,.6);
+  background-color: #1f1f1f;
+  background-image:
+    linear-gradient(180deg, rgba(31,31,31,.16), rgba(31,31,31,.2)),
+    url('/x8/footer-bg.png');
   background-size: cover;
   background-position: center;
 }
@@ -2749,13 +2775,17 @@ onBeforeUnmount(() => {
   margin: 0 auto;
 }
 .x8-quick-navigation {
+  height: 308px;
   display: flex;
   justify-content: center;
-  gap: 40px;
-  padding: 72px 0 18px;
+  gap: 50px;
+  padding: 60px 0;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  font-weight: 500;
 }
 .x8-footer-nav {
-  width: 426px;
+  width: 407px;
+  min-width: 208px;
 }
 .x8-footer-nav h3 {
   margin: 0 0 21px;
@@ -2774,6 +2804,7 @@ onBeforeUnmount(() => {
   padding: 35.5px 17px;
   border-radius: 12px;
   background: rgba(255,255,255,.04);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 .x8-footer-card.category {
@@ -2800,6 +2831,8 @@ onBeforeUnmount(() => {
   border: 0;
   color: rgba(255,255,255,.72);
   background: transparent;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 22px;
   white-space: nowrap;
   text-align: center;
@@ -2807,15 +2840,42 @@ onBeforeUnmount(() => {
 .x8-footer-card.category .bottom button {
   width: auto;
 }
-.x8-footer-card button span {
+.x8-footer-card button em {
+  font-style: normal;
+}
+@font-face {
+  font-family: "x8-footer-iconfont";
+  src: url('/x8/iconfont.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+.x8-footer-icon {
   width: 20px;
   height: 20px;
   display: inline-grid;
   place-items: center;
   color: rgba(255,255,255,.56);
-  font-size: 18px;
+  font-family: "x8-footer-iconfont";
+  font-size: 20px;
+  font-style: normal;
   line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+.icon-kuaijielianjie::before { content: "\e712"; }
+.icon-kuaijielianjie1::before { content: "\e713"; }
+.icon-kuaijielianjie2::before { content: "\e714"; }
+.icon-kuaijielianjie3::before { content: "\e715"; }
+.icon-kuaijielianjie4::before { content: "\e716"; }
+.icon-kuaijielianjie5::before { content: "\e717"; }
+.icon-kuaijielianjie6::before { content: "\e718"; }
+.icon-kuaijielianjie7::before { content: "\e719"; }
+.icon-kuaijielianjie8::before { content: "\e71a"; }
+.icon-kuaijielianjie9::before { content: "\e71b"; }
+.icon-kuaijielianjie10::before { content: "\e71c"; }
+.icon-kuaijielianjie11::before { content: "\e71d"; }
+.icon-kuaijielianjie12::before { content: "\e71e"; }
 .x8-help-navigation {
   display: flex;
   flex-direction: column;
@@ -3071,7 +3131,7 @@ onBeforeUnmount(() => {
   .x8-footer-card .top {
     padding: 0;
   }
-  .x8-footer-card button span {
+  .x8-footer-icon {
     display: none;
   }
   .x8-help-navigation nav {
