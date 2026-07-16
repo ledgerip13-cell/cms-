@@ -4273,19 +4273,57 @@ onBeforeUnmount(() => {
     display: block;
   }
   .x8-video-toolbar {
-    min-height: 78px;
+    min-height: 66px;
+    height: 66px;
+    gap: 5px;
+    padding: 6px 10px 8px;
     scrollbar-width: none;
   }
   .x8-video-toolbar::-webkit-scrollbar {
     display: none;
   }
   .x8-control-row {
+    justify-content: flex-start;
+    gap: 6px;
     overflow-x: auto;
     padding-bottom: 2px;
   }
   .x8-control-left,
   .x8-control-right {
     flex: 0 0 auto;
+    gap: 6px;
+  }
+  .x8-video-toolbar button {
+    min-width: 30px;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+  .x8-video-toolbar .x8-lucide,
+  .x8-airplay-btn .x8-lucide {
+    width: 21px;
+    height: 21px;
+  }
+  .x8-video-toolbar .x8-settings-icon {
+    width: 23px;
+    height: 23px;
+  }
+  .x8-time {
+    font-size: 12px;
+  }
+  .x8-quality-trigger {
+    width: auto !important;
+    min-width: 54px !important;
+    padding: 0 8px;
+    gap: 4px;
+    font-size: 12px !important;
+  }
+  .x8-quality-trigger span {
+    display: none;
+  }
+  .x8-settings-menu,
+  .x8-quality-menu {
+    bottom: 40px;
   }
   .x8-player-title {
     font-size: 24px;
