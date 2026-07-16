@@ -245,13 +245,31 @@
                 </button>
               </div>
               <div class="x8-detail-stats">
-                <div><strong>{{ vod.rating || '暂无' }}</strong><span>评分</span></div>
+                <div class="x8-stat-item">
+                  <p class="x8-stat-top">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.82 5.72 6.32.92-4.57 4.46 1.08 6.3L12 17.02 6.35 20l1.08-6.3-4.57-4.46 6.32-.92L12 2.6Z" /></svg>
+                    <strong>{{ vod.rating || '暂无' }}</strong>
+                  </p>
+                  <span>评分</span>
+                </div>
                 <i></i>
-                <div><strong>{{ heatValue(vod) || '热度' }}</strong><span>{{ heatValue(vod) ? '人' : '热度' }}</span></div>
+                <div class="x8-stat-item">
+                  <p class="x8-stat-top">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.4 2.2c.36 2.25 1.2 3.96 2.5 5.12.8.7 1.74 1.4 2.78 2.06 1.97 1.26 3.12 3.24 3.12 5.64 0 4.08-3.35 7.38-8.05 7.38-4.8 0-8.05-3.08-8.05-7.3 0-2.7 1.3-4.84 3.92-6.42.6 1.42 1.42 2.38 2.44 2.88-.28-2.78.16-5.9 1.34-9.36Z" /></svg>
+                    <strong>热度</strong>
+                  </p>
+                  <span>{{ heatValue(vod) ? `${heatValue(vod)}人` : '暂无' }}</span>
+                </div>
                 <i></i>
-                <div><strong>{{ vod.year || '未知' }}</strong><span>上映时间</span></div>
+                <div class="x8-stat-item">
+                  <p class="x8-stat-top"><strong>{{ vod.year || '未知' }}</strong></p>
+                  <span>上映时间</span>
+                </div>
                 <i></i>
-                <div><strong>{{ detailDuration }}</strong><span>片长</span></div>
+                <div class="x8-stat-item">
+                  <p class="x8-stat-top"><strong>{{ detailDuration }}</strong></p>
+                  <span>片长</span>
+                </div>
               </div>
             </div>
           </div>
@@ -262,11 +280,14 @@
         <section v-if="vod.lines?.length" class="x8-detail-play-list">
           <div class="x8-detail-list-head">
             <span>{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</span>
-            <button type="button" @click="goPlay(vod.id)">排序</button>
+            <button type="button" @click="detailEpDesc = !detailEpDesc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14" /><path d="m5 16 3 3 3-3" /><path d="M16 19V5" /><path d="m13 8 3-3 3 3" /></svg>
+              {{ detailEpDesc ? '升序' : '倒序' }}
+            </button>
           </div>
           <div class="x8-detail-episodes">
-            <button v-for="(ep, index) in episodes" :key="`detail-ep-${index}`" type="button" @click="goPlay(vod.id, index)">
-              {{ index + 1 }}
+            <button v-for="ep in detailEpisodes" :key="`detail-ep-${ep.index}`" type="button" @click="goPlay(vod.id, ep.index)">
+              {{ ep.index + 1 }}
             </button>
           </div>
         </section>
@@ -444,6 +465,7 @@ const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
 const defaultQualityUrl = ref('')
+const detailEpDesc = ref(false)
 let heroTouchX = 0
 let heroTimer = 0
 let hls = null
@@ -501,6 +523,10 @@ const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}`
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
+const detailEpisodes = computed(() => {
+  const rows = episodes.value.map((ep, index) => ({ ep, index }))
+  return detailEpDesc.value ? rows.reverse() : rows
+})
 const detailTags = computed(() => {
   const rows = [vod.value?.subType, vod.value?.typeName]
     .flatMap(value => String(value || '').split(/[，,、/|]+/))
@@ -871,6 +897,7 @@ function switchQuality(res) {
 function selectLine(id) {
   currentLineId.value = id
   currentEpIndex.value = 0
+  detailEpDesc.value = false
   playCurrent()
 }
 function selectEpisode(index) {
@@ -994,6 +1021,7 @@ async function loadVod(withPlay = false) {
   qualityOpen.value = false
   qualities.value = []
   defaultQualityUrl.value = ''
+  detailEpDesc.value = false
   try {
     await ensureTypes()
     const id = Number(route.params.id)
@@ -2215,7 +2243,7 @@ onBeforeUnmount(() => {
   display: none;
 }
 .x8-detail-actions {
-  margin-top: 32px;
+  margin-top: 34px;
 }
 .x8-detail-action-top {
   display: flex;
@@ -2230,19 +2258,22 @@ onBeforeUnmount(() => {
   font-size: 20px;
   cursor: pointer;
 }
-.x8-detail-play-btn {
+.x8-page .x8-detail-play-btn {
   flex: 0 0 160px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
   background: #fff;
   color: #121212;
+  font-size: 20px;
   font-weight: 700;
+  line-height: 24px;
+  transition: background .25s ease;
 }
 .x8-detail-play-btn .x8-play-icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 .x8-icon-btn {
   flex: 0 0 60px;
@@ -2262,23 +2293,38 @@ onBeforeUnmount(() => {
 .x8-detail-stats {
   display: flex;
   width: min(760px, 100%);
-  min-height: 72px;
   align-items: center;
+  justify-content: flex-start;
   color: #fff;
   white-space: nowrap;
 }
-.x8-detail-stats div {
-  min-width: 92px;
+.x8-stat-item {
+  min-width: 82px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
   padding: 0 20px;
 }
-.x8-detail-stats div:first-child {
+.x8-stat-item:first-child {
   padding-left: 0;
 }
-.x8-detail-stats strong {
+.x8-stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  margin: 0 0 9px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 18px;
+}
+.x8-stat-top svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  color: rgba(255,255,255,.9);
+}
+.x8-stat-top strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2287,9 +2333,10 @@ onBeforeUnmount(() => {
   line-height: 18px;
   font-weight: 700;
 }
-.x8-detail-stats span {
+.x8-stat-item span {
   color: rgba(255,255,255,.54);
   font-size: 12px;
+  line-height: 16px;
 }
 .x8-detail-stats i {
   width: 1px;
@@ -2316,23 +2363,47 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 .x8-detail-list-head span {
   font-size: 18px;
+  line-height: 24px;
   font-weight: 600;
 }
 .x8-detail-list-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   background: transparent;
   color: rgba(255,255,255,.6);
   font-size: 14px;
+  line-height: 20px;
   cursor: pointer;
+}
+.x8-detail-list-head button:hover {
+  color: #fff;
+}
+.x8-detail-list-head button svg {
+  width: 16px;
+  height: 16px;
 }
 .x8-detail-episodes {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  max-height: 196px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.26) transparent;
+}
+.x8-detail-episodes::-webkit-scrollbar {
+  width: 4px;
+}
+.x8-detail-episodes::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255,255,255,.26);
 }
 .x8-detail-episodes button {
   min-width: 64px;
