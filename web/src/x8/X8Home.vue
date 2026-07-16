@@ -351,15 +351,15 @@
                       <div class="x8-control-row">
                         <div class="x8-control-left">
                           <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-                            <svg v-if="playing" class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="M6 5h4v14H6Z" /><path d="M14 5h4v14h-4Z" /></svg>
-                            <svg v-else class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z" /></svg>
+                            <svg v-if="playing" class="x8-lucide" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" /></svg>
+                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" /></svg>
                           </button>
                           <button type="button" title="下一集" @click="playNextEpisode">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8V4Z" /><path d="M19 5v14" /></svg>
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><polygon points="6 4 16 12 6 20 6 4" /><line x1="18" x2="18" y1="5" y2="19" /></svg>
                           </button>
                           <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
-                            <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="m22 9-6 6" /><path d="m16 9 6 6" /></svg>
-                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
+                            <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M16 9a5 5 0 0 1 .95 2.293" /><path d="M19.364 5.636a9 9 0 0 1 1.889 9.96" /><path d="m2 2 20 20" /><path d="m7 7-.587.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298V11" /><path d="M9.828 4.172A.686.686 0 0 1 11 4.657v.686" /></svg>
+                            <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.364 18.364a9 9 0 0 0 0-12.728" /></svg>
                           </button>
                           <span class="x8-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
                         </div>
@@ -378,7 +378,7 @@
                           </div>
                           <div class="x8-control-pop">
                             <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
-                              <svg class="x8-lucide x8-settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg>
+                              <svg class="x8-lucide" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" /><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" /><path d="M12 2v2" /><path d="M12 22v-2" /><path d="m17 20.66-1-1.73" /><path d="M11 10.27 7 3.34" /><path d="m20.66 17-1.73-1" /><path d="m3.34 7 1.73 1" /><path d="M14 12h8" /><path d="M2 12h2" /><path d="m20.66 7-1.73 1" /><path d="m3.34 17 1.73-1" /><path d="m17 3.34-1 1.73" /><path d="m11 13.73-4 6.93" /></svg>
                             </button>
                             <div v-if="settingsOpen" class="x8-settings-menu" :class="{ 'rate-mode': rateOpen }" @click.stop>
                               <template v-if="!rateOpen">
@@ -410,14 +410,14 @@
                             </div>
                           </div>
                           <button type="button" title="窗口化" @click="togglePip">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M21 10V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6" /><rect width="8" height="6" x="13" y="13" rx="1" /></svg>
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M2 10h20" /><path d="M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6Z" /><path d="M14 14h6v4h-6z" /></svg>
                           </button>
                           <button type="button" :title="playerTheater ? '退出 HLS 全屏' : 'HLS 全屏'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
-                            <svg v-if="playerTheater" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></svg>
-                            <svg v-else class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
+                            <svg v-if="playerTheater" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
+                            <svg v-else class="x8-lucide x8-icon-maximize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
                           </button>
                           <button type="button" title="系统全屏" @click="requestNativeFullscreen">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
+                            <svg class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
                           </button>
                         </div>
                       </div>
@@ -3056,18 +3056,18 @@ onBeforeUnmount(() => {
   top: 14px;
   right: 14px;
   z-index: 7;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 0;
   color: rgba(255,255,255,.82);
-  background: rgba(0,0,0,.42);
-  backdrop-filter: blur(8px);
+  background: transparent;
+  backdrop-filter: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .18s ease, background .18s ease;
+  transition: opacity .18s ease, color .16s ease, transform .16s ease;
 }
 .x8-player-area.controls-visible .x8-airplay-btn {
   opacity: 1;
@@ -3075,11 +3075,8 @@ onBeforeUnmount(() => {
 }
 .x8-airplay-btn:hover {
   color: #fff;
-  background: rgba(0,0,0,.62);
-}
-.x8-airplay-btn svg {
-  width: 24px;
-  height: 24px;
+  background: transparent;
+  transform: scale(1.06);
 }
 .x8-player-video-right {
   position: relative;
@@ -3313,10 +3310,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 38px;
-  height: 38px;
+  min-width: 34px;
+  height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   color: rgba(255,255,255,.9);
   background: transparent;
   font-size: 15px;
@@ -3326,27 +3323,18 @@ onBeforeUnmount(() => {
 .x8-video-toolbar button:hover,
 .x8-video-toolbar button.active {
   color: #fff;
-  background: rgba(255,255,255,.1);
-  transform: scale(1.12);
+  background: transparent;
+  transform: scale(1.06);
 }
 .x8-video-toolbar .x8-lucide,
 .x8-airplay-btn .x8-lucide {
-  width: 25px;
-  height: 25px;
+  width: 22px;
+  height: 22px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.25;
+  stroke-width: 2.15;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.x8-video-toolbar .x8-icon-fill {
-  fill: currentColor;
-  stroke: none;
-}
-.x8-video-toolbar .x8-settings-icon {
-  width: 28px;
-  height: 28px;
-  stroke-width: 2.15;
 }
 .x8-time {
   color: rgba(255,255,255,.82);
@@ -4309,16 +4297,12 @@ onBeforeUnmount(() => {
     min-width: 30px;
     width: 30px;
     height: 30px;
-    border-radius: 8px;
+    border-radius: 0;
   }
   .x8-video-toolbar .x8-lucide,
   .x8-airplay-btn .x8-lucide {
-    width: 21px;
-    height: 21px;
-  }
-  .x8-video-toolbar .x8-settings-icon {
-    width: 23px;
-    height: 23px;
+    width: 20px;
+    height: 20px;
   }
   .x8-time {
     font-size: 12px;

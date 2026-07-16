@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 HLS 页面内全屏回修）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 播放器图标统一回修）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 播放器图标统一回修断点**：`web/src/x8/X8Home.vue` 按用户指定名称替换播放器控制图标：播放/暂停为 `Play/Pause`、下一集 `StepForward`、声音 `Volume2/VolumeOff`、设置 `Cog`、窗口化 `PictureInPicture`、HLS 打开/关闭全屏 `Maximize/Minimize`、系统全屏 `Fullscreen`。播放器控制图标 PC 统一 `22x22`，手机断点统一 `20x20`，按钮 hover 取消背景仅保留轻微 `scale(1.06)`，右上角 AirPlay 取消圆形背景与毛玻璃，图标同尺寸体系。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-D9pSyzJj.js / assets/index-DZwTkYo4.css`；无头浏览器实测桌面按钮热区 `34x34`、图标 `22x22`、AirPlay 背景透明，手机按钮热区 `30x30`、图标 `20x20`，hover 背景 `rgba(0,0,0,0)`。
 - **2026-07-17 X8 HLS 页面内全屏回修断点**：`web/src/x8/X8Home.vue` 将 HLS 全屏从浏览器 Fullscreen API 改为页面内 `playerTheater/theater-mode`，点击后不触发 `document.fullscreenElement`，只隐藏右侧选集、播放信息、下方选集和猜你喜欢，让播放器在页面内铺满视口并保留自定义 HLS 控制条；Esc 或再次点击退出。系统全屏仍只对 `video` 元素调原生全屏，进入前临时打开 `video.controls`，退出后关闭。控制条已去掉前进10秒/后退10秒入口。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-BMLvFRWP.js / assets/index-C2avfgT9.css`；无头浏览器实测 `#/x8/play/921` 点击 HLS 全屏后 `.x8-play.theater-mode=true`、`document.fullscreenElement=null`、右侧选集 `display:none`、`video.controls=false`；点击系统全屏后 `document.fullscreenElement=VIDEO` 且 `video.controls=true`。
 - **2026-07-17 X8 头部分类与域名回修断点**：`server/src/routes/vods.ts` 将公共 `/api/types` 从观看权限 `enabledTypeNames(viewer)` 调整为展示权限 `visibleTypeNames(viewer)`，并按后台分类配置顺序返回，避免 X8 头部未登录只剩三个可观看分类；`/api/vods` 等内容列表仍按观看权限过滤，未登录访问 `短剧` 仍返回空列表。`web/src/x8/X8Home.vue` 将头部 logo 域名与预告区水印从 `JPYY21.COM` 统一替换为 `dododmb.com`。验证：`pnpm --dir server build`、`npm run build`、`docker compose up -d --build server web`、`git diff --check` 通过；5150 `/health` 正常，未登录 `/api/types` 返回 `电影/电视剧/动漫/短剧/漫剧`，`/api/vods?type=短剧` 返回空列表；无头浏览器实测 `#/x8` 头部为 `首页/电影/电视剧/动漫/短剧/漫剧`，brand 与 watermark 均为 `dododmb.com`。
 - **2026-07-16 X8 播放器设置与全屏图标回修断点**：`web/src/x8/X8Home.vue` 将播放器设置按钮替换为 lucide `<Settings />` 原始路径，不再使用手写齿轮或 bolt；HLS/video 原生全屏未进入时为 `fullscreen`，进入后退出态明确使用 lucide `minimize` 并加 `x8-icon-minimize` class。保持播放器页面最大化为 diagonal maximize，与 HLS 全屏区分。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-BagS8rDd.js / assets/index-CTbZVJT6.css`；浏览器实测 `#/x8/play/921` 设置按钮 title 为“设置”，SVG path 为 lucide Settings 标准路径，HLS 未全屏态为 `x8-icon-fullscreen`。
