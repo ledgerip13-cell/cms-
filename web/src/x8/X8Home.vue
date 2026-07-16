@@ -234,9 +234,15 @@
                   <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
                   立即播放
                 </button>
-                <button class="x8-icon-btn" type="button" @click="goLogin">♡</button>
-                <button class="x8-icon-btn" type="button" @click="goLogin">＋</button>
-                <button class="x8-icon-btn" type="button" @click="goLogin">↗</button>
+                <button class="x8-icon-btn" type="button" aria-label="收藏" @click="goLogin">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
+                </button>
+                <button class="x8-icon-btn" type="button" aria-label="添加到播放列表" @click="goLogin">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+                </button>
+                <button class="x8-icon-btn" type="button" aria-label="分享" @click="goLogin">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 5l3 3-3 3" /><path d="M19 8H9a4 4 0 0 0-4 4v7" /></svg>
+                </button>
               </div>
               <div class="x8-detail-stats">
                 <div><strong>{{ vod.rating || '暂无' }}</strong><span>评分</span></div>
@@ -255,12 +261,12 @@
         </div>
         <section v-if="vod.lines?.length" class="x8-detail-play-list">
           <div class="x8-detail-list-head">
-            <span>{{ currentLine?.sourceName || currentLine?.flag || '播放器' }}播放器</span>
+            <span>{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</span>
             <button type="button" @click="goPlay(vod.id)">排序</button>
           </div>
           <div class="x8-detail-episodes">
             <button v-for="(ep, index) in episodes" :key="`detail-ep-${index}`" type="button" @click="goPlay(vod.id, index)">
-              {{ ep.name || index + 1 }}
+              {{ index + 1 }}
             </button>
           </div>
         </section>
@@ -342,32 +348,32 @@
             <h3>影视分类</h3>
             <div class="x8-footer-card category">
               <div class="top">
-                <button type="button" @click="goShow('电影')"><span>▣</span>电影</button>
-                <button type="button" @click="goShow('电视剧')"><span>▤</span>电视剧</button>
+                <button type="button" @click="goShow('电影')">电影</button>
+                <button type="button" @click="goShow('电视剧')">电视剧</button>
               </div>
               <div class="bottom">
-                <button type="button" @click="goShow('综艺')"><span>◇</span>综艺</button>
-                <button type="button" @click="goShow('动漫')"><span>◈</span>动漫</button>
-                <button type="button" @click="goShow('短剧')"><span>▥</span>短剧</button>
+                <button type="button" @click="goShow('综艺')">综艺</button>
+                <button type="button" @click="goShow('动漫')">动漫</button>
+                <button type="button" @click="goShow('短剧')">短剧</button>
               </div>
             </div>
           </section>
           <section class="x8-footer-nav">
             <h3>内容推荐</h3>
             <div class="x8-footer-card">
-              <button type="button" @click="goShow('电影')"><span>✦</span>最新上映</button>
-              <button type="button" @click="goRank"><span>▴</span>热门推荐</button>
-              <button type="button" @click="goRank"><span>▥</span>评分最高</button>
-              <button type="button" @click="scrollToTrailer"><span>◌</span>即将上线</button>
+              <button type="button" @click="goShow('电影')">最新上映</button>
+              <button type="button" @click="goRank">热门推荐</button>
+              <button type="button" @click="goRank">评分最高</button>
+              <button type="button" @click="scrollToTrailer">即将上线</button>
             </div>
           </section>
           <section class="x8-footer-nav">
             <h3>用户中心</h3>
             <div class="x8-footer-card">
-              <button type="button" @click="goUser('follows')"><span>♡</span>我的收藏</button>
-              <button type="button" @click="goUser('history')"><span>◷</span>观看历史</button>
-              <button type="button" @click="goUser('history')"><span>◎</span>个人中心</button>
-              <button type="button" @click="goLogin"><span>☰</span>系统设置</button>
+              <button type="button" @click="goUser('follows')">我的收藏</button>
+              <button type="button" @click="goUser('history')">观看历史</button>
+              <button type="button" @click="goUser('history')">个人中心</button>
+              <button type="button" @click="goLogin">系统设置</button>
             </div>
           </section>
         </div>
@@ -381,7 +387,7 @@
             <span>|</span>
             <button type="button">隐私政策</button>
           </nav>
-          <div class="year">© 2026 ADY-All Rights Reserved</div>
+          <div class="year">2026 ADY-All Rights Reserved</div>
         </div>
       </div>
     </footer>
@@ -2095,7 +2101,7 @@ onBeforeUnmount(() => {
 .x8-detail-info {
   display: flex;
   position: relative;
-  margin-bottom: 27px;
+  margin-bottom: 54px;
 }
 .x8-detail-poster {
   position: sticky;
@@ -2165,36 +2171,48 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 26px;
 }
 .x8-detail-tags button {
-  height: 24px;
-  border: 0;
+  height: 28px;
+  border: 1px solid rgba(255,255,255,.08);
   border-radius: 4px;
-  padding: 0 9px;
-  color: #fff;
-  background: rgba(255,255,255,.12);
-  font-size: 13px;
+  padding: 0 11px;
+  color: rgba(255,255,255,.6);
+  background: transparent;
+  font-size: 14px;
   cursor: pointer;
 }
 .x8-detail-tags button:hover {
-  background: rgba(255,255,255,.22);
+  background: rgba(255,255,255,.08);
+  color: #fff;
 }
 .x8-detail-row {
   display: flex;
-  min-height: 28px;
+  min-height: 21px;
+  margin-bottom: 18px;
   align-items: flex-start;
   color: #fff;
   font-size: 14px;
-  line-height: 22px;
+  line-height: 18px;
+  overflow: hidden;
 }
 .x8-detail-row span {
-  flex: 0 0 44px;
+  flex: 0 0 auto;
+  margin-right: 5px;
   color: rgba(255,255,255,.6);
+  white-space: nowrap;
 }
 .x8-detail-row p {
   margin: 0;
   color: #fff;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.x8-detail-row p::-webkit-scrollbar {
+  display: none;
 }
 .x8-detail-actions {
   margin-top: 32px;
@@ -2206,14 +2224,14 @@ onBeforeUnmount(() => {
 }
 .x8-detail-play-btn,
 .x8-icon-btn {
-  height: 48px;
+  height: 60px;
   border: 0;
   border-radius: 10px;
   font-size: 20px;
   cursor: pointer;
 }
 .x8-detail-play-btn {
-  flex: 0 0 180px;
+  flex: 0 0 160px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2227,38 +2245,51 @@ onBeforeUnmount(() => {
   height: 22px;
 }
 .x8-icon-btn {
-  flex: 0 0 48px;
-  background: rgba(255,255,255,.08);
+  flex: 0 0 60px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #fff;
+  background: transparent;
   color: #fff;
 }
+.x8-icon-btn svg {
+  width: 24px;
+  height: 24px;
+}
 .x8-icon-btn:hover {
-  background: rgba(255,255,255,.16);
+  background: rgba(255,255,255,.08);
 }
 .x8-detail-stats {
   display: flex;
   width: min(760px, 100%);
   min-height: 72px;
   align-items: center;
-  gap: 22px;
   color: #fff;
+  white-space: nowrap;
 }
 .x8-detail-stats div {
-  min-width: 84px;
+  min-width: 92px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 20px;
+}
+.x8-detail-stats div:first-child {
+  padding-left: 0;
 }
 .x8-detail-stats strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 24px;
-  line-height: 1;
+  max-width: 150px;
+  font-size: 14px;
+  line-height: 18px;
   font-weight: 700;
 }
 .x8-detail-stats span {
   color: rgba(255,255,255,.54);
-  font-size: 13px;
+  font-size: 12px;
 }
 .x8-detail-stats i {
   width: 1px;
@@ -2266,7 +2297,7 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.12);
 }
 .x8-detail-intro {
-  margin-bottom: 30px;
+  margin-bottom: 27px;
   color: #fff;
   font-size: 14px;
   line-height: 22px;
@@ -2274,6 +2305,7 @@ onBeforeUnmount(() => {
 .x8-detail-intro p {
   margin: 0;
   max-width: 1120px;
+  text-align: justify;
 }
 .x8-detail-play-list {
   position: relative;
@@ -2284,7 +2316,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 .x8-detail-list-head span {
   font-size: 18px;
@@ -2295,21 +2327,23 @@ onBeforeUnmount(() => {
   background: transparent;
   color: rgba(255,255,255,.6);
   font-size: 14px;
+  cursor: pointer;
 }
 .x8-detail-episodes {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 .x8-detail-episodes button {
-  min-width: 56px;
-  height: 34px;
+  min-width: 64px;
+  height: 40px;
   border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  padding: 0 14px;
+  border-radius: 10px;
+  padding: 0 18px;
   background: rgba(255,255,255,.06);
   color: rgba(255,255,255,.86);
-  font-size: 14px;
+  font-size: 15px;
+  cursor: pointer;
 }
 .x8-detail-episodes button:hover {
   background: #fff;
