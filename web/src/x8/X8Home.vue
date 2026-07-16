@@ -343,6 +343,9 @@
                   @mouseleave="hidePlayerControlsSoon"
                 >
                   <div ref="videoBox" class="x8-video-container">
+                    <div v-if="playerTheater" class="x8-theater-title">
+                      <b>{{ currentPlayTitle }}</b>
+                    </div>
                     <video
                       v-if="playKind !== 'iframe'"
                       ref="videoEl"
@@ -439,7 +442,7 @@
                             <svg v-if="playerTheater" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
                             <svg v-else class="x8-lucide x8-icon-maximize" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
                           </button>
-                          <button type="button" title="系统全屏" @click="requestNativeFullscreen">
+                          <button v-if="!playerTheater" type="button" title="系统全屏" @click="requestNativeFullscreen">
                             <svg class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /><rect width="10" height="8" x="7" y="8" rx="1" /></svg>
                           </button>
                         </div>
@@ -773,6 +776,11 @@ const playEpisodeTitle = computed(() => {
   const text = currentEpisodeLabel.value || ''
   const n = text.match(/\d+/)?.[0]
   return n ? `第 ${n} 集` : text
+})
+const currentPlayTitle = computed(() => {
+  const title = String(vod.value?.name || '正在播放').trim()
+  const episode = currentEpisodeLabel.value
+  return episode ? `${title} · ${episode}` : title
 })
 const playLikeCount = computed(() => viewportWidth.value >= 1024 ? 12 : 8)
 const detailTags = computed(() => {
@@ -3439,6 +3447,35 @@ onBeforeUnmount(() => {
 }
 .x8-video-container video:not([controls])::-webkit-media-controls {
   display: none !important;
+}
+.x8-theater-title {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  min-height: 86px;
+  display: flex;
+  align-items: flex-start;
+  padding: 24px 28px 20px;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(0,0,0,.72) 0%, rgba(0,0,0,.42) 46%, rgba(0,0,0,0) 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+.x8-player-area.controls-visible .x8-theater-title {
+  opacity: 1;
+}
+.x8-theater-title b {
+  max-width: min(820px, calc(100vw - 56px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-shadow: 0 2px 10px rgba(0,0,0,.5);
 }
 .x8-airplay-btn {
   position: absolute;

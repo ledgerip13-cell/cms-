@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜页参考站重做）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 HLS 全屏标题与系统全屏隐藏）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 HLS 全屏标题与系统全屏隐藏断点**：`web/src/x8/X8Home.vue` 调整播放页 HLS 页面内全屏控制层：进入 `playerTheater` 后隐藏“系统全屏”按钮，只保留 HLS 全屏退出按钮；在播放器左上角新增当前播放标题（`影片名 · 当前集`），标题层复用控制条显隐状态，仅点击/移动唤起控制层时显示，自动淡出时同步隐藏。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-3-wv1g5u.js / assets/index-BRbcKxqc.css`。
 - **2026-07-17 X8 排行榜页参考站重做断点**：`web/src/x8/X8Home.vue` 参考 `https://www.x8kb9k8.com/rank` 的排行榜页布局与动效，X8 `/x8/rank` 从普通标题+旧小榜卡升级为多列大榜卡：每个分类榜独立 60px 标题栏，卡片背景/12px 圆角/20px 网格间距对齐参考站；前三名展开 168px 海报行，海报左下角排名色块，后续行保持 54px 紧凑；hover/键盘焦点有背景、轻微位移与海报缩放，热度列补火焰样式，加载态同步大榜骨架。移动端降为单列并收紧海报/热度列，避免挤压。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-QlyQMktd.js / assets/index-DmymQAeC.css`。
 - **2026-07-17 X8 HLS 全屏键盘控制断点**：`web/src/x8/X8Home.vue` 为 X8 播放页 HLS 页面内全屏补齐键盘控制：空格播放/暂停，左方向键后退 10 秒，右方向键前进 10 秒；非 HLS 全屏时仅在播放器区域有焦点才接管快捷键，并避开 input/textarea/select/contenteditable，避免影响正常输入。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-DUeccjYr.js / assets/index-CvNkFSt9.css`。
 - **2026-07-17 X8 播放器空态按钮与时间字重微调断点**：`web/src/x8/X8Home.vue` 将播放器控制条时间 `0:00 / 0:00` 字重设为 `500`；播放器中间空态播放按钮去掉圆形背景，只保留播放图标并将图标从通用 `34px` 放大到 `51px`（1.5 倍）；空态按钮文案“立即播放/解析中...”字重设为 `500`。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-DtK_m40a.js / assets/index-CvNkFSt9.css`。
