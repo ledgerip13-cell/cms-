@@ -223,13 +223,13 @@
         </div>
       </section>
 
-      <section v-else-if="pageMode === 'rank'" class="x8-page-panel">
-        <div class="x8-page-title">
+      <section v-else-if="pageMode === 'rank'" class="x8-page-panel x8-rank-page">
+        <div class="x8-page-title x8-rank-page-title">
           <h1>排行榜</h1>
-          <p>完整排行榜</p>
+          <p>实时热度榜单</p>
         </div>
         <div class="x8-rank-grid">
-          <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" static @open="goDetail" />
+          <x8-rank-card v-for="group in rankGroups" :key="group.key" :title="group.title" :items="group.items" :loading="loading" static @open="goDetail" />
         </div>
       </section>
 
@@ -924,6 +924,30 @@ const X8RankCard = defineComponent({
   },
   emits: ['open', 'more'],
   setup(props, { emit }) {
+    const renderStaticRows = () => props.items.length ? props.items.slice(0, 10).map((item, index) => {
+        const tags = rankTags(item)
+        const hot = heatValue(item) || item.rating || '热播'
+        return h('button', { class: ['x8-rank-large-item', index < 3 ? 'featured' : '', `index-${index}`], type: 'button', onClick: () => emit('open', item.id) }, [
+          h('span', { class: 'x8-rank-large-no' }, index + 1),
+          index < 3 ? h('span', { class: 'x8-rank-large-poster' }, [
+            poster(item) ? h('img', { src: poster(item), alt: item.name || '', loading: 'lazy', onError: onImgError }) : null,
+            h('i', index + 1),
+          ]) : null,
+          h('span', { class: 'x8-rank-large-main' }, [
+            h('b', item.name || ''),
+            index < 3 ? h('span', { class: 'x8-rank-large-tags' }, tags.map(tag => h('em', tag))) : h('em', tags.join(' / ') || '影片'),
+          ]),
+          h('strong', { class: 'x8-rank-large-heat' }, hot),
+        ])
+      }) : (props.loading ? Array.from({ length: 10 }, (_, index) => h('div', { class: ['x8-rank-large-item', 'skeleton', index < 3 ? 'featured' : '', `index-${index}`] }, [
+        h('span', { class: 'x8-rank-large-no' }, index + 1),
+        index < 3 ? h('span', { class: 'x8-rank-large-poster x8-rank-large-poster-skeleton' }) : null,
+        h('span', { class: 'x8-rank-large-main' }, [
+          h('b', { class: 'x8-skeleton-line wide' }),
+          h('em', { class: 'x8-skeleton-line short' }),
+        ]),
+        h('strong', { class: 'x8-skeleton-line score' }),
+      ])) : [])
     const renderRows = () => props.items.length ? props.items.slice(0, 10).map((item, index) => {
         const active = index === 0
         return h('button', { class: ['x8-rank-item', active ? 'active' : '', `index-${index}`], type: 'button', onClick: () => emit('open', item.id) }, [
@@ -946,10 +970,13 @@ const X8RankCard = defineComponent({
       ])) : [])
     return () => h('aside', { class: ['x8-rank-card', props.static ? 'static' : ''] }, [
       h('div', { class: 'x8-rank-head' }, [
-        h('h3', props.title),
+        h('span', { class: 'x8-rank-head-title' }, [
+          h('h3', props.title),
+          props.static ? h('p', 'TOP 10 热度排行') : null,
+        ]),
         props.static ? null : h('button', { type: 'button', onClick: () => emit('more') }, '完整排行榜'),
       ]),
-      h('div', { class: 'x8-rank-list' }, renderRows()),
+      h('div', { class: props.static ? 'x8-rank-large-list' : 'x8-rank-list' }, props.static ? renderStaticRows() : renderRows()),
     ])
   },
 })
@@ -991,6 +1018,9 @@ function heatValue(item) {
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
   return String(n)
+}
+function rankTags(item) {
+  return [item?.subType, item?.typeName, item?.year].filter(Boolean).slice(0, 3)
 }
 function onImgError(event) {
   if (event?.target) event.target.style.visibility = 'hidden'
@@ -2486,10 +2516,22 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
 }
+.x8-rank-head-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .x8-rank-head h3 {
   margin: 0;
   font-size: 29px;
   font-weight: 600;
+}
+.x8-rank-head p {
+  margin: 0;
+  color: rgba(255,255,255,.42);
+  font-size: 13px;
+  font-weight: 400;
 }
 .x8-rank-head button {
   height: 28px;
@@ -2714,10 +2756,218 @@ onBeforeUnmount(() => {
 .x8-rank-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
+  gap: 20px;
 }
 .x8-rank-card.static {
   width: auto;
+  min-width: 0;
+  gap: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(0,0,0,.18);
+}
+.x8-rank-card.static .x8-rank-head {
+  height: 60px;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.x8-rank-card.static .x8-rank-head h3 {
+  font-size: 20px;
+  line-height: 1;
+}
+.x8-rank-large-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 20px;
+  min-height: 704px;
+  overflow: hidden;
+}
+.x8-rank-large-list::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,0) 48%);
+  pointer-events: none;
+}
+.x8-rank-large-item {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+  height: 54px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 80px;
+  align-items: center;
+  gap: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #fff;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: height .16s cubic-bezier(.32,.72,0,1), background-color .16s ease, transform .16s ease;
+}
+.x8-rank-large-item.featured {
+  height: 168px;
+  grid-template-columns: 100px minmax(0, 1fr) 80px;
+  gap: 12px;
+  background: #282828;
+}
+.x8-rank-large-item:hover,
+.x8-rank-large-item:focus-visible {
+  background: rgba(255,255,255,.06);
+  transform: translateY(-1px);
+}
+.x8-rank-large-item.featured:hover,
+.x8-rank-large-item.featured:focus-visible {
+  background: #303030;
+}
+.x8-rank-large-item.skeleton {
+  cursor: default;
+}
+.x8-rank-large-item.skeleton:hover {
+  transform: none;
+}
+.x8-rank-large-no {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: rgba(255,255,255,.72);
+  background: rgba(255,255,255,.04);
+  font-size: 16px;
+  font-weight: 600;
+}
+.x8-rank-large-item.featured > .x8-rank-large-no {
+  display: none;
+}
+.x8-rank-large-item.index-0 .x8-rank-large-no,
+.x8-rank-large-item.index-1 .x8-rank-large-no,
+.x8-rank-large-item.index-2 .x8-rank-large-no {
+  color: #fff;
+}
+.x8-rank-large-item.index-0 .x8-rank-large-no {
+  background: #d92828;
+}
+.x8-rank-large-item.index-1 .x8-rank-large-no {
+  color: #ff5d38;
+}
+.x8-rank-large-item.index-2 .x8-rank-large-no {
+  color: #ffb820;
+}
+.x8-rank-large-poster {
+  position: relative;
+  width: 100px;
+  height: 144px;
+  display: block;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255,255,255,.06);
+}
+.x8-rank-large-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .22s ease;
+}
+.x8-rank-large-item:hover .x8-rank-large-poster img,
+.x8-rank-large-item:focus-visible .x8-rank-large-poster img {
+  transform: scale(1.04);
+}
+.x8-rank-large-poster i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  min-width: 28px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 0 6px 0 0;
+  color: #fff;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 600;
+  background: #d92828;
+}
+.x8-rank-large-item.index-1 .x8-rank-large-poster i {
+  background: #ff5d38;
+}
+.x8-rank-large-item.index-2 .x8-rank-large-poster i {
+  background: #ffb820;
+}
+.x8-rank-large-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.x8-rank-large-main b {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+.x8-rank-large-main > em {
+  overflow: hidden;
+  color: rgba(255,255,255,.6);
+  font-size: 13px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-rank-large-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.x8-rank-large-tags em {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 4px;
+  color: rgba(255,255,255,.6);
+  font-size: 12px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.x8-rank-large-heat {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: right;
+}
+.x8-rank-large-heat::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 8px 8px 8px 2px;
+  background: linear-gradient(135deg, #ffb820 0%, #ff5d38 58%, #d92828 100%);
+  transform: rotate(-18deg);
+  box-shadow: 0 0 10px rgba(255,93,56,.34);
+}
+.x8-rank-large-item.featured .x8-rank-large-heat {
+  align-self: end;
+  margin-bottom: 4px;
+}
+.x8-rank-large-poster-skeleton {
+  background: linear-gradient(110deg, #242424 8%, #343434 18%, #242424 33%);
+  background-size: 220% 100%;
+  animation: x8-shimmer 1.35s linear infinite;
 }
 .x8-detail {
   padding-bottom: 80px;
@@ -4095,6 +4345,9 @@ onBeforeUnmount(() => {
   .x8-rank-head h3 {
     font-size: 28px;
   }
+  .x8-rank-card.static .x8-rank-head h3 {
+    font-size: 20px;
+  }
   .x8-rank-item {
     height: 44px;
   }
@@ -4299,6 +4552,23 @@ onBeforeUnmount(() => {
     flex-wrap: wrap;
     justify-content: center;
   }
+  .x8-rank-page {
+    padding-top: calc(116px + env(safe-area-inset-top));
+  }
+  .x8-rank-large-list {
+    min-height: 0;
+  }
+  .x8-rank-large-item.featured {
+    grid-template-columns: 84px minmax(0, 1fr) 64px;
+    gap: 10px;
+  }
+  .x8-rank-large-poster {
+    width: 84px;
+    height: 126px;
+  }
+  .x8-rank-large-heat {
+    font-size: 13px;
+  }
 }
 @media (max-width: 720px) {
   .x8-brand-text b {
@@ -4313,6 +4583,16 @@ onBeforeUnmount(() => {
   .x8-page .x8-panel-title,
   .x8-rank-head h3 {
     font-size: 24px;
+  }
+  .x8-rank-card.static .x8-rank-head {
+    height: 58px;
+    padding: 0 14px;
+  }
+  .x8-rank-card.static .x8-rank-head h3 {
+    font-size: 18px;
+  }
+  .x8-rank-head p {
+    font-size: 12px;
   }
   .x8-card-grid.hot,
   .x8-card-grid.section,
@@ -4376,6 +4656,44 @@ onBeforeUnmount(() => {
   }
   .x8-rank-grid {
     grid-template-columns: 1fr;
+  }
+  .x8-rank-large-list {
+    padding: 0 8px 14px;
+  }
+  .x8-rank-large-item {
+    grid-template-columns: 32px minmax(0, 1fr) 58px;
+    padding: 9px 8px;
+  }
+  .x8-rank-large-item.featured {
+    height: 132px;
+    grid-template-columns: 72px minmax(0, 1fr) 54px;
+    gap: 8px;
+  }
+  .x8-rank-large-poster {
+    width: 72px;
+    height: 108px;
+  }
+  .x8-rank-large-main {
+    gap: 6px;
+  }
+  .x8-rank-large-main b {
+    font-size: 14px;
+  }
+  .x8-rank-large-tags {
+    max-height: 52px;
+    overflow: hidden;
+  }
+  .x8-rank-large-tags em {
+    height: 22px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+  .x8-rank-large-heat {
+    font-size: 12px;
+  }
+  .x8-rank-large-heat::before {
+    width: 10px;
+    height: 10px;
   }
   .x8-detail-info {
     flex-direction: column;
