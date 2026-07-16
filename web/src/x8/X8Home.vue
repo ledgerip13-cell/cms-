@@ -370,15 +370,35 @@
                             </div>
                           </div>
                           <div class="x8-control-pop">
-                            <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="settingsOpen = !settingsOpen">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" /><path d="m19.4 15 .1 2.1-2 1.2-1.8-1a7.6 7.6 0 0 1-1.7 1l-.5 2H10l-.5-2a7.6 7.6 0 0 1-1.7-1l-1.8 1-2-1.2.1-2.1a7.8 7.8 0 0 1-.8-1.8L1.5 12l1.8-1.2c.2-.6.4-1.2.8-1.8L4 6.9l2-1.2 1.8 1c.5-.4 1.1-.7 1.7-1l.5-2h3.5l.5 2c.6.2 1.2.6 1.7 1l1.8-1 2 1.2-.1 2.1c.4.6.6 1.2.8 1.8L22.5 12l-1.8 1.2c-.2.6-.5 1.2-.9 1.8Z" /></svg>
+                            <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
+                              <svg class="x8-bolt-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2.4 4 13.2h7.2L10 21.6l10-12h-7.1l.3-7.2Z" /></svg>
                             </button>
                             <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
-                              <label><span>自动下一集</span><input v-model="autoNext" type="checkbox" /></label>
-                              <label><span>跳过片头片尾</span><input v-model="skipIntroOutro" type="checkbox" /></label>
-                              <div class="x8-rate-list">
-                                <span>倍速</span>
-                                <button v-for="rate in playbackRates" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click="setPlaybackRate(rate)">{{ rate }}x</button>
+                              <template v-if="!rateOpen">
+                                <label class="x8-switch-row">
+                                  <span>自动下一集</span>
+                                  <input v-model="autoNext" type="checkbox" />
+                                  <i></i>
+                                </label>
+                                <label class="x8-switch-row">
+                                  <span>跳过片头片尾</span>
+                                  <input v-model="skipIntroOutro" type="checkbox" />
+                                  <i></i>
+                                </label>
+                                <button class="x8-setting-row" type="button" @click="rateOpen = true">
+                                  <span>倍数</span>
+                                  <b>{{ playbackRateLabel }}</b>
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6" /></svg>
+                                </button>
+                              </template>
+                              <div v-else class="x8-rate-panel">
+                                <button class="x8-setting-back" type="button" @click="rateOpen = false">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6" /></svg>
+                                  <span>倍数</span>
+                                </button>
+                                <button v-for="rate in playbackRates" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click="setPlaybackRate(rate)">
+                                  {{ rateLabel(rate) }}
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -595,6 +615,7 @@ const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
 const settingsOpen = ref(false)
+const rateOpen = ref(false)
 const defaultQualityUrl = ref('')
 const detailEpDesc = ref(false)
 const playEpDesc = ref(false)
@@ -742,6 +763,7 @@ const progressPercent = computed(() => {
   if (!duration.value) return 0
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
 })
+const playbackRateLabel = computed(() => rateLabel(playbackRate.value))
 
 const X8Panel = defineComponent({
   name: 'X8Panel',
@@ -1164,6 +1186,10 @@ function formatTime(value) {
   if (hours) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
+function rateLabel(rate) {
+  const value = Number(rate) || 1
+  return Number.isInteger(value) ? `${value.toFixed(1)}x` : `${value}x`
+}
 function onVideoEnded() {
   syncVideoState()
   if (autoNext.value) playNextEpisode()
@@ -1172,6 +1198,11 @@ function setPlaybackRate(rate) {
   playbackRate.value = rate
   const video = videoEl.value
   if (video) video.playbackRate = rate
+  rateOpen.value = false
+}
+function toggleSettings() {
+  settingsOpen.value = !settingsOpen.value
+  if (!settingsOpen.value) rateOpen.value = false
 }
 async function togglePip() {
   const video = videoEl.value
@@ -1209,6 +1240,7 @@ function selectLine(id) {
   selectedPlayGroupIdx.value = 0
   qualityOpen.value = false
   settingsOpen.value = false
+  rateOpen.value = false
   playCurrent()
 }
 function selectPlayGroup(index) {
@@ -1220,6 +1252,7 @@ function selectEpisode(index) {
   if (selectedPlayGroupIdx.value < 0) selectedPlayGroupIdx.value = 0
   qualityOpen.value = false
   settingsOpen.value = false
+  rateOpen.value = false
   playCurrent()
 }
 function onKeydown(event) {
@@ -2966,8 +2999,8 @@ onBeforeUnmount(() => {
   top: 14px;
   right: 14px;
   z-index: 7;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border: 0;
@@ -2988,8 +3021,8 @@ onBeforeUnmount(() => {
   background: rgba(0,0,0,.62);
 }
 .x8-airplay-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 .x8-player-video-right {
   position: relative;
@@ -3223,8 +3256,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 34px;
-  height: 34px;
+  min-width: 38px;
+  height: 38px;
   border: 0;
   border-radius: 8px;
   color: rgba(255,255,255,.82);
@@ -3238,8 +3271,12 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.12);
 }
 .x8-video-toolbar svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+}
+.x8-video-toolbar .x8-bolt-icon {
+  width: 25px;
+  height: 25px;
 }
 .x8-time {
   color: rgba(255,255,255,.82);
@@ -3254,51 +3291,124 @@ onBeforeUnmount(() => {
 .x8-quality-menu {
   position: absolute;
   right: 0;
-  bottom: 36px;
+  bottom: 44px;
   z-index: 20;
-  min-width: 190px;
-  padding: 10px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 10px;
-  background: rgba(20,20,20,.96);
-  box-shadow: 0 12px 32px rgba(0,0,0,.35);
-  backdrop-filter: blur(12px);
+  min-width: 238px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 18px;
+  background: rgba(18,18,18,.58);
+  box-shadow: 0 20px 52px rgba(0,0,0,.42);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
 .x8-settings-menu {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
-.x8-settings-menu label,
-.x8-rate-list {
+.x8-settings-menu .x8-switch-row,
+.x8-settings-menu .x8-setting-row,
+.x8-settings-menu .x8-setting-back,
+.x8-rate-panel button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  color: rgba(255,255,255,.82);
-  font-size: 13px;
-}
-.x8-rate-list {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-.x8-rate-list span {
+  gap: 14px;
   width: 100%;
-  color: rgba(255,255,255,.52);
-}
-.x8-rate-list button,
-.x8-quality-menu button {
-  height: 28px;
-  min-width: 46px;
+  height: 42px;
   border: 0;
-  border-radius: 6px;
-  color: rgba(255,255,255,.78);
-  background: rgba(255,255,255,.08);
-  font-size: 12px;
+  border-radius: 13px;
+  padding: 0 10px;
+  color: rgba(255,255,255,.9);
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
 }
-.x8-rate-list button.on,
+.x8-settings-menu .x8-switch-row {
+  position: relative;
+  cursor: pointer;
+}
+.x8-settings-menu .x8-switch-row:hover,
+.x8-settings-menu .x8-setting-row:hover,
+.x8-settings-menu .x8-setting-back:hover,
+.x8-rate-panel button:hover {
+  background: rgba(255,255,255,.08);
+}
+.x8-settings-menu .x8-switch-row input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.x8-settings-menu .x8-switch-row i {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 42px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  transition: background .18s ease, box-shadow .18s ease;
+}
+.x8-settings-menu .x8-switch-row i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  transition: transform .18s ease;
+}
+.x8-settings-menu .x8-switch-row input:checked + i {
+  background: rgba(255,255,255,.92);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
+}
+.x8-settings-menu .x8-switch-row input:checked + i::after {
+  transform: translateX(18px);
+  background: #111;
+}
+.x8-settings-menu .x8-setting-row {
+  cursor: pointer;
+}
+.x8-settings-menu .x8-setting-row b {
+  margin-left: auto;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-settings-menu .x8-setting-row svg,
+.x8-settings-menu .x8-setting-back svg {
+  width: 18px;
+  height: 18px;
+  color: rgba(255,255,255,.62);
+}
+.x8-rate-panel {
+  display: grid;
+  gap: 6px;
+}
+.x8-settings-menu .x8-setting-back {
+  justify-content: flex-start;
+  color: rgba(255,255,255,.72);
+}
+.x8-rate-panel button {
+  justify-content: center;
+  font-weight: 600;
+}
+.x8-rate-panel button.on,
 .x8-quality-menu button.on {
   color: #111;
   background: #fff;
+}
+.x8-quality-menu button {
+  height: 32px;
+  min-width: 54px;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.08);
+  font-size: 13px;
 }
 .x8-player-detail {
   width: 100%;
