@@ -335,8 +335,8 @@
                       @pause="playing = false"
                       @volumechange="syncVideoState"
                       @ended="onVideoEnded"
-                      @webkitbeginfullscreen="videoFullscreen = true"
-                      @webkitendfullscreen="videoFullscreen = false"
+                      @webkitbeginfullscreen="nativeFullscreen = true"
+                      @webkitendfullscreen="nativeFullscreen = false"
                     ></video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
@@ -356,12 +356,6 @@
                           </button>
                           <button type="button" title="下一集" @click="playNextEpisode">
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8V4Z" /><path d="M19 5v14" /></svg>
-                          </button>
-                          <button type="button" title="后退10秒" @click="skipVideo(-10)">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M11 17 6 12l5-5" /><path d="M18 17a5 5 0 0 0 0-10" /><path d="M6 12h8" /><path d="M8 21a9 9 0 1 0 0-18" /></svg>
-                          </button>
-                          <button type="button" title="前进10秒" @click="skipVideo(10)">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m13 7 5 5-5 5" /><path d="M6 7a5 5 0 0 0 0 10" /><path d="M18 12h-8" /><path d="M16 3a9 9 0 1 1 0 18" /></svg>
                           </button>
                           <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
                             <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="m22 9-6 6" /><path d="m16 9 6 6" /></svg>
@@ -641,6 +635,7 @@ const duration = ref(0)
 const controlsVisible = ref(false)
 const playerTheater = ref(false)
 const videoFullscreen = ref(false)
+const nativeFullscreen = ref(false)
 const autoNext = ref(true)
 const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
@@ -1191,15 +1186,6 @@ function playNextEpisode() {
   if (currentEpIndex.value >= episodes.value.length - 1) return
   selectEpisode(currentEpIndex.value + 1)
 }
-function skipVideo(delta) {
-  const video = videoEl.value
-  if (!video) return
-  const total = Number(video.duration) || duration.value || 0
-  const next = Math.max(0, Math.min(total || Number.MAX_SAFE_INTEGER, (Number(video.currentTime) || 0) + delta))
-  video.currentTime = next
-  currentTime.value = next
-  showPlayerControls()
-}
 function toggleMute() {
   const video = videoEl.value
   if (!video) return
@@ -1250,19 +1236,20 @@ async function togglePip() {
   } catch {}
 }
 async function requestVideoFullscreen() {
-  const video = videoEl.value
-  const target = videoBox.value || video
+  const target = videoBox.value
+  if (!target) return
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
-  if (fullscreenElement === target || fullscreenElement === video) {
+  if (fullscreenElement === target) {
     const exit = document.exitFullscreen || document.webkitExitFullscreen
     if (exit) await exit.call(document)
     videoFullscreen.value = false
     return
   }
-  const fn = target?.requestFullscreen || target?.webkitRequestFullscreen || video?.webkitEnterFullscreen
+  const fn = target.requestFullscreen || target.webkitRequestFullscreen
   if (!fn) return
   try {
-    await fn.call(target?.requestFullscreen || target?.webkitRequestFullscreen ? target : video)
+    nativeFullscreen.value = false
+    await fn.call(target)
     videoFullscreen.value = true
     showPlayerControls()
   } catch {
@@ -1273,6 +1260,9 @@ async function requestNativeFullscreen() {
   const video = videoEl.value
   if (!video) return
   try {
+    video.controls = true
+    nativeFullscreen.value = true
+    videoFullscreen.value = false
     if (video.webkitEnterFullscreen) {
       video.webkitEnterFullscreen()
       return
@@ -1288,7 +1278,10 @@ async function requestNativeFullscreen() {
 }
 function syncFullscreenState() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
-  videoFullscreen.value = fullscreenElement === videoBox.value || fullscreenElement === videoEl.value || Boolean(videoEl.value?.webkitDisplayingFullscreen)
+  const video = videoEl.value
+  videoFullscreen.value = fullscreenElement === videoBox.value
+  nativeFullscreen.value = fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
+  if (!nativeFullscreen.value && video) video.controls = false
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
@@ -3068,7 +3061,7 @@ onBeforeUnmount(() => {
   display: block;
   background: #000;
 }
-.x8-video-container video::-webkit-media-controls {
+.x8-video-container video:not([controls])::-webkit-media-controls {
   display: none !important;
 }
 .x8-airplay-btn {
