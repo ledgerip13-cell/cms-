@@ -313,7 +313,12 @@
           <section class="x8-play-list-container">
             <div class="x8-player-video">
               <div class="x8-player-video-left">
-                <div class="x8-player-area active">
+                <div
+                  class="x8-player-area active"
+                  :class="{ 'controls-visible': controlsVisible || settingsOpen || qualityOpen }"
+                  @mousemove="showPlayerControls"
+                  @mouseleave="hidePlayerControlsSoon"
+                >
                   <div class="x8-video-container">
                     <video
                       v-if="playKind !== 'iframe'"
@@ -323,7 +328,7 @@
                       x-webkit-airplay="allow"
                       airplay="allow"
                       :poster="heroImage(vod)"
-                      @click="togglePlay"
+                      @click="onVideoClick"
                       @timeupdate="syncVideoState"
                       @loadedmetadata="syncVideoState"
                       @play="playing = true"
@@ -339,55 +344,55 @@
                       <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
                       <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
                     </button>
-                  </div>
-                </div>
-                <div class="x8-video-toolbar">
-                  <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" @input="seekVideo" />
-                  <div class="x8-control-row">
-                    <div class="x8-control-left">
-                      <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-                        <svg v-if="playing" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z" /></svg>
-                        <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.6v12.8L18.2 12 8 5.6Z" /></svg>
-                      </button>
-                      <button type="button" title="下一集" @click="playNextEpisode">
-                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5.5 14.5 12 5 18.5v-13ZM16 5h3v14h-3V5Z" /></svg>
-                      </button>
-                      <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
-                        <svg v-if="muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m19 9-4 4" /><path d="m15 9 4 4" /></svg>
-                        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8a5 5 0 0 1 0 8" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
-                      </button>
-                      <span class="x8-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-                    </div>
-                    <div class="x8-control-right">
-                      <div class="x8-control-pop">
-                        <button v-if="qualities.length" type="button" :class="{ active: qualityOpen }" @click.stop="qualityOpen = !qualityOpen">{{ curQualityLabel || '清晰度' }}</button>
-                        <div v-if="qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
-                          <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
-                          <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+                    <div class="x8-video-toolbar" @click.stop @mousemove.stop="showPlayerControls">
+                      <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" @input="seekVideo" />
+                      <div class="x8-control-row">
+                        <div class="x8-control-left">
+                          <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
+                            <svg v-if="playing" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z" /></svg>
+                            <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.6v12.8L18.2 12 8 5.6Z" /></svg>
+                          </button>
+                          <button type="button" title="下一集" @click="playNextEpisode">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5.5 14.5 12 5 18.5v-13ZM16 5h3v14h-3V5Z" /></svg>
+                          </button>
+                          <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
+                            <svg v-if="muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="m19 9-4 4" /><path d="m15 9 4 4" /></svg>
+                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4Z" /><path d="M16 8a5 5 0 0 1 0 8" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+                          </button>
+                          <span class="x8-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
                         </div>
-                      </div>
-                      <div class="x8-control-pop">
-                        <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="settingsOpen = !settingsOpen">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" /><path d="m19.4 15 .1 2.1-2 1.2-1.8-1a7.6 7.6 0 0 1-1.7 1l-.5 2H10l-.5-2a7.6 7.6 0 0 1-1.7-1l-1.8 1-2-1.2.1-2.1a7.8 7.8 0 0 1-.8-1.8L1.5 12l1.8-1.2c.2-.6.4-1.2.8-1.8L4 6.9l2-1.2 1.8 1c.5-.4 1.1-.7 1.7-1l.5-2h3.5l.5 2c.6.2 1.2.6 1.7 1l1.8-1 2 1.2-.1 2.1c.4.6.6 1.2.8 1.8L22.5 12l-1.8 1.2c-.2.6-.5 1.2-.9 1.8Z" /></svg>
-                        </button>
-                        <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
-                          <label><span>自动下一集</span><input v-model="autoNext" type="checkbox" /></label>
-                          <label><span>跳过片头片尾</span><input v-model="skipIntroOutro" type="checkbox" /></label>
-                          <div class="x8-rate-list">
-                            <span>倍速</span>
-                            <button v-for="rate in playbackRates" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click="setPlaybackRate(rate)">{{ rate }}x</button>
+                        <div class="x8-control-right">
+                          <div class="x8-control-pop">
+                            <button v-if="qualities.length" type="button" :class="{ active: qualityOpen }" @click.stop="qualityOpen = !qualityOpen">{{ curQualityLabel || '清晰度' }}</button>
+                            <div v-if="qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
+                              <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
+                              <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+                            </div>
                           </div>
+                          <div class="x8-control-pop">
+                            <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="settingsOpen = !settingsOpen">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" /><path d="m19.4 15 .1 2.1-2 1.2-1.8-1a7.6 7.6 0 0 1-1.7 1l-.5 2H10l-.5-2a7.6 7.6 0 0 1-1.7-1l-1.8 1-2-1.2.1-2.1a7.8 7.8 0 0 1-.8-1.8L1.5 12l1.8-1.2c.2-.6.4-1.2.8-1.8L4 6.9l2-1.2 1.8 1c.5-.4 1.1-.7 1.7-1l.5-2h3.5l.5 2c.6.2 1.2.6 1.7 1l1.8-1 2 1.2-.1 2.1c.4.6.6 1.2.8 1.8L22.5 12l-1.8 1.2c-.2.6-.5 1.2-.9 1.8Z" /></svg>
+                            </button>
+                            <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
+                              <label><span>自动下一集</span><input v-model="autoNext" type="checkbox" /></label>
+                              <label><span>跳过片头片尾</span><input v-model="skipIntroOutro" type="checkbox" /></label>
+                              <div class="x8-rate-list">
+                                <span>倍速</span>
+                                <button v-for="rate in playbackRates" :key="rate" type="button" :class="{ on: playbackRate === rate }" @click="setPlaybackRate(rate)">{{ rate }}x</button>
+                              </div>
+                            </div>
+                          </div>
+                          <button type="button" title="窗口化" @click="togglePip">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="12" width="7" height="5" rx="1" /></svg>
+                          </button>
+                          <button type="button" title="全屏" @click="requestVideoFullscreen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M8 21H3v-5" /><path d="M16 21h5v-5" /></svg>
+                          </button>
+                          <button type="button" title="最大化" @click="requestPlayerFullscreen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>
+                          </button>
                         </div>
                       </div>
-                      <button type="button" title="窗口化" @click="togglePip">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="12" width="7" height="5" rx="1" /></svg>
-                      </button>
-                      <button type="button" title="全屏" @click="requestVideoFullscreen">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M8 21H3v-5" /><path d="M16 21h5v-5" /></svg>
-                      </button>
-                      <button type="button" title="最大化" @click="requestPlayerFullscreen">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -597,6 +602,7 @@ const playing = ref(false)
 const muted = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const controlsVisible = ref(false)
 const autoNext = ref(true)
 const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
@@ -604,6 +610,7 @@ const playbackRates = [0.75, 1, 1.25, 1.5, 2]
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
+let controlsTimer = 0
 let hls = null
 
 const sortItems = [
@@ -1027,6 +1034,23 @@ function syncVideoState() {
   muted.value = Boolean(video.muted || video.volume === 0)
   playing.value = !video.paused && !video.ended
 }
+function showPlayerControls() {
+  controlsVisible.value = true
+  clearTimeout(controlsTimer)
+  if (!settingsOpen.value && !qualityOpen.value) {
+    controlsTimer = window.setTimeout(() => {
+      controlsVisible.value = false
+    }, 2600)
+  }
+}
+function hidePlayerControlsSoon() {
+  clearTimeout(controlsTimer)
+  if (!settingsOpen.value && !qualityOpen.value) {
+    controlsTimer = window.setTimeout(() => {
+      controlsVisible.value = false
+    }, 900)
+  }
+}
 function attachVideo(url, kind = '') {
   playUrl.value = url
   playKind.value = kind === 'iframe' ? 'iframe' : ''
@@ -1098,11 +1122,16 @@ function switchQuality(res) {
 function togglePlay() {
   const video = videoEl.value
   if (!video || playKind.value === 'iframe') return
+  showPlayerControls()
   if (video.paused) video.play().then(syncVideoState).catch(syncVideoState)
   else {
     video.pause()
     syncVideoState()
   }
+}
+function onVideoClick() {
+  showPlayerControls()
+  togglePlay()
 }
 function playNextEpisode() {
   if (currentEpIndex.value >= episodes.value.length - 1) return
@@ -1374,6 +1403,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
+  clearTimeout(controlsTimer)
   destroyHls()
 })
 </script>
@@ -2893,6 +2923,13 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,.82);
   background: rgba(0,0,0,.42);
   backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, background .18s ease;
+}
+.x8-player-area.controls-visible .x8-airplay-btn {
+  opacity: 1;
+  pointer-events: auto;
 }
 .x8-airplay-btn:hover {
   color: #fff;
@@ -3039,7 +3076,10 @@ onBeforeUnmount(() => {
   border-color: #fff;
 }
 .x8-video-toolbar {
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 10;
   height: 64px;
   display: flex;
@@ -3050,6 +3090,14 @@ onBeforeUnmount(() => {
   background: rgba(10,10,10,.72);
   border-top: 1px solid rgba(255,255,255,.08);
   backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+  transition: opacity .18s ease;
+}
+.x8-player-area.controls-visible .x8-video-toolbar {
+  opacity: 1;
+  pointer-events: auto;
 }
 .x8-progress {
   width: 100%;
