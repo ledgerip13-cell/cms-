@@ -319,7 +319,7 @@
                   @mousemove="showPlayerControls"
                   @mouseleave="hidePlayerControlsSoon"
                 >
-                  <div class="x8-video-container">
+                  <div ref="videoBox" class="x8-video-container">
                     <video
                       v-if="playKind !== 'iframe'"
                       ref="videoEl"
@@ -335,6 +335,8 @@
                       @pause="playing = false"
                       @volumechange="syncVideoState"
                       @ended="onVideoEnded"
+                      @webkitbeginfullscreen="videoFullscreen = true"
+                      @webkitendfullscreen="videoFullscreen = false"
                     ></video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
@@ -614,6 +616,7 @@ const playUrl = ref('')
 const playKind = ref('')
 const resolving = ref(false)
 const videoEl = ref(null)
+const videoBox = ref(null)
 const user = ref(null)
 const followed = ref(false)
 const qualities = ref([])
@@ -1231,17 +1234,29 @@ async function togglePip() {
     else await video.requestPictureInPicture()
   } catch {}
 }
-function requestVideoFullscreen() {
+async function requestVideoFullscreen() {
   const video = videoEl.value
-  if (document.fullscreenElement === video && document.exitFullscreen) {
-    document.exitFullscreen()
+  const target = videoBox.value || video
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
+  if (fullscreenElement === target || fullscreenElement === video) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen
+    if (exit) await exit.call(document)
+    videoFullscreen.value = false
     return
   }
-  const fn = video?.requestFullscreen || video?.webkitEnterFullscreen || video?.webkitRequestFullscreen
-  if (fn) fn.call(video)
+  const fn = target?.requestFullscreen || target?.webkitRequestFullscreen || video?.webkitEnterFullscreen
+  if (!fn) return
+  try {
+    await fn.call(target?.requestFullscreen || target?.webkitRequestFullscreen ? target : video)
+    videoFullscreen.value = true
+    showPlayerControls()
+  } catch {
+    syncFullscreenState()
+  }
 }
 function syncFullscreenState() {
-  videoFullscreen.value = document.fullscreenElement === videoEl.value
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
+  videoFullscreen.value = fullscreenElement === videoBox.value || fullscreenElement === videoEl.value || Boolean(videoEl.value?.webkitDisplayingFullscreen)
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
@@ -1465,6 +1480,7 @@ onMounted(() => {
   window.addEventListener('resize', onResize, { passive: true })
   window.addEventListener('keydown', onKeydown)
   document.addEventListener('fullscreenchange', syncFullscreenState)
+  document.addEventListener('webkitfullscreenchange', syncFullscreenState)
   onResize()
   startHeroTimer()
   startSearchHintTimer()
@@ -1475,6 +1491,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('fullscreenchange', syncFullscreenState)
+  document.removeEventListener('webkitfullscreenchange', syncFullscreenState)
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
   clearTimeout(controlsTimer)
