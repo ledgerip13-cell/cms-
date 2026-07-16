@@ -2408,7 +2408,7 @@ onBeforeUnmount(() => {
   padding: 96px 0 80px;
 }
 .x8-play {
-  width: min(1750px, calc(100vw - 120px));
+  width: min(1500px, calc(100vw - 120px));
   margin: 0 auto;
   padding: calc(92px + env(safe-area-inset-top)) 0 80px;
 }
@@ -2926,6 +2926,7 @@ onBeforeUnmount(() => {
 .x8-player-video {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
+  height: calc((min(1500px, calc(100vw - 120px)) - 360px) * 9 / 16);
   align-items: stretch;
   overflow: hidden;
   border-radius: 12px;
@@ -2940,7 +2941,8 @@ onBeforeUnmount(() => {
 }
 .x8-player-area {
   position: relative;
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #000;
 }
@@ -2992,6 +2994,8 @@ onBeforeUnmount(() => {
 .x8-player-video-right {
   position: relative;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   background: transparent;
   border-left: .5px solid rgba(255,255,255,.04);
@@ -3084,6 +3088,7 @@ onBeforeUnmount(() => {
 }
 .x8-side-episodes {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
@@ -3751,6 +3756,7 @@ onBeforeUnmount(() => {
   }
   .x8-player-video {
     grid-template-columns: minmax(0, 1fr) 360px;
+    height: calc((min(1400px, calc(100vw - 80px)) - 360px) * 9 / 16);
   }
   .x8-side-playlist-head .header-title {
     padding: 16px 24px 24px;
@@ -3796,6 +3802,11 @@ onBeforeUnmount(() => {
 @media (max-width: 1350px) {
   .x8-player-video {
     display: block;
+    height: auto;
+  }
+  .x8-player-area {
+    aspect-ratio: 16 / 9;
+    height: auto;
   }
   .x8-player-video-right {
     display: none;
@@ -4023,6 +4034,10 @@ onBeforeUnmount(() => {
     margin: 0 -14px;
     border-radius: 0;
     display: block;
+    height: auto;
+  }
+  .x8-player-area {
+    aspect-ratio: 16 / 9;
     height: auto;
   }
   .x8-player-video-right {
