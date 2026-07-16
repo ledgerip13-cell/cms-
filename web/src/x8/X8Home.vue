@@ -357,6 +357,12 @@
                           <button type="button" title="下一集" @click="playNextEpisode">
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8V4Z" /><path d="M19 5v14" /></svg>
                           </button>
+                          <button type="button" title="后退10秒" @click="skipVideo(-10)">
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M11 17 6 12l5-5" /><path d="M18 17a5 5 0 0 0 0-10" /><path d="M6 12h8" /><path d="M8 21a9 9 0 1 0 0-18" /></svg>
+                          </button>
+                          <button type="button" title="前进10秒" @click="skipVideo(10)">
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m13 7 5 5-5 5" /><path d="M6 7a5 5 0 0 0 0 10" /><path d="M18 12h-8" /><path d="M16 3a9 9 0 1 1 0 18" /></svg>
+                          </button>
                           <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
                             <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="m22 9-6 6" /><path d="m16 9 6 6" /></svg>
                             <svg v-else class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>
@@ -412,12 +418,12 @@
                           <button type="button" title="窗口化" @click="togglePip">
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M21 10V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6" /><rect width="8" height="6" x="13" y="13" rx="1" /></svg>
                           </button>
-                          <button type="button" :title="playerTheater ? '退出最大化' : '系统最大化'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
-                          </button>
                           <button type="button" :title="videoFullscreen ? '退出全屏' : 'HLS 全屏'" :class="{ active: videoFullscreen }" @click="requestVideoFullscreen">
                             <svg v-if="videoFullscreen" class="x8-lucide x8-icon-minimize" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="m14 10 7-7" /><path d="m3 21 7-7" /></svg>
                             <svg v-else class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /></svg>
+                          </button>
+                          <button type="button" title="系统全屏" @click="requestNativeFullscreen">
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
                           </button>
                         </div>
                       </div>
@@ -1185,6 +1191,15 @@ function playNextEpisode() {
   if (currentEpIndex.value >= episodes.value.length - 1) return
   selectEpisode(currentEpIndex.value + 1)
 }
+function skipVideo(delta) {
+  const video = videoEl.value
+  if (!video) return
+  const total = Number(video.duration) || duration.value || 0
+  const next = Math.max(0, Math.min(total || Number.MAX_SAFE_INTEGER, (Number(video.currentTime) || 0) + delta))
+  video.currentTime = next
+  currentTime.value = next
+  showPlayerControls()
+}
 function toggleMute() {
   const video = videoEl.value
   if (!video) return
@@ -1253,6 +1268,23 @@ async function requestVideoFullscreen() {
   } catch {
     syncFullscreenState()
   }
+}
+async function requestNativeFullscreen() {
+  const video = videoEl.value
+  if (!video) return
+  try {
+    if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen()
+      return
+    }
+    if (video.requestFullscreen) {
+      await video.requestFullscreen()
+      return
+    }
+    if (video.webkitRequestFullscreen) {
+      await video.webkitRequestFullscreen()
+    }
+  } catch {}
 }
 function syncFullscreenState() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
