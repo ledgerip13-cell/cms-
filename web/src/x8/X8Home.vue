@@ -333,13 +333,21 @@
                 </div>
                 <div class="x8-video-toolbar">
                   <div class="left">
-                    <button type="button" title="点赞"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /><path d="M7 11 12 2a3 3 0 0 1 3 3v5h4a2 2 0 0 1 2 2l-1 7a3 3 0 0 1-3 3H7Z" /></svg><span>点赞</span></button>
-                    <button type="button" title="点踩"><svg class="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /><path d="M7 11 12 2a3 3 0 0 1 3 3v5h4a2 2 0 0 1 2 2l-1 7a3 3 0 0 1-3 3H7Z" /></svg><span>点踩</span></button>
-                    <button type="button" title="评论" @click="scrollToComments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" /></svg><span>评论</span></button>
-                    <button type="button" title="收藏" :class="{ active: followed }" @click="toggleFollow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{{ followed ? '已收藏' : '收藏' }}</span></button>
+                    <button type="button" title="点赞"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.2 21H4.8A2.8 2.8 0 0 1 2 18.2v-6.4A2.8 2.8 0 0 1 4.8 9h2.4v12ZM9 20.8V9.7l4.35-7.54A2.35 2.35 0 0 1 17.6 3.54V8h2.48a2.9 2.9 0 0 1 2.86 3.38l-1.14 6.84A3.34 3.34 0 0 1 18.5 21H10a2.7 2.7 0 0 1-1-.2Z" /></svg><span>85</span></button>
+                    <button type="button" title="点踩"><svg class="down" viewBox="0 0 24 24" fill="currentColor"><path d="M7.2 21H4.8A2.8 2.8 0 0 1 2 18.2v-6.4A2.8 2.8 0 0 1 4.8 9h2.4v12ZM9 20.8V9.7l4.35-7.54A2.35 2.35 0 0 1 17.6 3.54V8h2.48a2.9 2.9 0 0 1 2.86 3.38l-1.14 6.84A3.34 3.34 0 0 1 18.5 21H10a2.7 2.7 0 0 1-1-.2Z" /></svg><span>15</span></button>
+                    <button type="button" title="评论"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 4h13A3.5 3.5 0 0 1 22 7.5v6A3.5 3.5 0 0 1 18.5 17H9.1l-5.55 3.7A1 1 0 0 1 2 19.86V7.5A3.5 3.5 0 0 1 5.5 4Z" /></svg><span>评论</span></button>
+                    <button type="button" title="收藏" :class="{ active: followed }" @click="toggleFollow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.08A6 6 0 0 1 16.5 3C19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" /></svg><span>{{ followed ? '已收藏' : '收藏' }}</span></button>
                     <button type="button" title="报错"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg><span>报错</span></button>
-                    <button type="button" title="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6 12 2 8 6" /><path d="M12 2v14" /></svg><span>分享</span></button>
-                    <button type="button" title="添加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg><span>添加</span></button>
+                    <button type="button" title="分享"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11A2.98 2.98 0 1 0 15 5c0 .24.04.47.09.7L8.04 9.81a3 3 0 1 0 0 4.38l7.12 4.18c-.05.2-.08.41-.08.63a2.92 2.92 0 1 0 2.92-2.92Z" /></svg><span>分享</span></button>
+                    <button type="button" title="添加"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z" /></svg><span>添加</span></button>
+                  </div>
+                  <div class="right">
+                    <button class="danmu-toggle" type="button">弹</button>
+                    <button class="danmu-toggle" type="button">弹</button>
+                    <div class="x8-danmu-box">
+                      <input type="text" placeholder="来发表弹幕吧~" />
+                      <button type="button">发送</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -369,10 +377,9 @@
               <div class="x8-player-title">
                 <button type="button" @click="goDetail(vod.id)">
                   <h1>{{ vod.name || '正在加载' }}</h1>
-                  <span>更多信息</span>
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.7 3.3 13.3 10l-6.6 6.7" stroke-linecap="round" /></svg>
                 </button>
-                <h2>{{ currentEpisodeLabel }}</h2>
+                <h2>{{ playEpisodeTitle }}</h2>
               </div>
               <div class="x8-player-meta">
                 <span v-if="vod.rating" class="rating">
@@ -387,6 +394,7 @@
                   <span v-for="tag in detailTags.slice(0, 3)" :key="`play-tag-${tag}`">{{ tag }}</span>
                 </div>
               </div>
+              <p v-if="playIntro" class="x8-player-desc">简介：{{ playIntro }}</p>
             </section>
 
             <section v-if="vod.lines?.length" class="x8-mini-play-list">
@@ -409,24 +417,6 @@
                 <x8-card v-for="item in related.slice(0, playLikeCount)" :key="`play-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
               </div>
             </x8-panel>
-
-            <section id="x8-comments" class="x8-comments">
-              <div class="x8-comments-title">
-                <span></span>
-                评论区
-                <em>(0)</em>
-              </div>
-              <div class="x8-comment-login" @click="goLogin">
-                您还未
-                <button type="button">登录</button>
-                请登录后发表评论
-              </div>
-              <div class="x8-comment-tabs">
-                <button class="active" type="button">全部评论</button>
-                <button type="button">热门评论</button>
-              </div>
-              <div class="x8-comment-empty">暂无评论信息</div>
-            </section>
           </section>
         </div>
       </section>
@@ -647,6 +637,11 @@ const currentEpisodeLabel = computed(() => {
   const ep = episodes.value[currentEpIndex.value]
   return ep?.name || (episodes.value.length ? `第${currentEpIndex.value + 1}集` : '')
 })
+const playEpisodeTitle = computed(() => {
+  const text = currentEpisodeLabel.value || ''
+  const n = text.match(/\d+/)?.[0]
+  return n ? `第 ${n} 集` : text
+})
 const playLikeCount = computed(() => viewportWidth.value >= 1024 ? 12 : 8)
 const detailTags = computed(() => {
   const rows = [vod.value?.subType, vod.value?.typeName]
@@ -663,6 +658,7 @@ const detailAliases = computed(() => {
     .slice(0, 5)
 })
 const actors = computed(() => (vod.value?.people || []).filter(p => p.role === 'actor' && p.person?.name).slice(0, 6))
+const playIntro = computed(() => String(vod.value?.blurb || vod.value?.officialIntro || vod.value?.content || '').replace(/<[^>]+>/g, '').trim())
 const detailDuration = computed(() => {
   const text = String(vod.value?.duration || vod.value?.runtime || '').trim()
   if (text) return text
@@ -939,9 +935,6 @@ function scrollToTrailer() {
     return
   }
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-function scrollToComments() {
-  document.getElementById('x8-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function onScroll() {
   scrolled.value = window.scrollY > 12
@@ -2228,11 +2221,15 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 700;
 }
-.x8-page-panel,
-.x8-play {
+.x8-page-panel {
   width: min(1750px, calc(100vw - 112px));
   margin: 0 auto;
   padding: 96px 0 80px;
+}
+.x8-play {
+  width: calc(100vw - 48px);
+  margin: 0 auto;
+  padding: 8px 0 80px;
 }
 .x8-page-title {
   margin-bottom: 24px;
@@ -2700,30 +2697,33 @@ onBeforeUnmount(() => {
 .x8-play-shell {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 44px;
 }
 .x8-play-list-container {
   display: flex;
   flex-direction: column;
+  gap: 46px;
   -webkit-tap-highlight-color: transparent;
 }
 .x8-player-video {
-  display: flex;
-  border-radius: 12px;
+  height: calc(56.25vw - 253.25px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 548px;
+  align-items: stretch;
   overflow: hidden;
-  background: rgba(255,255,255,.04);
+  border-radius: 16px;
+  background: #282828;
 }
 .x8-player-video-left {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #000;
 }
 .x8-player-area {
-  flex: 1;
   position: relative;
-  padding-bottom: 56.25%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: #000;
 }
@@ -2741,10 +2741,10 @@ onBeforeUnmount(() => {
 }
 .x8-player-video-right {
   position: relative;
-  width: 360px;
-  box-sizing: content-box;
+  min-width: 0;
   overflow: hidden;
-  border-left: .5px solid rgba(255,255,255,.04);
+  background: #2b2b2b;
+  border-left: 1px solid rgba(255,255,255,.03);
 }
 .x8-side-playlist {
   width: 100%;
@@ -2754,24 +2754,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .x8-side-playlist-head .header-title {
-  padding: 16px 24px 24px;
+  padding: 28px 38px 34px;
   color: #fff;
-  font-size: 20px;
-  line-height: 24px;
-  font-weight: 500;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
 }
 .x8-side-playlist-head .header-sections {
-  height: 32px;
+  height: 45px;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 0 24px;
+  gap: 16px;
+  padding: 0 38px;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .x8-side-playlist-head .sections-left {
   flex: 1;
   display: flex;
-  gap: 24px;
+  gap: 30px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2779,14 +2779,14 @@ onBeforeUnmount(() => {
   display: none;
 }
 .x8-side-playlist-head .sections-left button {
-  height: 32px;
+  height: 45px;
   border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 0 0 8px;
-  color: rgba(255,255,255,.86);
+  border-bottom: 3px solid transparent;
+  padding: 0 0 15px;
+  color: rgba(255,255,255,.88);
   background: transparent;
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 24px;
+  line-height: 30px;
   white-space: nowrap;
 }
 .x8-side-playlist-head .sections-left button.active {
@@ -2794,116 +2794,167 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 .x8-side-playlist-head .sections-sort {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   border: 0;
-  color: rgba(255,255,255,.8);
+  color: rgba(255,255,255,.88);
   background: transparent;
 }
 .x8-side-playlist-head .sections-sort svg {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
 }
 .x8-side-episodes {
   flex: 1;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, 64px);
+  grid-auto-rows: 64px;
   align-content: flex-start;
-  gap: 10px;
-  padding: 16px 24px;
+  gap: 16px;
+  padding: 25px 38px 32px;
   overflow-y: auto;
 }
 .x8-side-episodes::-webkit-scrollbar {
   width: 4px;
 }
 .x8-side-episodes::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,.2);
+  border-radius: 4px;
+  background: rgba(255,255,255,.22);
 }
 .x8-side-episodes button,
 .x8-episode-grid button {
   position: relative;
-  height: 42px;
-  min-width: 54px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 6px;
-  padding: 0 14px;
-  color: rgba(255,255,255,.9);
-  background: transparent;
-  font-size: 14px;
-  line-height: 40px;
+  border: 2px solid rgba(255,255,255,.05);
+  border-radius: 8px;
+  padding: 0;
+  color: rgba(255,255,255,.88);
+  background: rgba(255,255,255,.02);
+  font-size: 24px;
+  line-height: 1;
   text-align: center;
   white-space: nowrap;
   transition: border-color .25s ease, background .25s ease, color .25s ease;
 }
 .x8-side-episodes button:hover,
 .x8-episode-grid button:hover {
-  border-color: #fff;
+  border-color: rgba(255,255,255,.35);
 }
 .x8-side-episodes button.active,
 .x8-episode-grid button.active {
-  color: #121212;
+  color: #111;
   background: #fff;
   border-color: #fff;
 }
 .x8-video-toolbar {
   position: relative;
   z-index: 10;
-  height: 54px;
+  height: 82px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  gap: 18px;
+  padding: 0 24px 0 35px;
+  background: #282828;
+  border-top: 1px solid rgba(255,255,255,.03);
+}
+.x8-video-toolbar .left,
+.x8-video-toolbar .right {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 .x8-video-toolbar .left {
-  display: flex;
-  align-items: center;
-  padding-left: 24px;
+  flex: 1;
+  gap: 28px;
+}
+.x8-video-toolbar .right {
+  gap: 14px;
+  justify-content: flex-end;
 }
 .x8-video-toolbar button {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  margin-right: 28px;
+  gap: 6px;
   border: 0;
-  color: rgba(255,255,255,.4);
+  color: rgba(255,255,255,.34);
   background: transparent;
-  font-size: 14px;
-}
-.x8-video-toolbar button:last-child {
-  margin-right: 0;
+  font-size: 22px;
+  line-height: 1;
 }
 .x8-video-toolbar button:hover,
 .x8-video-toolbar button.active {
-  color: #fff;
+  color: rgba(255,255,255,.78);
 }
 .x8-video-toolbar svg {
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
 }
 .x8-video-toolbar svg.down {
   transform: scale(1, -1);
+}
+.x8-video-toolbar .danmu-toggle {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  color: rgba(255,255,255,.55);
+  font-size: 28px;
+  font-weight: 700;
+}
+.x8-danmu-box {
+  width: 438px;
+  height: 49px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+}
+.x8-danmu-box input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0 20px;
+  color: rgba(255,255,255,.78);
+  background: transparent;
+  font-size: 20px;
+  outline: none;
+}
+.x8-danmu-box input::placeholder {
+  color: rgba(255,255,255,.34);
+}
+.x8-danmu-box button {
+  width: 104px;
+  height: 40px;
+  justify-content: center;
+  margin-right: 6px;
+  border-radius: 7px;
+  color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.12);
+  font-size: 20px;
 }
 .x8-player-detail {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 28px;
 }
 .x8-player-title {
   display: flex;
   align-items: baseline;
   min-width: 0;
   color: #fff;
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 600;
+  font-size: 40px;
+  line-height: 50px;
+  font-weight: 700;
 }
 .x8-player-title button {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
   border: 0;
   color: #fff;
@@ -2911,75 +2962,71 @@ onBeforeUnmount(() => {
 }
 .x8-player-title h1 {
   margin: 0;
-  max-width: 520px;
+  max-width: 620px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 600;
-}
-.x8-player-title button span {
-  width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  color: #fff;
-  font-size: 16px;
-  line-height: 22px;
-  transition: width .25s ease, margin-left .25s ease;
-}
-.x8-player-title button:hover span {
-  width: 72px;
-  margin-left: 10px;
+  font-size: 40px;
+  line-height: 50px;
+  font-weight: 700;
 }
 .x8-player-title button svg {
-  width: 20px;
-  height: 20px;
-  margin-left: 4px;
-  color: rgba(255,255,255,.6);
+  width: 25px;
+  height: 25px;
+  margin: 0 20px 0 10px;
+  color: rgba(255,255,255,.86);
 }
 .x8-player-title h2 {
-  margin: 0 0 0 4px;
-  color: rgba(255,255,255,.6);
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 600;
+  margin: 0;
+  color: rgba(255,255,255,.66);
+  font-size: 40px;
+  line-height: 50px;
+  font-weight: 700;
 }
 .x8-player-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0;
-  color: #fff;
-  font-size: 14px;
-  line-height: 20px;
+  color: rgba(255,255,255,.88);
+  font-size: 24px;
+  line-height: 34px;
 }
 .x8-player-meta .rating {
   display: inline-flex;
   align-items: center;
-  font-size: 16px;
+  font-size: 24px;
 }
 .x8-player-meta .rating svg {
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
 }
 .x8-player-meta .line {
-  margin: 0 12px;
-  color: rgba(255,255,255,.6);
+  margin: 0 18px;
+  color: rgba(255,255,255,.5);
 }
 .x8-player-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin-left: 24px;
 }
 .x8-player-tags span {
-  padding: 5px 11px;
-  border: 1px solid rgba(255,255,255,.08);
+  padding: 5px 13px;
+  border: 1px solid rgba(255,255,255,.1);
   border-radius: 4px;
-  color: rgba(255,255,255,.6);
-  font-size: 14px;
+  color: rgba(255,255,255,.66);
+  font-size: 22px;
+  line-height: 30px;
+}
+.x8-player-desc {
+  max-width: 100%;
+  margin: -4px 0 0;
+  color: rgba(255,255,255,.88);
+  font-size: 24px;
+  line-height: 1.65;
+  text-align: justify;
 }
 .x8-mini-play-list {
   display: none;
@@ -3032,79 +3079,6 @@ onBeforeUnmount(() => {
 }
 .x8-episode-grid::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,.4);
-}
-.x8-comments {
-  margin-bottom: 80px;
-}
-.x8-comments-title {
-  display: flex;
-  align-items: center;
-  margin-bottom: 20px;
-  color: #fff;
-  font-size: 24px;
-  line-height: 24px;
-  font-weight: 500;
-}
-.x8-comments-title span {
-  width: 28px;
-  height: 28px;
-  margin-right: 8px;
-  border: 2px solid rgba(255,255,255,.9);
-  border-radius: 50%;
-}
-.x8-comments-title em {
-  margin-left: 8px;
-  color: rgba(255,255,255,.8);
-  font-size: 16px;
-  font-style: normal;
-}
-.x8-comment-login {
-  height: 70px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: rgba(255,255,255,.9);
-  background: rgba(255,255,255,.04);
-  font-size: 14px;
-  cursor: pointer;
-}
-.x8-comment-login button {
-  width: 46px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 4px;
-  border: 1px solid #fff;
-  border-radius: 4px;
-  color: rgba(255,255,255,.9);
-  background: transparent;
-  font-size: 12px;
-}
-.x8-comment-tabs {
-  display: flex;
-  gap: 14px;
-  margin: 32px 0;
-}
-.x8-comment-tabs button {
-  width: 120px;
-  height: 40px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 6px;
-  color: rgba(255,255,255,.9);
-  background: transparent;
-  font-size: 14px;
-}
-.x8-comment-tabs button.active {
-  border-color: #fff;
-}
-.x8-comment-empty {
-  height: 160px;
-  display: grid;
-  place-items: center;
-  color: rgba(255,255,255,.4);
-  font-size: 14px;
 }
 .x8-quality-toggle {
   position: absolute;
@@ -3376,9 +3350,11 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1749px) {
   .x8-panel,
-  .x8-page-panel,
-  .x8-play {
+  .x8-page-panel {
     width: min(1480px, calc(100vw - 88px));
+  }
+  .x8-play {
+    width: calc(100vw - 48px);
   }
   .x8-footer-inner {
     width: min(1480px, calc(100vw - 88px));
@@ -3471,10 +3447,50 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .x8-player-video-right {
+    width: 380px;
+  }
+  .x8-player-video {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    height: calc(56.25vw - 176.75px);
+  }
+  .x8-side-playlist-head .header-title {
+    padding: 22px 24px 24px;
+    font-size: 22px;
+    line-height: 30px;
+  }
+  .x8-side-playlist-head .header-sections {
+    padding: 0 24px;
+  }
+  .x8-side-playlist-head .sections-left button {
+    font-size: 18px;
+  }
+  .x8-side-episodes {
+    grid-template-columns: repeat(5, 54px);
+    grid-auto-rows: 54px;
+    gap: 12px;
+    padding: 20px 24px 28px;
+  }
+  .x8-side-episodes button {
+    font-size: 18px;
+  }
+  .x8-video-toolbar .right {
     display: none;
   }
-  .x8-mini-play-list {
-    display: block;
+  .x8-video-toolbar {
+    height: 64px;
+  }
+  .x8-video-toolbar button {
+    font-size: 16px;
+  }
+  .x8-video-toolbar svg {
+    width: 22px;
+    height: 22px;
+  }
+  .x8-player-title,
+  .x8-player-title h1,
+  .x8-player-title h2 {
+    font-size: 30px;
+    line-height: 38px;
   }
   .x8-video-toolbar button {
     margin-right: 18px;
@@ -3537,9 +3553,12 @@ onBeforeUnmount(() => {
     height: 21px;
   }
   .x8-panel,
-  .x8-page-panel,
+  .x8-page-panel {
+    width: calc(100vw - 28px);
+  }
   .x8-play {
     width: calc(100vw - 28px);
+    padding-top: 72px;
   }
   .x8-footer-inner {
     width: calc(100vw - 28px);
@@ -3701,6 +3720,14 @@ onBeforeUnmount(() => {
   .x8-player-video {
     margin: 0 -14px;
     border-radius: 0;
+    display: block;
+    height: auto;
+  }
+  .x8-player-video-right {
+    display: none;
+  }
+  .x8-mini-play-list {
+    display: block;
   }
   .x8-video-toolbar {
     overflow-x: auto;
