@@ -308,7 +308,7 @@
         </x8-panel>
       </section>
 
-      <section v-else-if="pageMode === 'play'" class="x8-play">
+      <section v-else-if="pageMode === 'play'" class="x8-play" :class="{ 'theater-mode': playerTheater }">
         <div class="x8-play-shell">
           <section class="x8-play-list-container">
             <div class="x8-player-video">
@@ -345,7 +345,7 @@
                       <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
                     </button>
                     <div class="x8-video-toolbar" @click.stop @mousemove.stop="showPlayerControls">
-                      <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" @input="seekVideo" />
+                      <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :style="{ '--x8-progress': progressPercent + '%' }" @input="seekVideo" />
                       <div class="x8-control-row">
                         <div class="x8-control-left">
                           <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
@@ -385,11 +385,12 @@
                           <button type="button" title="窗口化" @click="togglePip">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2" /><rect x="12" y="12" width="7" height="5" rx="1" /></svg>
                           </button>
-                          <button type="button" title="全屏" @click="requestVideoFullscreen">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M8 21H3v-5" /><path d="M16 21h5v-5" /></svg>
+                          <button type="button" :title="playerTheater ? '退出最大化' : '播放器最大化'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
+                            <svg v-if="playerTheater" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v6H3" /><path d="M15 3v6h6" /><path d="M9 21v-6H3" /><path d="M15 21v-6h6" /></svg>
+                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H3v5" /><path d="M16 3h5v5" /><path d="M8 21H3v-5" /><path d="M16 21h5v-5" /></svg>
                           </button>
-                          <button type="button" title="最大化" @click="requestPlayerFullscreen">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>
+                          <button type="button" title="系统全屏" @click="requestVideoFullscreen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>
                           </button>
                         </div>
                       </div>
@@ -603,6 +604,7 @@ const muted = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const controlsVisible = ref(false)
+const playerTheater = ref(false)
 const autoNext = ref(true)
 const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
@@ -735,6 +737,10 @@ const curQualityLabel = computed(() => {
   }
   const hit = qualities.value.find(q => q.resolution === preferredRes.value)
   return hit ? (hit.name || `${hit.resolution}P`) : '自动'
+})
+const progressPercent = computed(() => {
+  if (!duration.value) return 0
+  return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
 })
 
 const X8Panel = defineComponent({
@@ -1180,10 +1186,9 @@ function requestVideoFullscreen() {
   const fn = video?.requestFullscreen || video?.webkitEnterFullscreen || video?.webkitRequestFullscreen
   if (fn) fn.call(video)
 }
-function requestPlayerFullscreen() {
-  const el = document.querySelector('.x8-player-video')
-  const fn = el?.requestFullscreen || el?.webkitRequestFullscreen
-  if (fn) fn.call(el)
+function togglePlayerTheater() {
+  playerTheater.value = !playerTheater.value
+  showPlayerControls()
 }
 function openAirplay() {
   const video = videoEl.value
@@ -1216,6 +1221,11 @@ function selectEpisode(index) {
   qualityOpen.value = false
   settingsOpen.value = false
   playCurrent()
+}
+function onKeydown(event) {
+  if (event.key === 'Escape' && playerTheater.value) {
+    playerTheater.value = false
+  }
 }
 async function ensureUser() {
   if (user.value) return user.value
@@ -1383,6 +1393,7 @@ async function loadVod(withPlay = false) {
 
 watch(() => route.fullPath, () => {
   const mode = pageMode.value
+  if (mode !== 'play') playerTheater.value = false
   if (mode === 'home') loadHome()
   else if (mode === 'show') loadBrowse()
   else if (mode === 'rank') loadRanks()
@@ -1393,6 +1404,7 @@ watch(() => route.fullPath, () => {
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onResize, { passive: true })
+  window.addEventListener('keydown', onKeydown)
   onResize()
   startHeroTimer()
   startSearchHintTimer()
@@ -1401,6 +1413,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('keydown', onKeydown)
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
   clearTimeout(controlsTimer)
@@ -2873,6 +2886,43 @@ onBeforeUnmount(() => {
   gap: 32px;
   -webkit-tap-highlight-color: transparent;
 }
+.x8-play.theater-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  width: 100vw;
+  height: 100dvh;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+.x8-play.theater-mode .x8-play-shell,
+.x8-play.theater-mode .x8-play-list-container {
+  width: 100%;
+  height: 100%;
+  gap: 0;
+}
+.x8-play.theater-mode .x8-player-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0;
+  background: #000;
+}
+.x8-play.theater-mode .x8-player-video-left,
+.x8-play.theater-mode .x8-player-area {
+  width: 100%;
+  height: 100%;
+}
+.x8-play.theater-mode .x8-player-area {
+  aspect-ratio: auto;
+}
+.x8-play.theater-mode .x8-player-video-right,
+.x8-play.theater-mode .x8-player-detail,
+.x8-play.theater-mode .x8-mini-play-list,
+.x8-play.theater-mode .x8-panel {
+  display: none !important;
+}
 .x8-player-video {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -3081,15 +3131,15 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: 0;
   z-index: 10;
-  height: 64px;
+  height: 62px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px 9px;
-  background: rgba(10,10,10,.72);
-  border-top: 1px solid rgba(255,255,255,.08);
-  backdrop-filter: blur(10px);
+  gap: 9px;
+  padding: 8px 18px 10px;
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.56) 24%, rgba(0,0,0,.86) 100%);
+  border-top: 0;
+  backdrop-filter: blur(8px);
   opacity: 0;
   pointer-events: none;
   transform: none;
@@ -3101,10 +3151,46 @@ onBeforeUnmount(() => {
 }
 .x8-progress {
   width: 100%;
-  height: 4px;
+  height: 12px;
   margin: 0;
-  accent-color: #fff;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
   cursor: pointer;
+}
+.x8-progress::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fff 0%, #fff var(--x8-progress, 0%), rgba(255,255,255,.26) var(--x8-progress, 0%), rgba(255,255,255,.26) 100%);
+}
+.x8-progress::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.16), 0 2px 8px rgba(0,0,0,.45);
+}
+.x8-progress::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.26);
+}
+.x8-progress::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: #fff;
+}
+.x8-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255,255,255,.16), 0 2px 8px rgba(0,0,0,.45);
 }
 .x8-control-row {
   width: 100%;
@@ -3131,28 +3217,29 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-width: 28px;
-  height: 28px;
+  gap: 6px;
+  min-width: 34px;
+  height: 34px;
   border: 0;
-  border-radius: 5px;
-  color: rgba(255,255,255,.74);
+  border-radius: 8px;
+  color: rgba(255,255,255,.82);
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
 .x8-video-toolbar button:hover,
 .x8-video-toolbar button.active {
   color: #fff;
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.12);
 }
 .x8-video-toolbar svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
 }
 .x8-time {
-  color: rgba(255,255,255,.78);
-  font-size: 13px;
+  color: rgba(255,255,255,.82);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .x8-control-pop {
