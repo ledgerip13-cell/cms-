@@ -3449,6 +3449,7 @@ onBeforeUnmount(() => {
 .x8-time {
   color: rgba(255,255,255,.82);
   font-size: 14px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -3790,8 +3791,19 @@ onBeforeUnmount(() => {
   color: #fff;
   background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.08), transparent 28%), #050505;
 }
+.x8-player-empty .x8-play-icon {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+}
+.x8-player-empty .x8-play-icon svg {
+  width: 51px;
+  height: 51px;
+}
 .x8-player-empty em {
   font-style: normal;
+  font-weight: 500;
 }
 .x8-login-card {
   padding: 20px;
