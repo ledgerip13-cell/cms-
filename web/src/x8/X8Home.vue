@@ -693,9 +693,9 @@ const navItems = computed(() => {
 })
 const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}` : (curSub.value || curType.value || '影片'))
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
+const currentSearchHint = computed(() => searchHints.value[searchHintIdx.value % Math.max(1, searchHints.value.length)] || '')
 const searchPlaceholder = computed(() => {
-  if (searchFocused.value) return '搜索'
-  return searchHints.value[searchHintIdx.value % Math.max(1, searchHints.value.length)] || '搜索'
+  return currentSearchHint.value || '搜索'
 })
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
@@ -976,8 +976,10 @@ function goUser(tab) {
   router.push({ path: '/me', query: { tab } })
 }
 function doSearch() {
-  if (!kw.value) return
-  router.push({ path: routeBase(), query: { kw: kw.value } })
+  const text = String(kw.value || currentSearchHint.value || '').trim()
+  if (!text || text === '搜索') return
+  kw.value = text
+  router.push({ path: routeBase(), query: { kw: text } })
 }
 function searchPerson(name) {
   const text = String(name || '').trim()
