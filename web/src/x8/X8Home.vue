@@ -2227,9 +2227,9 @@ onBeforeUnmount(() => {
   padding: 96px 0 80px;
 }
 .x8-play {
-  width: calc(100vw - 48px);
+  width: min(1750px, calc(100vw - 120px));
   margin: 0 auto;
-  padding: calc(82px + env(safe-area-inset-top)) 0 80px;
+  padding: calc(92px + env(safe-area-inset-top)) 0 80px;
 }
 .x8-page-title {
   margin-bottom: 24px;
@@ -2697,22 +2697,21 @@ onBeforeUnmount(() => {
 .x8-play-shell {
   display: flex;
   flex-direction: column;
-  gap: 44px;
+  gap: 32px;
 }
 .x8-play-list-container {
   display: flex;
   flex-direction: column;
-  gap: 46px;
+  gap: 32px;
   -webkit-tap-highlight-color: transparent;
 }
 .x8-player-video {
-  height: calc(56.25vw - 253.25px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 548px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   align-items: stretch;
   overflow: hidden;
-  border-radius: 16px;
-  background: #282828;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
 }
 .x8-player-video-left {
   min-width: 0;
@@ -2743,8 +2742,8 @@ onBeforeUnmount(() => {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  background: #2b2b2b;
-  border-left: 1px solid rgba(255,255,255,.03);
+  background: transparent;
+  border-left: .5px solid rgba(255,255,255,.04);
 }
 .x8-side-playlist {
   width: 100%;
@@ -2754,24 +2753,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .x8-side-playlist-head .header-title {
-  padding: 28px 38px 34px;
+  padding: 16px 24px 24px;
   color: #fff;
-  font-size: 30px;
-  line-height: 38px;
-  font-weight: 600;
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 500;
 }
 .x8-side-playlist-head .header-sections {
-  height: 45px;
+  height: 32px;
   display: flex;
   align-items: flex-start;
-  gap: 16px;
-  padding: 0 38px;
+  gap: 10px;
+  padding: 0 24px;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .x8-side-playlist-head .sections-left {
   flex: 1;
   display: flex;
-  gap: 30px;
+  gap: 24px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2779,14 +2778,14 @@ onBeforeUnmount(() => {
   display: none;
 }
 .x8-side-playlist-head .sections-left button {
-  height: 45px;
+  height: 32px;
   border: 0;
-  border-bottom: 3px solid transparent;
-  padding: 0 0 15px;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 8px;
   color: rgba(255,255,255,.88);
   background: transparent;
-  font-size: 24px;
-  line-height: 30px;
+  font-size: 16px;
+  line-height: 22px;
   white-space: nowrap;
 }
 .x8-side-playlist-head .sections-left button.active {
@@ -2794,8 +2793,8 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 .x8-side-playlist-head .sections-sort {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border: 0;
@@ -2803,17 +2802,16 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .x8-side-playlist-head .sections-sort svg {
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
 }
 .x8-side-episodes {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(6, 64px);
-  grid-auto-rows: 64px;
+  display: flex;
+  flex-wrap: wrap;
   align-content: flex-start;
-  gap: 16px;
-  padding: 25px 38px 32px;
+  gap: 10px;
+  padding: 16px 24px;
   overflow-y: auto;
 }
 .x8-side-episodes::-webkit-scrollbar {
@@ -2827,13 +2825,15 @@ onBeforeUnmount(() => {
 .x8-episode-grid button {
   position: relative;
   overflow: hidden;
-  border: 2px solid rgba(255,255,255,.05);
-  border-radius: 8px;
+  min-width: 54px;
+  height: 42px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
   padding: 0;
   color: rgba(255,255,255,.88);
-  background: rgba(255,255,255,.02);
-  font-size: 24px;
-  line-height: 1;
+  background: transparent;
+  font-size: 14px;
+  line-height: 42px;
   text-align: center;
   white-space: nowrap;
   transition: border-color .25s ease, background .25s ease, color .25s ease;
@@ -2851,14 +2851,15 @@ onBeforeUnmount(() => {
 .x8-video-toolbar {
   position: relative;
   z-index: 10;
-  height: 82px;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 0 24px 0 35px;
-  background: #282828;
-  border-top: 1px solid rgba(255,255,255,.03);
+  gap: 12px;
+  padding: 0 12px 0 24px;
+  background: transparent;
+  border-top: 1px solid rgba(255,255,255,.08);
+  backdrop-filter: blur(10px);
 }
 .x8-video-toolbar .left,
 .x8-video-toolbar .right {
@@ -2877,11 +2878,11 @@ onBeforeUnmount(() => {
 .x8-video-toolbar button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   border: 0;
   color: rgba(255,255,255,.34);
   background: transparent;
-  font-size: 22px;
+  font-size: 14px;
   line-height: 1;
 }
 .x8-video-toolbar button:hover,
@@ -2889,23 +2890,23 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,.78);
 }
 .x8-video-toolbar svg {
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
 }
 .x8-video-toolbar svg.down {
   transform: scale(1, -1);
 }
 .x8-video-toolbar .danmu-toggle {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   justify-content: center;
   color: rgba(255,255,255,.55);
-  font-size: 28px;
+  font-size: 18px;
   font-weight: 700;
 }
 .x8-danmu-box {
-  width: 438px;
-  height: 49px;
+  width: 320px;
+  height: 38px;
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -2918,39 +2919,39 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: 100%;
   border: 0;
-  padding: 0 20px;
+  padding: 0 14px;
   color: rgba(255,255,255,.78);
   background: transparent;
-  font-size: 20px;
+  font-size: 14px;
   outline: none;
 }
 .x8-danmu-box input::placeholder {
   color: rgba(255,255,255,.34);
 }
 .x8-danmu-box button {
-  width: 104px;
-  height: 40px;
+  width: 76px;
+  height: 30px;
   justify-content: center;
   margin-right: 6px;
   border-radius: 7px;
   color: rgba(255,255,255,.34);
   background: rgba(255,255,255,.12);
-  font-size: 20px;
+  font-size: 14px;
 }
 .x8-player-detail {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 .x8-player-title {
   display: flex;
   align-items: baseline;
   min-width: 0;
   color: #fff;
-  font-size: 40px;
-  line-height: 50px;
-  font-weight: 700;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
 }
 .x8-player-title button {
   display: inline-flex;
@@ -2966,22 +2967,22 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 40px;
-  line-height: 50px;
-  font-weight: 700;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
 }
 .x8-player-title button svg {
-  width: 25px;
-  height: 25px;
-  margin: 0 20px 0 10px;
+  width: 20px;
+  height: 20px;
+  margin: 0 10px;
   color: rgba(255,255,255,.86);
 }
 .x8-player-title h2 {
   margin: 0;
   color: rgba(255,255,255,.66);
-  font-size: 40px;
-  line-height: 50px;
-  font-weight: 700;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
 }
 .x8-player-meta {
   display: flex;
@@ -2989,43 +2990,43 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 0;
   color: rgba(255,255,255,.88);
-  font-size: 24px;
-  line-height: 34px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .x8-player-meta .rating {
   display: inline-flex;
   align-items: center;
-  font-size: 24px;
+  font-size: 14px;
 }
 .x8-player-meta .rating svg {
-  width: 22px;
-  height: 22px;
-  margin-right: 6px;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
 }
 .x8-player-meta .line {
-  margin: 0 18px;
+  margin: 0 10px;
   color: rgba(255,255,255,.5);
 }
 .x8-player-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   margin-left: 24px;
 }
 .x8-player-tags span {
-  padding: 5px 13px;
+  padding: 2px 8px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 4px;
   color: rgba(255,255,255,.66);
-  font-size: 22px;
-  line-height: 30px;
+  font-size: 14px;
+  line-height: 18px;
 }
 .x8-player-desc {
   max-width: 100%;
   margin: -4px 0 0;
   color: rgba(255,255,255,.88);
-  font-size: 24px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 22px;
   text-align: justify;
 }
 .x8-mini-play-list {
@@ -3354,7 +3355,7 @@ onBeforeUnmount(() => {
     width: min(1480px, calc(100vw - 88px));
   }
   .x8-play {
-    width: calc(100vw - 48px);
+    width: min(1400px, calc(100vw - 80px));
   }
   .x8-footer-inner {
     width: min(1480px, calc(100vw - 88px));
@@ -3446,45 +3447,39 @@ onBeforeUnmount(() => {
   .x8-rank-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .x8-player-video-right {
-    width: 380px;
-  }
   .x8-player-video {
-    grid-template-columns: minmax(0, 1fr) 380px;
-    height: calc(56.25vw - 176.75px);
+    grid-template-columns: minmax(0, 1fr) 360px;
   }
   .x8-side-playlist-head .header-title {
-    padding: 22px 24px 24px;
-    font-size: 22px;
-    line-height: 30px;
+    padding: 16px 24px 24px;
+    font-size: 20px;
+    line-height: 24px;
   }
   .x8-side-playlist-head .header-sections {
     padding: 0 24px;
   }
   .x8-side-playlist-head .sections-left button {
-    font-size: 18px;
+    font-size: 16px;
   }
   .x8-side-episodes {
-    grid-template-columns: repeat(5, 54px);
-    grid-auto-rows: 54px;
-    gap: 12px;
-    padding: 20px 24px 28px;
+    gap: 10px;
+    padding: 16px 24px;
   }
   .x8-side-episodes button {
-    font-size: 18px;
+    font-size: 14px;
   }
   .x8-video-toolbar .right {
     display: none;
   }
   .x8-video-toolbar {
-    height: 64px;
+    height: 54px;
   }
   .x8-video-toolbar button {
-    font-size: 16px;
+    font-size: 14px;
   }
   .x8-video-toolbar svg {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
   }
   .x8-player-title,
   .x8-player-title h1,
@@ -3492,14 +3487,22 @@ onBeforeUnmount(() => {
     font-size: 30px;
     line-height: 38px;
   }
-  .x8-video-toolbar button {
-    margin-right: 18px;
-  }
   .x8-quick-navigation {
     gap: 24px;
   }
   .x8-footer-nav {
     width: 380px;
+  }
+}
+@media (max-width: 1350px) {
+  .x8-player-video {
+    display: block;
+  }
+  .x8-player-video-right {
+    display: none;
+  }
+  .x8-mini-play-list {
+    display: block;
   }
 }
 @media (max-width: 1024px) {
