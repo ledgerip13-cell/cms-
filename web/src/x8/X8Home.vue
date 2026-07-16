@@ -353,7 +353,7 @@
                             <svg v-else class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z" /></svg>
                           </button>
                           <button type="button" title="下一集" @click="playNextEpisode">
-                            <svg class="x8-lucide x8-icon-fill" viewBox="0 0 24 24"><path d="m6 5 10 7-10 7Z" /><path d="M18 5v14" /></svg>
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8V4Z" /><path d="M19 5v14" /></svg>
                           </button>
                           <button type="button" :title="muted ? '打开声音' : '静音'" @click="toggleMute">
                             <svg v-if="muted" class="x8-lucide" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4Z" /><path d="m22 9-6 6" /><path d="m16 9 6 6" /></svg>
@@ -376,7 +376,7 @@
                           </div>
                           <div class="x8-control-pop">
                             <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
-                              <svg class="x8-lucide x8-bolt-icon" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46L12 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46L11 14Z" /></svg>
+                              <svg class="x8-lucide x8-settings-icon" viewBox="0 0 24 24"><path d="M9.67 2h4.66l.43 2.36a7.8 7.8 0 0 1 1.3.75l2.25-.82 2.33 4.04-1.82 1.55a8 8 0 0 1 0 1.5l1.82 1.55-2.33 4.04-2.25-.82a7.8 7.8 0 0 1-1.3.75L14.33 22H9.67l-.43-2.36a7.8 7.8 0 0 1-1.3-.75l-2.25.82-2.33-4.04 1.82-1.55a8 8 0 0 1 0-1.5L3.36 8.33l2.33-4.04 2.25.82a7.8 7.8 0 0 1 1.3-.75L9.67 2Z" /><circle cx="12" cy="12" r="3" /></svg>
                             </button>
                             <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
                               <template v-if="!rateOpen">
@@ -410,8 +410,8 @@
                           <button type="button" title="窗口化" @click="togglePip">
                             <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M21 10V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6" /><rect width="8" height="6" x="13" y="13" rx="1" /></svg>
                           </button>
-                          <button type="button" :title="playerTheater ? '退出最大化' : '播放器最大化'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
-                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
+                          <button type="button" :title="playerTheater ? '退出最大化' : '系统最大化'" :class="{ active: playerTheater }" @click="togglePlayerTheater">
+                            <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /></svg>
                           </button>
                           <button type="button" :title="videoFullscreen ? '退出全屏' : 'HLS 全屏'" :class="{ active: videoFullscreen }" @click="requestVideoFullscreen">
                             <svg v-if="videoFullscreen" class="x8-lucide" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
@@ -3197,12 +3197,12 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: 0;
   z-index: 10;
-  height: 62px;
+  height: 58px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 9px;
-  padding: 8px 18px 10px;
+  gap: 7px;
+  padding: 7px 18px 9px;
   background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.56) 24%, rgba(0,0,0,.86) 100%);
   border-top: 0;
   backdrop-filter: blur(8px);
@@ -3273,40 +3273,40 @@ onBeforeUnmount(() => {
 }
 .x8-control-left {
   flex: 1;
-  gap: 12px;
+  gap: 13px;
 }
 .x8-control-right {
-  gap: 10px;
+  gap: 12px;
   justify-content: flex-end;
 }
 .x8-video-toolbar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-width: 42px;
-  height: 42px;
+  gap: 6px;
+  min-width: 38px;
+  height: 38px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   color: rgba(255,255,255,.9);
   background: transparent;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   transition: color .16s ease, background .16s ease, transform .16s ease;
 }
 .x8-video-toolbar button:hover,
 .x8-video-toolbar button.active {
   color: #fff;
-  background: rgba(255,255,255,.11);
-  transform: scale(1.08);
+  background: rgba(255,255,255,.1);
+  transform: scale(1.12);
 }
 .x8-video-toolbar .x8-lucide,
 .x8-airplay-btn .x8-lucide {
-  width: 26px;
-  height: 26px;
+  width: 25px;
+  height: 25px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.35;
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -3314,10 +3314,10 @@ onBeforeUnmount(() => {
   fill: currentColor;
   stroke: none;
 }
-.x8-video-toolbar .x8-bolt-icon {
+.x8-video-toolbar .x8-settings-icon {
   width: 28px;
   height: 28px;
-  stroke-width: 2.5;
+  stroke-width: 2.15;
 }
 .x8-time {
   color: rgba(255,255,255,.82);
@@ -3332,20 +3332,20 @@ onBeforeUnmount(() => {
 .x8-quality-menu {
   position: absolute;
   right: 0;
-  bottom: 58px;
+  bottom: 52px;
   z-index: 20;
   border: 1px solid rgba(255,255,255,.09);
-  border-radius: 22px;
-  background: rgba(22,22,22,.78);
-  box-shadow: 0 22px 56px rgba(0,0,0,.46);
-  backdrop-filter: blur(28px) saturate(135%);
-  -webkit-backdrop-filter: blur(28px) saturate(135%);
+  border-radius: 18px;
+  background: rgba(20,20,20,.78);
+  box-shadow: 0 16px 38px rgba(0,0,0,.42);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
 }
 .x8-settings-menu {
-  min-width: 364px;
-  padding: 22px;
+  width: 302px;
+  padding: 16px;
   display: grid;
-  gap: 22px;
+  gap: 14px;
 }
 .x8-settings-menu .x8-switch-row,
 .x8-settings-menu .x8-setting-row,
@@ -3354,15 +3354,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
   width: 100%;
-  min-height: 54px;
+  min-height: 42px;
   border: 0;
-  border-radius: 14px;
-  padding: 0 10px;
+  border-radius: 11px;
+  padding: 0 8px;
   color: rgba(255,255,255,.9);
   background: transparent;
-  font-size: 23px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1;
 }
@@ -3384,9 +3384,9 @@ onBeforeUnmount(() => {
 }
 .x8-settings-menu .x8-switch-row i {
   position: relative;
-  width: 68px;
-  height: 38px;
-  flex: 0 0 68px;
+  width: 52px;
+  height: 30px;
+  flex: 0 0 52px;
   border-radius: 999px;
   background: rgba(255,255,255,.18);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
@@ -3395,10 +3395,10 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-switch-row i::after {
   content: "";
   position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 28px;
-  height: 28px;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 2px 8px rgba(0,0,0,.35);
@@ -3409,7 +3409,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
 }
 .x8-settings-menu .x8-switch-row input:checked + i::after {
-  transform: translateX(30px);
+  transform: translateX(22px);
   background: #111;
 }
 .x8-settings-menu .x8-setting-row {
@@ -3418,33 +3418,33 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-setting-row b {
   margin-left: auto;
   color: #fff;
-  font-size: 23px;
+  font-size: 17px;
   font-weight: 600;
 }
 .x8-settings-menu .x8-setting-row svg,
 .x8-settings-menu .x8-setting-back svg {
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   color: rgba(255,255,255,.62);
 }
 .x8-rate-panel {
-  min-width: 318px;
+  min-width: 214px;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 .x8-settings-menu .x8-setting-back {
   justify-content: flex-start;
-  height: 58px;
-  margin: -8px -10px 8px;
-  border-radius: 18px 18px 0 0;
+  height: 44px;
+  margin: -6px -8px 6px;
+  border-radius: 14px 14px 0 0;
   border-bottom: 1px solid rgba(255,255,255,.08);
   color: #fff;
 }
 .x8-rate-panel button {
   justify-content: center;
   font-weight: 600;
-  min-height: 58px;
+  min-height: 44px;
 }
 .x8-rate-panel button.on,
 .x8-quality-menu button.on {
@@ -3453,26 +3453,26 @@ onBeforeUnmount(() => {
 }
 .x8-quality-menu button {
   width: 100%;
-  min-height: 84px;
+  min-height: 58px;
   border: 0;
-  border-radius: 12px;
-  padding: 14px 28px;
+  border-radius: 10px;
+  padding: 10px 18px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   color: rgba(255,255,255,.78);
   background: transparent;
-  font-size: 22px;
+  font-size: 15px;
   font-weight: 500;
   transition: background .16s ease, transform .16s ease, color .16s ease;
 }
 .x8-quality-menu {
-  min-width: 330px;
-  padding: 18px;
+  width: 230px;
+  padding: 12px;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 .x8-quality-menu button:not(.on) {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.09);
@@ -3484,12 +3484,12 @@ onBeforeUnmount(() => {
 }
 .x8-quality-menu button strong {
   color: #fff;
-  font-size: 28px;
+  font-size: 20px;
   line-height: 1;
 }
 .x8-quality-menu button span {
   color: rgba(255,255,255,.72);
-  font-size: 20px;
+  font-size: 15px;
   line-height: 1.2;
 }
 .x8-quality-trigger b {
