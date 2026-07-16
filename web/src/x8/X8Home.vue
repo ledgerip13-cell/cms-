@@ -170,31 +170,41 @@
         <div class="x8-filter">
           <div v-if="loading && curType && !subtypes.length" class="x8-filter-line skeleton">
             <span></span>
-            <i v-for="index in 8" :key="`subtype-sk-${index}`"></i>
+            <div class="x8-filter-tags">
+              <i v-for="index in 8" :key="`subtype-sk-${index}`"></i>
+            </div>
           </div>
           <div v-else-if="subtypes.length" class="x8-filter-line">
             <span>类型</span>
-            <button type="button" :class="{ active: !curSub }" @click="setBrowse({ sub: undefined, page: 1 })">全部</button>
-            <button v-for="item in subtypes" :key="item.name" type="button" :class="{ active: curSub === item.name }" @click="setBrowse({ sub: item.name, page: 1 })">
-              {{ item.name }}
-            </button>
+            <div class="x8-filter-tags">
+              <button type="button" :class="{ active: !curSub }" @click="setBrowse({ sub: undefined, page: 1 })">全部</button>
+              <button v-for="item in subtypes" :key="item.name" type="button" :class="{ active: curSub === item.name }" @click="setBrowse({ sub: item.name, page: 1 })">
+                {{ item.name }}
+              </button>
+            </div>
           </div>
           <div v-if="loading && !years.length" class="x8-filter-line skeleton">
             <span></span>
-            <i v-for="index in 7" :key="`year-sk-${index}`"></i>
+            <div class="x8-filter-tags">
+              <i v-for="index in 7" :key="`year-sk-${index}`"></i>
+            </div>
           </div>
           <div v-else-if="years.length" class="x8-filter-line">
             <span>年份</span>
-            <button type="button" :class="{ active: !curYear }" @click="setBrowse({ year: undefined, page: 1 })">全部</button>
-            <button v-for="item in years" :key="item.year" type="button" :class="{ active: curYear === item.year }" @click="setBrowse({ year: item.year, page: 1 })">
-              {{ item.year }}
-            </button>
+            <div class="x8-filter-tags">
+              <button type="button" :class="{ active: !curYear }" @click="setBrowse({ year: undefined, page: 1 })">全部</button>
+              <button v-for="item in years" :key="item.year" type="button" :class="{ active: curYear === item.year }" @click="setBrowse({ year: item.year, page: 1 })">
+                {{ item.year }}
+              </button>
+            </div>
           </div>
           <div class="x8-filter-line">
             <span>排序</span>
-            <button v-for="item in sortItems" :key="item.value" type="button" :class="{ active: sort === item.value }" @click="setBrowse({ sort: item.value, page: 1 })">
-              {{ item.label }}
-            </button>
+            <div class="x8-filter-tags">
+              <button v-for="item in sortItems" :key="item.value" type="button" :class="{ active: sort === item.value }" @click="setBrowse({ sort: item.value, page: 1 })">
+                {{ item.label }}
+              </button>
+            </div>
           </div>
         </div>
         <div class="x8-card-grid browse">
@@ -442,13 +452,13 @@
                 <div class="x8-side-playlist">
                   <div class="x8-side-playlist-head">
                     <div class="header-title">{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</div>
-                    <div v-if="vod.lines?.length > 1" class="x8-side-lines">
+                    <div v-if="vod.lines?.length > 1" ref="sideLinesEl" class="x8-side-lines">
                       <button v-for="line in vod.lines" :key="line.id" type="button" :class="{ active: currentLineId === line.id }" @click="selectLine(line.id)">
                         {{ line.sourceName || line.flag || '默认' }}
                       </button>
                     </div>
                     <div class="header-sections">
-                      <div class="sections-left">
+                      <div ref="playGroupsEl" class="sections-left">
                         <button v-for="(group, index) in playEpisodeGroups" :key="`side-group-${index}`" type="button" :class="{ active: playGroupIdx === index }" @click="selectPlayGroup(index)">{{ group.label }}</button>
                       </div>
                       <button class="sections-sort" type="button" @click="playEpDesc = !playEpDesc">
@@ -456,7 +466,7 @@
                       </button>
                     </div>
                   </div>
-                  <div class="x8-side-episodes">
+                  <div ref="sideEpisodesEl" class="x8-side-episodes">
                     <button v-for="row in playVisibleEpisodes" :key="`side-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
                       {{ row.index + 1 }}
                     </button>
@@ -497,12 +507,12 @@
                   <span>排序</span>
                 </button>
               </div>
-              <div v-if="vod.lines?.length > 1" class="x8-line-tabs">
+              <div v-if="vod.lines?.length > 1" ref="miniLinesEl" class="x8-line-tabs">
                 <button v-for="line in vod.lines" :key="`mini-line-${line.id}`" type="button" :class="{ active: currentLineId === line.id }" @click="selectLine(line.id)">
                   {{ line.sourceName || line.flag || '默认' }}
                 </button>
               </div>
-              <div class="x8-episode-grid">
+              <div ref="miniEpisodesEl" class="x8-episode-grid">
                 <button v-for="row in playAllEpisodes" :key="`mini-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
                   {{ row.ep.name || row.index + 1 }}
                 </button>
@@ -630,6 +640,11 @@ const playKind = ref('')
 const resolving = ref(false)
 const videoEl = ref(null)
 const videoBox = ref(null)
+const sideLinesEl = ref(null)
+const playGroupsEl = ref(null)
+const sideEpisodesEl = ref(null)
+const miniLinesEl = ref(null)
+const miniEpisodesEl = ref(null)
 const user = ref(null)
 const followed = ref(false)
 const qualities = ref([])
@@ -1319,9 +1334,12 @@ function selectLine(id) {
   qualityOpen.value = false
   settingsOpen.value = false
   rateOpen.value = false
+  syncPlayRouteQuery()
+  focusActivePlayControls()
 }
 function selectPlayGroup(index) {
   selectedPlayGroupIdx.value = index
+  focusActivePlayControls()
 }
 function syncPlayRouteQuery() {
   if (pageMode.value !== 'play') return
@@ -1342,7 +1360,23 @@ function selectEpisode(index) {
   settingsOpen.value = false
   rateOpen.value = false
   syncPlayRouteQuery()
+  focusActivePlayControls()
   playCurrent()
+}
+function scrollActiveButton(container, { block = 'nearest', inline = 'center', focus = false } = {}) {
+  if (!container?.getClientRects?.().length) return
+  const active = container?.querySelector?.('button.active')
+  if (!active) return
+  active.scrollIntoView({ behavior: 'smooth', block, inline })
+  if (focus) active.focus({ preventScroll: true })
+}
+async function focusActivePlayControls() {
+  await nextTick()
+  scrollActiveButton(sideLinesEl.value, { inline: 'center' })
+  scrollActiveButton(miniLinesEl.value, { inline: 'center' })
+  scrollActiveButton(playGroupsEl.value, { inline: 'center' })
+  scrollActiveButton(sideEpisodesEl.value, { block: 'nearest', inline: 'nearest', focus: true })
+  scrollActiveButton(miniEpisodesEl.value, { block: 'nearest', inline: 'nearest' })
 }
 function onKeydown(event) {
   if (event.key === 'Escape' && playerTheater.value) {
@@ -2561,28 +2595,38 @@ onBeforeUnmount(() => {
 .x8-filter {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 28px;
-  padding: 16px;
+  gap: 18px;
+  margin-bottom: 34px;
+  padding: 20px 22px;
   border-radius: 12px;
   background: #1a1a1a;
 }
 .x8-filter-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 18px;
 }
 .x8-filter-line span {
   width: 42px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
   color: rgba(255,255,255,.42);
   font-size: 13px;
+}
+.x8-filter-tags {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
 }
 .x8-filter-line.skeleton {
   pointer-events: none;
 }
 .x8-filter-line.skeleton span,
-.x8-filter-line.skeleton i {
+.x8-filter-tags i {
   display: block;
   height: 32px;
   border-radius: 7px;
@@ -2594,10 +2638,10 @@ onBeforeUnmount(() => {
   width: 42px;
   opacity: .62;
 }
-.x8-filter-line.skeleton i {
+.x8-filter-tags i {
   width: 68px;
 }
-.x8-filter-line.skeleton i:nth-child(4n) {
+.x8-filter-tags i:nth-child(4n) {
   width: 86px;
 }
 .x8-filter-line button,

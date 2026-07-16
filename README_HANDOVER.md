@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索分类页骨架屏补齐）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 筛选布局与播放线路焦点优化）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 筛选布局与播放线路焦点优化断点**：`web/src/x8/X8Home.vue` 将 X8 搜索/分类二级页筛选区改为“左侧固定 label + 右侧标签容器”布局，放大类型/年份/排序行距与标签间距，标签过多换行时第二行继续与标签起点对齐，不再顶到最左侧。播放页线路切换、分组切换、选集切换后会把当前 active 线路/分组/选集滚动到可见位置，并对可见侧栏选集做焦点移动，避免切换后后续内容被滚动容器遮住。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-B8qGuRHp.js / assets/index-DYbW19Fc.css`。
 - **2026-07-17 X8 搜索分类页骨架屏补齐断点**：`web/src/x8/X8Home.vue` 为 X8 show 页（搜索结果、分类/二级分类/年份/排序切换）补齐加载骨架：请求期间 browse 列表直接展示响应式骨架卡，二级分类与年份筛选首次加载时展示胶囊骨架，标题副文案显示“正在加载影片”；`loadBrowse()` 增加请求序号，避免快速切换时旧请求覆盖新结果。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-C3006o8-.js / assets/index-CT23Raxo.css`。
 - **2026-07-17 X8 搜索热词点击提交回修断点**：`web/src/x8/X8Home.vue` 修复 X8 顶部搜索框热门词轮播交互：输入框聚焦后 placeholder 不再从当前热词切换成“搜索”，空输入直接点击搜索会使用当前轮播热词提交；只有用户实际输入内容后才以输入内容覆盖热词搜索。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-BPOp9asv.js / assets/index-DZwTkYo4.css`。
 - **2026-07-17 X8 播放页切线路不跳集回修断点**：`web/src/x8/X8Home.vue` 继续修正播放页右侧切线路行为：`selectLine()` 不再把 `currentEpIndex` 重置为 `0`，只切换当前线路与对应选集列表，并按当前集数定位分组；只有点击具体选集时才调用 `playCurrent()`。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check` 通过；5150 `/health` 正常，5152 新包 `assets/index-8i0bAvSN.js / assets/index-DZwTkYo4.css`；浏览器实测 `#/x8/play/921?line=450701&ep=2` 从金牌第 2 集切到无尽后仍 active 第 2 集，video src 不变、`/api/resolve` 不增加，点击第 2 集后才切到无尽播放并更新 URL。
