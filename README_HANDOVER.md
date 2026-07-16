@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜十条高度与综合榜补齐）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜底部 hover 锁定行隐藏）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 排行榜底部 hover 锁定行隐藏断点**：`web/src/x8/X8Home.vue` 修复排行榜从底部 hover 往上顶时锁定行仍可见导致重叠的问题：`locked` 行现在同步设置 `opacity:0`、`visibility:hidden`、`pointer-events:none`，渲染属性补 `aria-hidden=true` 与 `tabindex=-1`，让被顶上去的第 4 名以后行只作为布局位移参与计算但视觉和交互都隐藏。验证：`npm run build`、`git diff --check`、产物 `locked{opacity:0...visibility:hidden` 与 `aria-hidden` 关键字检查通过；新前端包 `assets/index-CNHXO1tn.js / assets/index-B00w6H0Z.css`。
 - **2026-07-17 X8 排行榜十条高度与综合榜补齐断点**：`web/src/x8/X8Home.vue` 修正排行榜卡片固定高度为完整 10 条参考站高度：桌面 `.x8-rank-card.static` 固定 `962px`（60px header + 902px list），移动端固定 `846px`，保证前三名默认展开 + 7 条普通行完整可见；hover 前部条目时只让底部超出裁切，hover 底部条目时保留 `locked` 上移裁切，并补齐 `active-index-8` 的 `translateY(calc(-100% - 8px))` 特殊位移。综合榜由 `/api/hot` 优先，数量不足 10 时用全站 `/api/vods?sort=hot` 去重补齐到 10 条。验证：`npm run build`、`git diff --check`、产物 `962px/846px/active-index-8` 关键字检查通过；新前端包 `assets/index-Bhe1n4Ur.js / assets/index-2VTdN1Bl.css`。
 - **2026-07-17 X8 排行榜卡片固定高度裁切断点**：`web/src/x8/X8Home.vue` 将排行榜静态榜卡改为参考站的固定卡高裁切模型：桌面 `.x8-rank-card.static` 固定 `682px`（60px header + 622px list），移动端固定 `594px`；`.x8-rank-head` 固定 flex-basis，`.x8-rank-large-list` 改为 `flex:1 1 auto + height:100% + min-height:0 + overflow:hidden`，hover/focus 展开只改变内部行高，多出的部分由列表区裁切，不再撑高整张卡片。验证：`npm run build`、`git diff --check`、产物固定高度/overflow 关键字检查通过；新前端包 `assets/index-BdiHDvrt.js / assets/index-EByqeLIg.css`。
 - **2026-07-17 X8 排行榜参考站交互重做断点**：`web/src/x8/X8Home.vue` 按参考站 `/rank` 重新实现 X8 排行榜页：榜单固定为 `综合榜 / 电影榜 / 动漫榜 / 电视剧榜 / 短剧榜 / 漫剧榜`；页面去掉额外大标题，直接进入榜单网格；列数改为参考站自适应模型（默认 2 列、`>=1360px` 3 列、`>=1830px` 5 列）；每个榜卡改为 `activeIndex` 状态机，行内同时渲染 normal/full 双层内容，前三名默认展开，第 4 名以后 hover/focus 后独立展开，底部第 8/9/10 名按参考站位移并对后续行加 `locked`，避免 hover 背景和内容错位。同步校正标题栏 60px、标题 20px/600、排名数字 24px DIN、普通热度 14px/400、标签 12px/rgba(255,255,255,.6)、卡片背景 `rgba(255,255,255,.04)`。验证：`npm run build`、`git diff --check`、产物断点/active-index/locked 关键字检查通过；新前端包 `assets/index-B5zTSSNc.js / assets/index-BOG65qlW.css`。

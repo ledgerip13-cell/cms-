@@ -961,9 +961,12 @@ const X8RankCard = defineComponent({
     }
     const renderStaticRows = () => props.items.length ? props.items.slice(0, 10).map((item, index) => {
         const rows = rankRows()
+        const locked = isLocked(index, rows)
         return h('button', {
-          class: ['x8-rank-large-item', isLargeActive(index) ? 'active' : '', isLocked(index, rows) ? 'locked' : '', `index-${index}`],
+          class: ['x8-rank-large-item', isLargeActive(index) ? 'active' : '', locked ? 'locked' : '', `index-${index}`],
           type: 'button',
+          tabindex: locked ? -1 : 0,
+          'aria-hidden': locked ? 'true' : null,
           onClick: () => emit('open', item.id),
           onMouseover: () => { activeIndex.value = index },
           onFocus: () => { activeIndex.value = index },
@@ -2856,6 +2859,9 @@ onBeforeUnmount(() => {
   height: 168px;
 }
 .x8-rank-large-item.locked {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
   transform: translateY(calc(-100% - 60px));
 }
 .x8-rank-large-list.active-index-8 .x8-rank-large-item.locked {
