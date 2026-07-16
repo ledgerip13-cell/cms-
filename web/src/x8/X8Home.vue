@@ -1288,10 +1288,9 @@ function selectDetailLine(id) {
 }
 function selectLine(id) {
   currentLineId.value = id
-  currentEpIndex.value = 0
   detailEpDesc.value = false
   playEpDesc.value = false
-  selectedPlayGroupIdx.value = 0
+  selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
   qualityOpen.value = false
   settingsOpen.value = false
   rateOpen.value = false
