@@ -546,7 +546,6 @@ let heroTimer = 0
 let searchHintTimer = 0
 let hls = null
 
-const navOrder = ['电影', '电视剧', '综艺', '动漫', '短剧']
 const sortItems = [
   { value: 'hot', label: '热门' },
   { value: 'recent', label: '最新' },
@@ -590,10 +589,7 @@ const hotCols = computed(() => {
 const hotSkeletonCount = computed(() => hotCols.value * 2)
 const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice(0, hotCols.value * 2))
 const navItems = computed(() => {
-  const byName = new Map(types.value.map(item => [item.name, item]))
-  const ordered = navOrder.map(name => byName.get(name)).filter(Boolean)
-  const rest = types.value.filter(item => !navOrder.includes(item.name))
-  return [...ordered, ...rest].slice(0, 6)
+  return types.value.filter(item => item?.name)
 })
 const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}` : (curSub.value || curType.value || '影片'))
 const browseSub = computed(() => list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览')
@@ -1092,7 +1088,9 @@ async function ensureTypes() {
 async function loadHome() {
   loading.value = true
   try {
-    homeSections.value = navOrder.map(type => ({
+    const typeRows = await ensureTypes().catch(() => [])
+    const sectionTypes = (typeRows || []).map(item => item.name).filter(Boolean)
+    homeSections.value = sectionTypes.map(type => ({
       key: type,
       type,
       title: `最新${type}`,
@@ -1101,7 +1099,6 @@ async function loadHome() {
       items: [],
       rank: [],
     }))
-    const typesPromise = ensureTypes().catch(() => [])
     const heroPromise = api.hot(12)
       .then(rows => {
         const list = (rows || []).map(withRandomHeroImage).filter(item => heroImage(item)).slice(0, 8)
@@ -1113,7 +1110,7 @@ async function loadHome() {
     Promise.all([heroPromise, hotPromise]).then(([heroRes, hotRes]) => {
       hotItems.value = uniqueVods(hotRes, heroRes?.list).slice(0, 28)
     }).catch(() => {})
-    const sectionPromises = navOrder.map((type, index) => Promise.all([
+    const sectionPromises = sectionTypes.map((type, index) => Promise.all([
       api.vods({ page: 1, size: 12, type, sort: 'recent' }).catch(() => ({ list: [] })),
       api.vods({ page: 1, size: 10, type, sort: 'hot' }).catch(() => ({ list: [] })),
     ]).then(([recent, rank]) => {
@@ -1131,7 +1128,6 @@ async function loadHome() {
       heroPromise,
       hotPromise,
       ...sectionPromises,
-      typesPromise,
     ])
     const sections = homeSections.value
     const sectionFill = sections.flatMap(section => section.items)
@@ -1171,14 +1167,15 @@ async function loadBrowse() {
 async function loadRanks() {
   loading.value = true
   try {
-    await ensureTypes()
+    const typeRows = await ensureTypes()
+    const rankTypes = (typeRows || []).map(item => item.name).filter(Boolean)
     const [hot, ...groups] = await Promise.all([
       api.hot(10).catch(() => []),
-      ...navOrder.map(type => api.vods({ page: 1, size: 10, type, sort: 'hot' }).catch(() => ({ list: [] }))),
+      ...rankTypes.map(type => api.vods({ page: 1, size: 10, type, sort: 'hot' }).catch(() => ({ list: [] }))),
     ])
     rankGroups.value = [
       { key: 'all', title: '热播总榜', items: hot || [] },
-      ...navOrder.map((type, index) => ({ key: type, title: `${type}热榜`, items: groups[index]?.list || [] })),
+      ...rankTypes.map((type, index) => ({ key: type, title: `${type}热榜`, items: groups[index]?.list || [] })),
     ]
   } finally {
     loading.value = false
