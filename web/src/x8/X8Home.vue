@@ -1254,12 +1254,12 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0 0 auto;
   z-index: 80;
-  height: 58px;
+  height: calc(58px + env(safe-area-inset-top));
   display: grid;
   grid-template-columns: 150px minmax(360px, 1fr) minmax(42px, 420px) auto;
   align-items: center;
   gap: 25px;
-  padding: 0 56px;
+  padding: env(safe-area-inset-top) 56px 0;
   background: linear-gradient(180deg, rgba(0,0,0,.68), rgba(0,0,0,0));
   transition: background .25s ease, backdrop-filter .25s ease;
 }
@@ -2229,7 +2229,7 @@ onBeforeUnmount(() => {
 .x8-play {
   width: calc(100vw - 48px);
   margin: 0 auto;
-  padding: 8px 0 80px;
+  padding: calc(82px + env(safe-area-inset-top)) 0 80px;
 }
 .x8-page-title {
   margin-bottom: 24px;
@@ -3505,9 +3505,9 @@ onBeforeUnmount(() => {
 @media (max-width: 1024px) {
   .x8-header {
     grid-template-columns: auto minmax(0, 1fr) 40px;
-    height: 96px;
+    height: calc(96px + env(safe-area-inset-top));
     align-content: start;
-    padding: 12px 18px 0;
+    padding: calc(12px + env(safe-area-inset-top)) 18px 0;
     gap: 10px;
   }
   .x8-nav {
@@ -3558,7 +3558,7 @@ onBeforeUnmount(() => {
   }
   .x8-play {
     width: calc(100vw - 28px);
-    padding-top: 72px;
+    padding-top: calc(116px + env(safe-area-inset-top));
   }
   .x8-footer-inner {
     width: calc(100vw - 28px);
