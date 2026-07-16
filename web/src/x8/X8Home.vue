@@ -224,7 +224,17 @@
                 <button v-for="tag in detailTags" :key="tag" type="button" @click="setBrowse({ type: vod.typeName, sub: tag, page: 1 })">{{ tag }}</button>
               </div>
               <div v-if="vod.director" class="x8-detail-row"><span>导演:</span><p>{{ vod.director }}</p></div>
-              <div v-if="vod.actor" class="x8-detail-row"><span>主演:</span><p>{{ vod.actor }}</p></div>
+              <div v-if="actors.length" class="x8-detail-row x8-detail-people-row">
+                <span>主演:</span>
+                <div class="x8-detail-people">
+                  <button v-for="p in actors" :key="`x8-actor-${p.id}`" type="button" @click="searchPerson(p.person.name)">
+                    <img v-if="p.person.avatar" :src="imgUrl(p.person.avatar)" alt="" @error="onImgError" />
+                    <i v-else>{{ p.person.name.slice(0, 1) }}</i>
+                    <em>{{ p.person.name }}</em>
+                  </button>
+                </div>
+              </div>
+              <div v-else-if="vod.actor" class="x8-detail-row"><span>主演:</span><p>{{ vod.actor }}</p></div>
               <div v-if="detailAliases.length" class="x8-detail-row"><span>别名:</span><p>{{ detailAliases.join(' / ') }}</p></div>
               <div v-if="vod.area || vod.language" class="x8-detail-row"><span>语言:</span><p>{{ [vod.language, vod.area].filter(Boolean).join(' / ') }}</p></div>
             </div>
@@ -234,14 +244,9 @@
                   <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
                   立即播放
                 </button>
-                <button class="x8-icon-btn" type="button" aria-label="收藏" @click="goLogin">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
-                </button>
-                <button class="x8-icon-btn" type="button" aria-label="添加到播放列表" @click="goLogin">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
-                </button>
-                <button class="x8-icon-btn" type="button" aria-label="分享" @click="goLogin">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 5l3 3-3 3" /><path d="M19 8H9a4 4 0 0 0-4 4v7" /></svg>
+                <button class="x8-follow-action" type="button" :class="{ on: followed }" @click="toggleFollow">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
+                  {{ followed ? '已追剧' : '追剧' }}
                 </button>
               </div>
               <div class="x8-detail-stats">
@@ -466,6 +471,8 @@ const playUrl = ref('')
 const playKind = ref('')
 const resolving = ref(false)
 const videoEl = ref(null)
+const user = ref(null)
+const followed = ref(false)
 const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
@@ -546,6 +553,7 @@ const detailAliases = computed(() => {
     .filter(Boolean)
     .slice(0, 5)
 })
+const actors = computed(() => (vod.value?.people || []).filter(p => p.role === 'actor' && p.person?.name).slice(0, 6))
 const detailDuration = computed(() => {
   const text = String(vod.value?.duration || vod.value?.runtime || '').trim()
   if (text) return text
@@ -763,6 +771,11 @@ function doSearch() {
   if (!kw.value) return
   router.push({ path: routeBase(), query: { kw: kw.value } })
 }
+function searchPerson(name) {
+  const text = String(name || '').trim()
+  if (!text) return
+  router.push({ path: routeBase(), query: { kw: text } })
+}
 function goDetail(id) {
   if (!id) return
   router.push(route.path.startsWith('/x8') ? `/x8/detail/${id}` : `/detail/${id}`)
@@ -914,6 +927,25 @@ function selectEpisode(index) {
   currentEpIndex.value = index
   playCurrent()
 }
+async function ensureUser() {
+  if (user.value) return user.value
+  try {
+    user.value = await api.userMe()
+  } catch {
+    user.value = null
+  }
+  return user.value
+}
+async function toggleFollow() {
+  if (!vod.value?.id) return
+  const currentUser = await ensureUser()
+  if (!currentUser) {
+    goLogin()
+    return
+  }
+  const result = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
+  followed.value = Boolean(result?.followed)
+}
 async function refreshSection(section) {
   const res = await api.vods({ page: 1 + ((section.page || 1) % 3), size: 12, type: section.type, sort: 'recent' }).catch(() => ({ list: [] }))
   section.items = res?.list || section.items
@@ -1032,13 +1064,19 @@ async function loadVod(withPlay = false) {
   qualities.value = []
   defaultQualityUrl.value = ''
   detailEpDesc.value = false
+  followed.value = false
   try {
     await ensureTypes()
     const id = Number(route.params.id)
     vod.value = await api.vod(id).catch(() => ({}))
     currentLineId.value = vod.value?.lines?.[0]?.id || 0
     currentEpIndex.value = Math.max(0, Number(route.query.ep || 1) - 1)
-    related.value = await api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => [])
+    const [relatedRows, state] = await Promise.all([
+      api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => []),
+      api.userVodState(id).catch(() => null),
+    ])
+    related.value = relatedRows || []
+    followed.value = Boolean(state?.followed)
     if (withPlay && currentLineId.value) playCurrent()
   } finally {
     loading.value = false
@@ -1153,7 +1191,7 @@ onBeforeUnmount(() => {
 }
 .x8-nav button {
   color: rgba(255,255,255,.72);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 500;
   white-space: nowrap;
   transform-origin: center;
@@ -2255,6 +2293,56 @@ onBeforeUnmount(() => {
 .x8-detail-row p::-webkit-scrollbar {
   display: none;
 }
+.x8-detail-people-row {
+  align-items: center;
+}
+.x8-detail-people {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.x8-detail-people::-webkit-scrollbar {
+  display: none;
+}
+.x8-detail-people button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.x8-detail-people img,
+.x8-detail-people i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255,255,255,.12);
+}
+.x8-detail-people i {
+  display: inline-grid;
+  place-items: center;
+  color: rgba(255,255,255,.7);
+  font-style: normal;
+  font-size: 13px;
+}
+.x8-detail-people em {
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: normal;
+}
 .x8-detail-actions {
   flex: 0 0 auto;
 }
@@ -2264,7 +2352,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
 }
 .x8-detail-play-btn,
-.x8-icon-btn {
+.x8-follow-action {
   height: 60px;
   border: 0;
   border-radius: 10px;
@@ -2297,19 +2385,24 @@ onBeforeUnmount(() => {
   color: #121212;
   fill: #121212;
 }
-.x8-icon-btn {
-  flex: 0 0 60px;
-  display: grid;
-  place-items: center;
+.x8-follow-action {
+  flex: 0 0 108px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid #fff;
   background: transparent;
   color: #fff;
+  font-size: 16px;
+  font-weight: 600;
 }
-.x8-icon-btn svg {
-  width: 24px;
-  height: 24px;
+.x8-follow-action svg {
+  width: 20px;
+  height: 20px;
 }
-.x8-icon-btn:hover {
+.x8-follow-action:hover,
+.x8-follow-action.on {
   background: rgba(255,255,255,.08);
 }
 .x8-detail-stats {
@@ -2341,8 +2434,8 @@ onBeforeUnmount(() => {
   line-height: 18px;
 }
 .x8-stat-top svg {
-  width: 16px;
-  height: 16px;
+  width: 19px;
+  height: 19px;
   margin-right: 4px;
   color: rgba(255,255,255,.9);
 }
