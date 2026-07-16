@@ -301,7 +301,7 @@
             </button>
           </div>
         </section>
-        <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" @change="refreshRelated" @more="goRank">
+        <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
           <div class="x8-card-grid section">
             <x8-card v-for="item in related.slice(0, 12)" :key="`detail-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
           </div>
@@ -309,56 +309,124 @@
       </section>
 
       <section v-else-if="pageMode === 'play'" class="x8-play">
-        <div class="x8-player-box">
-          <div class="x8-player">
-            <video v-if="playKind !== 'iframe'" ref="videoEl" controls playsinline webkit-playsinline :poster="heroImage(vod)"></video>
-            <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
-            <button v-if="playUrl && playKind !== 'iframe' && qualities.length" class="x8-quality-toggle" :class="{ on: qualityOpen }" :title="'清晰度：' + curQualityLabel" @click.stop="qualityOpen = !qualityOpen">
-              <span>{{ curQualityLabel }}</span>
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <div v-if="playUrl && playKind !== 'iframe' && qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
-              <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
-              <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+        <div class="x8-play-shell">
+          <section class="x8-play-list-container">
+            <div class="x8-player-video">
+              <div class="x8-player-video-left">
+                <div class="x8-player-area active">
+                  <div class="x8-video-container">
+                    <video v-if="playKind !== 'iframe'" ref="videoEl" controls playsinline webkit-playsinline :poster="heroImage(vod)"></video>
+                    <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                    <button v-if="playUrl && playKind !== 'iframe' && qualities.length" class="x8-quality-toggle" :class="{ on: qualityOpen }" :title="'清晰度：' + curQualityLabel" @click.stop="qualityOpen = !qualityOpen">
+                      <span>{{ curQualityLabel }}</span>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div v-if="playUrl && playKind !== 'iframe' && qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
+                      <button v-if="showAutoQuality" type="button" :class="{ on: preferredRes === 0 }" @click="switchQuality(0)">自动</button>
+                      <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: preferredRes === q.resolution }" @click="switchQuality(q.resolution)">{{ q.name || (q.resolution + 'P') }}</button>
+                    </div>
+                    <button v-if="!playUrl" class="x8-player-empty" type="button" @click="playCurrent">
+                      <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
+                      <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
+                    </button>
+                  </div>
+                </div>
+                <div class="x8-video-toolbar">
+                  <div class="left">
+                    <button type="button" title="点赞"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /><path d="M7 11 12 2a3 3 0 0 1 3 3v5h4a2 2 0 0 1 2 2l-1 7a3 3 0 0 1-3 3H7Z" /></svg><span>点赞</span></button>
+                    <button type="button" title="点踩"><svg class="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /><path d="M7 11 12 2a3 3 0 0 1 3 3v5h4a2 2 0 0 1 2 2l-1 7a3 3 0 0 1-3 3H7Z" /></svg><span>点踩</span></button>
+                    <button type="button" title="评论" @click="scrollToComments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" /></svg><span>评论</span></button>
+                    <button type="button" title="收藏" :class="{ active: followed }" @click="toggleFollow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" /></svg><span>{{ followed ? '已收藏' : '收藏' }}</span></button>
+                    <button type="button" title="报错"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg><span>报错</span></button>
+                    <button type="button" title="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><path d="M16 6 12 2 8 6" /><path d="M12 2v14" /></svg><span>分享</span></button>
+                    <button type="button" title="添加"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg><span>添加</span></button>
+                  </div>
+                </div>
+              </div>
+              <aside class="x8-player-video-right">
+                <div class="x8-side-playlist">
+                  <div class="x8-side-playlist-head">
+                    <div class="header-title">{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</div>
+                    <div class="header-sections">
+                      <div class="sections-left">
+                        <button v-for="(group, index) in playEpisodeGroups" :key="`side-group-${index}`" type="button" :class="{ active: playGroupIdx === index }" @click="selectPlayGroup(index)">{{ group.label }}</button>
+                      </div>
+                      <button class="sections-sort" type="button" @click="playEpDesc = !playEpDesc">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14" /><path d="m5 16 3 3 3-3" /><path d="M16 19V5" /><path d="m13 8 3-3 3 3" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="x8-side-episodes">
+                    <button v-for="row in playVisibleEpisodes" :key="`side-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
+                      {{ row.index + 1 }}
+                    </button>
+                  </div>
+                </div>
+              </aside>
             </div>
-            <button v-if="!playUrl" class="x8-player-empty" type="button" @click="playCurrent">
-              <span class="x8-play-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg></span>
-              <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
-            </button>
-          </div>
-          <aside class="x8-play-info">
-            <h1>{{ vod.name || '正在加载' }}</h1>
-            <p>{{ [vod.typeName, vod.subType, vod.year].filter(Boolean).join(' · ') }}</p>
-            <p class="intro">{{ vod.blurb || vod.officialIntro || vod.content || '暂无简介' }}</p>
-          </aside>
-        </div>
-        <div class="x8-play-layout">
-          <section>
-            <div class="x8-panel-head">
-              <button class="x8-panel-title" type="button"><span>选集</span></button>
-            </div>
-            <div class="x8-line-tabs">
-              <button v-for="line in vod.lines || []" :key="line.id" type="button" :class="{ active: currentLineId === line.id }" @click="selectLine(line.id)">
-                {{ line.sourceName || line.flag || '线路' }}
-              </button>
-            </div>
-            <div class="x8-episode-grid">
-              <button v-for="(ep, index) in episodes" :key="`${currentLineId}-${index}`" type="button" :class="{ active: currentEpIndex === index }" @click="selectEpisode(index)">
-                {{ ep.name || `第${index + 1}集` }}
-              </button>
-            </div>
-          </section>
-          <section>
-            <div class="x8-panel-head">
-              <button class="x8-panel-title" type="button"><span>相关推荐</span></button>
-            </div>
-            <div class="x8-related-list">
-              <button v-for="item in related" :key="`rel-${item.id}`" type="button" @click="goDetail(item.id)">
-                <img v-if="poster(item)" :src="poster(item)" :alt="item.name" @error="onImgError" />
-                <span>{{ item.name }}</span>
-                <b v-if="item.rating">{{ item.rating }}</b>
-              </button>
-            </div>
+
+            <section class="x8-player-detail">
+              <div class="x8-player-title">
+                <button type="button" @click="goDetail(vod.id)">
+                  <h1>{{ vod.name || '正在加载' }}</h1>
+                  <span>更多信息</span>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.7 3.3 13.3 10l-6.6 6.7" stroke-linecap="round" /></svg>
+                </button>
+                <h2>{{ currentEpisodeLabel }}</h2>
+              </div>
+              <div class="x8-player-meta">
+                <span v-if="vod.rating" class="rating">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6l2.82 5.72 6.32.92-4.57 4.46 1.08 6.3L12 17.02 6.35 20l1.08-6.3-4.57-4.46 6.32-.92L12 2.6Z" /></svg>
+                  {{ vod.rating }}
+                </span>
+                <span v-if="vod.year" class="line">|</span>
+                <span v-if="vod.year">{{ vod.year }}</span>
+                <span class="line">|</span>
+                <span>{{ detailDuration }}</span>
+                <div v-if="detailTags.length" class="x8-player-tags">
+                  <span v-for="tag in detailTags.slice(0, 3)" :key="`play-tag-${tag}`">{{ tag }}</span>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="vod.lines?.length" class="x8-mini-play-list">
+              <div class="x8-play-list-head">
+                <div class="player-name">{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</div>
+                <button class="player-sort" type="button" @click="playEpDesc = !playEpDesc">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14" /><path d="m5 16 3 3 3-3" /><path d="M16 19V5" /><path d="m13 8 3-3 3 3" /></svg>
+                  <span>排序</span>
+                </button>
+              </div>
+              <div class="x8-episode-grid">
+                <button v-for="row in playAllEpisodes" :key="`mini-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
+                  {{ row.ep.name || row.index + 1 }}
+                </button>
+              </div>
+            </section>
+
+            <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
+              <div class="x8-card-grid section">
+                <x8-card v-for="item in related.slice(0, playLikeCount)" :key="`play-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
+              </div>
+            </x8-panel>
+
+            <section id="x8-comments" class="x8-comments">
+              <div class="x8-comments-title">
+                <span></span>
+                评论区
+                <em>(0)</em>
+              </div>
+              <div class="x8-comment-login" @click="goLogin">
+                您还未
+                <button type="button">登录</button>
+                请登录后发表评论
+              </div>
+              <div class="x8-comment-tabs">
+                <button class="active" type="button">全部评论</button>
+                <button type="button">热门评论</button>
+              </div>
+              <div class="x8-comment-empty">暂无评论信息</div>
+            </section>
           </section>
         </div>
       </section>
@@ -481,6 +549,8 @@ const preferredRes = ref(0)
 const qualityOpen = ref(false)
 const defaultQualityUrl = ref('')
 const detailEpDesc = ref(false)
+const playEpDesc = ref(false)
+const selectedPlayGroupIdx = ref(0)
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -547,6 +617,37 @@ const detailEpisodes = computed(() => {
   const rows = episodes.value.map((ep, index) => ({ ep, index }))
   return detailEpDesc.value ? rows.reverse() : rows
 })
+const playEpisodeGroups = computed(() => {
+  const total = episodes.value.length
+  const groups = []
+  for (let start = 0; start < total; start += 50) {
+    const end = Math.min(start + 49, total - 1)
+    groups.push({ start, end, label: `${start + 1}-${end + 1}` })
+  }
+  return groups
+})
+const playGroupIdx = computed(() => {
+  const groups = playEpisodeGroups.value
+  if (!groups.length) return 0
+  const byEpisode = groups.findIndex(group => currentEpIndex.value >= group.start && currentEpIndex.value <= group.end)
+  if (byEpisode >= 0) return byEpisode
+  return Math.min(selectedPlayGroupIdx.value, groups.length - 1)
+})
+const playAllEpisodes = computed(() => {
+  const rows = episodes.value.map((ep, index) => ({ ep, index }))
+  return playEpDesc.value ? rows.reverse() : rows
+})
+const playVisibleEpisodes = computed(() => {
+  const group = playEpisodeGroups.value[playGroupIdx.value]
+  if (!group) return playAllEpisodes.value
+  const rows = episodes.value.slice(group.start, group.end + 1).map((ep, offset) => ({ ep, index: group.start + offset }))
+  return playEpDesc.value ? rows.reverse() : rows
+})
+const currentEpisodeLabel = computed(() => {
+  const ep = episodes.value[currentEpIndex.value]
+  return ep?.name || (episodes.value.length ? `第${currentEpIndex.value + 1}集` : '')
+})
+const playLikeCount = computed(() => viewportWidth.value >= 1024 ? 12 : 8)
 const detailTags = computed(() => {
   const rows = [vod.value?.subType, vod.value?.typeName]
     .flatMap(value => String(value || '').split(/[，,、/|]+/))
@@ -584,20 +685,21 @@ const X8Panel = defineComponent({
   props: {
     title: { type: String, required: true },
     changeable: { type: Boolean, default: false },
+    moreable: { type: Boolean, default: true },
   },
   emits: ['change', 'more'],
   setup(props, { slots, emit }) {
     return () => h('section', { class: 'x8-panel' }, [
       h('div', { class: 'x8-panel-head' }, [
-        h('button', { class: 'x8-panel-title', type: 'button', onClick: () => emit('more') }, [
+        h('button', { class: 'x8-panel-title', type: 'button', onClick: () => props.moreable && emit('more') }, [
           h('span', props.title),
-          h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
+          props.moreable ? h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
             h('path', { d: 'm9 18 6-6-6-6' }),
-          ]),
+          ]) : null,
         ]),
         h('div', { class: 'x8-panel-actions' }, [
           props.changeable ? h('button', { class: 'x8-change', type: 'button', onClick: () => emit('change') }, '换一换') : null,
-          h('button', { class: 'x8-more', type: 'button', onClick: () => emit('more') }, '更多'),
+          props.moreable ? h('button', { class: 'x8-more', type: 'button', onClick: () => emit('more') }, '更多') : null,
         ]),
       ]),
       slots.default?.(),
@@ -838,6 +940,9 @@ function scrollToTrailer() {
   }
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+function scrollToComments() {
+  document.getElementById('x8-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 function onScroll() {
   scrolled.value = window.scrollY > 12
 }
@@ -937,15 +1042,24 @@ function selectDetailLine(id) {
   currentLineId.value = id
   currentEpIndex.value = 0
   detailEpDesc.value = false
+  playEpDesc.value = false
+  selectedPlayGroupIdx.value = 0
 }
 function selectLine(id) {
   currentLineId.value = id
   currentEpIndex.value = 0
   detailEpDesc.value = false
+  playEpDesc.value = false
+  selectedPlayGroupIdx.value = 0
   playCurrent()
+}
+function selectPlayGroup(index) {
+  selectedPlayGroupIdx.value = index
 }
 function selectEpisode(index) {
   currentEpIndex.value = index
+  selectedPlayGroupIdx.value = playEpisodeGroups.value.findIndex(group => index >= group.start && index <= group.end)
+  if (selectedPlayGroupIdx.value < 0) selectedPlayGroupIdx.value = 0
   playCurrent()
 }
 async function ensureUser() {
@@ -1085,6 +1199,8 @@ async function loadVod(withPlay = false) {
   qualities.value = []
   defaultQualityUrl.value = ''
   detailEpDesc.value = false
+  playEpDesc.value = false
+  selectedPlayGroupIdx.value = 0
   followed.value = false
   try {
     await ensureTypes()
@@ -1092,6 +1208,7 @@ async function loadVod(withPlay = false) {
     vod.value = await api.vod(id).catch(() => ({}))
     currentLineId.value = vod.value?.lines?.[0]?.id || 0
     currentEpIndex.value = Math.max(0, Number(route.query.ep || 1) - 1)
+    selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
     const [relatedRows, state] = await Promise.all([
       api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => []),
       api.userVodState(id).catch(() => null),
@@ -2580,33 +2697,414 @@ onBeforeUnmount(() => {
   background: #fff;
   color: #111;
 }
-.x8-play-info p {
-  color: rgba(255,255,255,.68);
-  line-height: 1.7;
+.x8-play-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
-.x8-play-info .intro {
-  max-width: 820px;
+.x8-play-list-container {
+  display: flex;
+  flex-direction: column;
+  -webkit-tap-highlight-color: transparent;
 }
-.x8-player-box {
-  display: grid;
-  grid-template-columns: minmax(0, 1.75fr) 390px;
-  gap: 24px;
-}
-.x8-player {
-  min-height: 560px;
-  position: relative;
+.x8-player-video {
+  display: flex;
   border-radius: 12px;
   overflow: hidden;
-  background: #000;
-  box-shadow: 0 10px 70px rgba(0,0,0,.55);
+  background: rgba(255,255,255,.04);
 }
-.x8-player video,
-.x8-player iframe {
+.x8-player-video-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.x8-player-area {
+  flex: 1;
+  position: relative;
+  padding-bottom: 56.25%;
+  overflow: hidden;
+  background: #000;
+}
+.x8-video-container {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.x8-video-container video,
+.x8-video-container iframe {
   width: 100%;
   height: 100%;
-  min-height: 560px;
   display: block;
   background: #000;
+}
+.x8-player-video-right {
+  position: relative;
+  width: 360px;
+  box-sizing: content-box;
+  overflow: hidden;
+  border-left: .5px solid rgba(255,255,255,.04);
+}
+.x8-side-playlist {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.x8-side-playlist-head .header-title {
+  padding: 16px 24px 24px;
+  color: #fff;
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.x8-side-playlist-head .header-sections {
+  height: 32px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.x8-side-playlist-head .sections-left {
+  flex: 1;
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.x8-side-playlist-head .sections-left::-webkit-scrollbar {
+  display: none;
+}
+.x8-side-playlist-head .sections-left button {
+  height: 32px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 8px;
+  color: rgba(255,255,255,.86);
+  background: transparent;
+  font-size: 16px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+.x8-side-playlist-head .sections-left button.active {
+  border-bottom-color: #fff;
+  color: #fff;
+}
+.x8-side-playlist-head .sections-sort {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: rgba(255,255,255,.8);
+  background: transparent;
+}
+.x8-side-playlist-head .sections-sort svg {
+  width: 20px;
+  height: 20px;
+}
+.x8-side-episodes {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10px;
+  padding: 16px 24px;
+  overflow-y: auto;
+}
+.x8-side-episodes::-webkit-scrollbar {
+  width: 4px;
+}
+.x8-side-episodes::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.2);
+}
+.x8-side-episodes button,
+.x8-episode-grid button {
+  position: relative;
+  height: 42px;
+  min-width: 54px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: rgba(255,255,255,.9);
+  background: transparent;
+  font-size: 14px;
+  line-height: 40px;
+  text-align: center;
+  white-space: nowrap;
+  transition: border-color .25s ease, background .25s ease, color .25s ease;
+}
+.x8-side-episodes button:hover,
+.x8-episode-grid button:hover {
+  border-color: #fff;
+}
+.x8-side-episodes button.active,
+.x8-episode-grid button.active {
+  color: #121212;
+  background: #fff;
+  border-color: #fff;
+}
+.x8-video-toolbar {
+  position: relative;
+  z-index: 10;
+  height: 54px;
+  display: flex;
+  justify-content: space-between;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.x8-video-toolbar .left {
+  display: flex;
+  align-items: center;
+  padding-left: 24px;
+}
+.x8-video-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 28px;
+  border: 0;
+  color: rgba(255,255,255,.4);
+  background: transparent;
+  font-size: 14px;
+}
+.x8-video-toolbar button:last-child {
+  margin-right: 0;
+}
+.x8-video-toolbar button:hover,
+.x8-video-toolbar button.active {
+  color: #fff;
+}
+.x8-video-toolbar svg {
+  width: 18px;
+  height: 18px;
+}
+.x8-video-toolbar svg.down {
+  transform: scale(1, -1);
+}
+.x8-player-detail {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.x8-player-title {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  color: #fff;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
+}
+.x8-player-title button {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  border: 0;
+  color: #fff;
+  background: transparent;
+}
+.x8-player-title h1 {
+  margin: 0;
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
+}
+.x8-player-title button span {
+  width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #fff;
+  font-size: 16px;
+  line-height: 22px;
+  transition: width .25s ease, margin-left .25s ease;
+}
+.x8-player-title button:hover span {
+  width: 72px;
+  margin-left: 10px;
+}
+.x8-player-title button svg {
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  color: rgba(255,255,255,.6);
+}
+.x8-player-title h2 {
+  margin: 0 0 0 4px;
+  color: rgba(255,255,255,.6);
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 600;
+}
+.x8-player-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+}
+.x8-player-meta .rating {
+  display: inline-flex;
+  align-items: center;
+  font-size: 16px;
+}
+.x8-player-meta .rating svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+}
+.x8-player-meta .line {
+  margin: 0 12px;
+  color: rgba(255,255,255,.6);
+}
+.x8-player-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 24px;
+}
+.x8-player-tags span {
+  padding: 5px 11px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 4px;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+}
+.x8-mini-play-list {
+  display: none;
+  padding-bottom: 30px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.x8-play-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0;
+}
+.x8-play-list-head .player-name {
+  color: #fff;
+  font-size: 20px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.x8-play-list-head .x8-line-tabs {
+  flex: 1;
+  margin: 0;
+}
+.x8-play-list-head .player-sort {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 4px;
+  color: rgba(255,255,255,.8);
+  background: transparent;
+  font-size: 14px;
+}
+.x8-play-list-head .player-sort svg {
+  width: 24px;
+  height: 24px;
+}
+.x8-episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  text-align: center;
+}
+.x8-episode-grid::-webkit-scrollbar {
+  width: 2px;
+  background: rgba(255,255,255,.2);
+}
+.x8-episode-grid::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.4);
+}
+.x8-comments {
+  margin-bottom: 80px;
+}
+.x8-comments-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  color: #fff;
+  font-size: 24px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.x8-comments-title span {
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border: 2px solid rgba(255,255,255,.9);
+  border-radius: 50%;
+}
+.x8-comments-title em {
+  margin-left: 8px;
+  color: rgba(255,255,255,.8);
+  font-size: 16px;
+  font-style: normal;
+}
+.x8-comment-login {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: rgba(255,255,255,.9);
+  background: rgba(255,255,255,.04);
+  font-size: 14px;
+  cursor: pointer;
+}
+.x8-comment-login button {
+  width: 46px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 4px;
+  border: 1px solid #fff;
+  border-radius: 4px;
+  color: rgba(255,255,255,.9);
+  background: transparent;
+  font-size: 12px;
+}
+.x8-comment-tabs {
+  display: flex;
+  gap: 14px;
+  margin: 32px 0;
+}
+.x8-comment-tabs button {
+  width: 120px;
+  height: 40px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  color: rgba(255,255,255,.9);
+  background: transparent;
+  font-size: 14px;
+}
+.x8-comment-tabs button.active {
+  border-color: #fff;
+}
+.x8-comment-empty {
+  height: 160px;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,.4);
+  font-size: 14px;
 }
 .x8-quality-toggle {
   position: absolute;
@@ -2677,62 +3175,10 @@ onBeforeUnmount(() => {
 .x8-player-empty em {
   font-style: normal;
 }
-.x8-play-info,
-.x8-play-layout > section,
 .x8-login-card {
   padding: 20px;
   border-radius: 12px;
   background: #1a1a1a;
-}
-.x8-play-info h1 {
-  margin: 0 0 12px;
-  font-size: 30px;
-}
-.x8-play-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(360px, .7fr);
-  gap: 24px;
-  margin-top: 28px;
-}
-.x8-line-tabs,
-.x8-episode-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.x8-line-tabs {
-  margin-bottom: 14px;
-}
-.x8-related-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.x8-related-list button {
-  height: 58px;
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  border: 0;
-  border-radius: 8px;
-  color: #fff;
-  background: transparent;
-  text-align: left;
-}
-.x8-related-list button:hover {
-  background: rgba(255,255,255,.05);
-}
-.x8-related-list img {
-  width: 40px;
-  height: 52px;
-  border-radius: 4px;
-  object-fit: cover;
-}
-.x8-related-list span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .x8-login-page {
   min-height: 80vh;
@@ -3024,9 +3470,14 @@ onBeforeUnmount(() => {
   .x8-rank-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .x8-player-box,
-  .x8-play-layout {
-    grid-template-columns: 1fr;
+  .x8-player-video-right {
+    display: none;
+  }
+  .x8-mini-play-list {
+    display: block;
+  }
+  .x8-video-toolbar button {
+    margin-right: 18px;
   }
   .x8-quick-navigation {
     gap: 24px;
@@ -3247,14 +3698,40 @@ onBeforeUnmount(() => {
   .x8-detail-stats i {
     display: none;
   }
-  .x8-player {
-    min-height: 240px;
+  .x8-player-video {
     margin: 0 -14px;
     border-radius: 0;
   }
-  .x8-player video,
-  .x8-player iframe {
-    min-height: 240px;
+  .x8-video-toolbar {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .x8-video-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .x8-video-toolbar .left {
+    min-width: max-content;
+    padding-left: 14px;
+  }
+  .x8-player-title {
+    font-size: 24px;
+    line-height: 32px;
+  }
+  .x8-player-title h1,
+  .x8-player-title h2 {
+    font-size: 24px;
+    line-height: 32px;
+  }
+  .x8-player-title button span,
+  .x8-player-title button svg {
+    display: none;
+  }
+  .x8-player-tags {
+    width: 100%;
+    margin: 12px 0 0;
+  }
+  .x8-episode-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
   .x8-float {
     right: 8px;
