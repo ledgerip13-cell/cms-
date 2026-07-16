@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜参考站交互重做）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜卡片固定高度裁切）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 排行榜卡片固定高度裁切断点**：`web/src/x8/X8Home.vue` 将排行榜静态榜卡改为参考站的固定卡高裁切模型：桌面 `.x8-rank-card.static` 固定 `682px`（60px header + 622px list），移动端固定 `594px`；`.x8-rank-head` 固定 flex-basis，`.x8-rank-large-list` 改为 `flex:1 1 auto + height:100% + min-height:0 + overflow:hidden`，hover/focus 展开只改变内部行高，多出的部分由列表区裁切，不再撑高整张卡片。验证：`npm run build`、`git diff --check`、产物固定高度/overflow 关键字检查通过；新前端包 `assets/index-BdiHDvrt.js / assets/index-EByqeLIg.css`。
 - **2026-07-17 X8 排行榜参考站交互重做断点**：`web/src/x8/X8Home.vue` 按参考站 `/rank` 重新实现 X8 排行榜页：榜单固定为 `综合榜 / 电影榜 / 动漫榜 / 电视剧榜 / 短剧榜 / 漫剧榜`；页面去掉额外大标题，直接进入榜单网格；列数改为参考站自适应模型（默认 2 列、`>=1360px` 3 列、`>=1830px` 5 列）；每个榜卡改为 `activeIndex` 状态机，行内同时渲染 normal/full 双层内容，前三名默认展开，第 4 名以后 hover/focus 后独立展开，底部第 8/9/10 名按参考站位移并对后续行加 `locked`，避免 hover 背景和内容错位。同步校正标题栏 60px、标题 20px/600、排名数字 24px DIN、普通热度 14px/400、标签 12px/rgba(255,255,255,.6)、卡片背景 `rgba(255,255,255,.04)`。验证：`npm run build`、`git diff --check`、产物断点/active-index/locked 关键字检查通过；新前端包 `assets/index-B5zTSSNc.js / assets/index-BOG65qlW.css`。
 - **2026-07-17 X8 HLS 全屏标题与系统全屏隐藏断点**：`web/src/x8/X8Home.vue` 调整播放页 HLS 页面内全屏控制层：进入 `playerTheater` 后隐藏“系统全屏”按钮，只保留 HLS 全屏退出按钮；在播放器左上角新增当前播放标题（`影片名 · 当前集`），标题层复用控制条显隐状态，仅点击/移动唤起控制层时显示，自动淡出时同步隐藏。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-3-wv1g5u.js / assets/index-BRbcKxqc.css`。
 - **2026-07-17 X8 排行榜页参考站重做断点**：`web/src/x8/X8Home.vue` 参考 `https://www.x8kb9k8.com/rank` 的排行榜页布局与动效，X8 `/x8/rank` 从普通标题+旧小榜卡升级为多列大榜卡：每个分类榜独立 60px 标题栏，卡片背景/12px 圆角/20px 网格间距对齐参考站；前三名展开 168px 海报行，海报左下角排名色块，后续行保持 54px 紧凑；hover/键盘焦点有背景、轻微位移与海报缩放，热度列补火焰样式，加载态同步大榜骨架。移动端降为单列并收紧海报/热度列，避免挤压。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-QlyQMktd.js / assets/index-DmymQAeC.css`。

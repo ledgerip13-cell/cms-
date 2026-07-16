@@ -2794,6 +2794,7 @@ onBeforeUnmount(() => {
 .x8-rank-card.static {
   width: auto;
   min-width: 0;
+  height: 682px;
   gap: 0;
   border-radius: 12px;
   background: rgba(255,255,255,.04);
@@ -2801,6 +2802,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 18px 38px rgba(0,0,0,.18);
 }
 .x8-rank-card.static .x8-rank-head {
+  flex: 0 0 60px;
   height: 60px;
   padding: 0 20px;
   border-bottom: 1px solid rgba(255,255,255,.08);
@@ -2815,8 +2817,10 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
   padding: 0 12px 20px;
-  min-height: 622px;
   overflow: hidden;
 }
 .x8-rank-large-list.active .index-0,
@@ -4722,9 +4726,6 @@ onBeforeUnmount(() => {
   .x8-rank-page {
     padding-top: calc(116px + env(safe-area-inset-top));
   }
-  .x8-rank-large-list {
-    min-height: 0;
-  }
   .x8-rank-large-heat {
     font-size: 13px;
   }
@@ -4744,6 +4745,7 @@ onBeforeUnmount(() => {
     font-size: 24px;
   }
   .x8-rank-card.static .x8-rank-head {
+    flex-basis: 58px;
     height: 58px;
     padding: 0 14px;
   }
@@ -4815,6 +4817,9 @@ onBeforeUnmount(() => {
   }
   .x8-rank-grid {
     grid-template-columns: 1fr;
+  }
+  .x8-rank-card.static {
+    height: 594px;
   }
   .x8-rank-large-list {
     padding: 0 8px 14px;
