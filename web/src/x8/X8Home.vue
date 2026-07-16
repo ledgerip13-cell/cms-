@@ -2287,6 +2287,15 @@ onBeforeUnmount(() => {
 .x8-detail-play-btn .x8-play-icon {
   width: 24px;
   height: 24px;
+  border-radius: 0;
+  background: transparent;
+  color: #121212;
+}
+.x8-detail-play-btn .x8-play-icon svg {
+  width: 24px;
+  height: 24px;
+  color: #121212;
+  fill: #121212;
 }
 .x8-icon-btn {
   flex: 0 0 60px;
