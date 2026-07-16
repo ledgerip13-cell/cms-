@@ -1596,12 +1596,13 @@ async function loadRanks() {
   try {
     await ensureTypes()
     const rankTypes = ['电影', '动漫', '电视剧', '短剧', '漫剧']
-    const [hot, ...groups] = await Promise.all([
+    const [hot, hotFallback, ...groups] = await Promise.all([
       api.hot(10).catch(() => []),
+      api.vods({ page: 1, size: 10, sort: 'hot' }).catch(() => ({ list: [] })),
       ...rankTypes.map(type => api.vods({ page: 1, size: 10, type, sort: 'hot' }).catch(() => ({ list: [] }))),
     ])
     rankGroups.value = [
-      { key: 'all', title: '综合榜', items: hot || [] },
+      { key: 'all', title: '综合榜', items: uniqueVods(hot || [], hotFallback?.list || []).slice(0, 10) },
       ...rankTypes.map((type, index) => ({ key: type, title: `${type}榜`, items: groups[index]?.list || [] })),
     ]
   } finally {
@@ -2794,7 +2795,7 @@ onBeforeUnmount(() => {
 .x8-rank-card.static {
   width: auto;
   min-width: 0;
-  height: 682px;
+  height: 962px;
   gap: 0;
   border-radius: 12px;
   background: rgba(255,255,255,.04);
@@ -2856,6 +2857,9 @@ onBeforeUnmount(() => {
 }
 .x8-rank-large-item.locked {
   transform: translateY(calc(-100% - 60px));
+}
+.x8-rank-large-list.active-index-8 .x8-rank-large-item.locked {
+  transform: translateY(calc(-100% - 8px));
 }
 .x8-rank-large-item.active.index-7 {
   transform: translateY(-4%);
@@ -4819,7 +4823,7 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .x8-rank-card.static {
-    height: 594px;
+    height: 846px;
   }
   .x8-rank-large-list {
     padding: 0 8px 14px;
