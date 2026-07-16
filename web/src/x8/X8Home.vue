@@ -380,7 +380,7 @@
                             <button type="button" :class="{ active: settingsOpen }" title="设置" @click.stop="toggleSettings">
                               <svg class="x8-lucide x8-settings-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg>
                             </button>
-                            <div v-if="settingsOpen" class="x8-settings-menu" @click.stop>
+                            <div v-if="settingsOpen" class="x8-settings-menu" :class="{ 'rate-mode': rateOpen }" @click.stop>
                               <template v-if="!rateOpen">
                                 <label class="x8-switch-row">
                                   <span>自动下一集</span>
@@ -3349,20 +3349,24 @@ onBeforeUnmount(() => {
 .x8-quality-menu {
   position: absolute;
   right: 0;
-  bottom: 52px;
+  bottom: 46px;
   z-index: 20;
-  border: 1px solid rgba(255,255,255,.09);
-  border-radius: 18px;
-  background: rgba(20,20,20,.78);
-  box-shadow: 0 16px 38px rgba(0,0,0,.42);
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  background: rgba(18,18,18,.68);
+  box-shadow: 0 10px 28px rgba(0,0,0,.36);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
 }
 .x8-settings-menu {
-  width: 302px;
-  padding: 16px;
+  width: 218px;
+  padding: 7px;
   display: grid;
-  gap: 14px;
+  gap: 3px;
+}
+.x8-settings-menu.rate-mode {
+  width: 154px;
+  padding: 5px;
 }
 .x8-settings-menu .x8-switch-row,
 .x8-settings-menu .x8-setting-row,
@@ -3371,17 +3375,26 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  min-height: 42px;
+  min-height: 32px;
   border: 0;
-  border-radius: 11px;
-  padding: 0 8px;
+  border-radius: 8px;
+  padding: 0 10px;
   color: rgba(255,255,255,.9);
   background: transparent;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1;
+}
+.x8-video-toolbar .x8-settings-menu .x8-setting-row,
+.x8-video-toolbar .x8-settings-menu .x8-setting-back {
+  height: 32px;
+  min-height: 32px;
+}
+.x8-video-toolbar .x8-rate-panel button {
+  height: 26px;
+  min-height: 26px;
 }
 .x8-settings-menu .x8-switch-row {
   position: relative;
@@ -3401,9 +3414,9 @@ onBeforeUnmount(() => {
 }
 .x8-settings-menu .x8-switch-row i {
   position: relative;
-  width: 52px;
-  height: 30px;
-  flex: 0 0 52px;
+  width: 36px;
+  height: 20px;
+  flex: 0 0 36px;
   border-radius: 999px;
   background: rgba(255,255,255,.18);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
@@ -3412,13 +3425,13 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-switch-row i::after {
   content: "";
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 22px;
-  height: 22px;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
   transition: transform .18s ease;
 }
 .x8-settings-menu .x8-switch-row input:checked + i {
@@ -3426,7 +3439,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
 }
 .x8-settings-menu .x8-switch-row input:checked + i::after {
-  transform: translateX(22px);
+  transform: translateX(16px);
   background: #111;
 }
 .x8-settings-menu .x8-setting-row {
@@ -3435,33 +3448,35 @@ onBeforeUnmount(() => {
 .x8-settings-menu .x8-setting-row b {
   margin-left: auto;
   color: #fff;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
 }
 .x8-settings-menu .x8-setting-row svg,
 .x8-settings-menu .x8-setting-back svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   color: rgba(255,255,255,.62);
 }
 .x8-rate-panel {
-  min-width: 214px;
+  min-width: 0;
   padding: 0;
   display: grid;
-  gap: 5px;
+  gap: 2px;
 }
 .x8-settings-menu .x8-setting-back {
   justify-content: flex-start;
-  height: 44px;
-  margin: -6px -8px 6px;
-  border-radius: 14px 14px 0 0;
+  height: 28px;
+  margin: -1px -3px 3px;
+  border-radius: 10px 10px 0 0;
   border-bottom: 1px solid rgba(255,255,255,.08);
   color: #fff;
+  font-size: 13px;
 }
 .x8-rate-panel button {
   justify-content: center;
   font-weight: 600;
-  min-height: 44px;
+  min-height: 26px;
+  font-size: 13px;
 }
 .x8-rate-panel button.on,
 .x8-quality-menu button.on {
@@ -3470,26 +3485,25 @@ onBeforeUnmount(() => {
 }
 .x8-quality-menu button {
   width: 100%;
-  min-height: 58px;
+  min-height: 38px;
   border: 0;
-  border-radius: 10px;
-  padding: 10px 18px;
+  border-radius: 8px;
+  padding: 7px 10px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 8px;
   color: rgba(255,255,255,.78);
   background: transparent;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
   transition: background .16s ease, transform .16s ease, color .16s ease;
 }
 .x8-quality-menu {
-  width: 230px;
-  padding: 12px;
+  width: 168px;
+  padding: 7px;
   display: grid;
-  gap: 8px;
+  gap: 3px;
 }
 .x8-quality-menu button:not(.on) {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.09);
@@ -3501,12 +3515,12 @@ onBeforeUnmount(() => {
 }
 .x8-quality-menu button strong {
   color: #fff;
-  font-size: 20px;
+  font-size: 15px;
   line-height: 1;
 }
 .x8-quality-menu button span {
   color: rgba(255,255,255,.72);
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1.2;
 }
 .x8-quality-trigger b {
