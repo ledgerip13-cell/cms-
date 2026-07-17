@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 头部 380px 渐变与未登录本地历史）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 顶部工具入口调整）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 顶部工具入口调整断点**：`web/src/x8/X8Home.vue` 按最新要求移除顶部工具区“求片”入口，将“播放列表”改为“我的追剧”并跳转个人中心 `tab=follows`；登录壳提示同步改为“登录后可同步观看历史和我的追剧”。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；运行态 JS 仅命中“我的追剧”，无“求片/播放列表”；新前端包 `assets/index-DTm-czo2.js / assets/index-Cte4MGv0.css`。
 - **2026-07-17 X8 头部 380px 渐变与未登录本地历史断点**：`web/src/x8/X8Home.vue` 将 X8 顶部黑底滚动过渡距离从 `180px` 拉长到 `380px`，最终仍为 `rgba(18,18,18,.8) + blur(16px)`；头部“历史”改为参考站 hover 浮层，未登录也读取浏览器本地 `vcms.x8.local.history` 展示最近播放记录。播放页保存观看历史时先写本地记录，登录用户再同步 `/api/user/history`；详情页/播放页集数进度在无服务端历史时回落到本地历史。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器实测头部滚动 `0/190/380px` 对应黑底 `0.00/0.40/0.80` 与 `0/8/16px` blur，未登录本地历史浮层显示 `本地历史测试影片 · 第2集 · 已看 20%`，详情页第 2 集显示 `20%` 本地进度；新前端包 `assets/index-BiQKBl8P.js / assets/index-Cte4MGv0.css`。
 - **2026-07-17 X8 头部背景过渡放缓断点**：`web/src/x8/X8Home.vue` 继续微调 X8 顶部导航滚动背景：首屏渐变底部保持 `rgba(0,0,0,0) 100%` 完全透明；滚动黑底叠加从 `scrollY / 72` 放缓为 `scrollY / 180 * 0.8`，最终只到 80% 黑底，不再 100% 实心；同步按进度加入 `blur(0-16px)`，最终态为 `rgba(18,18,18,.8) + blur(16px)`，过渡更自然。验证：`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-BCpd_qB0.js / assets/index-D0RdyDxb.css`。
 - **2026-07-17 X8 头部渐变背景与集数观看进度断点**：`web/src/x8/X8Home.vue` 回修 X8 顶部导航背景：首屏不再固定实心黑底，改为参考站首屏透明黑色渐变，滚动时按 `scrollY / 72` 逐渐叠加 `#121212`，滚动到导航高度后才完整黑底。详情页和播放页集数按钮接入 `/api/user/vods/:id/state` 的 `WatchHistory`，按 `lineId + epIndex` 标记上次观看集，并用 `progressSec / durationSec` 显示底部进度条和百分比；X8 播放页补齐观看历史保存，播放中 15 秒节流保存，暂停/结束/切集/离开播放页强制保存到 `/api/user/history`。验证：参考站首页 HTML/CSS 抓取确认头部 `height:72px; z-index:100; transition:background .2s linear` 及首屏 Banner 渐变遮罩；`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-wih7lLzv.js / assets/index-DbeeukER.css`。

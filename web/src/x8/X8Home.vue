@@ -51,13 +51,9 @@
             </div>
           </div>
         </div>
-        <button type="button" @click="goLogin">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5h16v10H8l-4 4Z" /></svg>
-          <span>求片</span>
-        </button>
-        <button type="button" @click="goLogin">
+        <button type="button" @click="goUser('follows')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" /></svg>
-          <span>播放列表</span>
+          <span>我的追剧</span>
         </button>
         <button class="x8-login-btn" type="button" @click="goLogin">登录</button>
       </div>
@@ -580,7 +576,7 @@
       <section v-else class="x8-page-panel x8-login-page">
         <div class="x8-login-card">
           <h1>登录</h1>
-          <p>参考站求片、播放列表入口会先进入登录页。</p>
+          <p>登录后可同步观看历史和我的追剧。</p>
           <button type="button" @click="goUser('history')">进入个人中心</button>
         </div>
       </section>
