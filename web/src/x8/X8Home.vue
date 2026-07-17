@@ -136,7 +136,7 @@
                   <span class="x8-slide-action">
                     <span class="x8-go-title">
                       <b class="list-title">{{ item.name }}</b>
-                      <em v-if="item.remarks" class="list-description">{{ item.remarks }}</em>
+                      <em v-if="vodStatus(item)?.label || item.remarks" class="list-description">{{ vodStatus(item)?.label || item.remarks }}</em>
                     </span>
                   </span>
                 </button>
@@ -735,7 +735,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
-import { readCachedSite } from '../siteConfig'
+import { readCachedCategories, readCachedSite, writeCachedCategories } from '../siteConfig'
 import { clearSession, currentUser, refreshUser, setSession } from '../userStore'
 
 defineOptions({ name: 'X8Home' })
@@ -743,7 +743,7 @@ defineOptions({ name: 'X8Home' })
 const route = useRoute()
 const router = useRouter()
 const site = ref(readCachedSite())
-const types = ref([])
+const types = ref(readCachedCategories())
 const heroItems = ref([])
 const hotItems = ref([])
 const trailerItems = ref([])
@@ -814,6 +814,9 @@ const playbackRate = ref(1)
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const X8_LOCAL_HISTORY_KEY = 'vcms.x8.local.history'
 const X8_SEARCH_HISTORY_KEY = 'vcms.x8.search.history'
+const X8_LOGIN_WALL_CACHE_KEY = 'vcms.x8.login.wall'
+const X8_LOGIN_WALL_CACHE_TTL_MS = 1000 * 60 * 60 * 24
+const X8_LOGIN_WALL_COUNT = 48
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -898,7 +901,7 @@ const loginWallPosters = computed(() => {
     .filter(item => poster(item))
   if (!rows.length) return []
   const next = []
-  for (let i = 0; i < 48; i += 1) next.push(rows[i % rows.length])
+  for (let i = 0; i < X8_LOGIN_WALL_COUNT; i += 1) next.push(rows[i % rows.length])
   return next
 })
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
@@ -963,6 +966,8 @@ const detailAliases = computed(() => {
 const actors = computed(() => (vod.value?.people || []).filter(p => p.role === 'actor' && p.person?.name).slice(0, 6))
 const playIntro = computed(() => String(vod.value?.blurb || vod.value?.officialIntro || vod.value?.content || '').replace(/<[^>]+>/g, '').trim())
 const detailDuration = computed(() => {
+  const status = vodStatus(vod.value)
+  if (status?.detail) return status.detail
   const text = String(vod.value?.duration || vod.value?.runtime || '').trim()
   if (text) return text
   const count = episodes.value.length || Number(currentLine.value?.epCount || 0)
@@ -1035,13 +1040,14 @@ const X8Card = defineComponent({
   setup(props, { emit }) {
     const pic = () => poster(props.item)
     const meta = () => [props.item.typeName, props.item.subType, props.item.year].filter(Boolean).join(' · ')
+    const status = () => vodStatus(props.item)?.label || props.item.remarks || ''
     const heat = () => heatValue(props.item) || '0'
     return () => h('article', { class: ['x8-card', props.short ? 'short' : ''], onClick: () => emit('open', props.item.id) }, [
       h('div', { class: 'x8-card-poster' }, [
         pic() ? h('img', { src: pic(), alt: props.item.name || '', loading: 'lazy', onError: onImgError }) : null,
         h('div', { class: 'x8-card-tags' }, [h('span', '蓝光')]),
         h('div', { class: 'x8-card-bottom' }, [
-          h('span', props.item.remarks || meta() || ''),
+          h('span', status() || meta() || ''),
           props.item.rating ? h('b', props.item.rating) : null,
         ]),
         h('div', { class: 'x8-card-hover' }, [
@@ -1212,6 +1218,48 @@ function uniqueVods(...groups) {
   }
   return result
 }
+function compactWallItem(item) {
+  if (!item || !poster(item)) return null
+  return {
+    id: item.id,
+    name: item.name,
+    pic: item.officialPic || item.pic || item.localPic || '',
+    officialPic: item.officialPic || '',
+    localPic: item.localPic || '',
+    year: item.year,
+    typeName: item.typeName,
+    remarks: item.remarks,
+  }
+}
+function readLoginWallCache(allowExpired = false) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(X8_LOGIN_WALL_CACHE_KEY) || 'null')
+    if (!cached || !Array.isArray(cached.rows)) return []
+    if (!allowExpired && Date.now() - Number(cached.at || 0) > X8_LOGIN_WALL_CACHE_TTL_MS) return []
+    return cached.rows.filter(item => item && poster(item)).slice(0, X8_LOGIN_WALL_COUNT)
+  } catch {
+    return []
+  }
+}
+function writeLoginWallCache(rows) {
+  const next = uniqueVods(...(Array.isArray(rows) ? [rows] : rows))
+    .map(compactWallItem)
+    .filter(Boolean)
+    .slice(0, X8_LOGIN_WALL_COUNT)
+  if (next.length < 8) return
+  localStorage.setItem(X8_LOGIN_WALL_CACHE_KEY, JSON.stringify({ at: Date.now(), rows: next }))
+}
+function collectLoginWallCandidates() {
+  return uniqueVods(
+    loginWallItems.value,
+    heroItems.value,
+    hotItems.value,
+    trailerItems.value,
+    homeSections.value.flatMap(section => [...(section.items || []), ...(section.rank || [])]),
+    list.value,
+    related.value,
+  ).filter(item => poster(item))
+}
 function poster(item) {
   return imgUrl(item?.officialPic || item?.pic || item?.localPic || '')
 }
@@ -1235,6 +1283,29 @@ function heatValue(item) {
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
   return String(n)
+}
+function vodStatus(vod) {
+  const text = String(vod?.remarks || '').trim()
+  if (!text) return null
+  const fraction = text.match(/^\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?$/)
+  if (fraction) {
+    const current = Number(fraction[1])
+    const total = Number(fraction[2])
+    if (current > 0 && total > 0) {
+      return current >= total
+        ? { label: `全${total}集`, detail: `全${total}集`, type: 'done' }
+        : { label: `更新至${current}集`, detail: `更新至${current}集 / 共${total}集`, type: 'updating' }
+    }
+  }
+  const full = text.match(/全\s*(\d+)\s*(集|话|期|回)/i)
+  if (full) return { label: `全${full[1]}集`, detail: `全${full[1]}集`, type: 'done' }
+  if (/完结|已完结|全集|大结局|终章/i.test(text)) return { label: '完结', detail: '完结', type: 'done' }
+  const updating = text.match(/(?:更新至|更新到|更至)\s*第?\s*(\d+)\s*(集|话|期|回)?|^第\s*(\d+)\s*(集|话|期|回)$/i)
+  if (updating) {
+    const n = updating[1] || updating[3]
+    return { label: `更新至${n}集`, detail: `更新至${n}集`, type: 'updating' }
+  }
+  return { label: text, detail: text, type: 'raw' }
 }
 function rankTags(item) {
   return [item?.subType, item?.typeName, item?.year].filter(Boolean).slice(0, 3)
@@ -1903,7 +1974,10 @@ async function refreshRelated() {
 }
 async function ensureTypes() {
   if (types.value.length) return types.value
-  types.value = await api.types().catch(() => [])
+  const cached = readCachedCategories()
+  if (cached.length) types.value = cached
+  const rows = await api.types().catch(() => [])
+  if (rows?.length) types.value = writeCachedCategories(rows)
   return types.value
 }
 async function loadHome() {
@@ -1954,6 +2028,9 @@ async function loadHome() {
     const sectionFill = sections.flatMap(section => section.items)
     hotItems.value = uniqueVods(hotRes, heroRes?.list, sectionFill).slice(0, 28)
     trailerItems.value = uniqueVods(heroItems.value, hotItems.value, sectionFill).filter(item => poster(item)).slice(0, 5)
+    const wallRows = collectLoginWallCandidates()
+    loginWallItems.value = wallRows.slice(0, X8_LOGIN_WALL_COUNT)
+    writeLoginWallCache(wallRows)
   } finally {
     loading.value = false
   }
@@ -2007,14 +2084,22 @@ async function loadRanks() {
 }
 async function loadX8Login() {
   loading.value = false
-  if (!loginWallItems.value.length) {
-    const [hot, rating, animeHot, configuredHot] = await Promise.all([
+  await ensureTypes()
+  const localRows = collectLoginWallCandidates()
+  if (localRows.length) loginWallItems.value = localRows.slice(0, X8_LOGIN_WALL_COUNT)
+  if (loginWallItems.value.length < X8_LOGIN_WALL_COUNT) {
+    const cachedRows = readLoginWallCache(true)
+    if (cachedRows.length) loginWallItems.value = uniqueVods(loginWallItems.value, cachedRows).slice(0, X8_LOGIN_WALL_COUNT)
+  }
+  if (loginWallItems.value.length < X8_LOGIN_WALL_COUNT) {
+    const [hot, rating, configuredHot] = await Promise.all([
       api.vods({ page: 1, size: 48, sort: 'hot' }).catch(() => ({ list: [] })),
       api.vods({ page: 1, size: 48, sort: 'rating' }).catch(() => ({ list: [] })),
-      api.vods({ page: 1, size: 48, type: '动漫', sort: 'hot' }).catch(() => ({ list: [] })),
       api.hot(48).catch(() => []),
     ])
-    loginWallItems.value = uniqueVods(configuredHot || [], hot?.list || [], rating?.list || [], animeHot?.list || []).filter(item => poster(item)).slice(0, 48)
+    const next = uniqueVods(loginWallItems.value, configuredHot || [], hot?.list || [], rating?.list || []).filter(item => poster(item))
+    loginWallItems.value = next.slice(0, X8_LOGIN_WALL_COUNT)
+    writeLoginWallCache(next)
   }
   try {
     loginConfig.value = await api.registerConfig()
