@@ -225,7 +225,6 @@
                 </template>
               </div>
             </div>
-            <x8-rank-card :title="section.rankTitle" :items="section.rank" :loading="loading" @open="goDetail" @more="goRank" />
           </section>
         </template>
       </template>
@@ -1508,7 +1507,7 @@ function collectLoginWallCandidates() {
     heroItems.value,
     hotItems.value,
     trailerItems.value,
-    homeSections.value.flatMap(section => [...(section.items || []), ...(section.rank || [])]),
+    homeSections.value.flatMap(section => section.items || []),
     list.value,
     related.value,
   ).filter(item => poster(item))
@@ -2479,10 +2478,8 @@ async function loadHome() {
       key: type,
       type,
       title: `最新${type}`,
-      rankTitle: `${type}热榜`,
       page: 1,
       items: [],
-      rank: [],
     }))
     const heroPromise = api.hot(12)
       .then(rows => {
@@ -2495,18 +2492,14 @@ async function loadHome() {
     Promise.all([heroPromise, hotPromise]).then(([heroRes, hotRes]) => {
       hotItems.value = uniqueVods(hotRes, heroRes?.list).slice(0, 28)
     }).catch(() => {})
-    const sectionPromises = sectionTypes.map((type, index) => Promise.all([
-      api.vods({ page: 1, size: 12, type, sort: 'recent' }).catch(() => ({ list: [] })),
-      api.vods({ page: 1, size: 10, type, sort: 'hot' }).catch(() => ({ list: [] })),
-    ]).then(([recent, rank]) => {
+    const sectionPromises = sectionTypes.map((type, index) => api.vods({ page: 1, size: 12, type, sort: 'recent' }).catch(() => ({ list: [] })).then((recent) => {
       const next = [...homeSections.value]
       next[index] = {
         ...next[index],
         items: recent?.list || [],
-        rank: rank?.list || [],
       }
       homeSections.value = next
-      return [recent, rank]
+      return recent
     }))
 
     const [heroRes, hotRes, ...sectionRes] = await Promise.all([
@@ -3166,6 +3159,7 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   color: rgba(255,255,255,.72);
   font-size: 14px;
+  font-weight: 500;
 }
 .x8-user-dropdown-panel button:hover {
   color: #fff;
@@ -3948,9 +3942,7 @@ onBeforeUnmount(() => {
   transform: scale(1.1);
 }
 .x8-section-row {
-  display: flex;
-  gap: 22px;
-  align-items: flex-start;
+  display: block;
 }
 .x8-section-main {
   flex: 1;
@@ -5813,13 +5805,10 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .x8-user-side-nav button:hover,
-.x8-user-side-nav button.active {
+.x8-user-side-nav button.active,
+.x8-user-side-logout:hover {
   color: #fff;
   background: rgba(255,255,255,.075);
-}
-.x8-user-side-logout {
-  color: rgba(255,120,132,.9);
-  background: rgba(255,92,107,.08);
 }
 .x8-user-content {
   min-width: 0;
@@ -5844,8 +5833,7 @@ onBeforeUnmount(() => {
   line-height: 32px;
   font-weight: 700;
 }
-.x8-user-content-head button,
-.x8-user-save {
+.x8-user-content-head button {
   height: 36px;
   border-radius: 8px;
   padding: 0 16px;
@@ -5853,6 +5841,15 @@ onBeforeUnmount(() => {
   background: #fff;
   font-size: 13px;
   font-weight: 700;
+}
+.x8-user-save {
+  height: 36px;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #111;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 500;
 }
 .x8-user-info-panel {
   display: grid;
@@ -6007,7 +6004,6 @@ onBeforeUnmount(() => {
 }
 .x8-user-section-head .x8-user-save {
   flex: 0 0 auto;
-  font: 500 12px/1 "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
 }
 .x8-user-history-panel {
   min-width: 0;
@@ -6252,7 +6248,7 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,.82);
   background: rgba(255,255,255,.09);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
 }
 .x8-user-follow-actions button:hover {
   color: #fff;
@@ -6874,9 +6870,6 @@ onBeforeUnmount(() => {
   }
   .x8-section-row {
     display: block;
-  }
-  .x8-section-row .x8-rank-card {
-    display: none;
   }
   .x8-player-video {
     grid-template-columns: minmax(0, 1fr) 360px;
