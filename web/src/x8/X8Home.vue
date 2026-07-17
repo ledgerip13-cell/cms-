@@ -26,10 +26,31 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19V9" /><path d="M12 19V5" /><path d="M19 19v-7" /></svg>
           <span>排行榜</span>
         </button>
-        <button type="button" @click="goUser('history')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-          <span>历史</span>
-        </button>
+        <div class="x8-history-menu">
+          <button class="x8-history-trigger" type="button" @click="goUser('history')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+            <span>历史</span>
+          </button>
+          <div class="x8-history-dropdown">
+            <div class="x8-history-panel">
+              <div class="x8-history-head">
+                <span>播放记录</span>
+                <button v-if="localHistoryRows.length" type="button" @click.stop="clearLocalHistory">清空</button>
+              </div>
+              <div v-if="localHistoryRows.length" class="x8-history-list">
+                <button v-for="item in localHistoryRows.slice(0, 6)" :key="`x8-h-${item.vodId}`" type="button" @click.stop="goHistoryItem(item)">
+                  <img v-if="poster(item.vod)" :src="poster(item.vod)" :alt="item.vod?.name || ''" @error="onImgError" />
+                  <span>
+                    <b>{{ item.vod?.name || '影片' }}</b>
+                    <em>{{ historyItemSub(item) }}</em>
+                  </span>
+                  <i v-if="historyItemProgress(item)">{{ historyItemProgress(item) }}</i>
+                </button>
+              </div>
+              <div v-else class="x8-history-empty">暂无播放记录数据</div>
+            </div>
+          </div>
+        </div>
         <button type="button" @click="goLogin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5h16v10H8l-4 4Z" /></svg>
           <span>求片</span>
@@ -650,6 +671,7 @@ const years = ref([])
 const vod = ref({})
 const related = ref([])
 const rankGroups = ref([])
+const localHistoryRows = ref([])
 const page = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -699,6 +721,7 @@ const autoNext = ref(true)
 const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
+const X8_LOCAL_HISTORY_KEY = 'vcms.x8.local.history'
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -1205,7 +1228,7 @@ function scrollToTrailer() {
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function onScroll() {
-  const alpha = Math.min(0.8, Math.max(0, (window.scrollY / 180) * 0.8))
+  const alpha = Math.min(0.8, Math.max(0, (window.scrollY / 380) * 0.8))
   headerBgOpacity.value = alpha.toFixed(2)
   headerBlur.value = `${Math.round((alpha / 0.8) * 16)}px`
   scrolled.value = alpha >= 0.78
@@ -1258,7 +1281,7 @@ function saveHistoryTick() {
   saveWatchHistory(false)
 }
 function saveWatchHistory(force = false) {
-  if (!user.value || !vod.value?.id || !currentLine.value?.id || !playUrl.value) return
+  if (!vod.value?.id || !currentLine.value?.id || !playUrl.value) return
   const video = videoEl.value
   const progressSec = Math.floor(Number(video?.currentTime) || currentTime.value || 0)
   const durationSec = Math.floor(Number(video?.duration) || duration.value || 0)
@@ -1274,7 +1297,69 @@ function saveWatchHistory(force = false) {
     durationSec,
   }
   vodHistory.value = { ...(vodHistory.value || {}), ...payload }
-  api.saveHistory(payload).catch(() => {})
+  saveLocalHistory(payload)
+  if (user.value) api.saveHistory(payload).catch(() => {})
+}
+function readLocalHistory() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(X8_LOCAL_HISTORY_KEY) || '[]')
+    localHistoryRows.value = Array.isArray(rows) ? rows.filter(item => item?.vodId).slice(0, 30) : []
+  } catch {
+    localHistoryRows.value = []
+  }
+  return localHistoryRows.value
+}
+function saveLocalHistory(payload) {
+  const row = {
+    ...payload,
+    updatedAt: new Date().toISOString(),
+    vod: {
+      id: vod.value.id,
+      name: vod.value.name,
+      pic: vod.value.pic,
+      localPic: vod.value.localPic,
+      officialPic: vod.value.officialPic,
+      typeName: vod.value.typeName,
+      year: vod.value.year,
+    },
+  }
+  const rows = readLocalHistory().filter(item => Number(item.vodId) !== Number(row.vodId))
+  const next = [row, ...rows].slice(0, 30)
+  localHistoryRows.value = next
+  try {
+    localStorage.setItem(X8_LOCAL_HISTORY_KEY, JSON.stringify(next))
+  } catch {}
+}
+function clearLocalHistory() {
+  localHistoryRows.value = []
+  try {
+    localStorage.removeItem(X8_LOCAL_HISTORY_KEY)
+  } catch {}
+}
+function localHistoryForVod(id) {
+  return readLocalHistory().find(item => Number(item.vodId) === Number(id)) || null
+}
+function historyItemProgress(item) {
+  const durationSec = Number(item?.durationSec || 0)
+  const progressSec = Number(item?.progressSec || 0)
+  if (!durationSec || !progressSec) return ''
+  return `${Math.min(99, Math.max(1, Math.round((progressSec / durationSec) * 100)))}%`
+}
+function historyItemSub(item) {
+  const ep = item?.epName || `第${Number(item?.epIndex || 0) + 1}集`
+  const progress = historyItemProgress(item)
+  return progress ? `${ep} · 已看 ${progress}` : ep
+}
+function goHistoryItem(item) {
+  if (!item?.vodId) return
+  const path = route.path.startsWith('/x8') ? `/x8/play/${item.vodId}` : `/play/${item.vodId}`
+  router.push({
+    path,
+    query: cleanQuery({
+      line: item.lineId || undefined,
+      ep: Number(item.epIndex || 0) + 1,
+    }),
+  })
 }
 function isHistoryEpisode(index, lineId = currentLineId.value) {
   const h = vodHistory.value
@@ -1747,7 +1832,7 @@ async function loadVod(withPlay = false) {
     ])
     related.value = relatedRows || []
     followed.value = Boolean(state?.followed)
-    vodHistory.value = state?.history || null
+    vodHistory.value = state?.history || localHistoryForVod(id)
     const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
     if (!requestedLineId && historyLine) currentLineId.value = historyLine.id
     if (withPlay && currentLineId.value) playCurrent()
@@ -1777,6 +1862,7 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', syncFullscreenState)
   document.addEventListener('webkitfullscreenchange', syncFullscreenState)
   onResize()
+  readLocalHistory()
   startHeroTimer()
   startSearchHintTimer()
   loadSearchHints()
@@ -1970,6 +2056,123 @@ onBeforeUnmount(() => {
 .x8-header-tools button:hover {
   color: #fff;
   transform: scale(1.08);
+}
+.x8-history-menu {
+  position: relative;
+  width: 40px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.x8-history-menu .x8-history-trigger {
+  width: 40px;
+}
+.x8-history-dropdown {
+  display: none;
+  position: absolute;
+  top: 65px;
+  right: 50%;
+  z-index: 105;
+  width: 368px;
+  border-radius: 12px;
+  transform: translateX(50%);
+  animation: x8-history-fade .28s ease both;
+}
+.x8-history-menu:hover .x8-history-dropdown,
+.x8-history-menu:focus-within .x8-history-dropdown {
+  display: block;
+}
+.x8-history-panel {
+  width: 368px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #1a1a1a;
+  box-shadow: 0 2px 10px rgba(0,0,0,.2);
+}
+.x8-history-head {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 0 20px;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-history-head button {
+  width: auto;
+  min-width: 0;
+  height: 28px;
+  color: rgba(255,255,255,.42);
+  font-size: 12px;
+}
+.x8-history-list {
+  max-height: 360px;
+  padding: 0 10px 12px;
+  overflow-y: auto;
+}
+.x8-history-list button {
+  width: 100%;
+  height: 58px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #fff;
+  text-align: left;
+}
+.x8-history-list button:hover {
+  background: rgba(255,255,255,.06);
+  transform: none;
+}
+.x8-history-list img {
+  width: 38px;
+  height: 42px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: rgba(255,255,255,.08);
+}
+.x8-history-list span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.x8-history-list b,
+.x8-history-list em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-history-list b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-history-list em {
+  color: rgba(255,255,255,.46);
+  font-size: 12px;
+  font-style: normal;
+}
+.x8-history-list i {
+  color: rgba(255,255,255,.5);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+.x8-history-empty {
+  width: 358px;
+  height: 200px;
+  color: rgba(255,255,255,.6);
+  font-size: 16px;
+  line-height: 200px;
+  text-align: center;
+}
+@keyframes x8-history-fade {
+  from { opacity: 0; transform: translate(50%, -8px); }
+  to { opacity: 1; transform: translate(50%, 0); }
 }
 .x8-header-tools svg {
   width: 22px;
