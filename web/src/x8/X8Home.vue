@@ -80,7 +80,33 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /><path d="M9 7h6" /><path d="M9 11h4" /></svg>
           <span>我的追剧</span>
         </button>
-        <button class="x8-login-btn" type="button" @click="goLogin">登录</button>
+        <div v-if="user" class="x8-user-entry">
+          <button class="x8-user-avatar-btn" type="button" @click="goUser('userInfo')">
+            <img v-if="x8UserAvatar" :src="x8UserAvatar" :alt="x8UserName" @error="x8AvatarBroken = true" />
+            <span v-else>{{ x8UserInitial }}</span>
+          </button>
+          <div class="x8-user-dropdown">
+            <div class="x8-user-dropdown-panel">
+              <button type="button" @click="goUser('userInfo')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>
+                <span>个人中心</span>
+              </button>
+              <button type="button" @click="goUser('history')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+                <span>历史记录</span>
+              </button>
+              <button type="button" @click="goUser('follows')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /></svg>
+                <span>收藏记录</span>
+              </button>
+              <button type="button" @click="logoutX8">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5" /></svg>
+                <span>退出登录</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <button v-else class="x8-login-btn" type="button" @click="goLogin">登录</button>
       </div>
     </header>
 
@@ -710,7 +736,7 @@ import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
 import { readCachedSite } from '../siteConfig'
-import { setSession } from '../userStore'
+import { clearSession, currentUser, refreshUser, setSession } from '../userStore'
 
 defineOptions({ name: 'X8Home' })
 
@@ -757,8 +783,9 @@ const playGroupsEl = ref(null)
 const sideEpisodesEl = ref(null)
 const miniLinesEl = ref(null)
 const miniEpisodesEl = ref(null)
-const user = ref(null)
+const user = currentUser
 const followed = ref(false)
+const x8AvatarBroken = ref(false)
 const loginMode = ref('login')
 const loginConfig = ref({ allowRegister: true, inviteRequired: false })
 const loginLoading = ref(false)
@@ -860,6 +887,12 @@ const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
 const searchHotRows = computed(() => searchHints.value.slice(0, 12))
+const x8UserName = computed(() => user.value?.nickname || user.value?.username || '我的')
+const x8UserInitial = computed(() => x8UserName.value.slice(0, 1).toUpperCase())
+const x8UserAvatar = computed(() => {
+  if (x8AvatarBroken.value) return ''
+  return user.value?.avatar || user.value?.portrait || user.value?.userPortrait || ''
+})
 const loginWallPosters = computed(() => {
   const rows = uniqueVods(loginWallItems.value, heroItems.value, hotItems.value, homeSections.value.flatMap(section => section.items || []))
     .filter(item => poster(item))
@@ -1227,6 +1260,12 @@ function goLogin() {
 function goUser(tab) {
   router.push({ path: '/me', query: { tab } })
 }
+function logoutX8() {
+  clearSession()
+  x8AvatarBroken.value = false
+  notifySuccess('已退出登录')
+  goX8Home()
+}
 function submitSearch(text) {
   const value = String(text || '').trim()
   if (!value || value === '搜索') return
@@ -1323,6 +1362,7 @@ async function submitX8Auth() {
       : await api.userRegister({ ...payload, nickname: loginForm.nickname, inviteCode: loginForm.inviteCode })
     setSession(result.token, result.user)
     user.value = result.user
+    x8AvatarBroken.value = false
     notifySuccess(loginMode.value === 'register' ? '注册成功' : '登录成功')
     resetLoginForm()
     router.replace(route.query.redirect ? String(route.query.redirect) : '/me')
@@ -1835,9 +1875,9 @@ function shouldHandlePlayerHotkey(event) {
 async function ensureUser() {
   if (user.value) return user.value
   try {
-    user.value = await api.userMe()
+    await refreshUser()
   } catch {
-    user.value = null
+    clearSession()
   }
   return user.value
 }
@@ -2052,6 +2092,7 @@ onMounted(() => {
   startHeroTimer()
   startSearchHintTimer()
   loadSearchHints()
+  refreshUser().catch(() => {})
 })
 onBeforeUnmount(() => {
   saveWatchHistory(true)
@@ -2451,6 +2492,90 @@ onBeforeUnmount(() => {
   background: #1a1a1a;
   box-shadow: 0 2px 10px rgba(0,0,0,.2);
 }
+.x8-user-entry {
+  position: relative;
+  width: 40px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+}
+.x8-user-entry::after {
+  content: "";
+  position: absolute;
+  left: -24px;
+  right: -24px;
+  top: 38px;
+  height: 30px;
+  pointer-events: none;
+}
+.x8-user-entry:hover::after,
+.x8-user-entry:focus-within::after {
+  pointer-events: auto;
+}
+.x8-user-avatar-btn {
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0;
+  color: #111 !important;
+  background: #fff !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  transform: none !important;
+}
+.x8-user-avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.x8-user-dropdown {
+  display: none;
+  position: absolute;
+  top: 65px;
+  right: 50%;
+  z-index: 106;
+  width: 176px;
+  transform: translateX(50%);
+  animation: x8-history-fade .28s ease both;
+}
+.x8-user-entry:hover .x8-user-dropdown,
+.x8-user-entry:focus-within .x8-user-dropdown {
+  display: block;
+}
+.x8-user-dropdown-panel {
+  overflow: hidden;
+  border-radius: 12px;
+  padding: 8px;
+  background: #1a1a1a;
+  box-shadow: 0 2px 10px rgba(0,0,0,.2);
+}
+.x8-user-dropdown-panel button {
+  width: 100%;
+  height: 40px;
+  min-width: 0;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 10px;
+  color: rgba(255,255,255,.72);
+  font-size: 14px;
+}
+.x8-user-dropdown-panel button:hover {
+  color: #fff;
+  background: rgba(255,255,255,.07);
+  transform: none;
+}
+.x8-user-dropdown-panel svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
 .x8-history-head {
   height: 48px;
   display: flex;
@@ -2540,6 +2665,12 @@ onBeforeUnmount(() => {
   height: 22px;
   flex: 0 0 22px;
   stroke-width: 2;
+}
+.x8-header-tools .x8-user-dropdown-panel svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  stroke-width: 1.8;
 }
 .x8-header-tools .x8-login-btn {
   min-width: 64px;
