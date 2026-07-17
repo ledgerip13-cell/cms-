@@ -2897,10 +2897,12 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-right: 34px;
+  padding: 0 34px 0 24px;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 58px), transparent 100%);
-  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 58px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 58px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 32px, #000 calc(100% - 58px), transparent 100%);
+  scroll-padding-left: 24px;
+  scroll-padding-right: 34px;
   scroll-behavior: smooth;
 }
 .x8-nav::-webkit-scrollbar {
@@ -7020,9 +7022,11 @@ onBeforeUnmount(() => {
   }
   .x8-nav {
     gap: 22px;
-    padding-right: 28px;
-    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 48px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 48px), transparent 100%);
+    padding: 0 28px 0 22px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 48px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 48px), transparent 100%);
+    scroll-padding-left: 22px;
+    scroll-padding-right: 28px;
   }
   .x8-header-tools {
     gap: 20px;
@@ -7125,7 +7129,11 @@ onBeforeUnmount(() => {
     order: 4;
     overflow-x: auto;
     gap: 22px;
-    padding-bottom: 8px;
+    padding: 0 28px 8px 22px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 42px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 28px, #000 calc(100% - 42px), transparent 100%);
+    scroll-padding-left: 22px;
+    scroll-padding-right: 28px;
     scrollbar-width: none;
   }
   .x8-header-tools {
