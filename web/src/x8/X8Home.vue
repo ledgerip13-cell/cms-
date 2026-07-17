@@ -2717,11 +2717,10 @@ onBeforeUnmount(() => {
   display: none;
   position: absolute;
   top: 65px;
-  right: 50%;
+  right: 0;
   z-index: 105;
-  width: 368px;
+  width: min(368px, calc(100vw - 32px));
   border-radius: 12px;
-  transform: translateX(50%);
   animation: x8-history-fade .28s ease both;
 }
 .x8-history-menu:hover .x8-history-dropdown,
@@ -2729,7 +2728,7 @@ onBeforeUnmount(() => {
   display: block;
 }
 .x8-history-panel {
-  width: 368px;
+  width: 100%;
   overflow: hidden;
   border-radius: 12px;
   background: #1a1a1a;
@@ -2779,10 +2778,9 @@ onBeforeUnmount(() => {
   display: none;
   position: absolute;
   top: 65px;
-  right: 50%;
+  right: 0;
   z-index: 106;
   width: 176px;
-  transform: translateX(50%);
   animation: x8-history-fade .28s ease both;
 }
 .x8-user-entry:hover .x8-user-dropdown,
@@ -2900,8 +2898,8 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 @keyframes x8-history-fade {
-  from { opacity: 0; transform: translate(50%, -8px); }
-  to { opacity: 1; transform: translate(50%, 0); }
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .x8-header-tools svg {
   width: 22px;
