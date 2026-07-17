@@ -51,12 +51,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19V9" /><path d="M12 19V5" /><path d="M19 19v-7" /></svg>
           <span>排行榜</span>
         </button>
-        <div class="x8-history-menu">
+        <div ref="historyMenuEl" class="x8-history-menu" @pointerenter="updateHeaderDropdownPositions" @focusin="updateHeaderDropdownPositions">
           <button class="x8-history-trigger" type="button" @click="goUser('history')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
             <span>历史</span>
           </button>
-          <div class="x8-history-dropdown">
+          <div class="x8-history-dropdown" :style="{ left: historyDropdownLeft }">
             <div class="x8-history-panel">
               <div class="x8-history-head">
                 <span>播放记录</span>
@@ -80,12 +80,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /><path d="M9 7h6" /><path d="M9 11h4" /></svg>
           <span>我的追剧</span>
         </button>
-        <div v-if="user" class="x8-user-entry">
+        <div v-if="user" ref="userEntryEl" class="x8-user-entry" @pointerenter="updateHeaderDropdownPositions" @focusin="updateHeaderDropdownPositions">
           <button class="x8-user-avatar-btn" type="button" @click="goUser('userInfo')">
             <img v-if="x8UserAvatar" :src="x8UserAvatar" :alt="x8UserName" @error="x8AvatarBroken = true" />
             <span v-else>{{ x8UserInitial }}</span>
           </button>
-          <div class="x8-user-dropdown">
+          <div class="x8-user-dropdown" :style="{ left: userDropdownLeft }">
             <div class="x8-user-dropdown-panel">
               <button type="button" @click="goUser('userInfo')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>
@@ -921,6 +921,8 @@ const headerBgOpacity = ref(0)
 const headerBlur = ref('0px')
 const kw = ref('')
 const searchFocused = ref(false)
+const historyDropdownLeft = ref('10px')
+const userDropdownLeft = ref('10px')
 const searchHints = ref([])
 const searchHintIdx = ref(0)
 const searchHistoryRows = ref([])
@@ -936,6 +938,8 @@ const vodHistory = ref(null)
 const videoEl = ref(null)
 const videoBox = ref(null)
 const navEl = ref(null)
+const historyMenuEl = ref(null)
+const userEntryEl = ref(null)
 const sideLinesEl = ref(null)
 const playGroupsEl = ref(null)
 const sideEpisodesEl = ref(null)
@@ -1834,8 +1838,23 @@ function onScroll() {
   headerBlur.value = `${Math.round((alpha / 0.8) * 16)}px`
   scrolled.value = alpha >= 0.78
 }
+function dropdownLeftFor(el, width) {
+  if (!el || typeof window === 'undefined') return '10px'
+  const rect = el.getBoundingClientRect()
+  const viewport = window.innerWidth || 0
+  const panelWidth = Math.min(width, Math.max(0, viewport - 20))
+  const minLeft = 10
+  const maxLeft = Math.max(minLeft, viewport - panelWidth - 10)
+  const centered = rect.left + rect.width / 2 - panelWidth / 2
+  return `${Math.round(Math.min(maxLeft, Math.max(minLeft, centered)))}px`
+}
+function updateHeaderDropdownPositions() {
+  historyDropdownLeft.value = dropdownLeftFor(historyMenuEl.value, 368)
+  userDropdownLeft.value = dropdownLeftFor(userEntryEl.value, 176)
+}
 function onResize() {
   viewportWidth.value = window.innerWidth
+  updateHeaderDropdownPositions()
 }
 function startHeroTimer() {
   clearInterval(heroTimer)
@@ -2904,11 +2923,10 @@ onBeforeUnmount(() => {
 }
 .x8-history-dropdown {
   display: none;
-  position: absolute;
+  position: fixed;
   top: 65px;
-  right: 0;
   z-index: 105;
-  width: min(368px, calc(100vw - 32px));
+  width: min(368px, calc(100vw - 20px));
   border-radius: 12px;
   animation: x8-history-fade .28s ease both;
 }
@@ -2965,11 +2983,10 @@ onBeforeUnmount(() => {
 }
 .x8-user-dropdown {
   display: none;
-  position: absolute;
+  position: fixed;
   top: 65px;
-  right: 0;
   z-index: 106;
-  width: 176px;
+  width: min(176px, calc(100vw - 20px));
   animation: x8-history-fade .28s ease both;
 }
 .x8-user-entry:hover .x8-user-dropdown,
