@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 排行榜页骨架屏补齐）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 头部渐变背景与集数观看进度）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 头部渐变背景与集数观看进度断点**：`web/src/x8/X8Home.vue` 回修 X8 顶部导航背景：首屏不再固定实心黑底，改为参考站首屏透明黑色渐变，滚动时按 `scrollY / 72` 逐渐叠加 `#121212`，滚动到导航高度后才完整黑底。详情页和播放页集数按钮接入 `/api/user/vods/:id/state` 的 `WatchHistory`，按 `lineId + epIndex` 标记上次观看集，并用 `progressSec / durationSec` 显示底部进度条和百分比；X8 播放页补齐观看历史保存，播放中 15 秒节流保存，暂停/结束/切集/离开播放页强制保存到 `/api/user/history`。验证：参考站首页 HTML/CSS 抓取确认头部 `height:72px; z-index:100; transition:background .2s linear` 及首屏 Banner 渐变遮罩；`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-wih7lLzv.js / assets/index-DbeeukER.css`。
 - **2026-07-17 X8 排行榜页骨架屏补齐断点**：`web/src/x8/X8Home.vue` 修复 `/x8/rank` 首次进入时外层 `rankGroups` 为空导致整页空白的问题：排行榜页在 `loading && !rankGroups.length` 时先渲染 `综合榜/电影榜/动漫榜/电视剧榜/短剧榜/漫剧榜` 6 个固定骨架榜卡；`X8RankCard` 静态大榜骨架同步改为前三名展开、共 10 条，和真实榜单高度一致，避免 loading 到数据切换时大面积跳变。验证：`npm run build`、`git diff --check` 通过；新前端包 `assets/index-hx2Sy6q7.js / assets/index-idr0hPvg.css`。
 - **2026-07-17 X8 搜索热词真实热度与头部样式对齐断点**：`web/src/x8/X8Home.vue` 将顶部搜索轮播热词从 `/api/hot` 推荐配置切换为 `/api/vods?sort=hot&size=20`，按 `ratingCount/_count.plays/playCount/viewCount/hits` 真实热度字段二次降序后去重取前 10，避免少量推荐项或无依据数据影响搜索榜单顺序；同步按参考站 `https://www.x8kb9k8.com/` 首页头部调整 X8 顶栏：固定高度 `72px`、`#121212` 黑底、`z-index:100`、导航 `18px/500`，hover/active 放大 `1.11111` 且字重 `700`，搜索框宽度收至 `368px`、按钮区按参考站 46px。验证：本地接口 `/api/vods?page=1&size=12&sort=hot` 返回含 `ratingCount` 的热度排序数据；`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-B9Enepaa.js / assets/index-idr0hPvg.css`。
 - **2026-07-17 X8 排行榜底部 hover 锁定行隐藏断点**：`web/src/x8/X8Home.vue` 修复排行榜从底部 hover 往上顶时锁定行仍可见导致重叠的问题：`locked` 行现在同步设置 `opacity:0`、`visibility:hidden`、`pointer-events:none`，渲染属性补 `aria-hidden=true` 与 `tabindex=-1`，让被顶上去的第 4 名以后行只作为布局位移参与计算但视觉和交互都隐藏。验证：`npm run build`、`git diff --check`、产物 `locked{opacity:0...visibility:hidden` 与 `aria-hidden` 关键字检查通过；新前端包 `assets/index-CNHXO1tn.js / assets/index-B00w6H0Z.css`。

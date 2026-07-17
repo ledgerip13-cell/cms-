@@ -1,6 +1,6 @@
 <template>
   <div class="x8-page">
-    <header class="x8-header" :class="{ solid: scrolled }">
+    <header class="x8-header" :class="{ solid: scrolled }" :style="{ '--x8-header-bg': headerBgOpacity }">
       <button class="x8-brand" type="button" @click="goX8Home">
         <img v-if="showHomeLogo && site.logo" :src="site.logo" alt="logo" />
         <span v-else-if="showHomeLogo" class="x8-brand-mark">JP</span>
@@ -320,8 +320,16 @@
             </button>
           </div>
           <div class="x8-detail-episodes">
-            <button v-for="ep in detailEpisodes" :key="`detail-ep-${ep.index}`" type="button" @click="goPlay(vod.id, ep.index)">
-              {{ ep.index + 1 }}
+            <button
+              v-for="ep in detailEpisodes"
+              :key="`detail-ep-${ep.index}`"
+              type="button"
+              :class="{ watched: isHistoryEpisode(ep.index, currentLineId) }"
+              :style="episodeProgressStyle(ep.index, currentLineId)"
+              @click="goPlay(vod.id, ep.index)"
+            >
+              <span>{{ ep.index + 1 }}</span>
+              <em v-if="isHistoryEpisode(ep.index, currentLineId)">{{ historyEpisodeText }}</em>
             </button>
           </div>
         </section>
@@ -359,7 +367,7 @@
                       @timeupdate="syncVideoState"
                       @loadedmetadata="syncVideoState"
                       @play="playing = true"
-                      @pause="playing = false"
+                      @pause="onVideoPause"
                       @volumechange="syncVideoState"
                       @ended="onVideoEnded"
                       @webkitbeginfullscreen="nativeFullscreen = true"
@@ -471,8 +479,16 @@
                     </div>
                   </div>
                   <div ref="sideEpisodesEl" class="x8-side-episodes">
-                    <button v-for="row in playVisibleEpisodes" :key="`side-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
-                      {{ row.index + 1 }}
+                    <button
+                      v-for="row in playVisibleEpisodes"
+                      :key="`side-ep-${row.index}`"
+                      type="button"
+                      :class="{ active: currentEpIndex === row.index, watched: isHistoryEpisode(row.index, currentLineId) }"
+                      :style="episodeProgressStyle(row.index, currentLineId)"
+                      @click="selectEpisode(row.index)"
+                    >
+                      <span>{{ row.index + 1 }}</span>
+                      <em v-if="isHistoryEpisode(row.index, currentLineId)">{{ historyEpisodeText }}</em>
                     </button>
                   </div>
                 </div>
@@ -517,8 +533,16 @@
                 </button>
               </div>
               <div ref="miniEpisodesEl" class="x8-episode-grid">
-                <button v-for="row in playAllEpisodes" :key="`mini-ep-${row.index}`" type="button" :class="{ active: currentEpIndex === row.index }" @click="selectEpisode(row.index)">
-                  {{ row.ep.name || row.index + 1 }}
+                <button
+                  v-for="row in playAllEpisodes"
+                  :key="`mini-ep-${row.index}`"
+                  type="button"
+                  :class="{ active: currentEpIndex === row.index, watched: isHistoryEpisode(row.index, currentLineId) }"
+                  :style="episodeProgressStyle(row.index, currentLineId)"
+                  @click="selectEpisode(row.index)"
+                >
+                  <span>{{ row.ep.name || row.index + 1 }}</span>
+                  <em v-if="isHistoryEpisode(row.index, currentLineId)">{{ historyEpisodeText }}</em>
                 </button>
               </div>
             </section>
@@ -630,6 +654,7 @@ const page = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
 const scrolled = ref(false)
+const headerBgOpacity = ref(0)
 const kw = ref('')
 const searchFocused = ref(false)
 const searchHints = ref([])
@@ -642,6 +667,7 @@ const currentEpIndex = ref(0)
 const playUrl = ref('')
 const playKind = ref('')
 const resolving = ref(false)
+const vodHistory = ref(null)
 const videoEl = ref(null)
 const videoBox = ref(null)
 const sideLinesEl = ref(null)
@@ -677,6 +703,7 @@ let heroTimer = 0
 let searchHintTimer = 0
 let controlsTimer = 0
 let browseRequestId = 0
+let historySaveAt = 0
 let hls = null
 
 const sortItems = [
@@ -830,6 +857,17 @@ const currentQualityResLabel = computed(() => {
 const progressPercent = computed(() => {
   if (!duration.value) return 0
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
+})
+const historyPercent = computed(() => {
+  const h = vodHistory.value
+  const durationSec = Number(h?.durationSec || 0)
+  const progressSec = Number(h?.progressSec || 0)
+  if (!durationSec || !progressSec) return 0
+  return Math.min(99, Math.max(1, Math.round((progressSec / durationSec) * 100)))
+})
+const historyEpisodeText = computed(() => {
+  const percent = historyPercent.value
+  return percent ? `${percent}%` : '看过'
 })
 const playbackRateLabel = computed(() => rateLabel(playbackRate.value))
 
@@ -1166,7 +1204,9 @@ function scrollToTrailer() {
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function onScroll() {
-  scrolled.value = window.scrollY > 12
+  const alpha = Math.min(1, Math.max(0, window.scrollY / 72))
+  headerBgOpacity.value = alpha.toFixed(2)
+  scrolled.value = alpha >= 0.98
 }
 function onResize() {
   viewportWidth.value = window.innerWidth
@@ -1205,6 +1245,44 @@ function syncVideoState() {
   duration.value = Number.isFinite(video.duration) ? Number(video.duration) : 0
   muted.value = Boolean(video.muted || video.volume === 0)
   playing.value = !video.paused && !video.ended
+  saveHistoryTick()
+}
+function onVideoPause() {
+  playing.value = false
+  saveWatchHistory(true)
+}
+function saveHistoryTick() {
+  if (Date.now() - historySaveAt < 15000) return
+  saveWatchHistory(false)
+}
+function saveWatchHistory(force = false) {
+  if (!user.value || !vod.value?.id || !currentLine.value?.id || !playUrl.value) return
+  const video = videoEl.value
+  const progressSec = Math.floor(Number(video?.currentTime) || currentTime.value || 0)
+  const durationSec = Math.floor(Number(video?.duration) || duration.value || 0)
+  if (!force && progressSec < 10) return
+  historySaveAt = Date.now()
+  const ep = episodes.value[currentEpIndex.value]
+  const payload = {
+    vodId: vod.value.id,
+    lineId: currentLine.value.id,
+    epIndex: currentEpIndex.value,
+    epName: ep?.name || '',
+    progressSec,
+    durationSec,
+  }
+  vodHistory.value = { ...(vodHistory.value || {}), ...payload }
+  api.saveHistory(payload).catch(() => {})
+}
+function isHistoryEpisode(index, lineId = currentLineId.value) {
+  const h = vodHistory.value
+  if (!h || Number(h.epIndex) !== Number(index)) return false
+  if (h.lineId && lineId && Number(h.lineId) !== Number(lineId)) return false
+  return true
+}
+function episodeProgressStyle(index, lineId = currentLineId.value) {
+  if (!isHistoryEpisode(index, lineId)) return undefined
+  return { '--x8-episode-progress': `${historyPercent.value || 100}%` }
 }
 function showPlayerControls() {
   controlsVisible.value = true
@@ -1353,6 +1431,7 @@ function rateLabel(rate) {
 }
 function onVideoEnded() {
   syncVideoState()
+  saveWatchHistory(true)
   if (autoNext.value) playNextEpisode()
 }
 function setPlaybackRate(rate) {
@@ -1448,6 +1527,7 @@ function syncPlayRouteQuery() {
   window.history.replaceState(window.history.state, '', href)
 }
 function selectEpisode(index) {
+  saveWatchHistory(true)
   currentEpIndex.value = index
   selectedPlayGroupIdx.value = playEpisodeGroups.value.findIndex(group => index >= group.start && index <= group.end)
   if (selectedPlayGroupIdx.value < 0) selectedPlayGroupIdx.value = 0
@@ -1647,9 +1727,12 @@ async function loadVod(withPlay = false) {
   playEpDesc.value = false
   selectedPlayGroupIdx.value = 0
   followed.value = false
+  vodHistory.value = null
+  historySaveAt = 0
   try {
     await ensureTypes()
     const id = Number(route.params.id)
+    const currentUser = await ensureUser()
     vod.value = await api.vod(id).catch(() => ({}))
     const requestedLineId = Number(route.query.line || 0)
     const routeLine = (vod.value?.lines || []).find(line => line.id === requestedLineId)
@@ -1658,17 +1741,21 @@ async function loadVod(withPlay = false) {
     selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
     const [relatedRows, state] = await Promise.all([
       api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => []),
-      api.userVodState(id).catch(() => null),
+      currentUser ? api.userVodState(id).catch(() => null) : Promise.resolve(null),
     ])
     related.value = relatedRows || []
     followed.value = Boolean(state?.followed)
+    vodHistory.value = state?.history || null
+    const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
+    if (!requestedLineId && historyLine) currentLineId.value = historyLine.id
     if (withPlay && currentLineId.value) playCurrent()
   } finally {
     loading.value = false
   }
 }
 
-watch(() => route.fullPath, () => {
+watch(() => route.fullPath, (_next, prev) => {
+  if (String(prev || '').includes('/play/')) saveWatchHistory(true)
   const mode = pageMode.value
   if (mode !== 'play') {
     playerTheater.value = false
@@ -1693,6 +1780,7 @@ onMounted(() => {
   loadSearchHints()
 })
 onBeforeUnmount(() => {
+  saveWatchHistory(true)
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('keydown', onKeydown)
@@ -1725,7 +1813,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 30px;
   padding: env(safe-area-inset-top) 40px 0;
-  background: #121212;
+  background:
+    linear-gradient(180deg, rgba(18,18,18,var(--x8-header-bg, 0)) 0%, rgba(18,18,18,var(--x8-header-bg, 0)) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.68) 0%, rgba(0,0,0,.38) 54%, rgba(0,0,0,0) 100%);
   transition: background .2s linear;
 }
 .x8-header.solid {
@@ -3509,8 +3599,14 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.26);
 }
 .x8-detail-episodes button {
+  position: relative;
+  overflow: hidden;
   min-width: 64px;
   height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 10px;
   padding: 0 18px;
@@ -3522,6 +3618,46 @@ onBeforeUnmount(() => {
 .x8-detail-episodes button:hover {
   background: #fff;
   color: #111;
+}
+.x8-detail-episodes button span,
+.x8-detail-episodes button em,
+.x8-side-episodes button span,
+.x8-side-episodes button em,
+.x8-episode-grid button span,
+.x8-episode-grid button em {
+  position: relative;
+  z-index: 1;
+}
+.x8-detail-episodes button em,
+.x8-side-episodes button em,
+.x8-episode-grid button em {
+  color: rgba(255,255,255,.48);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1;
+}
+.x8-detail-episodes button.watched::before,
+.x8-side-episodes button.watched::before,
+.x8-episode-grid button.watched::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 0;
+  width: var(--x8-episode-progress, 100%);
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6d83f2 0%, #9fb0ff 100%);
+  box-shadow: 0 0 12px rgba(109,131,242,.38);
+}
+.x8-detail-episodes button.watched {
+  border-color: rgba(109,131,242,.45);
+}
+.x8-detail-episodes button:hover em,
+.x8-side-episodes button.active em,
+.x8-episode-grid button.active em {
+  color: rgba(17,17,17,.64);
 }
 .x8-play-shell {
   display: flex;
@@ -3783,13 +3919,17 @@ onBeforeUnmount(() => {
   overflow: hidden;
   min-width: 54px;
   height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 6px;
   padding: 0;
   color: rgba(255,255,255,.88);
   background: transparent;
   font-size: 14px;
-  line-height: 42px;
+  line-height: 1;
   text-align: center;
   white-space: nowrap;
   transition: border-color .25s ease, background .25s ease, color .25s ease;
