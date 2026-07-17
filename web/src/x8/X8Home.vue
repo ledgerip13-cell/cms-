@@ -15,8 +15,8 @@
           {{ item.name }}
         </button>
       </nav>
-      <form class="x8-search" @submit.prevent="doSearch">
-        <input v-model.trim="kw" type="search" :placeholder="searchPlaceholder" @focus="searchFocused = true" @blur="onSearchBlur" />
+      <form class="x8-search" :class="{ open: searchFocused }" @submit.prevent="doSearch">
+        <input v-model.trim="kw" type="search" :placeholder="searchPlaceholder" @focus="openSearchPanel" @click="openSearchPanel" @blur="onSearchBlur" />
         <button type="submit" aria-label="搜索">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
         </button>
@@ -1191,6 +1191,10 @@ function searchPerson(name) {
   if (!text) return
   submitSearch(text)
 }
+function openSearchPanel() {
+  clearTimeout(searchBlurTimer)
+  searchFocused.value = true
+}
 function onSearchBlur() {
   clearTimeout(searchBlurTimer)
   searchBlurTimer = window.setTimeout(() => {
@@ -2107,8 +2111,7 @@ onBeforeUnmount(() => {
   background: #1a1a1a;
   box-shadow: 0 2px 12px rgba(0,0,0,.2);
 }
-.x8-search:hover .x8-search-pop,
-.x8-search:focus-within .x8-search-pop {
+.x8-search.open .x8-search-pop {
   display: block;
 }
 .x8-search-pop-scroll {
@@ -2206,9 +2209,10 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 36px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  justify-content: start;
+  gap: 10px;
   padding: 0 8px;
   border-radius: 8px;
   color: #fff;
@@ -2219,20 +2223,36 @@ onBeforeUnmount(() => {
   transform: none;
 }
 .x8-search-hot-list i {
-  color: rgba(255,255,255,.42);
-  font-size: 14px;
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 5px;
+  color: rgba(255,255,255,.68);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
   font-style: normal;
   font-weight: 600;
   text-align: center;
 }
-.x8-search-hot-list button:nth-child(-n+3) i {
-  color: #ff4d4f;
+.x8-search-hot-list button:nth-child(1) i {
+  color: #fff;
+  background: linear-gradient(135deg, #ff5b5b 0%, #ff8a3d 100%);
+}
+.x8-search-hot-list button:nth-child(2) i {
+  color: #fff;
+  background: linear-gradient(135deg, #ff8b3d 0%, #ffc247 100%);
+}
+.x8-search-hot-list button:nth-child(3) i {
+  color: #fff;
+  background: linear-gradient(135deg, #ffcf4a 0%, #f28a1b 100%);
 }
 .x8-search-hot-list span {
   min-width: 0;
   overflow: hidden;
   color: #fff;
   font-size: 14px;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
