@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索下拉交互微调）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 登录页与历史浮层优化）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 登录页与历史浮层优化断点**：`web/src/x8/X8Home.vue` 将顶部“我的追剧”图标从播放列表换为书签追剧图标；播放历史 hover 下拉增加 `::after` 桥接热区，覆盖按钮到底部浮层之间的空隙，避免鼠标往下移时浮层消失。`/x8/login` 从占位页改为账号登录/账号注册页：参考金牌登录页 `https://www.x8kb9k8.com/login` 的全屏影视墙背景和居中登录窗，去掉手机号登录，使用本地账号登录/注册接口；背景墙拉取真实影片海报，使用 3D perspective 倾斜铺排和缓慢错位漂移动效，登录窗为液态玻璃质感；登录页隐藏 X8 大 footer 和浮动按钮，仅保留版权。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器实测 `/x8/login` 有 36 张海报、3D transform、玻璃 `blur(30px) saturate(1.25)`、账号登录/账号注册 tab、注册页显示站点邀请码输入、空提交提示“请输入账号”；历史浮层焦点/桥接区实测下拉保持 `display:block`；新前端包 `assets/index-CLVHo4jk.js / assets/index-VFyPFKu8.css`。
 - **2026-07-17 X8 搜索下拉交互微调断点**：`web/src/x8/X8Home.vue` 将顶部搜索下拉从 `hover/focus-within` 触发改为点击/聚焦输入框后由 `searchFocused` 状态显示，鼠标单纯 hover 搜索框不再弹出；热门搜索行内容保持左对齐，前三名编号改为彩色背景块（红橙/橙黄/金橙），4-12 名保持暗色编号块。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器实测 hover 搜索框下拉 `display:none`，点击/聚焦后 `display:block`，前三名编号背景为彩色渐变且热搜文本/按钮 `text-align:left`；新前端包 `assets/index-RySN3t91.js / assets/index-BtiEFxtf.css`。
 - **2026-07-17 X8 搜索下拉与分类页标题移除断点**：`web/src/x8/X8Home.vue` 移除 X8 分类/搜索结果页列表上方的标题与“共展示 N 部影片”副文案，切换分类后直接显示筛选区与影片列表；顶部搜索框按参考站 `https://www.x8kb9k8.com/` 补齐点击/聚焦下拉浮层：`搜索历史 + 清空图标 + 自适应换行历史词`、分割线、`热门搜索：` 与 1-12 编号热词。搜索历史写入浏览器本地 `vcms.x8.search.history`，点击历史/热门词直接搜索并更新历史；热门词继续来自 `/api/vods?sort=hot` 真实热度排序。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查、参考站源码 CSS 抓取通过；浏览器实测搜索下拉 `display:block`、背景 `#1a1a1a`、`top:49px`、圆角 `12px`、历史词 `flex-wrap:wrap`、热门搜索 12 条，点击热门词会写入搜索历史；分类页首个内容为 `.x8-filter`，无 `.x8-page-title` 和“共展示”；新前端包 `assets/index-H_LZtSwK.js / assets/index-D6Dt4W-z.css`。
 - **2026-07-17 X8 顶部工具入口调整断点**：`web/src/x8/X8Home.vue` 按最新要求移除顶部工具区“求片”入口，将“播放列表”改为“我的追剧”并跳转个人中心 `tab=follows`；登录壳提示同步改为“登录后可同步观看历史和我的追剧”。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；运行态 JS 仅命中“我的追剧”，无“求片/播放列表”；新前端包 `assets/index-DTm-czo2.js / assets/index-Cte4MGv0.css`。

@@ -77,7 +77,7 @@
           </div>
         </div>
         <button type="button" @click="goUser('follows')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /><path d="M9 7h6" /><path d="M9 11h4" /></svg>
           <span>我的追剧</span>
         </button>
         <button class="x8-login-btn" type="button" @click="goLogin">登录</button>
@@ -594,16 +594,54 @@
         </div>
       </section>
 
-      <section v-else class="x8-page-panel x8-login-page">
-        <div class="x8-login-card">
-          <h1>登录</h1>
-          <p>登录后可同步观看历史和我的追剧。</p>
-          <button type="button" @click="goUser('history')">进入个人中心</button>
+      <section v-else class="x8-login-page">
+        <div class="x8-login-wall" aria-hidden="true">
+          <div
+            v-for="(item, index) in loginWallPosters"
+            :key="`x8-login-wall-${item.id || 'poster'}-${index}`"
+            class="x8-login-poster"
+            :style="{ '--x8-login-delay': `${(index % 12) * -0.7}s` }"
+          >
+            <img v-if="poster(item)" :src="poster(item)" :alt="item.name || ''" @error="onImgError" />
+          </div>
+        </div>
+        <div class="x8-login-vignette"></div>
+        <div class="x8-login-shell">
+          <form class="x8-login-card" @submit.prevent="submitX8Auth">
+            <div class="x8-login-tabs">
+              <button type="button" :class="{ active: loginMode === 'login' }" @click="setLoginMode('login')">账号登录</button>
+              <button type="button" :class="{ active: loginMode === 'register' }" :disabled="!loginConfig.allowRegister" @click="setLoginMode('register')">账号注册</button>
+            </div>
+            <div class="x8-login-title">{{ loginMode === 'login' ? '欢迎回来' : '创建账号' }}</div>
+            <p>{{ loginMode === 'login' ? '登录后同步观看历史和我的追剧' : '注册后保存进度、追剧和个性推荐' }}</p>
+            <label>
+              <span>账号</span>
+              <input v-model.trim="loginForm.username" autocomplete="username" placeholder="4-32位字母/数字/下划线" @input="loginError = ''" />
+            </label>
+            <label v-if="loginMode === 'register'">
+              <span>昵称</span>
+              <input v-model.trim="loginForm.nickname" autocomplete="nickname" maxlength="32" placeholder="可选" @input="loginError = ''" />
+            </label>
+            <label>
+              <span>密码</span>
+              <input v-model="loginForm.password" type="password" :autocomplete="loginMode === 'login' ? 'current-password' : 'new-password'" placeholder="至少6位" @input="loginError = ''" />
+            </label>
+            <label v-if="loginMode === 'register' && loginConfig.inviteRequired">
+              <span>邀请码</span>
+              <input v-model.trim="loginForm.inviteCode" autocomplete="off" placeholder="请输入邀请码" @input="loginError = ''" />
+            </label>
+            <div v-if="loginError" class="x8-login-error">{{ loginError }}</div>
+            <button class="x8-login-submit" type="submit" :disabled="loginLoading || (loginMode === 'register' && !loginConfig.allowRegister)">
+              {{ loginLoading ? '处理中...' : (loginMode === 'login' ? '登录' : '注册并登录') }}
+            </button>
+            <button class="x8-login-home" type="button" @click="goX8Home">返回首页</button>
+          </form>
+          <div class="x8-login-copy">© 2026 ADY-All Rights Reserved</div>
         </div>
       </section>
     </main>
 
-    <footer class="x8-footer">
+    <footer v-if="pageMode !== 'login'" class="x8-footer">
       <div class="x8-footer-inner">
         <div class="x8-quick-navigation">
           <section class="x8-footer-nav">
@@ -654,7 +692,7 @@
       </div>
     </footer>
 
-    <div class="x8-float">
+    <div v-if="pageMode !== 'login'" class="x8-float">
       <button type="button" aria-label="切换主题">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>
       </button>
@@ -666,11 +704,13 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
+import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
 import { readCachedSite } from '../siteConfig'
+import { setSession } from '../userStore'
 
 defineOptions({ name: 'X8Home' })
 
@@ -689,6 +729,7 @@ const vod = ref({})
 const related = ref([])
 const rankGroups = ref([])
 const localHistoryRows = ref([])
+const loginWallItems = ref([])
 const page = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -718,6 +759,11 @@ const miniLinesEl = ref(null)
 const miniEpisodesEl = ref(null)
 const user = ref(null)
 const followed = ref(false)
+const loginMode = ref('login')
+const loginConfig = ref({ allowRegister: true, inviteRequired: false })
+const loginLoading = ref(false)
+const loginError = ref('')
+const loginForm = reactive({ username: '', password: '', nickname: '', inviteCode: '' })
 const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
@@ -814,6 +860,14 @@ const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
 const searchHotRows = computed(() => searchHints.value.slice(0, 12))
+const loginWallPosters = computed(() => {
+  const rows = uniqueVods(loginWallItems.value, heroItems.value, hotItems.value, homeSections.value.flatMap(section => section.items || []))
+    .filter(item => poster(item))
+  if (!rows.length) return []
+  const next = []
+  for (let i = 0; i < 36; i += 1) next.push(rows[i % rows.length])
+  return next
+})
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
 const detailEpisodes = computed(() => {
@@ -1228,6 +1282,57 @@ function clearSearchHistory() {
 }
 function pickSearchWord(word) {
   submitSearch(word)
+}
+function setLoginMode(mode) {
+  if (mode === 'register' && !loginConfig.value.allowRegister) {
+    notifyWarning('当前站点暂未开放注册')
+    return
+  }
+  loginMode.value = mode
+  loginError.value = ''
+}
+function resetLoginForm() {
+  loginForm.username = ''
+  loginForm.password = ''
+  loginForm.nickname = ''
+  loginForm.inviteCode = ''
+  loginError.value = ''
+}
+function validateX8Auth() {
+  if (!loginForm.username) return '请输入账号'
+  if (loginMode.value === 'register' && !/^[A-Za-z0-9_]{4,32}$/.test(loginForm.username)) return '账号需为4-32位字母、数字或下划线'
+  if (loginMode.value === 'register' && /^\d+$/.test(loginForm.username)) return '账号不能为纯数字'
+  if (!loginForm.password) return '请输入密码'
+  if (loginMode.value === 'register' && loginForm.password.length < 6) return '密码至少6位'
+  if (loginMode.value === 'register' && loginConfig.value.inviteRequired && !loginForm.inviteCode) return '请输入邀请码'
+  return ''
+}
+async function submitX8Auth() {
+  const invalid = validateX8Auth()
+  if (invalid) {
+    loginError.value = invalid
+    notifyWarning(invalid)
+    return
+  }
+  loginLoading.value = true
+  loginError.value = ''
+  try {
+    const payload = { username: loginForm.username, password: loginForm.password }
+    const result = loginMode.value === 'login'
+      ? await api.userLogin(payload)
+      : await api.userRegister({ ...payload, nickname: loginForm.nickname, inviteCode: loginForm.inviteCode })
+    setSession(result.token, result.user)
+    user.value = result.user
+    notifySuccess(loginMode.value === 'register' ? '注册成功' : '登录成功')
+    resetLoginForm()
+    router.replace(route.query.redirect ? String(route.query.redirect) : '/me')
+  } catch (error) {
+    const message = apiErrorMessage(error)
+    loginError.value = message
+    notifyError(message)
+  } finally {
+    loginLoading.value = false
+  }
 }
 function goDetail(id) {
   if (!id) return
@@ -1860,6 +1965,24 @@ async function loadRanks() {
     loading.value = false
   }
 }
+async function loadX8Login() {
+  loading.value = false
+  if (!loginWallItems.value.length) {
+    const [hot, rating, animeHot, configuredHot] = await Promise.all([
+      api.vods({ page: 1, size: 48, sort: 'hot' }).catch(() => ({ list: [] })),
+      api.vods({ page: 1, size: 48, sort: 'rating' }).catch(() => ({ list: [] })),
+      api.vods({ page: 1, size: 48, type: '动漫', sort: 'hot' }).catch(() => ({ list: [] })),
+      api.hot(48).catch(() => []),
+    ])
+    loginWallItems.value = uniqueVods(configuredHot || [], hot?.list || [], rating?.list || [], animeHot?.list || []).filter(item => poster(item)).slice(0, 48)
+  }
+  try {
+    loginConfig.value = await api.registerConfig()
+  } catch {
+    loginConfig.value = { allowRegister: false, inviteRequired: false }
+  }
+  if (loginMode.value === 'register' && !loginConfig.value.allowRegister) loginMode.value = 'login'
+}
 async function loadVod(withPlay = false) {
   loading.value = true
   destroyHls()
@@ -1912,6 +2035,7 @@ watch(() => route.fullPath, (_next, prev) => {
   if (mode === 'home') loadHome()
   else if (mode === 'show') loadBrowse()
   else if (mode === 'rank') loadRanks()
+  else if (mode === 'login') loadX8Login()
   else if (mode === 'detail') loadVod(false)
   else if (mode === 'play') loadVod(true)
 }, { immediate: true })
@@ -2288,6 +2412,14 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.x8-history-menu::after {
+  content: "";
+  position: absolute;
+  left: -24px;
+  right: -24px;
+  top: 44px;
+  height: 28px;
 }
 .x8-history-menu .x8-history-trigger {
   width: 40px;
@@ -4842,34 +4974,186 @@ onBeforeUnmount(() => {
   font-style: normal;
   font-weight: 500;
 }
-.x8-login-card {
-  padding: 20px;
-  border-radius: 12px;
-  background: #1a1a1a;
-}
 .x8-login-page {
-  min-height: 80vh;
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(96px + env(safe-area-inset-top)) 24px 54px;
+  background: #090a0e;
+}
+.x8-login-wall {
+  position: absolute;
+  inset: -16vh -14vw;
+  z-index: -3;
   display: grid;
-  place-items: center;
+  grid-template-columns: repeat(12, minmax(94px, 1fr));
+  grid-auto-rows: clamp(142px, 18vh, 232px);
+  gap: 16px;
+  transform: perspective(1200px) rotateX(54deg) rotateZ(-12deg) translateY(-9vh) scale(1.18);
+  transform-origin: center;
+  opacity: .74;
+  filter: saturate(1.08) brightness(.72);
+}
+.x8-login-poster {
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 18px 44px rgba(0,0,0,.4);
+  animation: x8-login-drift 12s ease-in-out infinite;
+  animation-delay: var(--x8-login-delay, 0s);
+}
+.x8-login-poster:nth-child(3n) {
+  transform: translateY(28px);
+}
+.x8-login-poster:nth-child(4n) {
+  transform: translateY(-24px);
+}
+.x8-login-poster:nth-child(5n) {
+  transform: translateX(18px);
+}
+.x8-login-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.x8-login-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(8,9,13,.16), rgba(8,9,13,.58) 56%, rgba(8,9,13,.92) 100%),
+    linear-gradient(90deg, rgba(8,9,13,.84), rgba(8,9,13,.28), rgba(8,9,13,.84));
+}
+.x8-login-shell {
+  width: min(430px, 100%);
 }
 .x8-login-card {
-  width: min(420px, 100%);
-  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.16);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.16), rgba(255,255,255,.055)),
+    rgba(18,20,27,.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.22),
+    inset 0 -22px 52px rgba(255,255,255,.04),
+    0 28px 88px rgba(0,0,0,.58);
+  backdrop-filter: blur(30px) saturate(1.25);
+  -webkit-backdrop-filter: blur(30px) saturate(1.25);
 }
-.x8-login-card h1 {
-  margin: 0 0 10px;
+.x8-login-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.x8-login-tabs button,
+.x8-login-home,
+.x8-login-submit {
+  border: 0;
+  cursor: pointer;
+}
+.x8-login-tabs button {
+  height: 44px;
+  border-radius: 12px;
+  color: rgba(255,255,255,.62);
+  background: rgba(255,255,255,.07);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  font-size: 15px;
+  font-weight: 600;
+}
+.x8-login-tabs button.active {
+  color: #111;
+  background: rgba(255,255,255,.94);
+  box-shadow: none;
+}
+.x8-login-tabs button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.x8-login-title {
+  margin-top: 8px;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
 }
 .x8-login-card p {
-  color: rgba(255,255,255,.55);
+  margin: -6px 0 6px;
+  color: rgba(255,255,255,.58);
+  font-size: 13px;
+  line-height: 1.7;
 }
-.x8-login-card button {
-  height: 40px;
-  border: 0;
-  border-radius: 7px;
-  padding: 0 18px;
-  background: #fff;
-  color: #111;
+.x8-login-card label {
+  display: grid;
+  gap: 8px;
+}
+.x8-login-card label span {
+  color: rgba(255,255,255,.58);
+  font-size: 12px;
+  font-weight: 500;
+}
+.x8-login-card input {
+  width: 100%;
+  height: 46px;
+  border: 1px solid rgba(255,255,255,.12);
+  outline: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #fff;
+  background: rgba(8,9,13,.46);
+  font-size: 15px;
+  box-shadow: inset 0 1px 12px rgba(0,0,0,.18);
+}
+.x8-login-card input:focus {
+  border-color: rgba(255,255,255,.42);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.1), inset 0 1px 12px rgba(0,0,0,.18);
+}
+.x8-login-error {
+  border: 1px solid rgba(255,92,107,.28);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #ffd7dc;
+  background: rgba(255,92,107,.12);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.x8-login-submit,
+.x8-login-home {
+  height: 46px;
+  border-radius: 12px;
   font-weight: 700;
+}
+.x8-login-submit {
+  margin-top: 2px;
+  color: #111;
+  background: rgba(255,255,255,.94);
+}
+.x8-login-submit:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+.x8-login-home {
+  color: rgba(255,255,255,.72);
+  background: rgba(255,255,255,.07);
+}
+.x8-login-copy {
+  margin-top: 18px;
+  color: rgba(255,255,255,.46);
+  font-size: 12px;
+  text-align: center;
+}
+@keyframes x8-login-drift {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -18px; }
 }
 .x8-footer {
   margin-top: 34px;
