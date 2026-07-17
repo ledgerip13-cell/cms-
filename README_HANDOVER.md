@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 顶部工具入口调整）
+> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 搜索下拉与分类页标题移除）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-17 X8 搜索下拉与分类页标题移除断点**：`web/src/x8/X8Home.vue` 移除 X8 分类/搜索结果页列表上方的标题与“共展示 N 部影片”副文案，切换分类后直接显示筛选区与影片列表；顶部搜索框按参考站 `https://www.x8kb9k8.com/` 补齐点击/聚焦下拉浮层：`搜索历史 + 清空图标 + 自适应换行历史词`、分割线、`热门搜索：` 与 1-12 编号热词。搜索历史写入浏览器本地 `vcms.x8.search.history`，点击历史/热门词直接搜索并更新历史；热门词继续来自 `/api/vods?sort=hot` 真实热度排序。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查、参考站源码 CSS 抓取通过；浏览器实测搜索下拉 `display:block`、背景 `#1a1a1a`、`top:49px`、圆角 `12px`、历史词 `flex-wrap:wrap`、热门搜索 12 条，点击热门词会写入搜索历史；分类页首个内容为 `.x8-filter`，无 `.x8-page-title` 和“共展示”；新前端包 `assets/index-H_LZtSwK.js / assets/index-D6Dt4W-z.css`。
 - **2026-07-17 X8 顶部工具入口调整断点**：`web/src/x8/X8Home.vue` 按最新要求移除顶部工具区“求片”入口，将“播放列表”改为“我的追剧”并跳转个人中心 `tab=follows`；登录壳提示同步改为“登录后可同步观看历史和我的追剧”。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；运行态 JS 仅命中“我的追剧”，无“求片/播放列表”；新前端包 `assets/index-DTm-czo2.js / assets/index-Cte4MGv0.css`。
 - **2026-07-17 X8 头部 380px 渐变与未登录本地历史断点**：`web/src/x8/X8Home.vue` 将 X8 顶部黑底滚动过渡距离从 `180px` 拉长到 `380px`，最终仍为 `rgba(18,18,18,.8) + blur(16px)`；头部“历史”改为参考站 hover 浮层，未登录也读取浏览器本地 `vcms.x8.local.history` 展示最近播放记录。播放页保存观看历史时先写本地记录，登录用户再同步 `/api/user/history`；详情页/播放页集数进度在无服务端历史时回落到本地历史。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器实测头部滚动 `0/190/380px` 对应黑底 `0.00/0.40/0.80` 与 `0/8/16px` blur，未登录本地历史浮层显示 `本地历史测试影片 · 第2集 · 已看 20%`，详情页第 2 集显示 `20%` 本地进度；新前端包 `assets/index-BiQKBl8P.js / assets/index-Cte4MGv0.css`。
 - **2026-07-17 X8 头部背景过渡放缓断点**：`web/src/x8/X8Home.vue` 继续微调 X8 顶部导航滚动背景：首屏渐变底部保持 `rgba(0,0,0,0) 100%` 完全透明；滚动黑底叠加从 `scrollY / 72` 放缓为 `scrollY / 180 * 0.8`，最终只到 80% 黑底，不再 100% 实心；同步按进度加入 `blur(0-16px)`，最终态为 `rgba(18,18,18,.8) + blur(16px)`，过渡更自然。验证：`npm run build`、`git diff --check`、关键字检查通过；新前端包 `assets/index-BCpd_qB0.js / assets/index-D0RdyDxb.css`。

@@ -16,10 +16,35 @@
         </button>
       </nav>
       <form class="x8-search" @submit.prevent="doSearch">
-        <input v-model.trim="kw" type="search" :placeholder="searchPlaceholder" @focus="searchFocused = true" @blur="searchFocused = false" />
+        <input v-model.trim="kw" type="search" :placeholder="searchPlaceholder" @focus="searchFocused = true" @blur="onSearchBlur" />
         <button type="submit" aria-label="搜索">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
         </button>
+        <div class="x8-search-pop">
+          <div class="x8-search-pop-scroll">
+            <div class="x8-search-history-box">
+              <div class="x8-search-pop-title">
+                <span>搜索历史</span>
+                <button class="x8-search-clear" type="button" aria-label="清空搜索历史" @mousedown.prevent @click.stop="clearSearchHistory">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="m19 6-.8 14H5.8L5 6" /><path d="M10 11v5" /><path d="M14 11v5" /></svg>
+                </button>
+              </div>
+              <div class="x8-search-history-list">
+                <button v-for="word in searchHistoryRows" :key="`x8-search-h-${word}`" type="button" @mousedown.prevent @click.stop="pickSearchWord(word)">{{ word }}</button>
+                <div v-if="!searchHistoryRows.length" class="x8-search-none">暂无搜索记录</div>
+              </div>
+            </div>
+            <div class="x8-search-hot-box">
+              <div class="x8-search-hot-title">热门搜索：</div>
+              <div class="x8-search-hot-list">
+                <button v-for="(word, index) in searchHotRows" :key="`x8-search-hot-${word}`" type="button" @mousedown.prevent @click.stop="pickSearchWord(word)">
+                  <i>{{ index + 1 }}</i>
+                  <span>{{ word }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </form>
       <div class="x8-header-tools">
         <button type="button" @click="goRank">
@@ -180,10 +205,6 @@
       </template>
 
       <section v-else-if="pageMode === 'show'" class="x8-page-panel">
-        <div class="x8-page-title">
-          <h1>{{ browseTitle }}</h1>
-          <p>{{ browseSub }}</p>
-        </div>
         <div class="x8-filter">
           <div v-if="loading && curType && !subtypes.length" class="x8-filter-line skeleton">
             <span></span>
@@ -678,6 +699,7 @@ const kw = ref('')
 const searchFocused = ref(false)
 const searchHints = ref([])
 const searchHintIdx = ref(0)
+const searchHistoryRows = ref([])
 const heroIdx = ref(0)
 const trailerIdx = ref(0)
 const hotOffset = ref(0)
@@ -718,9 +740,11 @@ const skipIntroOutro = ref(false)
 const playbackRate = ref(1)
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const X8_LOCAL_HISTORY_KEY = 'vcms.x8.local.history'
+const X8_SEARCH_HISTORY_KEY = 'vcms.x8.search.history'
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
+let searchBlurTimer = 0
 let controlsTimer = 0
 let browseRequestId = 0
 let historySaveAt = 0
@@ -785,15 +809,11 @@ const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice
 const navItems = computed(() => {
   return types.value.filter(item => item?.name)
 })
-const browseTitle = computed(() => route.query.kw ? `搜索：${route.query.kw}` : (curSub.value || curType.value || '影片'))
-const browseSub = computed(() => {
-  if (loading.value && pageMode.value === 'show') return '正在加载影片'
-  return list.value.length ? `共展示 ${list.value.length} 部影片` : '按类型、年份和排序浏览'
-})
 const currentSearchHint = computed(() => searchHints.value[searchHintIdx.value % Math.max(1, searchHints.value.length)] || '')
 const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
+const searchHotRows = computed(() => searchHints.value.slice(0, 12))
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
 const episodes = computed(() => currentLine.value?.episodes || [])
 const detailEpisodes = computed(() => {
@@ -1153,16 +1173,57 @@ function goLogin() {
 function goUser(tab) {
   router.push({ path: '/me', query: { tab } })
 }
+function submitSearch(text) {
+  const value = String(text || '').trim()
+  if (!value || value === '搜索') return
+  kw.value = value
+  saveSearchHistory(value)
+  searchFocused.value = false
+  router.push({ path: routeBase(), query: { kw: value } })
+}
 function doSearch() {
   const text = String(kw.value || currentSearchHint.value || '').trim()
   if (!text || text === '搜索') return
-  kw.value = text
-  router.push({ path: routeBase(), query: { kw: text } })
+  submitSearch(text)
 }
 function searchPerson(name) {
   const text = String(name || '').trim()
   if (!text) return
-  router.push({ path: routeBase(), query: { kw: text } })
+  submitSearch(text)
+}
+function onSearchBlur() {
+  clearTimeout(searchBlurTimer)
+  searchBlurTimer = window.setTimeout(() => {
+    searchFocused.value = false
+  }, 120)
+}
+function readSearchHistory() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(X8_SEARCH_HISTORY_KEY) || '[]')
+    searchHistoryRows.value = Array.isArray(rows) ? rows.map(item => String(item || '').trim()).filter(Boolean).slice(0, 12) : []
+  } catch {
+    searchHistoryRows.value = []
+  }
+  return searchHistoryRows.value
+}
+function saveSearchHistory(word) {
+  const text = String(word || '').trim()
+  if (!text || text === '搜索') return
+  const rows = readSearchHistory().filter(item => item !== text)
+  const next = [text, ...rows].slice(0, 12)
+  searchHistoryRows.value = next
+  try {
+    localStorage.setItem(X8_SEARCH_HISTORY_KEY, JSON.stringify(next))
+  } catch {}
+}
+function clearSearchHistory() {
+  searchHistoryRows.value = []
+  try {
+    localStorage.removeItem(X8_SEARCH_HISTORY_KEY)
+  } catch {}
+}
+function pickSearchWord(word) {
+  submitSearch(word)
 }
 function goDetail(id) {
   if (!id) return
@@ -1245,13 +1306,13 @@ function startSearchHintTimer() {
   }, 3200)
 }
 async function loadSearchHints() {
-  const rows = await api.vods({ page: 1, size: 20, sort: 'hot' }).catch(() => ({ list: [] }))
+  const rows = await api.vods({ page: 1, size: 24, sort: 'hot' }).catch(() => ({ list: [] }))
   const names = (rows?.list || [])
     .filter(item => heatScore(item) > 0)
     .sort((a, b) => heatScore(b) - heatScore(a))
     .map(item => String(item?.name || '').trim())
     .filter(Boolean)
-  searchHints.value = [...new Set(names)].slice(0, 10)
+  searchHints.value = [...new Set(names)].slice(0, 12)
 }
 function destroyHls() {
   if (hls) {
@@ -1859,6 +1920,7 @@ onMounted(() => {
   document.addEventListener('webkitfullscreenchange', syncFullscreenState)
   onResize()
   readLocalHistory()
+  readSearchHistory()
   startHeroTimer()
   startSearchHintTimer()
   loadSearchHints()
@@ -1872,6 +1934,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('webkitfullscreenchange', syncFullscreenState)
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
+  clearTimeout(searchBlurTimer)
   clearTimeout(controlsTimer)
   destroyHls()
 })
@@ -1981,6 +2044,7 @@ onBeforeUnmount(() => {
   transform: scale(1.11111);
 }
 .x8-search {
+  position: relative;
   justify-self: end;
   width: min(368px, 100%);
   max-width: 368px;
@@ -1990,7 +2054,7 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) 46px;
   border-radius: 20px;
   background: rgba(255,255,255,.08);
-  overflow: hidden;
+  overflow: visible;
   transition: background .25s ease;
 }
 .x8-search:hover,
@@ -2027,6 +2091,150 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,.82);
   background: transparent;
   cursor: pointer;
+}
+.x8-search-pop {
+  display: none;
+  position: absolute;
+  z-index: 106;
+  top: 49px;
+  left: 0;
+  width: 100%;
+  min-height: 585px;
+  padding: 0 0 12px;
+  overflow: hidden;
+  border-radius: 12px;
+  color: #fff;
+  background: #1a1a1a;
+  box-shadow: 0 2px 12px rgba(0,0,0,.2);
+}
+.x8-search:hover .x8-search-pop,
+.x8-search:focus-within .x8-search-pop {
+  display: block;
+}
+.x8-search-pop-scroll {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.x8-search-history-box {
+  position: relative;
+  margin: 0 12px;
+  color: rgba(255,255,255,.6);
+}
+.x8-search-history-box::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -12px;
+  width: calc(100% + 24px);
+  height: 1px;
+  background: rgba(111,111,111,.2);
+}
+.x8-search-pop-title {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-search .x8-search-clear {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  color: rgba(255,255,255,.45);
+}
+.x8-search-clear:hover {
+  color: rgba(255,255,255,.85);
+  transform: none;
+}
+.x8-search-clear svg {
+  width: 16px;
+  height: 16px;
+}
+.x8-search-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+  margin: 12px 0;
+  padding-bottom: 12px;
+}
+.x8-search-history-list button {
+  width: auto;
+  max-width: 100%;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 14px;
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  font-size: 14px;
+  line-height: 28px;
+}
+.x8-search-history-list button:hover {
+  background: rgba(255,255,255,.14);
+  transform: none;
+}
+.x8-search-none {
+  margin: 0 25px 28px 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 400;
+}
+.x8-search-hot-box {
+  padding: 0 12px;
+  color: #fff;
+}
+.x8-search-hot-title {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  color: rgba(255,255,255,.6);
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-search-hot-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+.x8-search-hot-list button {
+  width: 100%;
+  height: 36px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: #fff;
+  text-align: left;
+}
+.x8-search-hot-list button:hover {
+  background: rgba(255,255,255,.07);
+  transform: none;
+}
+.x8-search-hot-list i {
+  color: rgba(255,255,255,.42);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 600;
+  text-align: center;
+}
+.x8-search-hot-list button:nth-child(-n+3) i {
+  color: #ff4d4f;
+}
+.x8-search-hot-list span {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .x8-header-tools {
   display: flex;
@@ -3005,18 +3213,6 @@ onBeforeUnmount(() => {
   width: min(1500px, calc(100vw - 120px));
   margin: 0 auto;
   padding: calc(92px + env(safe-area-inset-top)) 0 80px;
-}
-.x8-page-title {
-  margin-bottom: 24px;
-}
-.x8-page-title h1 {
-  margin: 0 0 8px;
-  font-size: 34px;
-  font-weight: 700;
-}
-.x8-page-title p {
-  margin: 0;
-  color: rgba(255,255,255,.55);
 }
 .x8-filter {
   display: flex;
