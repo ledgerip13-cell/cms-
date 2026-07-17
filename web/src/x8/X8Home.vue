@@ -865,7 +865,7 @@ const loginWallPosters = computed(() => {
     .filter(item => poster(item))
   if (!rows.length) return []
   const next = []
-  for (let i = 0; i < 36; i += 1) next.push(rows[i % rows.length])
+  for (let i = 0; i < 48; i += 1) next.push(rows[i % rows.length])
   return next
 })
 const currentLine = computed(() => (vod.value.lines || []).find(line => line.id === currentLineId.value) || (vod.value.lines || [])[0])
@@ -2420,6 +2420,11 @@ onBeforeUnmount(() => {
   right: -24px;
   top: 44px;
   height: 28px;
+  pointer-events: none;
+}
+.x8-history-menu:hover::after,
+.x8-history-menu:focus-within::after {
+  pointer-events: auto;
 }
 .x8-history-menu .x8-history-trigger {
   width: 40px;
