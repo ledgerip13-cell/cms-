@@ -28,6 +28,7 @@ const router = createRouter({
     { path: '/x8/show/:type', component: X8Home },
     { path: '/x8/detail/:id', component: X8Home },
     { path: '/x8/play/:id', component: X8Home },
+    { path: '/x8/me', component: X8Home },
     { path: '/x8/login', component: X8Home },
     { path: '/auth', component: Auth },
     { path: '/me', component: Profile },

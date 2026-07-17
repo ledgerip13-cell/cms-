@@ -1,5 +1,5 @@
 <template>
-  <div class="x8-page">
+  <div class="x8-page" :class="{ 'login-mode': pageMode === 'login' }">
     <header class="x8-header" :style="{ '--x8-header-bg': headerBgOpacity, '--x8-header-blur': headerBlur }">
       <button class="x8-brand" type="button" @click="goX8Home">
         <img v-if="showHomeLogo && site.logo" :src="site.logo" alt="logo" />
@@ -620,6 +620,77 @@
         </div>
       </section>
 
+      <section v-else-if="pageMode === 'user'" class="x8-page-panel x8-user-center">
+        <aside class="x8-user-side">
+          <div class="x8-user-profile-card">
+            <div class="x8-user-profile-avatar">
+              <img v-if="x8UserAvatar" :src="x8UserAvatar" :alt="x8UserName" @error="x8AvatarBroken = true" />
+              <span v-else>{{ x8UserInitial }}</span>
+            </div>
+            <strong>{{ x8UserName }}</strong>
+            <em>{{ user?.vipLevel?.name || '普通用户' }}</em>
+          </div>
+          <nav class="x8-user-side-nav" aria-label="X8个人中心">
+            <button type="button" :class="{ active: x8UserTab === 'userInfo' }" @click="selectX8UserTab('userInfo')">个人资料</button>
+            <button type="button" :class="{ active: x8UserTab === 'history' }" @click="selectX8UserTab('history')">观看历史</button>
+            <button type="button" :class="{ active: x8UserTab === 'follows' }" @click="selectX8UserTab('follows')">我的追剧</button>
+          </nav>
+          <button class="x8-user-side-logout" type="button" @click="logoutX8">退出登录</button>
+        </aside>
+
+        <section class="x8-user-content">
+          <div class="x8-user-content-head">
+            <div>
+              <span>USER CENTER</span>
+              <h1>{{ x8UserTabTitle }}</h1>
+            </div>
+            <button type="button" @click="loadX8UserCenter">刷新</button>
+          </div>
+
+          <div v-if="x8UserLoading" class="x8-user-loading">
+            <span v-for="index in 6" :key="`x8-user-sk-${index}`"></span>
+          </div>
+
+          <div v-else-if="x8UserTab === 'userInfo'" class="x8-user-info-panel">
+            <div class="x8-user-info-row"><span>账号</span><strong>{{ user?.username || '-' }}</strong></div>
+            <div class="x8-user-info-row"><span>昵称</span><strong>{{ user?.nickname || user?.username || '-' }}</strong></div>
+            <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
+            <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
+            <div class="x8-user-pref">
+              <div class="x8-user-section-title">喜欢的类型</div>
+              <div class="x8-user-chips">
+                <button v-for="item in types" :key="`x8-pref-${item.name}`" type="button" :class="{ active: x8Prefs.includes(item.name) }" @click="toggleX8Pref(item.name)">
+                  {{ item.name || '未分类' }}
+                </button>
+              </div>
+              <button class="x8-user-save" type="button" :disabled="x8UserSaving" @click="saveX8Prefs">{{ x8UserSaving ? '保存中...' : '保存偏好' }}</button>
+            </div>
+          </div>
+
+          <div v-else-if="x8UserTab === 'history'" class="x8-user-records">
+            <button v-for="item in x8UserHistory" :key="`x8-user-h-${item.id}`" type="button" @click="goUserHistory(item)">
+              <img v-if="poster(item.vod)" :src="poster(item.vod)" :alt="item.vod?.name || ''" @error="onImgError" />
+              <span>
+                <b>{{ item.vod?.name || '影片' }}</b>
+                <em>{{ item.epName || ('第' + (Number(item.epIndex || 0) + 1) + '集') }} · {{ formatX8Time(item.updatedAt) }}</em>
+              </span>
+            </button>
+            <div v-if="!x8UserHistory.length" class="x8-user-empty">暂无观看历史</div>
+          </div>
+
+          <div v-else class="x8-user-grid-panel">
+            <x8-card v-for="item in x8UserFollows" :key="`x8-user-f-${item.vod?.id || item.id}`" :item="item.vod || item" short @open="goDetail" @follow="goDetail" />
+            <div v-if="!x8UserFollows.length" class="x8-user-empty">暂无追剧内容</div>
+          </div>
+
+          <x8-panel v-if="x8UserRecs.length" title="猜你喜欢" :changeable="false" :moreable="false">
+            <div class="x8-card-grid section">
+              <x8-card v-for="item in x8UserRecs.slice(0, 12)" :key="`x8-user-rec-${item.id}`" :item="item" short @open="goDetail" @follow="goDetail" />
+            </div>
+          </x8-panel>
+        </section>
+      </section>
+
       <section v-else class="x8-login-page">
         <div class="x8-login-wall" aria-hidden="true">
           <div
@@ -756,6 +827,12 @@ const related = ref([])
 const rankGroups = ref([])
 const localHistoryRows = ref([])
 const loginWallItems = ref([])
+const x8UserHistory = ref([])
+const x8UserFollows = ref([])
+const x8UserRecs = ref([])
+const x8Prefs = ref([])
+const x8UserLoading = ref(false)
+const x8UserSaving = ref(false)
 const page = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -852,6 +929,7 @@ const pageMode = computed(() => {
   if (route.path.includes('/play/')) return 'play'
   if (route.path.includes('/detail/')) return 'detail'
   if (route.path.includes('/rank')) return 'rank'
+  if (route.path.includes('/me')) return 'user'
   if (route.path.includes('/login')) return 'login'
   if (route.query.kw || route.query.type || route.path.includes('/show/')) return 'show'
   return 'home'
@@ -895,6 +973,12 @@ const x8UserInitial = computed(() => x8UserName.value.slice(0, 1).toUpperCase())
 const x8UserAvatar = computed(() => {
   if (x8AvatarBroken.value) return ''
   return user.value?.avatar || user.value?.portrait || user.value?.userPortrait || ''
+})
+const x8UserTab = computed(() => normalizeX8UserTab(route.query.tab))
+const x8UserTabTitle = computed(() => {
+  if (x8UserTab.value === 'history') return '观看历史'
+  if (x8UserTab.value === 'follows') return '我的追剧'
+  return '个人资料'
 })
 const loginWallPosters = computed(() => {
   const rows = uniqueVods(loginWallItems.value, heroItems.value, hotItems.value, homeSections.value.flatMap(section => section.items || []))
@@ -1329,7 +1413,7 @@ function goLogin() {
   router.push(route.path.startsWith('/x8') ? '/x8/login' : '/auth')
 }
 function goUser(tab) {
-  router.push({ path: '/me', query: { tab } })
+  router.push({ path: '/x8/me', query: { tab: normalizeX8UserTab(tab) } })
 }
 function logoutX8() {
   clearSession()
@@ -1436,7 +1520,8 @@ async function submitX8Auth() {
     x8AvatarBroken.value = false
     notifySuccess(loginMode.value === 'register' ? '注册成功' : '登录成功')
     resetLoginForm()
-    router.replace(route.query.redirect ? String(route.query.redirect) : '/me')
+    const redirect = String(route.query.redirect || '')
+    router.replace(redirect && redirect.startsWith('/x8') ? redirect : '/x8/me')
   } catch (error) {
     const message = apiErrorMessage(error)
     loginError.value = message
@@ -1448,6 +1533,68 @@ async function submitX8Auth() {
 function goDetail(id) {
   if (!id) return
   router.push(route.path.startsWith('/x8') ? `/x8/detail/${id}` : `/detail/${id}`)
+}
+function normalizeX8UserTab(tab) {
+  const value = Array.isArray(tab) ? tab[0] : tab
+  if (value === 'history' || value === 'follows') return value
+  return 'userInfo'
+}
+function selectX8UserTab(tab) {
+  router.replace({ path: '/x8/me', query: { tab: normalizeX8UserTab(tab) } })
+}
+function formatX8Time(value) {
+  if (!value) return ''
+  return new Date(value).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+function goUserHistory(item) {
+  const id = item?.vod?.id
+  if (!id) return
+  const query = cleanQuery({
+    line: item.lineId || undefined,
+    ep: Number.isFinite(Number(item.epIndex)) ? Number(item.epIndex) + 1 : undefined,
+  })
+  router.push({ path: `/x8/play/${id}`, query })
+}
+function toggleX8Pref(name) {
+  if (!name) return
+  x8Prefs.value = x8Prefs.value.includes(name)
+    ? x8Prefs.value.filter(item => item !== name)
+    : [...x8Prefs.value, name]
+}
+async function saveX8Prefs() {
+  if (!user.value) return goLogin()
+  x8UserSaving.value = true
+  try {
+    const updated = await api.updateUserProfile({ nickname: user.value?.nickname || user.value?.username, favoriteTypes: x8Prefs.value })
+    user.value = updated
+    localStorage.setItem('vcms.user', JSON.stringify(updated))
+    notifySuccess('偏好已保存')
+    await loadX8UserCenter()
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '保存失败'))
+  } finally {
+    x8UserSaving.value = false
+  }
+}
+async function loadX8UserCenter() {
+  if (!user.value) {
+    router.replace({ path: '/x8/login', query: { redirect: '/x8/me' } })
+    return
+  }
+  x8UserLoading.value = true
+  try {
+    const [historyRows, followRows, recRows] = await Promise.all([
+      api.history(50).catch(() => []),
+      api.follows(50).catch(() => []),
+      api.userRecommendations(24).catch(() => ({ list: [] })),
+    ])
+    x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
+    x8UserFollows.value = Array.isArray(followRows) ? followRows : []
+    x8UserRecs.value = Array.isArray(recRows?.list) ? recRows.list : []
+    x8Prefs.value = Array.isArray(user.value?.favoriteTypes) ? [...user.value.favoriteTypes] : []
+  } finally {
+    x8UserLoading.value = false
+  }
 }
 function goPlay(id, epIndex = 0) {
   if (!id) return
@@ -2160,6 +2307,7 @@ watch(() => route.fullPath, (_next, prev) => {
   if (mode === 'home') loadHome()
   else if (mode === 'show') loadBrowse()
   else if (mode === 'rank') loadRanks()
+  else if (mode === 'user') loadX8UserCenter()
   else if (mode === 'login') loadX8Login()
   else if (mode === 'detail') loadVod(false)
   else if (mode === 'play') loadVod(true)
@@ -2200,6 +2348,16 @@ onBeforeUnmount(() => {
   background: #1f1f1f;
   color: #fff;
   font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+.x8-page.login-mode {
+  height: 100vh;
+  height: 100svh;
+  min-height: 0;
+  overflow: hidden;
+}
+.x8-page.login-mode main {
+  height: 100%;
+  overflow: hidden;
 }
 .x8-page button {
   font: inherit;
@@ -5195,9 +5353,257 @@ onBeforeUnmount(() => {
   font-style: normal;
   font-weight: 500;
 }
+.x8-user-center {
+  min-height: calc(100vh - 72px);
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 24px;
+  padding-top: 110px;
+}
+.x8-user-side,
+.x8-user-content {
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+}
+.x8-user-side {
+  align-self: start;
+  padding: 22px;
+}
+.x8-user-profile-card {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.x8-user-profile-avatar {
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  color: #111;
+  background: #fff;
+  font-size: 28px;
+  font-weight: 800;
+}
+.x8-user-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.x8-user-profile-card strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-profile-card em {
+  color: rgba(255,255,255,.48);
+  font-size: 13px;
+  font-style: normal;
+}
+.x8-user-side-nav {
+  display: grid;
+  gap: 8px;
+  padding: 18px 0;
+}
+.x8-user-side-nav button,
+.x8-user-side-logout,
+.x8-user-content-head button,
+.x8-user-save {
+  border: 0;
+  cursor: pointer;
+}
+.x8-user-side-nav button,
+.x8-user-side-logout {
+  height: 42px;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: rgba(255,255,255,.68);
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+}
+.x8-user-side-nav button:hover,
+.x8-user-side-nav button.active {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+}
+.x8-user-side-logout {
+  width: 100%;
+  color: rgba(255,120,132,.9);
+  background: rgba(255,92,107,.08);
+}
+.x8-user-content {
+  min-width: 0;
+  padding: 24px;
+}
+.x8-user-content-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.x8-user-content-head span {
+  color: rgba(255,255,255,.34);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+.x8-user-content-head h1 {
+  margin: 4px 0 0;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+}
+.x8-user-content-head button,
+.x8-user-save {
+  height: 36px;
+  border-radius: 8px;
+  padding: 0 16px;
+  color: #111;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.x8-user-info-panel {
+  display: grid;
+  gap: 14px;
+}
+.x8-user-info-row {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-radius: 10px;
+  padding: 0 16px;
+  background: rgba(255,255,255,.045);
+}
+.x8-user-info-row span,
+.x8-user-records em,
+.x8-user-empty {
+  color: rgba(255,255,255,.5);
+}
+.x8-user-info-row strong {
+  color: #fff;
+  font-size: 15px;
+}
+.x8-user-pref {
+  margin-top: 8px;
+  border-radius: 12px;
+  padding: 18px;
+  background: rgba(255,255,255,.035);
+}
+.x8-user-section-title {
+  margin-bottom: 12px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+.x8-user-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.x8-user-chips button {
+  height: 32px;
+  border: 0;
+  border-radius: 16px;
+  padding: 0 14px;
+  color: rgba(255,255,255,.68);
+  background: rgba(255,255,255,.08);
+  cursor: pointer;
+}
+.x8-user-chips button.active {
+  color: #111;
+  background: #fff;
+}
+.x8-user-save {
+  margin-top: 16px;
+}
+.x8-user-records {
+  display: grid;
+  gap: 10px;
+}
+.x8-user-records button {
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  border: 0;
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: #fff;
+  background: rgba(255,255,255,.045);
+  cursor: pointer;
+  text-align: left;
+}
+.x8-user-records button:hover {
+  background: rgba(255,255,255,.08);
+}
+.x8-user-records img {
+  width: 46px;
+  height: 56px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.x8-user-records span {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.x8-user-records b,
+.x8-user-records em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-records b {
+  font-size: 15px;
+}
+.x8-user-records em {
+  font-size: 12px;
+  font-style: normal;
+}
+.x8-user-grid-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px;
+}
+.x8-user-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  font-size: 15px;
+}
+.x8-user-loading {
+  display: grid;
+  gap: 12px;
+}
+.x8-user-loading span {
+  height: 58px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.11), rgba(255,255,255,.05));
+  background-size: 220% 100%;
+  animation: x8-shimmer 1.25s linear infinite;
+}
 .x8-login-page {
   position: relative;
-  min-height: 100vh;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 100%;
   overflow: hidden;
   isolation: isolate;
   display: flex;
