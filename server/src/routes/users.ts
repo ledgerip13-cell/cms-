@@ -52,7 +52,7 @@ function parseJsonArray(value: string | null | undefined): string[] {
 
 function normalizeTypes(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 12);
+  return [...new Set(value.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 80);
 }
 
 function normalizeUsername(value: unknown) {
@@ -166,7 +166,15 @@ async function pickRecommendationTypes(userId: number, favoriteTypes: string[]) 
   const viewer = await viewerFromUserId(userId);
   const publicTypes = await watchableTypeNames(viewer);
   const watchableFavorites = favoriteTypes.filter((type) => publicTypes.includes(type));
-  if (watchableFavorites.length) return { source: "favoriteTypes", types: watchableFavorites, publicTypes };
+  const subtypeFavorites = favoriteTypes
+    .map((item) => {
+      const [type, ...rest] = String(item || "").split("::");
+      const name = rest.join("::").trim();
+      return { type: type.trim(), name };
+    })
+    .filter((item) => item.type && item.name && publicTypes.includes(item.type))
+    .slice(0, 60);
+  if (watchableFavorites.length || subtypeFavorites.length) return { source: "favoriteTypes", types: watchableFavorites, subtypes: subtypeFavorites, publicTypes };
   const rows = await prisma.watchHistory.findMany({
     where: { userId, vod: { status: "online", typeName: publicTypeFilter(publicTypes) } },
     orderBy: { updatedAt: "desc" },
@@ -174,7 +182,7 @@ async function pickRecommendationTypes(userId: number, favoriteTypes: string[]) 
     include: { vod: { select: { typeName: true } } },
   });
   const fromHistory = [...new Set(rows.map((r) => r.vod.typeName).filter(Boolean))].slice(0, 6);
-  if (fromHistory.length) return { source: "history", types: fromHistory, publicTypes };
+  if (fromHistory.length) return { source: "history", types: fromHistory, subtypes: [], publicTypes };
   const follows = await prisma.userFollow.findMany({
     where: { userId, vod: { status: "online", typeName: publicTypeFilter(publicTypes) } },
     orderBy: { createdAt: "desc" },
@@ -182,7 +190,7 @@ async function pickRecommendationTypes(userId: number, favoriteTypes: string[]) 
     include: { vod: { select: { typeName: true } } },
   });
   const fromFollows = [...new Set(follows.map((r) => r.vod.typeName).filter(Boolean))].slice(0, 6);
-  return fromFollows.length ? { source: "follows", types: fromFollows, publicTypes } : { source: "hot", types: [], publicTypes };
+  return fromFollows.length ? { source: "follows", types: fromFollows, subtypes: [], publicTypes } : { source: "hot", types: [], subtypes: [], publicTypes };
 }
 
 export default async function userRoutes(app: FastifyInstance) {
@@ -376,16 +384,25 @@ export default async function userRoutes(app: FastifyInstance) {
     return publicUser(u);
   });
 
-  app.put("/api/user/profile", { preHandler: webUserGuard }, async (req) => {
+  app.put("/api/user/profile", { preHandler: webUserGuard }, async (req, reply) => {
     const mid = (req as any).webUser.mid;
     const b = (req.body as any) || {};
     const favoriteTypes = normalizeTypes(b.favoriteTypes);
     const nickname = String(b.nickname || "").trim().slice(0, 32);
-    const u = await prisma.webUser.update({
-      where: { id: mid },
-      data: { nickname, favoriteTypes: JSON.stringify(favoriteTypes) },
-      include: { vipLevel: true },
-    });
+    const data: any = { nickname, favoriteTypes: JSON.stringify(favoriteTypes) };
+    if (Object.prototype.hasOwnProperty.call(b, "email")) {
+      const email = normalizeEmail(b.email);
+      const emailError = validateEmail(email);
+      if (emailError) return reply.code(400).send({ error: emailError });
+      if (!email) return reply.code(400).send({ error: "请输入邮箱" });
+      const duplicate = await prisma.webUser.findFirst({
+        where: { id: { not: mid }, email: { equals: email, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (duplicate) return reply.code(409).send({ error: "邮箱已被绑定" });
+      data.email = email;
+    }
+    const u = await prisma.webUser.update({ where: { id: mid }, data, include: { vipLevel: true } });
     invalidateUserRecommendation(mid);
     return publicUser(u);
   });
@@ -498,7 +515,10 @@ export default async function userRoutes(app: FastifyInstance) {
     const u = await prisma.webUser.findUnique({ where: { id: mid } });
     const picked = await pickRecommendationTypes(mid, parseJsonArray(u?.favoriteTypes));
     const where: any = { status: "online", typeName: publicTypeFilter(picked.publicTypes), ...publicPlayableFilter() };
-    if (picked.types.length) where.typeName = { in: picked.types };
+    const prefOr: any[] = [];
+    if (picked.types.length) prefOr.push({ typeName: { in: picked.types } });
+    if (picked.subtypes.length) prefOr.push(...picked.subtypes.map((item: any) => ({ typeName: item.type, subType: item.name })));
+    if (prefOr.length) where.OR = prefOr;
     const list = await prisma.vod.findMany({
       where,
       orderBy: [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],

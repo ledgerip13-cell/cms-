@@ -280,10 +280,10 @@
           </template>
         </div>
         <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
-        <div class="x8-pager" v-if="page > 1 || hasMore">
+        <div class="x8-pager" v-if="x8BrowsePageCount > 1 || page > 1 || hasMore">
           <button type="button" :disabled="page <= 1" @click="setBrowse({ page: page - 1 })">上一页</button>
-          <span>{{ page }}</span>
-          <button type="button" :disabled="!hasMore" @click="setBrowse({ page: page + 1 })">下一页</button>
+          <span>{{ x8BrowsePageText }}</span>
+          <button type="button" :disabled="x8BrowseNextDisabled" @click="setBrowse({ page: page + 1 })">下一页</button>
         </div>
       </section>
 
@@ -671,11 +671,27 @@
               <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
               <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
             </div>
+            <div class="x8-user-email">
+              <div class="x8-user-section-head">
+                <div>
+                  <strong>{{ user?.email ? '邮箱管理' : '绑定邮箱' }}</strong>
+                  <span>{{ user?.email ? '更新后可继续使用邮箱登录' : '绑定后可使用邮箱登录账号' }}</span>
+                </div>
+                <button class="x8-user-save" type="button" :disabled="x8EmailSaving" @click="saveX8Email">{{ x8EmailSaving ? '保存中...' : (user?.email ? '保存邮箱' : '绑定邮箱') }}</button>
+              </div>
+              <div class="x8-user-email-grid">
+                <label>
+                  <span>邮箱地址</span>
+                  <input v-model.trim="x8EmailForm.email" type="email" autocomplete="email" maxlength="120" placeholder="请输入邮箱地址" @input="x8EmailMsg = ''" />
+                </label>
+              </div>
+              <div v-if="x8EmailMsg" class="x8-user-form-msg">{{ x8EmailMsg }}</div>
+            </div>
             <div class="x8-user-pref">
               <div class="x8-user-section-head">
                 <div>
                   <strong>个人喜好</strong>
-                  <span>选择常看的分类，用来优化推荐内容</span>
+                  <span>先选大类，再细选常看的小类</span>
                 </div>
                 <button class="x8-user-save" type="button" :disabled="x8UserSaving" @click="saveX8Prefs">{{ x8UserSaving ? '保存中...' : '保存偏好' }}</button>
               </div>
@@ -683,6 +699,26 @@
                 <button v-for="item in types" :key="`x8-pref-${item.name}`" type="button" :class="{ active: x8Prefs.includes(item.name) }" @click="toggleX8Pref(item.name)">
                   {{ item.name || '未分类' }}
                 </button>
+              </div>
+              <div v-if="x8SelectedPrefTypes.length" class="x8-user-subprefs">
+                <section v-for="type in x8SelectedPrefTypes" :key="`x8-subpref-${type}`">
+                  <div>
+                    <strong>{{ type }}</strong>
+                    <span v-if="x8PrefSubtypesLoading[type]">加载中...</span>
+                    <span v-else>{{ (x8PrefSubtypes[type] || []).length ? '选择更细偏好' : '暂无小类' }}</span>
+                  </div>
+                  <div v-if="(x8PrefSubtypes[type] || []).length" class="x8-user-subchips">
+                    <button
+                      v-for="item in x8PrefSubtypes[type]"
+                      :key="`x8-subpref-${type}-${item.name}`"
+                      type="button"
+                      :class="{ active: x8Prefs.includes(x8PrefKey(type, item.name)) }"
+                      @click="toggleX8SubPref(type, item.name)"
+                    >
+                      {{ item.name }}
+                    </button>
+                  </div>
+                </section>
               </div>
             </div>
             <div class="x8-user-password">
@@ -711,15 +747,26 @@
             </div>
           </div>
 
-          <div v-else-if="x8UserTab === 'history'" class="x8-user-records">
-            <button v-for="item in x8UserHistory" :key="`x8-user-h-${item.id}`" type="button" @click="goUserHistory(item)">
-              <img v-if="poster(item.vod)" :src="poster(item.vod)" :alt="item.vod?.name || ''" @error="onImgError" />
-              <span>
-                <b>{{ item.vod?.name || '影片' }}</b>
-                <em>{{ item.epName || ('第' + (Number(item.epIndex || 0) + 1) + '集') }} · {{ formatX8Time(item.updatedAt) }}</em>
-              </span>
-            </button>
-            <div v-if="!x8UserHistory.length" class="x8-user-empty">暂无观看历史</div>
+          <div v-else-if="x8UserTab === 'history'" class="x8-user-history-panel">
+            <div v-if="x8UserHistory.length" class="x8-user-history-toolbar">
+              <strong>共 {{ x8UserHistory.length }} 条观看历史</strong>
+              <span>{{ x8HistoryPageText }}</span>
+            </div>
+            <div class="x8-user-records">
+              <button v-for="item in x8PagedHistory" :key="`x8-user-h-${item.id}`" type="button" @click="goUserHistory(item)">
+                <img v-if="poster(item.vod)" :src="poster(item.vod)" :alt="item.vod?.name || ''" @error="onImgError" />
+                <span>
+                  <b>{{ item.vod?.name || '影片' }}</b>
+                  <em>{{ item.epName || ('第' + (Number(item.epIndex || 0) + 1) + '集') }} · {{ formatX8Time(item.updatedAt) }}</em>
+                </span>
+              </button>
+              <div v-if="!x8UserHistory.length" class="x8-user-empty">暂无观看历史</div>
+            </div>
+            <div v-if="x8HistoryPageCount > 1" class="x8-user-history-pager">
+              <button type="button" :disabled="x8HistoryPage <= 1" @click="x8HistoryPage--">上一页</button>
+              <span>{{ x8HistoryPageText }}</span>
+              <button type="button" :disabled="x8HistoryPage >= x8HistoryPageCount" @click="x8HistoryPage++">下一页</button>
+            </div>
           </div>
 
           <div v-else class="x8-user-follow-panel">
@@ -908,12 +955,16 @@ const loginWallItems = ref([])
 const x8UserHistory = ref([])
 const x8UserFollows = ref([])
 const x8Prefs = ref([])
+const x8PrefSubtypes = reactive({})
+const x8PrefSubtypesLoading = reactive({})
 const x8UserLoading = ref(false)
 const x8UserSaving = ref(false)
+const x8HistoryPage = ref(1)
 const x8FollowEditing = ref(false)
 const x8FollowSelected = ref([])
 const x8FollowCanceling = ref(false)
 const page = ref(1)
+const total = ref(0)
 const hasMore = ref(false)
 const loading = ref(false)
 const scrolled = ref(false)
@@ -953,6 +1004,9 @@ const loginConfig = ref({ allowRegister: true, inviteRequired: false })
 const loginLoading = ref(false)
 const loginError = ref('')
 const loginForm = reactive({ username: '', email: '', password: '', nickname: '', inviteCode: '' })
+const x8EmailForm = reactive({ email: '' })
+const x8EmailSaving = ref(false)
+const x8EmailMsg = ref('')
 const x8PasswordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const x8PasswordSaving = ref(false)
 const x8PasswordMsg = ref('')
@@ -982,6 +1036,7 @@ const X8_SEARCH_HISTORY_KEY = 'vcms.x8.search.history'
 const X8_LOGIN_WALL_CACHE_KEY = 'vcms.x8.login.wall'
 const X8_LOGIN_WALL_CACHE_TTL_MS = 1000 * 60 * 60 * 24
 const X8_LOGIN_WALL_COUNT = 48
+const X8_HISTORY_PAGE_SIZE = 20
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -997,6 +1052,7 @@ const sortItems = [
   { value: 'rating', label: '评分' },
   { value: 'year', label: '年份' },
 ]
+const X8_BROWSE_PAGE_SIZE = 30
 const rankSkeletonGroups = [
   { key: 'all', title: '综合榜' },
   { key: 'movie', title: '电影榜' },
@@ -1047,6 +1103,9 @@ const browseSkeletonCount = computed(() => {
   if (viewportWidth.value >= 721) return 8
   return 6
 })
+const x8BrowsePageCount = computed(() => Math.max(1, Math.ceil((Number(total.value) || 0) / X8_BROWSE_PAGE_SIZE)))
+const x8BrowsePageText = computed(() => `第 ${page.value} / ${x8BrowsePageCount.value} 页`)
+const x8BrowseNextDisabled = computed(() => total.value > 0 ? page.value >= x8BrowsePageCount.value : !hasMore.value)
 const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice(0, hotCols.value * 2))
 const navItems = computed(() => {
   return types.value.filter(item => item?.name)
@@ -1062,6 +1121,11 @@ const x8UserAvatar = computed(() => {
   if (x8AvatarBroken.value) return ''
   return user.value?.avatar || user.value?.portrait || user.value?.userPortrait || ''
 })
+const x8UserAccessSignature = computed(() => [
+  user.value?.id || 0,
+  user.value?.isVip ? 1 : 0,
+  user.value?.vipLevelId || 0,
+].join(':'))
 const x8UserTab = computed(() => normalizeX8UserTab(route.query.tab))
 const x8UserTabTitle = computed(() => {
   if (x8UserTab.value === 'history') return '观看历史'
@@ -1072,6 +1136,13 @@ const x8AllFollowsSelected = computed(() => {
   const ids = x8UserFollows.value.map(x8FollowVodId).filter(Boolean)
   return Boolean(ids.length) && ids.every(id => x8FollowSelected.value.includes(id))
 })
+const x8HistoryPageCount = computed(() => Math.max(1, Math.ceil(x8UserHistory.value.length / X8_HISTORY_PAGE_SIZE)))
+const x8HistoryPageText = computed(() => `第 ${x8HistoryPage.value} / ${x8HistoryPageCount.value} 页`)
+const x8PagedHistory = computed(() => {
+  const start = (x8HistoryPage.value - 1) * X8_HISTORY_PAGE_SIZE
+  return x8UserHistory.value.slice(start, start + X8_HISTORY_PAGE_SIZE)
+})
+const x8SelectedPrefTypes = computed(() => types.value.map(item => item.name).filter(name => name && x8Prefs.value.includes(name)))
 const loginWallPosters = computed(() => {
   const rows = uniqueVods(loginWallItems.value, heroItems.value, hotItems.value, homeSections.value.flatMap(section => section.items || []))
     .filter(item => poster(item))
@@ -1515,9 +1586,10 @@ function focusX8Nav() {
 function goUser(tab) {
   router.push({ path: '/x8/me', query: { tab: normalizeX8UserTab(tab) } })
 }
-function logoutX8() {
+async function logoutX8() {
   clearSession()
   x8AvatarBroken.value = false
+  await refreshX8Types()
   notifySuccess('已退出登录')
   goX8Home()
 }
@@ -1620,6 +1692,7 @@ async function submitX8Auth() {
     setSession(result.token, result.user)
     user.value = result.user
     x8AvatarBroken.value = false
+    await refreshX8Types()
     notifySuccess(loginMode.value === 'register' ? '注册成功' : '登录成功')
     resetLoginForm()
     const redirect = String(route.query.redirect || '')
@@ -1665,9 +1738,32 @@ function goUserHistory(item) {
 }
 function toggleX8Pref(name) {
   if (!name) return
-  x8Prefs.value = x8Prefs.value.includes(name)
-    ? x8Prefs.value.filter(item => item !== name)
-    : [...x8Prefs.value, name]
+  if (x8Prefs.value.includes(name)) {
+    x8Prefs.value = x8Prefs.value.filter(item => item !== name && !item.startsWith(`${name}::`))
+    return
+  }
+  x8Prefs.value = [...x8Prefs.value, name]
+  void loadX8PrefSubtypes(name)
+}
+function x8PrefKey(type, name) {
+  return `${type}::${name}`
+}
+function toggleX8SubPref(type, name) {
+  const key = x8PrefKey(type, name)
+  x8Prefs.value = x8Prefs.value.includes(key)
+    ? x8Prefs.value.filter(item => item !== key)
+    : [...x8Prefs.value, key]
+}
+async function loadX8PrefSubtypes(type) {
+  if (!type || x8PrefSubtypes[type] || x8PrefSubtypesLoading[type]) return
+  x8PrefSubtypesLoading[type] = true
+  try {
+    x8PrefSubtypes[type] = (await api.subtypes(type).catch(() => []))
+      .filter(item => item?.name && Number(item.count || 0) > 0)
+      .slice(0, 36)
+  } finally {
+    x8PrefSubtypesLoading[type] = false
+  }
 }
 function toggleX8FollowEdit() {
   x8FollowEditing.value = !x8FollowEditing.value
@@ -1708,6 +1804,45 @@ function cancelSelectedX8Follows() {
 }
 function cancelOneX8Follow(id) {
   return cancelX8Follows([id])
+}
+function syncX8EmailForm() {
+  x8EmailForm.email = user.value?.email || ''
+  x8EmailMsg.value = ''
+}
+function validateX8Email() {
+  const email = String(x8EmailForm.email || '').trim()
+  if (!email) return '请输入邮箱'
+  if (email.length > 120) return '邮箱过长'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '邮箱格式不正确'
+  return ''
+}
+async function saveX8Email() {
+  if (!user.value) return goLogin()
+  const invalid = validateX8Email()
+  if (invalid) {
+    x8EmailMsg.value = invalid
+    notifyWarning(invalid)
+    return
+  }
+  x8EmailSaving.value = true
+  x8EmailMsg.value = ''
+  try {
+    const updated = await api.updateUserProfile({
+      nickname: user.value?.nickname || user.value?.username,
+      favoriteTypes: x8Prefs.value,
+      email: x8EmailForm.email,
+    })
+    user.value = updated
+    localStorage.setItem('vcms.user', JSON.stringify(updated))
+    syncX8EmailForm()
+    x8EmailMsg.value = user.value?.email ? '邮箱已保存' : ''
+    notifySuccess('邮箱已保存')
+  } catch (error) {
+    x8EmailMsg.value = apiErrorMessage(error, '保存失败')
+    notifyError(x8EmailMsg.value)
+  } finally {
+    x8EmailSaving.value = false
+  }
 }
 async function saveX8Prefs() {
   if (!user.value) return goLogin()
@@ -1769,10 +1904,13 @@ async function loadX8UserCenter() {
       api.follows(50).catch(() => []),
     ])
     x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
+    x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
     x8UserFollows.value = Array.isArray(followRows) ? followRows : []
     x8FollowSelected.value = x8FollowSelected.value.filter(id => x8UserFollows.value.some(item => x8FollowVodId(item) === id))
     if (!x8UserFollows.value.length) x8FollowEditing.value = false
     x8Prefs.value = Array.isArray(user.value?.favoriteTypes) ? [...user.value.favoriteTypes] : []
+    x8SelectedPrefTypes.value.forEach(type => { void loadX8PrefSubtypes(type) })
+    syncX8EmailForm()
   } finally {
     x8UserLoading.value = false
   }
@@ -2315,13 +2453,16 @@ async function refreshRelated() {
   const rows = await api.related({ id: vod.value.id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => [])
   related.value = rows || related.value
 }
-async function ensureTypes() {
-  if (types.value.length) return types.value
-  const cached = readCachedCategories()
-  if (cached.length) types.value = cached
+async function refreshX8Types() {
   const rows = await api.types().catch(() => [])
-  if (rows?.length) types.value = writeCachedCategories(rows)
+  types.value = writeCachedCategories(Array.isArray(rows) ? rows : [])
   return types.value
+}
+async function ensureTypes(force = false) {
+  if (!force && types.value.length) return types.value
+  const cached = readCachedCategories()
+  if (!force && cached.length) types.value = cached
+  return refreshX8Types()
 }
 async function loadHome() {
   loading.value = true
@@ -2388,7 +2529,7 @@ async function loadBrowse() {
     const [res, subtypeRows, yearRows] = await Promise.all([
       api.vods({
         page: page.value,
-        size: 30,
+        size: X8_BROWSE_PAGE_SIZE,
         kw: route.query.kw || undefined,
         type: curType.value || undefined,
         sub: curSub.value || undefined,
@@ -2400,7 +2541,8 @@ async function loadBrowse() {
     ])
     if (requestId !== browseRequestId || pageMode.value !== 'show') return
     list.value = res?.list || []
-    hasMore.value = list.value.length >= 30
+    total.value = Number.isFinite(Number(res?.total)) ? Number(res.total) : 0
+    hasMore.value = typeof res?.hasMore === 'boolean' ? res.hasMore : list.value.length >= X8_BROWSE_PAGE_SIZE
     subtypes.value = (subtypeRows || []).filter(item => Number(item.count || 0) > 0).slice(0, 18)
     years.value = (yearRows || []).slice(0, 12)
   } finally {
@@ -2509,6 +2651,12 @@ watch(() => route.fullPath, (_next, prev) => {
   else if (mode === 'detail') loadVod(false)
   else if (mode === 'play') loadVod(true)
 }, { immediate: true })
+watch(x8UserAccessSignature, () => {
+  void refreshX8Types()
+})
+watch(x8HistoryPageCount, (count) => {
+  if (x8HistoryPage.value > count) x8HistoryPage.value = count
+})
 
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
@@ -5574,7 +5722,9 @@ onBeforeUnmount(() => {
 .x8-user-side {
   align-self: start;
   position: sticky;
-  top: 92px;
+  top: calc(92px + env(safe-area-inset-top));
+  max-height: calc(100vh - 112px - env(safe-area-inset-top));
+  overflow-y: auto;
   padding: 20px;
 }
 .x8-user-profile-card {
@@ -5796,9 +5946,93 @@ onBeforeUnmount(() => {
   color: #111;
   background: #fff;
 }
-.x8-user-save {
+.x8-user-subprefs {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.x8-user-subprefs section {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 13px;
+  background: rgba(255,255,255,.035);
+}
+.x8-user-subprefs section > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.x8-user-subprefs strong {
+  color: #fff;
+  font-size: 14px;
+  line-height: 18px;
+}
+.x8-user-subprefs span {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.42);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-subchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.x8-user-subchips button {
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 11px;
+  color: rgba(255,255,255,.64);
+  background: rgba(255,255,255,.075);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.x8-user-subchips button.active {
+  color: #111;
+  background: #fff;
+}
+.x8-user-section-head .x8-user-save {
   flex: 0 0 auto;
-  font: 700 13px/1 "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  font: 500 12px/1 "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+.x8-user-history-panel {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.x8-user-history-toolbar {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-radius: 10px;
+  padding: 0 16px;
+  background: rgba(255,255,255,.035);
+}
+.x8-user-history-toolbar strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-history-toolbar span {
+  flex: 0 0 auto;
+  color: rgba(255,255,255,.5);
+  font-size: 13px;
 }
 .x8-user-records {
   display: grid;
@@ -5849,6 +6083,75 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 16px;
   font-style: normal;
+}
+.x8-user-history-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.x8-user-history-pager button {
+  height: 34px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: rgba(255,255,255,.76);
+  background: rgba(255,255,255,.055);
+  cursor: pointer;
+  font-size: 13px;
+}
+.x8-user-history-pager button:disabled {
+  cursor: not-allowed;
+  opacity: .38;
+}
+.x8-user-history-pager span {
+  min-width: 82px;
+  color: rgba(255,255,255,.52);
+  font-size: 13px;
+  text-align: center;
+}
+.x8-user-email {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  border-radius: 10px;
+  padding: 18px;
+  background: rgba(255,255,255,.035);
+}
+.x8-user-email-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 420px);
+  gap: 12px;
+}
+.x8-user-email-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.x8-user-email-grid label span {
+  overflow: hidden;
+  color: rgba(255,255,255,.52);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-email-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid rgba(255,255,255,.1);
+  outline: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #fff;
+  background: rgba(255,255,255,.055);
+  font-size: 14px;
+}
+.x8-user-email-grid input:focus {
+  border-color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.08);
 }
 .x8-user-password-grid {
   display: grid;

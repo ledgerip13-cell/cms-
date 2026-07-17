@@ -174,6 +174,11 @@ const isX8PreviewRoute = computed(() => route.path === '/x8' || route.path.start
 const isX8HomeRoute = computed(() => site.value?.homeConfig?.adaptiveTemplate === 'x8' && (route.path === '/' || route.path.startsWith('/play/')))
 const shortsEnabled = computed(() => site.value?.shortsConfig?.enabled !== false)
 const mobileTemplateEnabled = computed(() => site.value?.homeConfig?.mobileTemplate === 'shortDrama')
+const userAccessSignature = computed(() => [
+  user.value?.id || 0,
+  user.value?.isVip ? 1 : 0,
+  user.value?.vipLevelId || 0,
+].join(':'))
 
 // 任何路由切换都强制关闭移动端侧边栏抽屉，避免从首页点开菜单后跳转到播放页时状态残留遮挡内容
 watch(() => route.fullPath, () => {
@@ -183,6 +188,9 @@ watch(() => route.fullPath, () => {
   applyMobileTemplateRedirect()
 })
 watch(() => site.value?.homeConfig?.mobileTemplate, applyMobileTemplateRedirect)
+watch(userAccessSignature, () => {
+  void refreshMenuCategories()
+})
 
 function pic(v) { return imgUrl(v.officialPic || v.pic || v.localPic || '') }
 function fallbackPic(v) { return imgUrl(v.localPic || '') }
@@ -257,6 +265,15 @@ function updatePwa() {
   if (!applyPwaUpdate()) window.location.reload()
 }
 
+async function refreshMenuCategories() {
+  try {
+    const data = await api.categories()
+    types.value = writeCachedCategories(Array.isArray(data) ? data : [])
+  } catch {
+    if (!types.value.length) types.value = []
+  }
+}
+
 // 用 mousedown 而非延迟绑定的 click：避免与当次点击事件时序冲突导致“点一下消失”
 const vClickOutside = {
   mounted(el, binding) {
@@ -277,11 +294,7 @@ onMounted(async () => {
     applySiteTheme(site.value, themePageFromRoute(route))
     applyMobileTemplateRedirect()
   }).catch(() => {})
-  const categoriesPromise = api.categories().then(data => {
-    types.value = writeCachedCategories(data)
-  }).catch(() => {
-    if (!types.value.length) types.value = []
-  })
+  const categoriesPromise = refreshMenuCategories()
   await Promise.allSettled([sitePromise, categoriesPromise])
   if (site.value?.pwaConfig?.enabled !== false) setupPwaUpdates(() => { pwaUpdateReady.value = true })
 })

@@ -240,8 +240,8 @@
 
       <div class="pager" v-if="page > 1 || hasMore">
         <button :disabled="page<=1" @click="go(page-1)">上一页</button>
-        <button disabled>{{ page }}</button>
-        <button :disabled="!hasMore" @click="go(page+1)">下一页</button>
+        <button disabled>{{ pagerText }}</button>
+        <button :disabled="nextDisabled" @click="go(page+1)">下一页</button>
       </div>
     </template>
   </div>
@@ -455,6 +455,9 @@ let totalRequestId = 0
 const sorts = [{ v:'recent', t:'最近更新' }, { v:'year', t:'按年份' }, { v:'hot', t:'热门' }, { v:'rating', t:'高分' }]
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
 const totalKnown = computed(() => total.value !== null && total.value !== undefined && Number.isFinite(Number(total.value)))
+const pageCount = computed(() => totalKnown.value ? Math.max(1, Math.ceil(Number(total.value) / size)) : Math.max(page.value + (hasMore.value ? 1 : 0), 1))
+const pagerText = computed(() => `第 ${page.value} / ${pageCount.value} 页`)
+const nextDisabled = computed(() => totalKnown.value ? page.value >= pageCount.value : !hasMore.value)
 const filterSummary = computed(() => {
   const items = [sub.value || curType.value || '全部', currentSortLabel.value]
   if (year.value) items.push(year.value)
