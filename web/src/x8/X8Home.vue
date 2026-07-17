@@ -643,6 +643,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /></svg>
               <span>我的追剧</span>
             </button>
+            <button type="button" :class="{ active: x8UserTab === 'password' }" @click="selectX8UserTab('password')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+              <span>修改密码</span>
+            </button>
           </nav>
           <button class="x8-user-side-logout" type="button" @click="logoutX8">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5" /></svg>
@@ -721,30 +725,31 @@
                 </section>
               </div>
             </div>
-            <div class="x8-user-password">
-              <div class="x8-user-section-head">
-                <div>
-                  <strong>修改密码</strong>
-                  <span>定期更新密码，保护账号安全</span>
-                </div>
-                <button class="x8-user-save" type="button" :disabled="x8PasswordSaving" @click="changeX8Password">{{ x8PasswordSaving ? '保存中...' : '保存密码' }}</button>
+          </div>
+
+          <div v-else-if="x8UserTab === 'password'" class="x8-user-password">
+            <div class="x8-user-section-head">
+              <div>
+                <strong>修改密码</strong>
+                <span>定期更新密码，保护账号安全</span>
               </div>
-              <div class="x8-user-password-grid">
-                <label>
-                  <span>当前密码</span>
-                  <input v-model="x8PasswordForm.oldPassword" type="password" autocomplete="current-password" placeholder="请输入当前密码" @input="x8PasswordMsg = ''" />
-                </label>
-                <label>
-                  <span>新密码</span>
-                  <input v-model="x8PasswordForm.newPassword" type="password" autocomplete="new-password" placeholder="至少6位" @input="x8PasswordMsg = ''" />
-                </label>
-                <label>
-                  <span>确认新密码</span>
-                  <input v-model="x8PasswordForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" @input="x8PasswordMsg = ''" />
-                </label>
-              </div>
-              <div v-if="x8PasswordMsg" class="x8-user-form-msg">{{ x8PasswordMsg }}</div>
+              <button class="x8-user-save" type="button" :disabled="x8PasswordSaving" @click="changeX8Password">{{ x8PasswordSaving ? '保存中...' : '保存密码' }}</button>
             </div>
+            <div class="x8-user-password-grid">
+              <label>
+                <span>当前密码</span>
+                <input v-model="x8PasswordForm.oldPassword" type="password" autocomplete="current-password" placeholder="请输入当前密码" @input="x8PasswordMsg = ''" />
+              </label>
+              <label>
+                <span>新密码</span>
+                <input v-model="x8PasswordForm.newPassword" type="password" autocomplete="new-password" placeholder="至少6位" @input="x8PasswordMsg = ''" />
+              </label>
+              <label>
+                <span>确认新密码</span>
+                <input v-model="x8PasswordForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" @input="x8PasswordMsg = ''" />
+              </label>
+            </div>
+            <div v-if="x8PasswordMsg" class="x8-user-form-msg">{{ x8PasswordMsg }}</div>
           </div>
 
           <div v-else-if="x8UserTab === 'history'" class="x8-user-history-panel">
@@ -1130,6 +1135,7 @@ const x8UserTab = computed(() => normalizeX8UserTab(route.query.tab))
 const x8UserTabTitle = computed(() => {
   if (x8UserTab.value === 'history') return '观看历史'
   if (x8UserTab.value === 'follows') return '我的追剧'
+  if (x8UserTab.value === 'password') return '修改密码'
   return '个人资料'
 })
 const x8AllFollowsSelected = computed(() => {
@@ -1711,7 +1717,7 @@ function goDetail(id) {
 }
 function normalizeX8UserTab(tab) {
   const value = Array.isArray(tab) ? tab[0] : tab
-  if (value === 'history' || value === 'follows') return value
+  if (value === 'history' || value === 'follows' || value === 'password') return value
   return 'userInfo'
 }
 function selectX8UserTab(tab) {

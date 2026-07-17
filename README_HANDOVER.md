@@ -373,6 +373,7 @@ docker compose up -d --build
 - **2026-07-18 X8 观看历史分页与个人中心侧栏断点**：`web/src/x8/X8Home.vue` 的个人中心观看历史固定每页 20 条，超出后显示上一页/下一页和当前/总页数；个人中心左侧栏 sticky 增加安全区 top、最大高度和内部滚动，历史页向下滚动时侧栏固定在头部下方。同步修复“保存偏好/保存密码”按钮字号未生效的根因：原 `.x8-user-save` 被基础按钮规则覆盖，按钮实际位于 `.x8-user-section-head` 下，现用 `.x8-user-section-head .x8-user-save` 覆盖，实际生效 12px/500。已 `npm run build`、`git diff --check` 通过。
 - **2026-07-18 X8 前台绑定邮箱断点**：`server/src/routes/users.ts` 的 `PUT /api/user/profile` 支持绑定/更新邮箱，补齐格式校验、非空校验与重复邮箱 409；`web/src/x8/X8Home.vue` 个人中心资料页新增“绑定邮箱/邮箱管理”表单，未绑定时可输入邮箱并保存，保存后同步 `currentUser` 与本地会话，后续可用邮箱登录。已 `pnpm --dir server build`、`npm run build`、`git diff --check` 通过。
 - **2026-07-18 X8 偏好小类颗粒度断点**：`web/src/x8/X8Home.vue` 个人喜好支持大类 + 小类颗粒度：选择大类后按 `/api/subtypes` 懒加载小类 chip，小类以 `大类::小类` key 写入既有 `favoriteTypes`，取消大类会同步清除其小类偏好；`server/src/routes/users.ts` 推荐逻辑识别小类偏好并按 `typeName + subType` 精确过滤，偏好上限从 12 提升到 80 以容纳小类。已 `pnpm --dir server build`、`npm run build`、`git diff --check` 通过。
+- **2026-07-18 X8 修改密码左侧菜单与偏好推荐语义断点**：`web/src/x8/X8Home.vue` 将“修改密码”从个人资料内容区移到左侧个人中心菜单独立 `password` tab；`server/src/routes/users.ts` 调整偏好推荐语义：只选大类且未选小类时推荐整个大类；同一大类已选小类时，该大类只按已选小类 `typeName + subType` 精确推荐，不再被父级大类泛化。已 `pnpm --dir server build`、`npm run build`、`git diff --check` 通过。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

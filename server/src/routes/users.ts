@@ -174,7 +174,9 @@ async function pickRecommendationTypes(userId: number, favoriteTypes: string[]) 
     })
     .filter((item) => item.type && item.name && publicTypes.includes(item.type))
     .slice(0, 60);
-  if (watchableFavorites.length || subtypeFavorites.length) return { source: "favoriteTypes", types: watchableFavorites, subtypes: subtypeFavorites, publicTypes };
+  const subtypeTypeSet = new Set(subtypeFavorites.map((item) => item.type));
+  const broadFavorites = watchableFavorites.filter((type) => !subtypeTypeSet.has(type));
+  if (broadFavorites.length || subtypeFavorites.length) return { source: "favoriteTypes", types: broadFavorites, subtypes: subtypeFavorites, publicTypes };
   const rows = await prisma.watchHistory.findMany({
     where: { userId, vod: { status: "online", typeName: publicTypeFilter(publicTypes) } },
     orderBy: { updatedAt: "desc" },
