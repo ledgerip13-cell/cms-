@@ -631,11 +631,23 @@
             <em>{{ user?.vipLevel?.name || '普通用户' }}</em>
           </div>
           <nav class="x8-user-side-nav" aria-label="X8个人中心">
-            <button type="button" :class="{ active: x8UserTab === 'userInfo' }" @click="selectX8UserTab('userInfo')">个人资料</button>
-            <button type="button" :class="{ active: x8UserTab === 'history' }" @click="selectX8UserTab('history')">观看历史</button>
-            <button type="button" :class="{ active: x8UserTab === 'follows' }" @click="selectX8UserTab('follows')">我的追剧</button>
+            <button type="button" :class="{ active: x8UserTab === 'userInfo' }" @click="selectX8UserTab('userInfo')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>
+              <span>个人资料</span>
+            </button>
+            <button type="button" :class="{ active: x8UserTab === 'history' }" @click="selectX8UserTab('history')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+              <span>观看历史</span>
+            </button>
+            <button type="button" :class="{ active: x8UserTab === 'follows' }" @click="selectX8UserTab('follows')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /></svg>
+              <span>我的追剧</span>
+            </button>
           </nav>
-          <button class="x8-user-side-logout" type="button" @click="logoutX8">退出登录</button>
+          <button class="x8-user-side-logout" type="button" @click="logoutX8">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5" /></svg>
+            <span>退出登录</span>
+          </button>
         </aside>
 
         <section class="x8-user-content">
@@ -652,18 +664,25 @@
           </div>
 
           <div v-else-if="x8UserTab === 'userInfo'" class="x8-user-info-panel">
-            <div class="x8-user-info-row"><span>账号</span><strong>{{ user?.username || '-' }}</strong></div>
-            <div class="x8-user-info-row"><span>昵称</span><strong>{{ user?.nickname || user?.username || '-' }}</strong></div>
-            <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
-            <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
+            <div class="x8-user-stats">
+              <div class="x8-user-info-row"><span>账号</span><strong>{{ user?.username || '-' }}</strong></div>
+              <div class="x8-user-info-row"><span>昵称</span><strong>{{ user?.nickname || user?.username || '-' }}</strong></div>
+              <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
+              <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
+            </div>
             <div class="x8-user-pref">
-              <div class="x8-user-section-title">喜欢的类型</div>
+              <div class="x8-user-section-head">
+                <div>
+                  <strong>个人喜好</strong>
+                  <span>选择常看的分类，用来优化推荐内容</span>
+                </div>
+                <button class="x8-user-save" type="button" :disabled="x8UserSaving" @click="saveX8Prefs">{{ x8UserSaving ? '保存中...' : '保存偏好' }}</button>
+              </div>
               <div class="x8-user-chips">
                 <button v-for="item in types" :key="`x8-pref-${item.name}`" type="button" :class="{ active: x8Prefs.includes(item.name) }" @click="toggleX8Pref(item.name)">
                   {{ item.name || '未分类' }}
                 </button>
               </div>
-              <button class="x8-user-save" type="button" :disabled="x8UserSaving" @click="saveX8Prefs">{{ x8UserSaving ? '保存中...' : '保存偏好' }}</button>
             </div>
           </div>
 
@@ -684,7 +703,7 @@
           </div>
 
           <x8-panel v-if="x8UserRecs.length" title="猜你喜欢" :changeable="false" :moreable="false">
-            <div class="x8-card-grid section">
+            <div class="x8-user-vod-grid">
               <x8-card v-for="item in x8UserRecs.slice(0, 12)" :key="`x8-user-rec-${item.id}`" :item="item" short @open="goDetail" @follow="goDetail" />
             </div>
           </x8-panel>
@@ -5375,37 +5394,40 @@ onBeforeUnmount(() => {
 .x8-user-center {
   min-height: calc(100vh - 72px);
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 28px;
   padding-top: 110px;
 }
 .x8-user-side,
 .x8-user-content {
-  border-radius: 12px;
+  min-width: 0;
+  border-radius: 10px;
   background: rgba(255,255,255,.04);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
 }
 .x8-user-side {
   align-self: start;
-  padding: 22px;
+  position: sticky;
+  top: 92px;
+  padding: 20px;
 }
 .x8-user-profile-card {
   display: grid;
   justify-items: center;
-  gap: 8px;
-  padding: 10px 0 22px;
+  gap: 9px;
+  padding: 8px 0 20px;
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .x8-user-profile-avatar {
-  width: 74px;
-  height: 74px;
+  width: 72px;
+  height: 72px;
   display: grid;
   place-items: center;
   overflow: hidden;
   border-radius: 50%;
   color: #111;
   background: #fff;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
 }
 .x8-user-profile-avatar img {
@@ -5417,7 +5439,8 @@ onBeforeUnmount(() => {
   max-width: 100%;
   overflow: hidden;
   color: #fff;
-  font-size: 18px;
+  font-size: 17px;
+  line-height: 22px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5429,7 +5452,7 @@ onBeforeUnmount(() => {
 }
 .x8-user-side-nav {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding: 18px 0;
 }
 .x8-user-side-nav button,
@@ -5441,34 +5464,51 @@ onBeforeUnmount(() => {
 }
 .x8-user-side-nav button,
 .x8-user-side-logout {
-  height: 42px;
+  width: 100%;
+  height: 44px;
   border-radius: 8px;
   padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
   color: rgba(255,255,255,.68);
   background: transparent;
   font-size: 14px;
+  font-weight: 500;
   text-align: left;
+}
+.x8-user-side-nav svg,
+.x8-user-side-logout svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+.x8-user-side-nav span,
+.x8-user-side-logout span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .x8-user-side-nav button:hover,
 .x8-user-side-nav button.active {
   color: #fff;
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.075);
 }
 .x8-user-side-logout {
-  width: 100%;
   color: rgba(255,120,132,.9);
   background: rgba(255,92,107,.08);
 }
 .x8-user-content {
   min-width: 0;
-  padding: 24px;
+  padding: 24px 26px 30px;
 }
 .x8-user-content-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 .x8-user-content-head span {
   color: rgba(255,255,255,.34);
@@ -5478,7 +5518,8 @@ onBeforeUnmount(() => {
 .x8-user-content-head h1 {
   margin: 4px 0 0;
   color: #fff;
-  font-size: 26px;
+  font-size: 24px;
+  line-height: 32px;
   font-weight: 700;
 }
 .x8-user-content-head button,
@@ -5493,16 +5534,20 @@ onBeforeUnmount(() => {
 }
 .x8-user-info-panel {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+}
+.x8-user-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 .x8-user-info-row {
-  min-height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  min-height: 76px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
   border-radius: 10px;
-  padding: 0 16px;
+  padding: 14px 16px;
   background: rgba(255,255,255,.045);
 }
 .x8-user-info-row span,
@@ -5510,34 +5555,74 @@ onBeforeUnmount(() => {
 .x8-user-empty {
   color: rgba(255,255,255,.5);
 }
+.x8-user-info-row span {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .x8-user-info-row strong {
+  min-width: 0;
+  overflow: hidden;
   color: #fff;
-  font-size: 15px;
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .x8-user-pref {
-  margin-top: 8px;
+  min-width: 0;
   border-radius: 12px;
   padding: 18px;
   background: rgba(255,255,255,.035);
 }
-.x8-user-section-title {
-  margin-bottom: 12px;
+.x8-user-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+.x8-user-section-head div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.x8-user-section-head strong {
   color: #fff;
   font-size: 16px;
+  line-height: 22px;
   font-weight: 700;
 }
+.x8-user-section-head span {
+  overflow: hidden;
+  color: rgba(255,255,255,.46);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .x8-user-chips {
-  display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
   gap: 10px;
 }
 .x8-user-chips button {
-  height: 32px;
+  min-width: 0;
+  height: 34px;
   border: 0;
-  border-radius: 16px;
-  padding: 0 14px;
+  border-radius: 8px;
+  padding: 0 12px;
+  overflow: hidden;
   color: rgba(255,255,255,.68);
   background: rgba(255,255,255,.08);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 .x8-user-chips button.active {
@@ -5545,7 +5630,7 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 .x8-user-save {
-  margin-top: 16px;
+  flex: 0 0 auto;
 }
 .x8-user-records {
   display: grid;
@@ -5554,11 +5639,11 @@ onBeforeUnmount(() => {
 .x8-user-records button {
   width: 100%;
   min-width: 0;
-  min-height: 76px;
+  min-height: 78px;
   border: 0;
   border-radius: 10px;
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -5571,8 +5656,8 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.08);
 }
 .x8-user-records img {
-  width: 46px;
-  height: 56px;
+  width: 48px;
+  height: 58px;
   border-radius: 5px;
   object-fit: cover;
 }
@@ -5589,17 +5674,59 @@ onBeforeUnmount(() => {
 }
 .x8-user-records b {
   font-size: 15px;
+  line-height: 20px;
 }
 .x8-user-records em {
   font-size: 12px;
+  line-height: 16px;
   font-style: normal;
 }
-.x8-user-grid-panel {
+.x8-user-grid-panel,
+.x8-user-vod-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+  gap: 22px 16px;
+  align-items: start;
+}
+.x8-user-center .x8-card {
+  min-width: 0;
+}
+.x8-user-center .x8-card-poster {
+  --scale-x: 1.04;
+  --scale-y: 1.04;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 356 / 498;
+  border-radius: 8px;
+}
+.x8-user-center .x8-card:hover .x8-card-poster {
+  transform: scale(1.035);
+  box-shadow: 0 14px 42px rgba(0,0,0,.45);
+}
+.x8-user-center .x8-card-info {
+  height: 38px;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 14px;
+}
+.x8-user-center .x8-card-info span {
+  font-size: 14px;
+  font-weight: 600;
+}
+.x8-user-center .x8-card-info b,
+.x8-user-center .x8-card-bottom b {
+  font-size: 15px;
+}
+.x8-user-center .x8-card-bottom {
+  height: 82px;
+  padding: 0 10px 11px;
+  font-size: 12px;
+}
+.x8-user-center .x8-card-hover {
+  display: none;
 }
 .x8-user-empty {
+  grid-column: 1 / -1;
   min-height: 180px;
   display: grid;
   place-items: center;
