@@ -666,6 +666,7 @@
           <div v-else-if="x8UserTab === 'userInfo'" class="x8-user-info-panel">
             <div class="x8-user-stats">
               <div class="x8-user-info-row"><span>账号</span><strong>{{ user?.username || '-' }}</strong></div>
+              <div class="x8-user-info-row"><span>邮箱</span><strong>{{ user?.email || '未绑定' }}</strong></div>
               <div class="x8-user-info-row"><span>昵称</span><strong>{{ user?.nickname || user?.username || '-' }}</strong></div>
               <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
               <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
@@ -683,6 +684,30 @@
                   {{ item.name || '未分类' }}
                 </button>
               </div>
+            </div>
+            <div class="x8-user-password">
+              <div class="x8-user-section-head">
+                <div>
+                  <strong>修改密码</strong>
+                  <span>定期更新密码，保护账号安全</span>
+                </div>
+                <button class="x8-user-save" type="button" :disabled="x8PasswordSaving" @click="changeX8Password">{{ x8PasswordSaving ? '保存中...' : '保存密码' }}</button>
+              </div>
+              <div class="x8-user-password-grid">
+                <label>
+                  <span>当前密码</span>
+                  <input v-model="x8PasswordForm.oldPassword" type="password" autocomplete="current-password" placeholder="请输入当前密码" @input="x8PasswordMsg = ''" />
+                </label>
+                <label>
+                  <span>新密码</span>
+                  <input v-model="x8PasswordForm.newPassword" type="password" autocomplete="new-password" placeholder="至少6位" @input="x8PasswordMsg = ''" />
+                </label>
+                <label>
+                  <span>确认新密码</span>
+                  <input v-model="x8PasswordForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" @input="x8PasswordMsg = ''" />
+                </label>
+              </div>
+              <div v-if="x8PasswordMsg" class="x8-user-form-msg">{{ x8PasswordMsg }}</div>
             </div>
           </div>
 
@@ -702,7 +727,7 @@
             <div v-if="!x8UserFollows.length" class="x8-user-empty">暂无追剧内容</div>
           </div>
 
-          <x8-panel v-if="x8UserRecs.length" title="猜你喜欢" :changeable="false" :moreable="false">
+          <x8-panel v-if="x8UserTab !== 'userInfo' && x8UserRecs.length" title="猜你喜欢" :changeable="false" :moreable="false">
             <div class="x8-user-vod-grid">
               <x8-card v-for="item in x8UserRecs.slice(0, 12)" :key="`x8-user-rec-${item.id}`" :item="item" short @open="goDetail" @follow="goDetail" />
             </div>
@@ -731,8 +756,12 @@
             <div class="x8-login-title">{{ loginMode === 'login' ? '欢迎回来' : '创建账号' }}</div>
             <p>{{ loginMode === 'login' ? '登录后同步观看历史和我的追剧' : '注册后保存进度、追剧和个性推荐' }}</p>
             <label>
-              <span>账号</span>
-              <input v-model.trim="loginForm.username" autocomplete="username" placeholder="4-32位字母/数字/下划线" @input="loginError = ''" />
+              <span>{{ loginMode === 'login' ? '账号 / 邮箱' : '账号' }}</span>
+              <input v-model.trim="loginForm.username" autocomplete="username" :placeholder="loginMode === 'login' ? '请输入账号或邮箱' : '4-32位字母/数字/下划线'" @input="loginError = ''" />
+            </label>
+            <label v-if="loginMode === 'register'">
+              <span>邮箱</span>
+              <input v-model.trim="loginForm.email" type="email" autocomplete="email" maxlength="120" placeholder="用于账号找回，可选" @input="loginError = ''" />
             </label>
             <label v-if="loginMode === 'register'">
               <span>昵称</span>
@@ -887,7 +916,10 @@ const loginMode = ref('login')
 const loginConfig = ref({ allowRegister: true, inviteRequired: false })
 const loginLoading = ref(false)
 const loginError = ref('')
-const loginForm = reactive({ username: '', password: '', nickname: '', inviteCode: '' })
+const loginForm = reactive({ username: '', email: '', password: '', nickname: '', inviteCode: '' })
+const x8PasswordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const x8PasswordSaving = ref(false)
+const x8PasswordMsg = ref('')
 const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
@@ -1515,6 +1547,7 @@ function setLoginMode(mode) {
 }
 function resetLoginForm() {
   loginForm.username = ''
+  loginForm.email = ''
   loginForm.password = ''
   loginForm.nickname = ''
   loginForm.inviteCode = ''
@@ -1524,6 +1557,7 @@ function validateX8Auth() {
   if (!loginForm.username) return '请输入账号'
   if (loginMode.value === 'register' && !/^[A-Za-z0-9_]{4,32}$/.test(loginForm.username)) return '账号需为4-32位字母、数字或下划线'
   if (loginMode.value === 'register' && /^\d+$/.test(loginForm.username)) return '账号不能为纯数字'
+  if (loginMode.value === 'register' && loginForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginForm.email)) return '邮箱格式不正确'
   if (!loginForm.password) return '请输入密码'
   if (loginMode.value === 'register' && loginForm.password.length < 6) return '密码至少6位'
   if (loginMode.value === 'register' && loginConfig.value.inviteRequired && !loginForm.inviteCode) return '请输入邀请码'
@@ -1542,7 +1576,7 @@ async function submitX8Auth() {
     const payload = { username: loginForm.username, password: loginForm.password }
     const result = loginMode.value === 'login'
       ? await api.userLogin(payload)
-      : await api.userRegister({ ...payload, nickname: loginForm.nickname, inviteCode: loginForm.inviteCode })
+      : await api.userRegister({ ...payload, email: loginForm.email, nickname: loginForm.nickname, inviteCode: loginForm.inviteCode })
     setSession(result.token, result.user)
     user.value = result.user
     x8AvatarBroken.value = false
@@ -1602,6 +1636,39 @@ async function saveX8Prefs() {
     notifyError(apiErrorMessage(error, '保存失败'))
   } finally {
     x8UserSaving.value = false
+  }
+}
+function resetX8PasswordForm() {
+  x8PasswordForm.oldPassword = ''
+  x8PasswordForm.newPassword = ''
+  x8PasswordForm.confirmPassword = ''
+}
+async function changeX8Password() {
+  if (!user.value) return goLogin()
+  if (!x8PasswordForm.oldPassword) {
+    x8PasswordMsg.value = '请输入当前密码'
+    return
+  }
+  if (x8PasswordForm.newPassword.length < 6) {
+    x8PasswordMsg.value = '新密码至少6位'
+    return
+  }
+  if (x8PasswordForm.newPassword !== x8PasswordForm.confirmPassword) {
+    x8PasswordMsg.value = '两次输入的新密码不一致'
+    return
+  }
+  x8PasswordSaving.value = true
+  x8PasswordMsg.value = ''
+  try {
+    await api.changeUserPassword({ oldPassword: x8PasswordForm.oldPassword, newPassword: x8PasswordForm.newPassword })
+    resetX8PasswordForm()
+    x8PasswordMsg.value = '密码已更新'
+    notifySuccess('密码已更新')
+  } catch (error) {
+    x8PasswordMsg.value = apiErrorMessage(error, '修改失败')
+    notifyError(x8PasswordMsg.value)
+  } finally {
+    x8PasswordSaving.value = false
   }
 }
 async function loadX8UserCenter() {
@@ -5538,7 +5605,7 @@ onBeforeUnmount(() => {
 }
 .x8-user-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 .x8-user-info-row {
@@ -5572,7 +5639,8 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.x8-user-pref {
+.x8-user-pref,
+.x8-user-password {
   min-width: 0;
   border-radius: 12px;
   padding: 18px;
@@ -5631,9 +5699,11 @@ onBeforeUnmount(() => {
 }
 .x8-user-save {
   flex: 0 0 auto;
+  font: 700 13px/1 "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
 }
 .x8-user-records {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 .x8-user-records button {
@@ -5680,6 +5750,46 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 16px;
   font-style: normal;
+}
+.x8-user-password-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.x8-user-password-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.x8-user-password-grid label span {
+  overflow: hidden;
+  color: rgba(255,255,255,.52);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-password-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid rgba(255,255,255,.1);
+  outline: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #fff;
+  background: rgba(255,255,255,.055);
+  font-size: 14px;
+}
+.x8-user-password-grid input:focus {
+  border-color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.08);
+}
+.x8-user-form-msg {
+  margin-top: 12px;
+  color: rgba(255,255,255,.58);
+  font-size: 13px;
+  line-height: 18px;
 }
 .x8-user-grid-panel,
 .x8-user-vod-grid {
@@ -5744,6 +5854,16 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.11), rgba(255,255,255,.05));
   background-size: 220% 100%;
   animation: x8-shimmer 1.25s linear infinite;
+}
+@media (max-width: 1180px) {
+  .x8-user-center {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 18px;
+  }
+  .x8-user-records,
+  .x8-user-password-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .x8-login-page {
   position: relative;

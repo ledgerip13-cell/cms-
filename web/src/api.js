@@ -25,6 +25,7 @@ export const api = {
   userLogin: (d) => http.post('/user/login', d),
   userMe: () => http.get('/user/me'),
   updateUserProfile: (d) => http.put('/user/profile', d),
+  changeUserPassword: (d) => http.post('/user/password', d),
   userVodState: (id) => http.get(`/user/vods/${id}/state`),
   followVod: (id) => http.post(`/user/follows/${id}`),
   unfollowVod: (id) => http.delete(`/user/follows/${id}`),

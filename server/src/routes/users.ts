@@ -65,6 +65,17 @@ function validateUsername(username: string) {
   return "";
 }
 
+function normalizeEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function validateEmail(email: string) {
+  if (!email) return "";
+  if (email.length > 120) return "邮箱过长";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "邮箱格式不正确";
+  return "";
+}
+
 async function findWebUserByUsername(username: string, include: any = undefined) {
   return prisma.webUser.findFirst({
     where: { username: { equals: username, mode: "insensitive" } },
@@ -72,10 +83,24 @@ async function findWebUserByUsername(username: string, include: any = undefined)
   });
 }
 
-function publicUser(u: { id: number; username: string; nickname: string; favoriteTypes: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
+async function findWebUserByLogin(login: string, include: any = undefined) {
+  const normalized = normalizeUsername(login);
+  return prisma.webUser.findFirst({
+    where: {
+      OR: [
+        { username: { equals: normalized, mode: "insensitive" } },
+        { email: { equals: normalized, mode: "insensitive" } },
+      ],
+    },
+    ...(include ? { include } : {}),
+  });
+}
+
+function publicUser(u: { id: number; username: string; email?: string | null; nickname: string; favoriteTypes: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || "",
     nickname: u.nickname,
     favoriteTypes: parseJsonArray(u.favoriteTypes),
     isVip: isVipLevelActive(u),
@@ -87,6 +112,7 @@ function publicUser(u: { id: number; username: string; nickname: string; favorit
 function adminUser(u: {
   id: number;
   username: string;
+  email?: string | null;
   nickname: string;
   enabled: boolean;
   vipExpireAt: Date | null;
@@ -100,6 +126,7 @@ function adminUser(u: {
   return {
     id: u.id,
     username: u.username,
+    email: u.email || "",
     nickname: u.nickname,
     enabled: u.enabled,
     isVip: isVipLevelActive(u),
@@ -283,25 +310,34 @@ export default async function userRoutes(app: FastifyInstance) {
     if (!site.allowRegister) return reply.code(403).send({ error: "暂未开放注册" });
     const b = (req.body as any) || {};
     const username = normalizeUsername(b.username);
+    const email = normalizeEmail(b.email);
     const password = String(b.password || "");
     const nickname = String(b.nickname || username).trim().slice(0, 32);
     const inviteCode = String(b.inviteCode || "").trim();
     const usernameError = validateUsername(username);
     if (usernameError) return reply.code(400).send({ error: usernameError });
+    const emailError = validateEmail(email);
+    if (emailError) return reply.code(400).send({ error: emailError });
     if (password.length < 6) return reply.code(400).send({ error: "密码至少6位" });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
     if (invitePoolCount > 0 && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
-    const exists = await findWebUserByUsername(username);
+    const duplicateWhere: any[] = [{ username: { equals: username, mode: "insensitive" } }];
+    if (email) duplicateWhere.push({ email: { equals: email, mode: "insensitive" } });
+    const exists = await prisma.webUser.findFirst({
+      where: {
+        OR: duplicateWhere,
+      },
+    });
     if (exists) return reply.code(409).send({ error: "账号已存在" });
     const defaultLevel = await ensureDefaultVipLevel();
     let u: any;
     try {
       u = await prisma.webUser.create({
-        data: { username, nickname, password: await hashPassword(password), vipLevelId: defaultLevel.id },
+        data: { username, email: email || null, nickname, password: await hashPassword(password), vipLevelId: defaultLevel.id },
         include: { vipLevel: true },
       });
     } catch {
-      return reply.code(409).send({ error: "账号已存在" });
+      return reply.code(409).send({ error: "账号或邮箱已存在" });
     }
     if (invitePoolCount > 0 && !(await consumeInviteCode(inviteCode, u.id))) {
       await prisma.webUser.delete({ where: { id: u.id } });
@@ -318,7 +354,7 @@ export default async function userRoutes(app: FastifyInstance) {
     if (!username) return reply.code(400).send({ error: "请输入账号" });
     if (!password) return reply.code(400).send({ error: "请输入密码" });
     if (rejectLimitedLogin(req, reply, "web", username)) return reply;
-    const u = await findWebUserByUsername(username, { vipLevel: true });
+    const u = await findWebUserByLogin(username, { vipLevel: true });
     if (!u || !u.enabled) {
       recordLoginFailure(req, "web", username);
       return reply.code(401).send({ error: "账号不存在或已禁用" });
@@ -352,6 +388,21 @@ export default async function userRoutes(app: FastifyInstance) {
     });
     invalidateUserRecommendation(mid);
     return publicUser(u);
+  });
+
+  app.post("/api/user/password", { preHandler: webUserGuard }, async (req, reply) => {
+    const mid = (req as any).webUser.mid;
+    const b = (req.body as any) || {};
+    const oldPassword = String(b.oldPassword || "");
+    const newPassword = String(b.newPassword || "");
+    if (!oldPassword) return reply.code(400).send({ error: "请输入当前密码" });
+    if (newPassword.length < 6) return reply.code(400).send({ error: "新密码至少6位" });
+    if (oldPassword === newPassword) return reply.code(400).send({ error: "新密码不能和当前密码相同" });
+    const u = await prisma.webUser.findUnique({ where: { id: mid } });
+    if (!u || !u.enabled) return reply.code(401).send({ error: "账号不存在或已禁用" });
+    if (!(await checkPassword(oldPassword, u.password))) return reply.code(400).send({ error: "当前密码错误" });
+    await prisma.webUser.update({ where: { id: mid }, data: { password: await hashPassword(newPassword) } });
+    return { ok: true };
   });
 
   app.get("/api/user/vods/:id/state", { preHandler: webUserGuard }, async (req) => {
