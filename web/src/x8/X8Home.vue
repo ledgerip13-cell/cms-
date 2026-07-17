@@ -9,7 +9,7 @@
           <em>dododmb.com</em>
         </span>
       </button>
-      <nav class="x8-nav" aria-label="主导航">
+      <nav ref="navEl" class="x8-nav" aria-label="主导航">
         <button type="button" :class="{ active: pageMode === 'home' }" @click="goX8Home">首页</button>
         <button v-for="item in navItems" :key="item.name" type="button" :class="{ active: curType === item.name }" @click="goShow(item.name)">
           {{ item.name }}
@@ -855,6 +855,7 @@ const resolving = ref(false)
 const vodHistory = ref(null)
 const videoEl = ref(null)
 const videoBox = ref(null)
+const navEl = ref(null)
 const sideLinesEl = ref(null)
 const playGroupsEl = ref(null)
 const sideEpisodesEl = ref(null)
@@ -1401,16 +1402,24 @@ function routeBase() {
   return route.path.startsWith('/x8') ? '/x8' : '/'
 }
 function goX8Home() {
-  router.push(route.path.startsWith('/x8') ? '/x8' : '/')
+  router.push(route.path.startsWith('/x8') ? '/x8' : '/').then(() => focusX8Nav()).catch?.(() => {})
 }
 function goShow(type) {
-  router.push({ path: routeBase(), query: { type, sort: 'hot' } })
+  router.push({ path: routeBase(), query: { type, sort: 'hot' } }).then(() => focusX8Nav()).catch?.(() => {})
 }
 function goRank() {
   router.push(route.path.startsWith('/x8') ? '/x8/rank' : { path: '/', query: { view: 'rank' } })
 }
 function goLogin() {
   router.push(route.path.startsWith('/x8') ? '/x8/login' : '/auth')
+}
+function focusX8Nav() {
+  nextTick(() => {
+    const nav = navEl.value
+    const active = nav?.querySelector('button.active')
+    if (!nav || !active) return
+    active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  })
 }
 function goUser(tab) {
   router.push({ path: '/x8/me', query: { tab: normalizeX8UserTab(tab) } })
@@ -2299,6 +2308,7 @@ async function loadVod(withPlay = false) {
 
 watch(() => route.fullPath, (_next, prev) => {
   if (String(prev || '').includes('/play/')) saveWatchHistory(true)
+  focusX8Nav()
   const mode = pageMode.value
   if (mode !== 'play') {
     playerTheater.value = false
@@ -2368,7 +2378,7 @@ onBeforeUnmount(() => {
   z-index: 100;
   height: calc(72px + env(safe-area-inset-top));
   display: grid;
-  grid-template-columns: 150px minmax(360px, 1fr) minmax(182px, 368px) auto;
+  grid-template-columns: 150px minmax(360px, 1fr) minmax(182px, 336px) auto;
   align-items: center;
   gap: 30px;
   padding: env(safe-area-inset-top) 40px 0;
@@ -2439,8 +2449,19 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 30px;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-right: 34px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 58px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 58px), transparent 100%);
+  scroll-behavior: smooth;
+}
+.x8-nav::-webkit-scrollbar {
+  display: none;
 }
 .x8-nav button {
+  flex: 0 0 auto;
   color: rgba(255,255,255,.85);
   font-size: 18px;
   font-weight: 500;
@@ -2458,8 +2479,8 @@ onBeforeUnmount(() => {
 .x8-search {
   position: relative;
   justify-self: end;
-  width: min(368px, 100%);
-  max-width: 368px;
+  width: min(336px, 100%);
+  max-width: 336px;
   min-width: 182px;
   height: 40px;
   display: grid;
@@ -6024,12 +6045,15 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1399px) {
   .x8-header {
-    grid-template-columns: 138px minmax(280px, 1fr) minmax(182px, 300px) auto;
+    grid-template-columns: 138px minmax(280px, 1fr) minmax(182px, 276px) auto;
     gap: 18px;
     padding: env(safe-area-inset-top) 32px 0;
   }
   .x8-nav {
     gap: 22px;
+    padding-right: 28px;
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 48px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 48px), transparent 100%);
   }
   .x8-header-tools {
     gap: 20px;
