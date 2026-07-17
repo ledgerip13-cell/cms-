@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-18 (GMT+8)｜**对应提交**：本次提交（X8 头部分类渐隐回修）
+> **最后更新**：2026-07-18 (GMT+8)｜**对应提交**：本次提交（后台影片库清洗状态）
 
 ---
 
@@ -380,6 +380,7 @@ docker compose up -d --build
 - **2026-07-18 X8 新片预告分类取数回修断点**：定位上一版把首页预告区写成 `type=新片预告` 的根因是混淆了区块标题与实际分类；当前库里实际启用分类为 `预告片(id=16)`，源分类映射 `如意/无尽/量子/暴风/红牛/虎牙/光速` 的 `预告片` 均映射到该分类，线上 `Vod.typeName/subType=预告片` 共 29 条。`web/src/x8/X8Home.vue` 将 `X8_TRAILER_TYPE` 改为 `预告片`，首页“新片预告”区块只取该分类内容；`server/src/collector/classify.ts` 同步把 `新片预告/预告片/预告` 自动归类到 `预告片`，后续自动映射不会生成错误的 `新片预告` 大类。已 `pnpm --dir server build`、`pnpm --dir web build` 通过；接口验证 `/api/vods?type=预告片&sort=recent` 返回 `超人[预告片]` 等内容。
 - **2026-07-18 X8 预告播放器封面回修断点**：`web/src/x8/X8Home.vue` 为首页预告播放器新增 `trailerCoverImage()`，优先使用宽图，其次使用 `heroPic/localPic/pic/officialPic`，避免预告封面优先取豆瓣竖版海报；预告播放器容器同步设置 `background-image + background-size:cover + background-position:center`，前景封面和 video 均锁定 `object-fit:cover/object-position:center`，没有横图时也能在 16:9 播放框内居中铺满。已 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；运行态 web 新包 `assets/index-XfPhiEid.js / assets/index-kc3O3Dz5.css`，线上 CSS 抓取确认预告播放器 cover/center 规则生效。
 - **2026-07-18 X8 头部分类渐隐回修断点**：`web/src/x8/X8Home.vue` 头部分类横向滚动原先只有右侧 `mask-image`，左侧滚出时硬切且位置太靠左；现改为左右双向渐隐，桌面左侧 32px/右侧 58px，中小屏左侧 28px，并补 `scroll-padding-left/right`，移动端滚动分类消失时也会渐隐。已 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；运行态 web 新包 `assets/index-mBiY9QRc.js / assets/index-M6BCA75e.css`，线上 CSS 抓取确认桌面/中屏/移动三档 `.x8-nav` 均有左侧透明渐隐。
+- **2026-07-18 后台影片库清洗状态断点**：`server/src/routes/vods.ts` 的 `/api/admin/vods` 支持 `cleanStatus=cleaned|uncleaned`，按 `Play.hasCleanResult` 筛选“仅看已清洗/仅看未清洗”，并返回 `hasCleanResult/cleanLineCount/totalLineCount`；`admin/src/views/Vods.vue` 影片库筛选栏新增“清洗状态”，片名旁新增 `已清洗` 标签，部分清洗显示 `已清洗 n/m` 并悬浮提示已清洗线路数。已 `pnpm --dir server build`、`pnpm --dir admin build`、`git diff --check`、`docker compose up -d --build server admin` 通过；运行态 `5150 /health` 正常，admin 新包 `assets/index-CxDEkNdJ.js / assets/index-DT1LWrpt.css`，线上 JS 抓取确认“仅看已清洗/仅看未清洗/已清洗”已生效；当前库 `Play.hasCleanResult=true` 线路 1837 条，可用于筛选和标签展示。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

@@ -13,6 +13,10 @@
         <el-select v-model="q.sourceId" placeholder="全部源" clearable filterable style="width:160px" @change="applyFilters">
           <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
         </el-select>
+        <el-select v-model="q.cleanStatus" placeholder="清洗状态" clearable style="width:130px" @change="applyFilters">
+          <el-option label="仅看已清洗" value="cleaned" />
+          <el-option label="仅看未清洗" value="uncleaned" />
+        </el-select>
         <el-button type="primary" @click="applyFilters">查询</el-button>
         <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
@@ -105,6 +109,9 @@
           <el-tag v-else-if="row.archiveStatus==='running'" size="small" style="margin-left:6px">转存中</el-tag>
           <el-tag v-else-if="row.archiveStatus==='pending'" size="small" type="info" style="margin-left:6px">待转存</el-tag>
           <el-tag v-else-if="row.archiveStatus==='failed'" size="small" type="danger" style="margin-left:6px">转存失败</el-tag>
+          <el-tag v-if="row.hasCleanResult" size="small" type="success" effect="dark" style="margin-left:6px" :title="cleanTagTitle(row)">
+            {{ cleanTagText(row) }}
+          </el-tag>
           <div v-if="aliasNamesText(row)" class="alias-line">别名：{{ aliasNamesText(row) }}</div>
         </template>
       </el-table-column>
@@ -612,7 +619,7 @@ async function metaBatch() {
     ElMessage.success(r.message || '已提交')
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.message || '提交失败') }
 }
-const q = reactive({ page: 1, size: 20, kw: String(route.query.kw || ''), type: '', status: '', sourceId: '', year: '' })
+const q = reactive({ page: 1, size: 20, kw: String(route.query.kw || ''), type: '', status: '', sourceId: '', cleanStatus: '', year: '' })
 const drawer = ref(false); const cur = ref({}); const active = ref([])
 const selected = ref([]); const tableRef = ref(null)
 const mergeDlg = ref(false); const mergeTargetId = ref(null); const mergeSaving = ref(false)
@@ -728,6 +735,16 @@ function aliasNames(row) {
 }
 function aliasNamesText(row) {
   return aliasNames(row).join('、')
+}
+function cleanTagTitle(row) {
+  const clean = Number(row?.cleanLineCount || 0)
+  const total = Number(row?.totalLineCount || row?._count?.plays || 0)
+  return total ? `已清洗 ${clean}/${total} 条线路` : '已清洗'
+}
+function cleanTagText(row) {
+  const clean = Number(row?.cleanLineCount || 0)
+  const total = Number(row?.totalLineCount || row?._count?.plays || 0)
+  return total && clean < total ? `已清洗 ${clean}/${total}` : '已清洗'
 }
 
 async function load() {

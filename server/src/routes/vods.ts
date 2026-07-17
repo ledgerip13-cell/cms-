@@ -1238,6 +1238,11 @@ export default async function vodRoutes(app: FastifyInstance) {
         const sourceId = Number(q.sourceId);
         if (Number.isInteger(sourceId) && sourceId > 0) where.plays = { some: { sourceId } };
       }
+      if (q.cleanStatus === "cleaned") {
+        where.plays = { ...(where.plays || {}), some: { ...(where.plays?.some || {}), hasCleanResult: true } };
+      } else if (q.cleanStatus === "uncleaned") {
+        where.plays = { ...(where.plays || {}), none: { hasCleanResult: true } };
+      }
       if (q.year === "2005年以前") {
         const years: string[] = [];
         for (let y = 1900; y < 2005; y++) years.push(String(y));
@@ -1252,10 +1257,31 @@ export default async function vodRoutes(app: FastifyInstance) {
           orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
           skip: (page - 1) * size,
           take: size,
-          include: { aliases: { orderBy: { createdAt: "asc" } }, _count: { select: { plays: true } }, plays: { where: { flag: JINPAI_FLAG }, take: 1, select: { id: true } } },
+          include: {
+            aliases: { orderBy: { createdAt: "asc" } },
+            _count: { select: { plays: true } },
+            plays: { select: { id: true, flag: true, hasCleanResult: true } },
+          },
         }),
       ]);
-      return { total, page, size, list: list.map((vod) => ({ ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), hasArchivable: (vod.plays?.length || 0) > 0, plays: undefined })) };
+      return {
+        total,
+        page,
+        size,
+        list: list.map((vod) => {
+          const plays = vod.plays || [];
+          const cleanLineCount = plays.filter((play) => play.hasCleanResult).length;
+          return {
+            ...vod,
+            aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean),
+            hasArchivable: plays.some((play) => play.flag === JINPAI_FLAG),
+            hasCleanResult: cleanLineCount > 0,
+            cleanLineCount,
+            totalLineCount: plays.length,
+            plays: undefined,
+          };
+        }),
+      };
     });
 
     // 批量操作：下架/上架/删除，传 ids 数组，支持多选
