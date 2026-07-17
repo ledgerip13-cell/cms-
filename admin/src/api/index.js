@@ -70,9 +70,10 @@ export const api = {
   addCategory: (d) => http.post('/admin/categories', d),
   updateCategory: (id, d) => http.put(`/admin/categories/${id}`, d),
   delCategory: (id) => http.delete(`/admin/categories/${id}`),
-  typemaps: (sourceId) => http.get('/admin/typemaps', { params: { sourceId } }),
+  typemaps: (sourceId, options = {}) => http.get('/admin/typemaps', { params: { sourceId: sourceId || undefined, ...options } }),
   setTypemap: (id, categoryId) => http.post(`/admin/typemaps/${id}`, { categoryId }),
   batchTypemaps: (ids, categoryId) => http.post('/admin/typemaps/batch', { ids, categoryId }),
+  autoMapTypemaps: (options = {}) => http.post('/admin/typemaps/auto', options),
   delTypemap: (id) => http.delete(`/admin/typemaps/${id}`),
   unmappedCount: () => http.get('/admin/typemaps/unmapped'),
   // tasks

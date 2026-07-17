@@ -50,11 +50,17 @@
           <div class="sec-title">源分类映射
             <el-tag v-if="unmapped" type="warning" size="small">{{ unmapped }} 项未映射</el-tag>
           </div>
-          <el-select v-model="curSource" placeholder="选择源" size="small" style="width:160px" @change="loadMaps">
+          <el-select v-model="curSource" placeholder="全部源" clearable size="small" style="width:160px" @change="loadMaps">
             <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </div>
         <div class="batch-map-bar">
+          <el-button size="small" plain :type="unmappedOnly ? 'warning' : ''" @click="toggleUnmappedOnly">
+            {{ unmappedOnly ? '显示全部映射' : '只看未映射（全部源）' }}
+          </el-button>
+          <el-button size="small" type="success" plain :loading="autoMapping" @click="autoMapUnmapped">
+            自动映射未映射
+          </el-button>
           <el-button size="small" plain @click="selectUnmapped">选中未映射</el-button>
           <el-select v-model="batchCategoryId" placeholder="批量映射到" clearable filterable size="small" style="width:180px">
             <el-option v-for="c in cats" :key="c.id" :label="c.name" :value="c.id" />
@@ -68,6 +74,9 @@
         </div>
         <el-table ref="mapTableRef" :data="maps" size="small" max-height="560" row-key="id" @selection-change="selectedMaps = $event">
           <el-table-column type="selection" width="42" />
+          <el-table-column v-if="!curSource || unmappedOnly" label="源" min-width="100">
+            <template #default="{ row }">{{ row.source?.name || row.sourceId }}</template>
+          </el-table-column>
           <el-table-column prop="sourceTypeId" label="源type" width="80" />
           <el-table-column prop="sourceTypeName" label="源分类名" />
           <el-table-column label="→ 映射到统一分类" width="200">
@@ -158,6 +167,8 @@ const mapTableRef = ref(null)
 const selectedMaps = ref([])
 const batchCategoryId = ref(null)
 const batchSaving = ref(false)
+const unmappedOnly = ref(false)
+const autoMapping = ref(false)
 const displayModes = [
   { value: 'public', label: '游客可见' },
   { value: 'login', label: '登录可见' },
@@ -220,12 +231,35 @@ async function toggleEnabled(row, v) {
 async function loadMaps() {
   selectedMaps.value = []
   mapTableRef.value?.clearSelection?.()
-  if (curSource.value) maps.value = await api.typemaps(curSource.value)
+  maps.value = await api.typemaps(curSource.value, unmappedOnly.value ? { unmapped: 1 } : {})
 }
 async function loadUnmapped() { unmapped.value = (await api.unmappedCount()).unmapped }
+function toggleUnmappedOnly() {
+  unmappedOnly.value = !unmappedOnly.value
+  if (unmappedOnly.value) curSource.value = null
+  loadMaps()
+}
 function selectUnmapped() {
   mapTableRef.value?.clearSelection?.()
   for (const row of maps.value.filter(row => !row.categoryId)) mapTableRef.value?.toggleRowSelection?.(row, true)
+}
+async function autoMapUnmapped() {
+  const scope = curSource.value && !unmappedOnly.value
+    ? (sources.value.find(s => s.id === curSource.value)?.name || '当前源')
+    : '全部源'
+  const ok = await ElMessageBox.confirm(`按现有分类规则自动映射「${scope}」未映射项？已有人工映射不会被覆盖。`, '自动映射未映射', { type:'warning' })
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  autoMapping.value = true
+  try {
+    const r = await api.autoMapTypemaps({ sourceId: curSource.value && !unmappedOnly.value ? curSource.value : undefined })
+    ElMessage.success(`已自动映射 ${r.updated} 项，跳过 ${r.skipped || 0} 项，回刷 ${r.backfilled || 0} 部影片`)
+    await Promise.all([loadMaps(), loadUnmapped(), loadCats()])
+  } catch (e) {
+    ElMessage.error(e.message || '自动映射失败')
+  } finally {
+    autoMapping.value = false
+  }
 }
 
 function openAdd() {
@@ -313,7 +347,8 @@ onMounted(async () => {
   sources.value = sourceRows
   levels.value = levelRows.filter(level => level.enabled !== false)
   await loadCats()
-  if (sources.value.length) { curSource.value = sources.value[0].id; loadMaps() }
+  if (sources.value.length) { curSource.value = sources.value[0].id }
+  loadMaps()
   loadUnmapped()
 })
 </script>

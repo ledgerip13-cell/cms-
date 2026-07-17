@@ -36,7 +36,8 @@ export function classifyType(raw: string | null | undefined): string {
   if (!n || n === "未分类" || n === "其他" || n === "福利") return "其他";
   const has = (...ks: string[]) => ks.some((k) => n.includes(k));
 
-  if (has("解说", "预告")) return "解说";
+  if (has("新片预告", "预告片") || n === "预告") return "新片预告";
+  if (has("解说")) return "解说";
   if (has("足球", "篮球", "网球", "斯诺克", "台球", "赛事", "体育", "电竞")) return "体育";
   if (has("纪录", "记录")) return "纪录片";
   if (has("漫剧")) return "漫剧";               // AI漫剧 / 漫剧

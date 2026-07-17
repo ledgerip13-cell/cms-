@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-17 (GMT+8)｜**对应提交**：本次提交（X8 登录页缓存与集数状态适配）
+> **最后更新**：2026-07-18 (GMT+8)｜**对应提交**：本次提交（源分类映射与 X8 新片预告）
 
 ---
 
@@ -375,6 +375,7 @@ docker compose up -d --build
 - **2026-07-18 X8 偏好小类颗粒度断点**：`web/src/x8/X8Home.vue` 个人喜好支持大类 + 小类颗粒度：选择大类后按 `/api/subtypes` 懒加载小类 chip，小类以 `大类::小类` key 写入既有 `favoriteTypes`，取消大类会同步清除其小类偏好；`server/src/routes/users.ts` 推荐逻辑识别小类偏好并按 `typeName + subType` 精确过滤，偏好上限从 12 提升到 80 以容纳小类。已 `pnpm --dir server build`、`npm run build`、`git diff --check` 通过。
 - **2026-07-18 X8 修改密码左侧菜单与偏好推荐语义断点**：`web/src/x8/X8Home.vue` 将“修改密码”从个人资料内容区移到左侧个人中心菜单独立 `password` tab；`server/src/routes/users.ts` 调整偏好推荐语义：只选大类且未选小类时推荐整个大类；同一大类已选小类时，该大类只按已选小类 `typeName + subType` 精确推荐，不再被父级大类泛化。已 `pnpm --dir server build`、`npm run build`、`git diff --check` 通过。
 - **2026-07-18 X8 首页排行榜移除与按钮规范断点**：`web/src/x8/X8Home.vue` 移除首页分类区块右侧内嵌排行榜卡片和对应 `rank` 请求，首页 section 回到纯影片栅格；个人中心左侧“退出登录”改为和个人资料/观看历史等左侧菜单同规格 `14px/500`、透明底、hover 同色；`.x8-user-save` 基础规则直接统一为 `12px/500`，头像下拉按钮补 `14px/500`，追剧编辑/批量按钮降为 `13px/500`。已 `npm run build`、`git diff --check` 通过。
+- **2026-07-18 源分类映射与 X8 新片预告断点**：`admin/src/views/Categories.vue` 的源分类映射新增“只看未映射（全部源）”与“自动映射未映射”，支持清空源选择查看全部源，未映射视图显示源名称；`server/src/routes/categories.ts` 的 `/api/admin/typemaps` 支持 `unmapped=1` 与全部源查询，新增 `/api/admin/typemaps/auto` 仅填充 `categoryId=null` 的映射并回刷关联影片，不覆盖人工映射；`server/src/collector/classify.ts` 将 `新片预告/预告片/预告` 优先识别为 `新片预告`，避免被误归到 `解说`。`web/src/x8/X8Home.vue` 首页预告区只从 `type=新片预告` 拉取影片，未播放时显示横向封面，点击播放后只在当前预告框内播放/暂停，不跳详情页且不暴露完整播放器控件。已 `pnpm --dir server build`、`pnpm --dir admin build`、`pnpm --dir web build`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `5150 /health` 正常，web 新包 `assets/index-DHPFzJep.js / assets/index-D56saT1Z.css`，admin 新包 `assets/index-DKZ3mVwS.js / assets/index-CpQp4tz2.css`。
 
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。

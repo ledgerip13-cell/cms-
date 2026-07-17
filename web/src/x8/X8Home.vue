@@ -185,21 +185,33 @@
             <div class="x8-trailer-name">
               <span>{{ activeTrailer?.name || '新片预告' }}</span>
               <small v-if="activeTrailer?.year">（{{ activeTrailer.year }}上映）</small>
-              <button type="button">预约</button>
             </div>
             <div class="x8-trailer-flex">
-              <button class="x8-trailer-player" type="button" @click="activeTrailer && goDetail(activeTrailer.id)">
-                <span class="x8-play-icon">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg>
-                </span>
-              </button>
+              <div class="x8-trailer-player" :class="{ playing: trailerPlaying, empty: !trailerVideoUrl }">
+                <video
+                  v-if="trailerVideoUrl"
+                  ref="trailerVideoEl"
+                  playsinline
+                  webkit-playsinline
+                  :poster="heroImage(activeTrailer)"
+                  @play="trailerPlaying = true"
+                  @pause="trailerPlaying = false"
+                  @ended="trailerPlaying = false"
+                  @click="toggleTrailerPlayback"
+                ></video>
+                <img v-else-if="heroImage(activeTrailer)" :src="heroImage(activeTrailer)" :alt="activeTrailer?.name || '新片预告'" @error="onImgError" />
+                <button class="x8-trailer-play-toggle" type="button" :disabled="trailerResolving || !activeTrailer?.id" @click="toggleTrailerPlayback">
+                  <svg v-if="trailerPlaying" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
+                  <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg>
+                </button>
+              </div>
               <aside class="x8-trailer-right">
                 <div class="x8-watermark">
                   <b>{{ site.siteName || '金牌影院' }}</b>
                   <span>dododmb.com</span>
                 </div>
                 <div class="x8-trailer-thumbs">
-                  <button v-for="(item, index) in trailerItems" :key="`trailer-${item.id}`" type="button" :class="{ active: trailerIdx === index }" @click="trailerIdx = index">
+                  <button v-for="(item, index) in trailerItems" :key="`trailer-${item.id}`" type="button" :class="{ active: trailerIdx === index }" @click="selectTrailer(index)">
                     <img :src="poster(item)" :alt="item.name" @error="onImgError" />
                   </button>
                 </div>
@@ -983,6 +995,10 @@ const searchHintIdx = ref(0)
 const searchHistoryRows = ref([])
 const heroIdx = ref(0)
 const trailerIdx = ref(0)
+const trailerVideoEl = ref(null)
+const trailerVideoUrl = ref('')
+const trailerPlaying = ref(false)
+const trailerResolving = ref(false)
 const hotOffset = ref(0)
 const currentLineId = ref(0)
 const currentEpIndex = ref(0)
@@ -1041,6 +1057,7 @@ const X8_LOGIN_WALL_CACHE_KEY = 'vcms.x8.login.wall'
 const X8_LOGIN_WALL_CACHE_TTL_MS = 1000 * 60 * 60 * 24
 const X8_LOGIN_WALL_COUNT = 48
 const X8_HISTORY_PAGE_SIZE = 20
+const X8_TRAILER_TYPE = '新片预告'
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -1049,6 +1066,7 @@ let controlsTimer = 0
 let browseRequestId = 0
 let historySaveAt = 0
 let hls = null
+let trailerHls = null
 
 const sortItems = [
   { value: 'hot', label: '热门' },
@@ -1975,6 +1993,11 @@ function scrollToTrailer() {
   }
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+function selectTrailer(index) {
+  if (trailerIdx.value === index) return
+  trailerIdx.value = index
+  resetTrailerPlayback()
+}
 function onScroll() {
   const alpha = Math.min(0.8, Math.max(0, (window.scrollY / 380) * 0.8))
   headerBgOpacity.value = alpha.toFixed(2)
@@ -2024,6 +2047,79 @@ function destroyHls() {
   if (hls) {
     hls.destroy()
     hls = null
+  }
+}
+function destroyTrailerHls() {
+  if (trailerHls) {
+    trailerHls.destroy()
+    trailerHls = null
+  }
+}
+function resetTrailerPlayback() {
+  const video = trailerVideoEl.value
+  if (video) {
+    video.pause()
+    video.removeAttribute('src')
+    video.load()
+  }
+  destroyTrailerHls()
+  trailerVideoUrl.value = ''
+  trailerPlaying.value = false
+  trailerResolving.value = false
+}
+function attachTrailerVideo(url) {
+  trailerVideoUrl.value = url
+  destroyTrailerHls()
+  nextTick(() => {
+    const video = trailerVideoEl.value
+    if (!video) return
+    video.pause()
+    video.removeAttribute('src')
+    video.controls = false
+    video.load()
+    const play = () => video.play().catch(() => { trailerPlaying.value = false })
+    if (/\.m3u8(\?|$)/i.test(url) && Hls.isSupported()) {
+      trailerHls = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
+      trailerHls.loadSource(url)
+      trailerHls.attachMedia(video)
+      trailerHls.on(Hls.Events.MANIFEST_PARSED, play)
+    } else {
+      video.src = url
+      play()
+    }
+  })
+}
+async function toggleTrailerPlayback() {
+  const video = trailerVideoEl.value
+  if (trailerVideoUrl.value && video) {
+    if (video.paused) video.play().catch(() => { trailerPlaying.value = false })
+    else video.pause()
+    return
+  }
+  const item = activeTrailer.value
+  if (!item?.id || trailerResolving.value) return
+  trailerResolving.value = true
+  try {
+    const detail = await api.vod(item.id)
+    const line = detail?.lines?.[0]
+    if (!line?.id || !line?.episodes?.length) {
+      notifyWarning('当前预告暂无可播放内容')
+      return
+    }
+    const result = await api.resolvePlay({ vodId: detail.id, playId: line.id, epIndex: 0 })
+    if (result?.ok === false || !result?.url) {
+      notifyWarning('当前预告暂无可播放地址')
+      return
+    }
+    if (result.kind === 'iframe' || line.playKind === 'iframe') {
+      notifyWarning('当前预告源不支持首页内嵌播放')
+      return
+    }
+    attachTrailerVideo(result.url)
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '预告播放失败'))
+  } finally {
+    trailerResolving.value = false
   }
 }
 function syncVideoState() {
@@ -2502,15 +2598,19 @@ async function loadHome() {
       return recent
     }))
 
-    const [heroRes, hotRes, ...sectionRes] = await Promise.all([
+    const trailerPromise = api.vods({ page: 1, size: 8, type: X8_TRAILER_TYPE, sort: 'recent' }).catch(() => ({ list: [] }))
+    const [heroRes, hotRes, trailerRes, ...sectionRes] = await Promise.all([
       heroPromise,
       hotPromise,
+      trailerPromise,
       ...sectionPromises,
     ])
     const sections = homeSections.value
     const sectionFill = sections.flatMap(section => section.items)
     hotItems.value = uniqueVods(hotRes, heroRes?.list, sectionFill).slice(0, 28)
-    trailerItems.value = uniqueVods(heroItems.value, hotItems.value, sectionFill).filter(item => poster(item)).slice(0, 5)
+    trailerItems.value = (trailerRes?.list || []).map(withRandomHeroImage).filter(item => heroImage(item)).slice(0, 5)
+    trailerIdx.value = Math.min(trailerIdx.value, Math.max(0, trailerItems.value.length - 1))
+    resetTrailerPlayback()
     const wallRows = collectLoginWallCandidates()
     loginWallItems.value = wallRows.slice(0, X8_LOGIN_WALL_COUNT)
     writeLoginWallCache(wallRows)
@@ -2656,6 +2756,9 @@ watch(x8UserAccessSignature, () => {
 watch(x8HistoryPageCount, (count) => {
   if (x8HistoryPage.value > count) x8HistoryPage.value = count
 })
+watch(() => activeTrailer.value?.id, () => {
+  resetTrailerPlayback()
+})
 
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
@@ -2683,6 +2786,7 @@ onBeforeUnmount(() => {
   clearTimeout(searchBlurTimer)
   clearTimeout(controlsTimer)
   destroyHls()
+  destroyTrailerHls()
 })
 </script>
 
@@ -3845,27 +3949,70 @@ onBeforeUnmount(() => {
   font-size: 20px;
   font-weight: 600;
 }
-.x8-trailer-name button {
-  height: 24px;
-  border: 1px solid #fff;
-  border-radius: 6px;
-  padding: 0 9px;
-  color: #fff;
-  background: #1f1f1f;
-  font-size: 14px;
-}
 .x8-trailer-flex {
   flex: 1;
   display: flex;
 }
 .x8-trailer-player {
+  position: relative;
   width: 54.8572%;
   aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 12px;
+  overflow: hidden;
   background: #000;
   box-shadow: 0 4px 12px rgba(0,0,0,.2);
+}
+.x8-trailer-player img,
+.x8-trailer-player video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.x8-trailer-player video {
+  background: #000;
   cursor: pointer;
+}
+.x8-trailer-play-toggle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0,0,0,.46);
+  box-shadow: 0 8px 28px rgba(0,0,0,.34);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: opacity .18s ease, transform .18s ease, background .18s ease;
+}
+.x8-trailer-play-toggle svg {
+  width: 32px;
+  height: 32px;
+}
+.x8-trailer-player.playing .x8-trailer-play-toggle {
+  opacity: 0;
+}
+.x8-trailer-player.playing:hover .x8-trailer-play-toggle,
+.x8-trailer-play-toggle:focus-visible {
+  opacity: 1;
+}
+.x8-trailer-play-toggle:hover {
+  background: rgba(0,0,0,.68);
+  transform: translate(-50%, -50%) scale(1.04);
+}
+.x8-trailer-play-toggle:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  transform: translate(-50%, -50%);
 }
 .x8-play-icon {
   display: inline-grid;

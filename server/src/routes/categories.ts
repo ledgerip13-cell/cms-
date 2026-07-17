@@ -180,11 +180,40 @@ export default async function categoryRoutes(app: FastifyInstance) {
     // 源分类映射：列出所有已发现的源type + 映射状态
     admin.get("/api/admin/typemaps", async (req) => {
       const sourceId = (req.query as any).sourceId ? Number((req.query as any).sourceId) : undefined;
+      const unmappedOnly = (req.query as any).unmapped === "1" || (req.query as any).unmapped === "true";
       return prisma.sourceTypeMap.findMany({
-        where: sourceId ? { sourceId } : undefined,
+        where: { ...(sourceId ? { sourceId } : {}), ...(unmappedOnly ? { categoryId: null } : {}) },
         include: { category: true, source: { select: { name: true } } },
         orderBy: [{ sourceId: "asc" }, { sourceTypeName: "asc" }],
       });
+    });
+
+    // 自动映射未映射源分类：沿用现有分类器，只填充 categoryId 为空的映射
+    admin.post("/api/admin/typemaps/auto", async (req) => {
+      const b = (req.body as any) || {};
+      const sourceId = b.sourceId ? Number(b.sourceId) : undefined;
+      const cats = await prisma.category.findMany({ select: { id: true, name: true } });
+      const byName = new Map(cats.map((c) => [c.name, c.id]));
+      const rows = await prisma.sourceTypeMap.findMany({
+        where: { categoryId: null, ...(sourceId ? { sourceId } : {}) },
+        select: { id: true, sourceTypeName: true },
+      });
+      let updated = 0;
+      let skipped = 0;
+      let backfilled = 0;
+      for (const row of rows) {
+        const categoryId = byName.get(classifyType(row.sourceTypeName));
+        if (!categoryId) {
+          skipped++;
+          continue;
+        }
+        await prisma.sourceTypeMap.update({ where: { id: row.id }, data: { categoryId } });
+        updated++;
+        backfilled += await backfillMapToVods(row.id);
+      }
+      invalidatePublicVodCaches("category");
+      invalidateCategoryCountCache();
+      return { ok: true, scanned: rows.length, updated, skipped, backfilled };
     });
 
     // 批量设置源type → 统一分类
