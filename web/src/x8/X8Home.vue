@@ -187,19 +187,23 @@
               <small v-if="activeTrailer?.year">（{{ activeTrailer.year }}上映）</small>
             </div>
             <div class="x8-trailer-flex">
-              <div class="x8-trailer-player" :class="{ playing: trailerPlaying, empty: !trailerVideoUrl }">
+              <div
+                class="x8-trailer-player"
+                :class="{ playing: trailerPlaying, empty: !trailerVideoUrl }"
+                :style="{ backgroundImage: `url(${trailerCoverImage(activeTrailer)})` }"
+              >
                 <video
                   v-if="trailerVideoUrl"
                   ref="trailerVideoEl"
                   playsinline
                   webkit-playsinline
-                  :poster="heroImage(activeTrailer)"
+                  :poster="trailerCoverImage(activeTrailer)"
                   @play="trailerPlaying = true"
                   @pause="trailerPlaying = false"
                   @ended="trailerPlaying = false"
                   @click="toggleTrailerPlayback"
                 ></video>
-                <img v-else-if="heroImage(activeTrailer)" :src="heroImage(activeTrailer)" :alt="activeTrailer?.name || '新片预告'" @error="onImgError" />
+                <img v-else-if="trailerCoverImage(activeTrailer)" class="x8-trailer-cover" :src="trailerCoverImage(activeTrailer)" :alt="activeTrailer?.name || '新片预告'" @error="onImgError" />
                 <button class="x8-trailer-play-toggle" type="button" :disabled="trailerResolving || !activeTrailer?.id" @click="toggleTrailerPlayback">
                   <svg v-if="trailerPlaying" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
                   <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 5.8v12.4a1.15 1.15 0 0 0 1.78.96l8.8-6.2a1.16 1.16 0 0 0 0-1.92l-8.8-6.2a1.15 1.15 0 0 0-1.78.96Z" /></svg>
@@ -1534,6 +1538,11 @@ function poster(item) {
 }
 function heroImage(item) {
   return imgUrl(item?.heroImage || item?.heroPic || item?.officialPic || item?.pic || item?.localPic || '')
+}
+function trailerCoverImage(item) {
+  const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
+  const wide = images.find(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
+  return imgUrl(wide?.url || item?.heroPic || item?.localPic || item?.pic || item?.officialPic || item?.heroImage || '')
 }
 function withRandomHeroImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
@@ -3961,8 +3970,25 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 12px;
   overflow: hidden;
-  background: #000;
+  background-color: #000;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   box-shadow: 0 4px 12px rgba(0,0,0,.2);
+}
+.x8-trailer-player::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: inherit;
+  filter: blur(14px);
+  transform: scale(1.08);
+  opacity: .55;
+}
+.x8-trailer-player > * {
+  position: relative;
+  z-index: 1;
 }
 .x8-trailer-player img,
 .x8-trailer-player video {
@@ -3970,6 +3996,7 @@ onBeforeUnmount(() => {
   height: 100%;
   display: block;
   object-fit: cover;
+  object-position: center center;
 }
 .x8-trailer-player video {
   background: #000;
