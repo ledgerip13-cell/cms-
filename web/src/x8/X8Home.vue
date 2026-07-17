@@ -1,6 +1,6 @@
 <template>
   <div class="x8-page">
-    <header class="x8-header" :class="{ solid: scrolled }" :style="{ '--x8-header-bg': headerBgOpacity }">
+    <header class="x8-header" :style="{ '--x8-header-bg': headerBgOpacity, '--x8-header-blur': headerBlur }">
       <button class="x8-brand" type="button" @click="goX8Home">
         <img v-if="showHomeLogo && site.logo" :src="site.logo" alt="logo" />
         <span v-else-if="showHomeLogo" class="x8-brand-mark">JP</span>
@@ -655,6 +655,7 @@ const hasMore = ref(false)
 const loading = ref(false)
 const scrolled = ref(false)
 const headerBgOpacity = ref(0)
+const headerBlur = ref('0px')
 const kw = ref('')
 const searchFocused = ref(false)
 const searchHints = ref([])
@@ -1204,9 +1205,10 @@ function scrollToTrailer() {
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function onScroll() {
-  const alpha = Math.min(1, Math.max(0, window.scrollY / 72))
+  const alpha = Math.min(0.8, Math.max(0, (window.scrollY / 180) * 0.8))
   headerBgOpacity.value = alpha.toFixed(2)
-  scrolled.value = alpha >= 0.98
+  headerBlur.value = `${Math.round((alpha / 0.8) * 16)}px`
+  scrolled.value = alpha >= 0.78
 }
 function onResize() {
   viewportWidth.value = window.innerWidth
@@ -1816,11 +1818,14 @@ onBeforeUnmount(() => {
   background:
     linear-gradient(180deg, rgba(18,18,18,var(--x8-header-bg, 0)) 0%, rgba(18,18,18,var(--x8-header-bg, 0)) 100%),
     linear-gradient(180deg, rgba(0,0,0,.68) 0%, rgba(0,0,0,.38) 54%, rgba(0,0,0,0) 100%);
-  transition: background .2s linear;
+  backdrop-filter: blur(var(--x8-header-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--x8-header-blur, 0px));
+  transition: background .2s linear, backdrop-filter .2s linear;
 }
 .x8-header.solid {
-  background: #121212;
-  backdrop-filter: none;
+  background: rgba(18,18,18,.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 .x8-brand,
 .x8-nav button,
