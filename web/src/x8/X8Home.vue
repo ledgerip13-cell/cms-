@@ -671,7 +671,6 @@
               <span>USER CENTER</span>
               <h1>{{ x8UserTabTitle }}</h1>
             </div>
-            <button type="button" @click="loadX8UserCenter">刷新</button>
           </div>
 
           <div v-if="x8UserLoading" class="x8-user-loading">
@@ -5918,7 +5917,6 @@ onBeforeUnmount(() => {
 }
 .x8-user-side-nav button,
 .x8-user-side-logout,
-.x8-user-content-head button,
 .x8-user-save {
   border: 0;
   cursor: pointer;
@@ -5980,22 +5978,14 @@ onBeforeUnmount(() => {
   line-height: 32px;
   font-weight: 700;
 }
-.x8-user-content-head button {
-  height: 36px;
-  border-radius: 8px;
-  padding: 0 16px;
-  color: #111;
-  background: #fff;
-  font-size: 13px;
-  font-weight: 700;
-}
 .x8-user-save {
-  height: 36px;
-  border-radius: 8px;
-  padding: 0 16px;
+  height: 32px;
+  border-radius: 7px;
+  padding: 0 12px;
   color: #111;
   background: #fff;
   font-size: 12px;
+  line-height: 32px;
   font-weight: 500;
 }
 .x8-user-info-panel {
@@ -6149,8 +6139,14 @@ onBeforeUnmount(() => {
   color: #111;
   background: #fff;
 }
-.x8-user-section-head .x8-user-save {
+.x8-page .x8-user-section-head > .x8-user-save {
   flex: 0 0 auto;
+  height: 32px;
+  border-radius: 7px;
+  padding: 0 12px;
+  font-size: 12px;
+  line-height: 32px;
+  font-weight: 500;
 }
 .x8-user-history-panel {
   min-width: 0;
