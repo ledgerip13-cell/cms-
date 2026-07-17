@@ -722,16 +722,46 @@
             <div v-if="!x8UserHistory.length" class="x8-user-empty">暂无观看历史</div>
           </div>
 
-          <div v-else class="x8-user-grid-panel">
-            <x8-card v-for="item in x8UserFollows" :key="`x8-user-f-${item.vod?.id || item.id}`" :item="item.vod || item" short @open="goDetail" @follow="goDetail" />
+          <div v-else class="x8-user-follow-panel">
+            <div v-if="x8UserFollows.length" class="x8-user-follow-toolbar">
+              <div>
+                <strong>共 {{ x8UserFollows.length }} 部追剧</strong>
+                <span v-if="x8FollowEditing">已选 {{ x8FollowSelected.length }} 部</span>
+              </div>
+              <div class="x8-user-follow-actions">
+                <button v-if="x8FollowEditing" type="button" @click="toggleAllX8Follows">{{ x8AllFollowsSelected ? '取消全选' : '全选' }}</button>
+                <button v-if="x8FollowEditing" type="button" :disabled="!x8FollowSelected.length || x8FollowCanceling" @click="cancelSelectedX8Follows">
+                  {{ x8FollowCanceling ? '取消中...' : '取消追剧' }}
+                </button>
+                <button type="button" @click="toggleX8FollowEdit">{{ x8FollowEditing ? '完成' : '编辑' }}</button>
+              </div>
+            </div>
+            <div v-if="x8UserFollows.length" class="x8-user-follow-grid">
+              <article
+                v-for="item in x8UserFollows"
+                :key="`x8-user-f-${x8FollowVodId(item)}`"
+                class="x8-user-follow-card"
+                :class="{ editing: x8FollowEditing, selected: x8FollowSelected.includes(x8FollowVodId(item)) }"
+              >
+                <button class="x8-user-follow-main" type="button" @click="x8FollowEditing ? toggleX8FollowSelected(x8FollowVodId(item)) : goDetail(x8FollowVodId(item))">
+                  <span class="x8-user-follow-check" aria-hidden="true">
+                    <svg v-if="x8FollowSelected.includes(x8FollowVodId(item))" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 4 4L19 6" /></svg>
+                  </span>
+                  <span class="x8-user-follow-poster">
+                    <img v-if="poster(x8FollowVod(item))" :src="poster(x8FollowVod(item))" :alt="x8FollowVod(item)?.name || ''" loading="lazy" @error="onImgError" />
+                  </span>
+                  <span class="x8-user-follow-info">
+                    <b>{{ x8FollowVod(item)?.name || '影片' }}</b>
+                    <em>{{ [x8FollowVod(item)?.typeName, x8FollowVod(item)?.year].filter(Boolean).join(' · ') || '继续观看' }}</em>
+                    <small>{{ vodStatus(x8FollowVod(item))?.label || x8FollowVod(item)?.remarks || '已加入追剧' }}</small>
+                  </span>
+                  <i v-if="x8FollowVod(item)?.rating">{{ x8FollowVod(item).rating }}</i>
+                </button>
+                <button class="x8-user-follow-remove" type="button" :disabled="x8FollowCanceling" @click="cancelOneX8Follow(x8FollowVodId(item))">取消追剧</button>
+              </article>
+            </div>
             <div v-if="!x8UserFollows.length" class="x8-user-empty">暂无追剧内容</div>
           </div>
-
-          <x8-panel v-if="x8UserTab !== 'userInfo' && x8UserRecs.length" title="猜你喜欢" :changeable="false" :moreable="false">
-            <div class="x8-user-vod-grid">
-              <x8-card v-for="item in x8UserRecs.slice(0, 12)" :key="`x8-user-rec-${item.id}`" :item="item" short @open="goDetail" @follow="goDetail" />
-            </div>
-          </x8-panel>
         </section>
       </section>
 
@@ -877,10 +907,12 @@ const localHistoryRows = ref([])
 const loginWallItems = ref([])
 const x8UserHistory = ref([])
 const x8UserFollows = ref([])
-const x8UserRecs = ref([])
 const x8Prefs = ref([])
 const x8UserLoading = ref(false)
 const x8UserSaving = ref(false)
+const x8FollowEditing = ref(false)
+const x8FollowSelected = ref([])
+const x8FollowCanceling = ref(false)
 const page = ref(1)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -1031,6 +1063,10 @@ const x8UserTabTitle = computed(() => {
   if (x8UserTab.value === 'history') return '观看历史'
   if (x8UserTab.value === 'follows') return '我的追剧'
   return '个人资料'
+})
+const x8AllFollowsSelected = computed(() => {
+  const ids = x8UserFollows.value.map(x8FollowVodId).filter(Boolean)
+  return Boolean(ids.length) && ids.every(id => x8FollowSelected.value.includes(id))
 })
 const loginWallPosters = computed(() => {
   const rows = uniqueVods(loginWallItems.value, heroItems.value, hotItems.value, homeSections.value.flatMap(section => section.items || []))
@@ -1608,6 +1644,12 @@ function formatX8Time(value) {
   if (!value) return ''
   return new Date(value).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+function x8FollowVod(item) {
+  return item?.vod || item || {}
+}
+function x8FollowVodId(item) {
+  return Number(x8FollowVod(item)?.id) || 0
+}
 function goUserHistory(item) {
   const id = item?.vod?.id
   if (!id) return
@@ -1622,6 +1664,46 @@ function toggleX8Pref(name) {
   x8Prefs.value = x8Prefs.value.includes(name)
     ? x8Prefs.value.filter(item => item !== name)
     : [...x8Prefs.value, name]
+}
+function toggleX8FollowEdit() {
+  x8FollowEditing.value = !x8FollowEditing.value
+  x8FollowSelected.value = []
+}
+function toggleX8FollowSelected(id) {
+  if (!id) return
+  x8FollowSelected.value = x8FollowSelected.value.includes(id)
+    ? x8FollowSelected.value.filter(item => item !== id)
+    : [...x8FollowSelected.value, id]
+}
+function toggleAllX8Follows() {
+  if (x8AllFollowsSelected.value) {
+    x8FollowSelected.value = []
+    return
+  }
+  x8FollowSelected.value = x8UserFollows.value.map(x8FollowVodId).filter(Boolean)
+}
+async function cancelX8Follows(ids) {
+  if (!user.value) return goLogin()
+  const nextIds = [...new Set(ids.map(id => Number(id)).filter(Boolean))]
+  if (!nextIds.length || x8FollowCanceling.value) return
+  x8FollowCanceling.value = true
+  try {
+    await Promise.all(nextIds.map(id => api.unfollowVod(id)))
+    x8UserFollows.value = x8UserFollows.value.filter(item => !nextIds.includes(x8FollowVodId(item)))
+    x8FollowSelected.value = x8FollowSelected.value.filter(id => !nextIds.includes(id))
+    if (!x8UserFollows.value.length) x8FollowEditing.value = false
+    notifySuccess(nextIds.length > 1 ? `已取消 ${nextIds.length} 部追剧` : '已取消追剧')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '取消追剧失败'))
+  } finally {
+    x8FollowCanceling.value = false
+  }
+}
+function cancelSelectedX8Follows() {
+  return cancelX8Follows(x8FollowSelected.value)
+}
+function cancelOneX8Follow(id) {
+  return cancelX8Follows([id])
 }
 async function saveX8Prefs() {
   if (!user.value) return goLogin()
@@ -1678,14 +1760,14 @@ async function loadX8UserCenter() {
   }
   x8UserLoading.value = true
   try {
-    const [historyRows, followRows, recRows] = await Promise.all([
+    const [historyRows, followRows] = await Promise.all([
       api.history(50).catch(() => []),
       api.follows(50).catch(() => []),
-      api.userRecommendations(24).catch(() => ({ list: [] })),
     ])
     x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
     x8UserFollows.value = Array.isArray(followRows) ? followRows : []
-    x8UserRecs.value = Array.isArray(recRows?.list) ? recRows.list : []
+    x8FollowSelected.value = x8FollowSelected.value.filter(id => x8UserFollows.value.some(item => x8FollowVodId(item) === id))
+    if (!x8UserFollows.value.length) x8FollowEditing.value = false
     x8Prefs.value = Array.isArray(user.value?.favoriteTypes) ? [...user.value.favoriteTypes] : []
   } finally {
     x8UserLoading.value = false
@@ -5791,49 +5873,197 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 18px;
 }
-.x8-user-grid-panel,
-.x8-user-vod-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
-  gap: 22px 16px;
-  align-items: start;
-}
-.x8-user-center .x8-card {
+.x8-user-follow-panel {
   min-width: 0;
+  display: grid;
+  gap: 16px;
 }
-.x8-user-center .x8-card-poster {
-  --scale-x: 1.04;
-  --scale-y: 1.04;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 356 / 498;
-  border-radius: 8px;
+.x8-user-follow-toolbar {
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 10px;
+  padding: 0 14px 0 18px;
+  background: rgba(255,255,255,.035);
 }
-.x8-user-center .x8-card:hover .x8-card-poster {
-  transform: scale(1.035);
-  box-shadow: 0 14px 42px rgba(0,0,0,.45);
+.x8-user-follow-toolbar > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
-.x8-user-center .x8-card-info {
-  height: 38px;
-  gap: 6px;
-  padding: 0 2px;
-  font-size: 14px;
-}
-.x8-user-center .x8-card-info span {
-  font-size: 14px;
-  font-weight: 600;
-}
-.x8-user-center .x8-card-info b,
-.x8-user-center .x8-card-bottom b {
+.x8-user-follow-toolbar strong {
+  overflow: hidden;
+  color: #fff;
   font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.x8-user-center .x8-card-bottom {
-  height: 82px;
-  padding: 0 10px 11px;
+.x8-user-follow-toolbar span {
+  color: rgba(255,255,255,.46);
   font-size: 12px;
+  line-height: 16px;
 }
-.x8-user-center .x8-card-hover {
+.x8-user-follow-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.x8-user-follow-actions button,
+.x8-user-follow-remove {
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.x8-user-follow-actions button {
+  height: 32px;
+  padding: 0 13px;
+  color: rgba(255,255,255,.82);
+  background: rgba(255,255,255,.09);
+  font-size: 13px;
+  font-weight: 700;
+}
+.x8-user-follow-actions button:hover {
+  color: #fff;
+  background: rgba(255,255,255,.14);
+}
+.x8-user-follow-actions button:disabled,
+.x8-user-follow-remove:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.x8-user-follow-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.x8-user-follow-card {
+  min-width: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255,255,255,.04);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+}
+.x8-user-follow-main {
+  width: 100%;
+  min-width: 0;
+  height: 126px;
+  border: 0;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 12px;
+  color: #fff;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.x8-user-follow-card.editing .x8-user-follow-main {
+  grid-template-columns: 26px 74px minmax(0, 1fr) auto;
+}
+.x8-user-follow-card:hover {
+  background: rgba(255,255,255,.065);
+}
+.x8-user-follow-card.selected {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.34);
+}
+.x8-user-follow-check {
   display: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  place-items: center;
+  color: #111;
+  background: rgba(255,255,255,.16);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.24);
+}
+.x8-user-follow-card.editing .x8-user-follow-check {
+  display: grid;
+}
+.x8-user-follow-card.selected .x8-user-follow-check {
+  background: #fff;
+}
+.x8-user-follow-check svg {
+  width: 15px;
+  height: 15px;
+}
+.x8-user-follow-poster {
+  width: 74px;
+  height: 102px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 7px;
+  background: rgba(255,255,255,.08);
+}
+.x8-user-follow-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.x8-user-follow-info {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.x8-user-follow-info b,
+.x8-user-follow-info em,
+.x8-user-follow-info small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-user-follow-info b {
+  color: #fff;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+}
+.x8-user-follow-info em {
+  color: rgba(255,255,255,.52);
+  font-size: 13px;
+  line-height: 18px;
+  font-style: normal;
+}
+.x8-user-follow-info small {
+  width: fit-content;
+  max-width: 100%;
+  height: 24px;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: rgba(255,255,255,.72);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  line-height: 24px;
+}
+.x8-user-follow-main i {
+  align-self: start;
+  color: #ff4f5e;
+  font-size: 15px;
+  line-height: 20px;
+  font-style: normal;
+  font-weight: 700;
+}
+.x8-user-follow-remove {
+  width: calc(100% - 24px);
+  height: 34px;
+  margin: 0 12px 12px;
+  color: rgba(255,120,132,.95);
+  background: rgba(255,92,107,.1);
+  font-size: 13px;
+  font-weight: 700;
+}
+.x8-user-follow-remove:hover {
+  color: #fff;
+  background: rgba(255,92,107,.18);
 }
 .x8-user-empty {
   grid-column: 1 / -1;
