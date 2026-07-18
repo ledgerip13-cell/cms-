@@ -174,7 +174,7 @@
           </div>
         </x8-panel>
 
-        <section class="x8-panel x8-trailer" id="trailer-panel">
+        <section v-if="trailerItems.length" class="x8-panel x8-trailer" id="trailer-panel">
           <div class="x8-panel-head">
             <button class="x8-panel-title" type="button">
               <span>新片预告</span>
@@ -1067,7 +1067,9 @@ const X8_LOGIN_WALL_CACHE_KEY = 'vcms.x8.login.wall'
 const X8_LOGIN_WALL_CACHE_TTL_MS = 1000 * 60 * 60 * 24
 const X8_LOGIN_WALL_COUNT = 48
 const X8_HISTORY_PAGE_SIZE = 20
-const X8_TRAILER_TYPE = '预告片'
+const X8_TRAILER_CACHE_KEY = 'vcms.x8.trailers.v2'
+const X8_TRAILER_CACHE_TTL_MS = 3 * 60 * 1000
+const X8_TRAILER_COUNT = 8
 let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
@@ -1535,6 +1537,20 @@ function writeLoginWallCache(rows) {
     .slice(0, X8_LOGIN_WALL_COUNT)
   if (next.length < 8) return
   localStorage.setItem(X8_LOGIN_WALL_CACHE_KEY, JSON.stringify({ at: Date.now(), rows: next }))
+}
+function readTrailerCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(X8_TRAILER_CACHE_KEY) || 'null')
+    if (!cached || !Array.isArray(cached.rows)) return null
+    if (Date.now() - Number(cached.at || 0) > X8_TRAILER_CACHE_TTL_MS) return null
+    return cached.rows.filter(item => item && trailerCoverImage(item)).slice(0, X8_TRAILER_COUNT)
+  } catch {
+    return null
+  }
+}
+function writeTrailerCache(rows) {
+  const next = uniqueVods(rows).filter(item => item && trailerCoverImage(item)).slice(0, X8_TRAILER_COUNT)
+  localStorage.setItem(X8_TRAILER_CACHE_KEY, JSON.stringify({ at: Date.now(), rows: next }))
 }
 function collectLoginWallCandidates() {
   return uniqueVods(
@@ -2624,7 +2640,11 @@ async function loadHome() {
       return recent
     }))
 
-    const trailerPromise = api.vods({ page: 1, size: 30, type: X8_TRAILER_TYPE, sort: 'recent' }).catch(() => ({ list: [] }))
+    const cachedTrailers = readTrailerCache()
+    if (cachedTrailers) trailerItems.value = cachedTrailers
+    const trailerPromise = cachedTrailers
+      ? Promise.resolve({ list: cachedTrailers })
+      : api.trailers(X8_TRAILER_COUNT).catch(() => ({ list: [] }))
     const [heroRes, hotRes, trailerRes, ...sectionRes] = await Promise.all([
       heroPromise,
       hotPromise,
@@ -2634,7 +2654,9 @@ async function loadHome() {
     const sections = homeSections.value
     const sectionFill = sections.flatMap(section => section.items)
     hotItems.value = uniqueVods(hotRes, heroRes?.list, sectionFill).slice(0, 28)
-    trailerItems.value = (trailerRes?.list || []).filter(hasTrailerWideImage).map(withRandomHeroImage).filter(item => trailerCoverImage(item)).slice(0, 5)
+    const nextTrailers = (trailerRes?.list || []).filter(hasTrailerWideImage).map(withRandomHeroImage).filter(item => trailerCoverImage(item)).slice(0, X8_TRAILER_COUNT)
+    trailerItems.value = nextTrailers
+    if (!cachedTrailers) writeTrailerCache(nextTrailers)
     trailerIdx.value = Math.min(trailerIdx.value, Math.max(0, trailerItems.value.length - 1))
     resetTrailerPlayback()
     const wallRows = collectLoginWallCandidates()

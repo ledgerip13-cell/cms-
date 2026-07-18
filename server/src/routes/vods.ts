@@ -15,6 +15,8 @@ import { cleanText, cleanVodTextFields } from "../textClean.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const TRAILER_TYPE_NAME = "预告片";
+const TRAILER_CACHE_TTL_MS = 3 * 60 * 1000;
 
 function recentShanghaiDates(days: number) {
   const now = new Date();
@@ -75,6 +77,25 @@ function withHeroImage(vod: any) {
   const heroImages = heroImageCandidates(vod);
   const heroImage = heroImages[0] || { url: "", wide: false };
   return { ...cleanVodTextFields(rest), rating: formatPublicRating(rest.rating), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
+}
+
+function hasWideVodImageAsset(vod: any) {
+  const images: Array<{ url?: string; type?: string; isHero?: boolean; width?: number; height?: number }> = Array.isArray(vod?.images) ? vod.images : [];
+  return images.some((img) => {
+    if (!img?.url || img.type === "poster") return false;
+    const width = Number(img.width) || 0;
+    const height = Number(img.height) || 0;
+    return (width > 0 && height > 0 && width > height) || Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
+  });
+}
+
+function shuffleByMathRandom<T>(rows: T[]) {
+  const next = [...rows];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [next[i], next[j]] = [next[j], next[i]];
+  }
+  return next;
 }
 
 function publicVodCard(vod: any) {
@@ -685,6 +706,24 @@ export default async function vodRoutes(app: FastifyInstance) {
     else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     const withTotal = q.withTotal === "1" || q.withTotal === "true";
+    const cacheKey = JSON.stringify({
+      scope: "vods",
+      publicTypes,
+      sourceIds,
+      cleanOnlySourceIds,
+      page,
+      size,
+      kw: String(q.kw || ""),
+      type: String(q.type || ""),
+      types: String(q.types || ""),
+      sub: String(q.sub || ""),
+      subs: String(q.subs || ""),
+      year: String(q.year || ""),
+      sort: String(q.sort || ""),
+      withTotal,
+    });
+    const cached = aggregateCacheGet<any>(cacheKey);
+    if (cached) return cached;
     const [total, rows] = await Promise.all([
       withTotal ? prisma.vod.count({ where }) : Promise.resolve(null),
       prisma.vod.findMany({
@@ -697,7 +736,45 @@ export default async function vodRoutes(app: FastifyInstance) {
     ]);
     const hasMore = rows.length > size;
     const list = hasMore ? rows.slice(0, size) : rows;
-    return { total, hasMore, page, size, list: list.map(publicVodCard) };
+    const data = { total, hasMore, page, size, list: list.map(publicVodCard) };
+    aggregateCacheSet(cacheKey, data, TRAILER_CACHE_TTL_MS);
+    return data;
+  });
+
+  app.get("/api/trailers", async (req, reply) => {
+    const viewer = await viewerFromRequest(req);
+    const limit = Math.max(1, Math.min(20, Number((req.query as any)?.limit) || 8));
+    const curYear = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Shanghai" })).getFullYear();
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const cacheKey = JSON.stringify({ scope: "trailers", limit, curYear, publicTypes, sourceIds, cleanOnlySourceIds });
+    const cached = aggregateCacheGet<{ list: any[]; total: number; cachedAt: number }>(cacheKey);
+    reply.header("Cache-Control", "private, max-age=180");
+    if (cached) return { ...cached, cached: true };
+    const yearFilters = Array.from({ length: 2101 - curYear }, (_, i) => ({ year: { contains: String(curYear + i) } }));
+    const where: any = {
+      status: "online",
+      typeName: requestedPublicType(publicTypes, TRAILER_TYPE_NAME),
+      ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+      images: { some: { type: { not: "poster" } } },
+      OR: yearFilters,
+    };
+    const rows = await prisma.vod.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: 200,
+      include: {
+        _count: { select: publicPlayCountSelect(sourceIds, cleanOnlySourceIds) },
+        images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+      },
+    });
+    const candidates = rows.filter(hasWideVodImageAsset);
+    const data = {
+      list: shuffleByMathRandom(candidates).slice(0, limit).map(publicVodCard),
+      total: candidates.length,
+      cachedAt: Date.now(),
+    };
+    aggregateCacheSet(cacheKey, data, TRAILER_CACHE_TTL_MS);
+    return data;
   });
 
   // 年份索引（聚合，降序）：支持按 type/sub/kw 联动，只返回当前结果集实际存在的年份
@@ -766,6 +843,10 @@ export default async function vodRoutes(app: FastifyInstance) {
     const q = req.query as any;
     const cat = String(q.cat || "hot");
     const viewer = await viewerFromRequest(req);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const cacheKey = JSON.stringify({ scope: "hot", cat, limit: Number(q.limit) || 0, publicTypes, sourceIds, cleanOnlySourceIds });
+    const cached = aggregateCacheGet<any[]>(cacheKey);
+    if (cached) return cached;
     const hotQuery = await hotVodQuery(cat, Number(q.limit) || undefined, viewer);
     const list = await prisma.vod.findMany({
       where: hotQuery.where,
@@ -776,7 +857,9 @@ export default async function vodRoutes(app: FastifyInstance) {
         images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
       },
     });
-    return list.map(withHeroImage);
+    const data = list.map(withHeroImage);
+    aggregateCacheSet(cacheKey, data, TRAILER_CACHE_TTL_MS);
+    return data;
   });
 
   // 短剧漫游流：每条只代表一部不同短剧，前端向下刷时不会连续刷同一部剧的多集。

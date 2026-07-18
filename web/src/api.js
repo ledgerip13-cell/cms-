@@ -13,6 +13,7 @@ export const api = {
   categories: () => http.get('/categories'),
   subtypes: (type) => http.get('/subtypes', { params: { type } }),
   years: (params) => http.get('/years', { params }),
+  trailers: (limit = 8) => http.get('/trailers', { params: { limit } }),
   hot: (limit, cat) => http.get('/hot', { params: { limit, cat } }),
   shortFeed: (params) => http.get('/short-feed', { params }),
   shortFeedOptions: () => http.get('/short-feed/options'),
