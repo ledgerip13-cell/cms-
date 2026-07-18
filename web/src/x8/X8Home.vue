@@ -1556,7 +1556,11 @@ function heroImage(item) {
 function trailerCoverImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
   const wide = images.find(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
-  return imgUrl(wide?.url || item?.heroPic || item?.localPic || item?.pic || item?.officialPic || item?.heroImage || '')
+  return imgUrl(wide?.url || '')
+}
+function hasTrailerWideImage(item) {
+  const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
+  return images.some(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
 }
 function withRandomHeroImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
@@ -2620,7 +2624,7 @@ async function loadHome() {
       return recent
     }))
 
-    const trailerPromise = api.vods({ page: 1, size: 8, type: X8_TRAILER_TYPE, sort: 'recent' }).catch(() => ({ list: [] }))
+    const trailerPromise = api.vods({ page: 1, size: 30, type: X8_TRAILER_TYPE, sort: 'recent' }).catch(() => ({ list: [] }))
     const [heroRes, hotRes, trailerRes, ...sectionRes] = await Promise.all([
       heroPromise,
       hotPromise,
@@ -2630,7 +2634,7 @@ async function loadHome() {
     const sections = homeSections.value
     const sectionFill = sections.flatMap(section => section.items)
     hotItems.value = uniqueVods(hotRes, heroRes?.list, sectionFill).slice(0, 28)
-    trailerItems.value = (trailerRes?.list || []).map(withRandomHeroImage).filter(item => heroImage(item)).slice(0, 5)
+    trailerItems.value = (trailerRes?.list || []).filter(hasTrailerWideImage).map(withRandomHeroImage).filter(item => trailerCoverImage(item)).slice(0, 5)
     trailerIdx.value = Math.min(trailerIdx.value, Math.max(0, trailerItems.value.length - 1))
     resetTrailerPlayback()
     const wallRows = collectLoginWallCandidates()
