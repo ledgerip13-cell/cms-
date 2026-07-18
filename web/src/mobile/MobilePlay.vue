@@ -943,11 +943,18 @@ async function loadVod(id) {
 }
 
 watch(() => route.params.id, (id) => {
-  if (id) loadVod(id)
+  if (isPlayRoute() && id) loadVod(id)
+})
+watch(() => route.path, (path) => {
+  if (String(path || '').startsWith('/m/play')) return
+  pageActive = false
+  loadSeq += 1
+  stopPlayback()
+  resetLandscape()
 })
 onMounted(() => {
   pageActive = true
-  loadVod(route.params.id)
+  if (isPlayRoute() && route.params.id) loadVod(route.params.id)
 })
 onActivated(() => {
   pageActive = true
