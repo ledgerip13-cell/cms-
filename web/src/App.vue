@@ -214,8 +214,9 @@ function goProfileSection(section) {
   router.push({ path: '/me', query: { tab: section } }).catch?.(() => {})
   window.dispatchEvent(new CustomEvent('profile-tab', { detail: section }))
 }
-function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path:'/', query:{kw:kw.value} }) }
-function goPlay(id) { searchOpen.value=false; router.push('/play/'+id) }
+function templateBase() { return site.value?.homeConfig?.adaptiveTemplate === 'x8' ? '/x8' : '/' }
+function doSearch() { searchOpen.value=false; if(kw.value) router.push({ path: templateBase(), query:{kw:kw.value} }) }
+function goPlay(id) { searchOpen.value=false; router.push((site.value?.homeConfig?.adaptiveTemplate === 'x8' ? '/x8/play/' : '/play/') + id) }
 function openLogin() { openAuthDialog({ mode: 'login', redirect: route.fullPath }) }
 function isPhoneDevice() {
   const ua = navigator.userAgent || ''

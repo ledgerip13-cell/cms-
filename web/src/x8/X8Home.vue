@@ -1113,6 +1113,7 @@ const pageMode = computed(() => {
   if (route.query.kw || route.query.type || route.path.includes('/show/')) return 'show'
   return 'home'
 })
+const useX8Routes = computed(() => route.path.startsWith('/x8') || site.value?.homeConfig?.adaptiveTemplate === 'x8')
 const routeType = computed(() => {
   const id = String(route.params.type || '')
   return typeRouteMap[id] || id
@@ -1628,19 +1629,19 @@ function onImgError(event) {
   if (event?.target) event.target.style.visibility = 'hidden'
 }
 function routeBase() {
-  return route.path.startsWith('/x8') ? '/x8' : '/'
+  return useX8Routes.value ? '/x8' : '/'
 }
 function goX8Home() {
-  router.push(route.path.startsWith('/x8') ? '/x8' : '/').then(() => focusX8Nav()).catch?.(() => {})
+  router.push(routeBase()).then(() => focusX8Nav()).catch?.(() => {})
 }
 function goShow(type) {
   router.push({ path: routeBase(), query: { type, sort: 'hot' } }).then(() => focusX8Nav()).catch?.(() => {})
 }
 function goRank() {
-  router.push(route.path.startsWith('/x8') ? '/x8/rank' : { path: '/', query: { view: 'rank' } })
+  router.push(useX8Routes.value ? '/x8/rank' : { path: '/', query: { view: 'rank' } })
 }
 function goLogin() {
-  router.push(route.path.startsWith('/x8') ? '/x8/login' : '/auth')
+  router.push(useX8Routes.value ? '/x8/login' : '/auth')
 }
 function focusX8Nav() {
   nextTick(() => {
@@ -1779,7 +1780,7 @@ async function submitX8Auth() {
 }
 function goDetail(id) {
   if (!id) return
-  router.push(route.path.startsWith('/x8') ? `/x8/detail/${id}` : `/detail/${id}`)
+  router.push(useX8Routes.value ? `/x8/detail/${id}` : `/play/${id}`)
 }
 function normalizeX8UserTab(tab) {
   const value = Array.isArray(tab) ? tab[0] : tab
@@ -2035,7 +2036,7 @@ async function loadX8UserCenter() {
 }
 function goPlay(id, epIndex = 0) {
   if (!id) return
-  const path = route.path.startsWith('/x8') ? `/x8/play/${id}` : `/play/${id}`
+  const path = useX8Routes.value ? `/x8/play/${id}` : `/play/${id}`
   const line = currentLineId.value || vod.value?.lines?.[0]?.id || 0
   const query = cleanQuery({
     line: line || undefined,
@@ -2083,7 +2084,7 @@ function scrollTop() {
 }
 function scrollToTrailer() {
   if (pageMode.value !== 'home') {
-    router.push({ path: route.path.startsWith('/x8') ? '/x8' : '/', hash: '#trailer-panel' })
+    router.push({ path: routeBase(), hash: '#trailer-panel' })
     return
   }
   document.getElementById('trailer-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -2306,7 +2307,7 @@ function historyItemSub(item) {
 }
 function goHistoryItem(item) {
   if (!item?.vodId) return
-  const path = route.path.startsWith('/x8') ? `/x8/play/${item.vodId}` : `/play/${item.vodId}`
+  const path = useX8Routes.value ? `/x8/play/${item.vodId}` : `/play/${item.vodId}`
   router.push({
     path,
     query: cleanQuery({
