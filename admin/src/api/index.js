@@ -109,6 +109,7 @@ export const api = {
   updateHlsCleanConfig: (d) => http.put('/admin/hls-clean/config', d),
   updateHlsCleanPolicy: (d) => http.put('/admin/hls-clean/policy', d),
   deleteHlsCleanPolicy: (id) => http.delete(`/admin/hls-clean/policy/${id}`),
+  previewHlsCleanTask: (d) => http.post('/admin/hls-clean/preview', d),
   createHlsCleanTask: (d) => http.post('/admin/hls-clean/tasks', d),
   hlsCleanResults: (params) => http.get('/admin/hls-clean/results', { params }),
   hlsCleanTask: (d) => http.post('/admin/hls-clean/tasks', d),

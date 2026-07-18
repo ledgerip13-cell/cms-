@@ -865,9 +865,23 @@ export async function runHlsCleanForEpisode(opts: HlsCleanRunOptions) {
 
     // 产出 clean 结果时同步更新 Play.hasCleanResult 反范式标记（供前端列表过滤用）
     const shouldMarkClean = !dryRun && status === "clean";
+    const resultKey = { playId: play.id, epIndex: opts.epIndex, sourceUrlHash, strategyId };
+    const existing = await prisma.hlsCleanResult.findUnique({ where: { playId_epIndex_sourceUrlHash_strategyId: resultKey } });
+    if (
+      existing &&
+      !dryRun &&
+      existing.status === "clean" &&
+      status === "clean" &&
+      Number(existing.confidence || 0) >= Number(analysis.confidence || 0)
+    ) {
+      if (shouldMarkClean) {
+        await prisma.play.update({ where: { id: play.id }, data: { hasCleanResult: true } });
+      }
+      return existing;
+    }
 
     const result = await prisma.hlsCleanResult.upsert({
-      where: { playId_epIndex_sourceUrlHash_strategyId: { playId: play.id, epIndex: opts.epIndex, sourceUrlHash, strategyId } },
+      where: { playId_epIndex_sourceUrlHash_strategyId: resultKey },
       update: {
         vodId: play.vodId, sourceId: play.sourceId, epName: ep.name || "", originUrl: ep.url, resolvedUrl: resolved.url,
         m3u8Hash, status, confidence: analysis.confidence, adRanges: JSON.stringify(analysis.adRanges),

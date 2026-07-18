@@ -9,7 +9,7 @@ import {
   updateHlsCleanConfig,
   upsertHlsCleanPolicy,
 } from "../hls/cleaner.js";
-import { createHlsCleanTask } from "../collector/taskRunner.js";
+import { createHlsCleanTask, previewHlsCleanTask } from "../collector/taskRunner.js";
 
 function parseJson(value: string, fallback: any) {
   try { return JSON.parse(value || ""); } catch { return fallback; }
@@ -132,25 +132,62 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
       return { ok: true };
     });
 
-    admin.post("/api/admin/hls-clean/tasks", async (req, reply) => {
+    admin.post("/api/admin/hls-clean/preview", async (req, reply) => {
       const b = (req.body as any) || {};
       const playIds = Array.isArray(b.playIds)
         ? b.playIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
         : undefined;
+      const categoryNames = Array.isArray(b.categoryNames)
+        ? b.categoryNames.map((x: any) => String(x || "").trim()).filter(Boolean)
+        : [];
       const rangeMode = ["vod", "line", "batch"].includes(String(b.rangeMode || "")) ? String(b.rangeMode) : "";
       if ((rangeMode === "vod" || (b.vodId && !b.playId)) && (!playIds || !playIds.length)) {
         return reply.code(400).send({ error: "精确影片清洗必须选择具体线路" });
       }
       if (rangeMode === "line" && (!Number.isInteger(Number(b.playId)) || Number(b.playId) <= 0)) {
-        return reply.code(400).send({ error: "请输入有效线路ID" });
+        return reply.code(400).send({ error: "请选择有效线路" });
       }
-      if (rangeMode === "batch" && !b.sourceId && !b.categoryName) {
+      if (rangeMode === "batch" && !b.sourceId && !categoryNames.length && !b.categoryName) {
+        return reply.code(400).send({ error: "批量清洗请至少选择采集源或分类" });
+      }
+      const preview = await previewHlsCleanTask({
+        sourceId: b.sourceId ? Number(b.sourceId) : undefined,
+        categoryName: b.categoryName ? String(b.categoryName) : undefined,
+        categoryNames,
+        vodId: b.vodId ? Number(b.vodId) : undefined,
+        playId: b.playId ? Number(b.playId) : undefined,
+        playIds,
+        epIndex: b.epIndex === "" || b.epIndex === null || typeof b.epIndex === "undefined" ? undefined : Number(b.epIndex),
+        episodeMode: b.episodeMode === "all" ? "all" : "first",
+        limit: Math.max(1, Math.min(2000, Number(b.limit) || 100)),
+        skipCleaned: Boolean(b.skipCleaned),
+      });
+      return { ok: true, preview };
+    });
+
+    admin.post("/api/admin/hls-clean/tasks", async (req, reply) => {
+      const b = (req.body as any) || {};
+      const playIds = Array.isArray(b.playIds)
+        ? b.playIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+        : undefined;
+      const categoryNames = Array.isArray(b.categoryNames)
+        ? b.categoryNames.map((x: any) => String(x || "").trim()).filter(Boolean)
+        : [];
+      const rangeMode = ["vod", "line", "batch"].includes(String(b.rangeMode || "")) ? String(b.rangeMode) : "";
+      if ((rangeMode === "vod" || (b.vodId && !b.playId)) && (!playIds || !playIds.length)) {
+        return reply.code(400).send({ error: "精确影片清洗必须选择具体线路" });
+      }
+      if (rangeMode === "line" && (!Number.isInteger(Number(b.playId)) || Number(b.playId) <= 0)) {
+        return reply.code(400).send({ error: "请选择有效线路" });
+      }
+      if (rangeMode === "batch" && !b.sourceId && !categoryNames.length && !b.categoryName) {
         return reply.code(400).send({ error: "批量清洗请至少选择采集源或分类" });
       }
       const strategyIds = normalizeHlsStrategyIds(b.strategyIds ?? b.strategyId, []);
       const task = await createHlsCleanTask({
         sourceId: b.sourceId ? Number(b.sourceId) : undefined,
         categoryName: b.categoryName ? String(b.categoryName) : undefined,
+        categoryNames,
         vodId: b.vodId ? Number(b.vodId) : undefined,
         playId: b.playId ? Number(b.playId) : undefined,
         playIds,
@@ -159,6 +196,7 @@ export default async function hlsCleanRoutes(app: FastifyInstance) {
         limit: Math.max(1, Math.min(2000, Number(b.limit) || 100)),
         strategyIds: strategyIds.length ? strategyIds : undefined,
         dryRun: typeof b.dryRun === "boolean" ? b.dryRun : undefined,
+        skipCleaned: Boolean(b.skipCleaned),
       });
       return { ok: true, taskId: task.id };
     });

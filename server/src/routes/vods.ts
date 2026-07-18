@@ -1203,7 +1203,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       if (!vod) return reply.code(404).send({ error: "not found" });
       const channels = vod.plays.map((p) => ({
         id: p.id, sourceId: p.sourceId, sourceName: p.source.name, priority: p.source.priority,
-        flag: p.flag, epCount: p.epCount, alive: p.alive, score: p.score, checkMs: p.checkMs,
+        flag: p.flag, epCount: p.epCount, alive: p.alive, score: p.score, checkMs: p.checkMs, hasCleanResult: p.hasCleanResult,
         playKind: p.playKind, episodes: parseEpisodes(p.episodes),
       }));
       const byHealth = (a: any, b: any) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.score !== a.score ? b.score - a.score : a.priority - b.priority);

@@ -107,7 +107,10 @@
           <div class="sec-title">手动清洗</div>
           <div class="hint">可以按源、分类、精确影片、线路或单集发起清洗；未命中 clean 时播放自动回退原始源。</div>
         </div>
-        <el-button type="success" :icon="VideoPlay" @click="startTask" :loading="starting">开始清洗</el-button>
+        <div class="actions">
+          <el-button type="primary" plain :icon="Check" @click="previewTask" :loading="previewing">预检</el-button>
+          <el-button type="success" :icon="VideoPlay" @click="startTask" :loading="starting" :disabled="!previewReady">开始清洗</el-button>
+        </div>
       </div>
       <el-form :model="job" label-width="90px" class="manual-form">
         <el-form-item label="清洗范围">
@@ -150,6 +153,11 @@
               <el-table-column prop="sourceName" label="来源" min-width="140" />
               <el-table-column prop="flag" label="标识" width="110" show-overflow-tooltip />
               <el-table-column prop="epCount" label="集数" width="76" />
+              <el-table-column label="清洗" width="88">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.hasCleanResult ? 'success' : 'info'">{{ row.hasCleanResult ? '已清洗' : '未清洗' }}</el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="状态" width="88">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.alive ? 'success' : 'info'">{{ row.alive ? '可用' : '失效' }}</el-tag>
@@ -161,9 +169,49 @@
         </template>
 
         <template v-else-if="job.rangeMode === 'line'">
-          <el-form-item label="线路ID">
-            <el-input v-model="job.playId" clearable placeholder="输入单条线路ID" style="width:260px" />
+          <el-form-item label="选择影片">
+            <el-select v-model="job.vodId" clearable filterable remote reserve-keyword
+              placeholder="输入片名搜索，再选择线路" :remote-method="searchVods" :loading="vodSearching"
+              style="width:420px" @change="loadVodLines">
+              <el-option v-for="v in vodOptions" :key="v.id" :label="vodLabel(v)" :value="v.id">
+                <div class="vod-option">
+                  <span>{{ v.name }}</span>
+                  <em>{{ v.typeName || '未分类' }} · {{ v.year || '—' }} · {{ v._count?.plays || 0 }} 条线路</em>
+                </div>
+              </el-option>
+            </el-select>
           </el-form-item>
+
+          <div v-if="selectedVod" class="line-panel">
+            <div class="line-panel-head">
+              <div>
+                <b>{{ selectedVod.name }}</b>
+                <span>{{ selectedVod.typeName || '未分类' }} · {{ selectedVod.year || '—' }} · 已选线路 {{ job.playId || '未选择' }}</span>
+              </div>
+            </div>
+            <el-table :data="vodLines" stripe class="line-table">
+              <el-table-column label="" width="54">
+                <template #default="{ row }">
+                  <el-radio v-model="job.playId" :value="row.id" />
+                </template>
+              </el-table-column>
+              <el-table-column prop="id" label="线路ID" width="82" />
+              <el-table-column prop="sourceName" label="来源" min-width="140" />
+              <el-table-column prop="flag" label="标识" width="110" show-overflow-tooltip />
+              <el-table-column prop="epCount" label="集数" width="76" />
+              <el-table-column label="清洗" width="88">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.hasCleanResult ? 'success' : 'info'">{{ row.hasCleanResult ? '已清洗' : '未清洗' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="88">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.alive ? 'success' : 'info'">{{ row.alive ? '可用' : '失效' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="score" label="评分" width="72" />
+            </el-table>
+          </div>
         </template>
 
         <template v-else>
@@ -174,7 +222,7 @@
               </el-select>
             </el-form-item>
             <el-form-item label="分类">
-              <el-select v-model="job.categoryName" clearable filterable placeholder="全部分类" style="width:220px">
+              <el-select v-model="job.categoryNames" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="可多选分类" style="width:320px">
                 <el-option v-for="c in categories" :key="c.name" :label="c.name" :value="c.name" />
               </el-select>
             </el-form-item>
@@ -206,8 +254,33 @@
               <el-radio-button value="dry_run">只检测不用于播放</el-radio-button>
             </el-radio-group>
           </el-form-item>
+          <el-form-item label="重复处理">
+            <el-checkbox v-model="job.skipCleaned">自动跳过已清洗</el-checkbox>
+            <span class="unit">取消勾选会重新检测；只有新 clean 分数更高才覆盖旧结果</span>
+          </el-form-item>
         </div>
       </el-form>
+
+      <div v-if="preview" class="preview-box">
+        <el-alert :type="preview.candidateEpisodes ? 'success' : 'warning'" :closable="false" show-icon>
+          <template #title>
+            匹配 {{ preview.matchingLines }} 条线路，已清洗 {{ preview.cleanedLines }} 条，跳过 {{ preview.skippedCleanedLines }} 条，预检待处理 {{ preview.candidateEpisodes }} 集
+          </template>
+          <div class="preview-desc">本次按任务上限取 {{ preview.limit }} 条候选线路；必须预检后才能开始清洗。</div>
+        </el-alert>
+        <el-table v-if="preview.samples?.length" :data="preview.samples" size="small" stripe class="preview-table">
+          <el-table-column prop="vodName" label="影片" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="typeName" label="分类" width="120" show-overflow-tooltip />
+          <el-table-column prop="sourceName" label="来源" width="140" show-overflow-tooltip />
+          <el-table-column prop="epCount" label="总集数" width="76" />
+          <el-table-column prop="selectedEpisodes" label="本次集数" width="88" />
+          <el-table-column label="清洗" width="88">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.hasCleanResult ? 'success' : 'info'">{{ row.hasCleanResult ? '已清洗' : '未清洗' }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </div>
     </el-tab-pane>
 
@@ -357,7 +430,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, ref, resolveComponent } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, resolveComponent, watch } from 'vue'
 import { Check, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
@@ -385,6 +458,7 @@ const PolicyMode = defineComponent({
 const loading = ref(false)
 const saving = ref(false)
 const starting = ref(false)
+const previewing = ref(false)
 const strategySaving = ref('')
 const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
 const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, requireCleanPlayback: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
@@ -405,10 +479,12 @@ const lineTableRef = ref(null)
 const selectedVod = ref(null)
 const vodLines = ref([])
 const selectedPlayIds = ref([])
+const preview = ref(null)
+const previewKey = ref('')
 const job = ref({
   rangeMode: 'vod',
   sourceId: null,
-  categoryName: '',
+  categoryNames: [],
   vodId: null,
   playId: '',
   epIndex: '',
@@ -416,7 +492,9 @@ const job = ref({
   limit: 100,
   strategyIds: [...DEFAULT_STRATEGIES],
   runMode: 'clean',
+  skipCleaned: true,
 })
+const previewReady = computed(() => Boolean(preview.value && previewKey.value && preview.value.candidateEpisodes > 0))
 
 const policyMap = computed(() => new Map(policies.value.map(p => [p.targetKey, p])))
 const sourceRows = computed(() => sources.value.map(s => {
@@ -618,14 +696,21 @@ function resetVodLines() {
   lineTableRef.value?.clearSelection?.()
 }
 
+function resetPreview() {
+  preview.value = null
+  previewKey.value = ''
+}
+
 function onRangeModeChange() {
   job.value.playId = ''
   job.value.sourceId = null
-  job.value.categoryName = ''
-  if (job.value.rangeMode !== 'vod') {
+  job.value.categoryNames = []
+  resetPreview()
+  if (!['vod', 'line'].includes(job.value.rangeMode)) {
     job.value.vodId = null
     resetVodLines()
   }
+  if (job.value.rangeMode === 'vod') selectedPlayIds.value = []
 }
 
 function flattenVodLines(vod) {
@@ -641,6 +726,7 @@ function flattenVodLines(vod) {
         epCount: c.epCount || c.episodes?.length || 0,
         alive: c.alive !== false,
         score: c.score || 0,
+        hasCleanResult: Boolean(c.hasCleanResult || line.hasCleanResult),
       })
     }
   }
@@ -649,6 +735,7 @@ function flattenVodLines(vod) {
 
 async function loadVodLines(vodId) {
   resetVodLines()
+  if (job.value.rangeMode === 'line') job.value.playId = ''
   if (!vodId) return
   loading.value = true
   try {
@@ -664,6 +751,7 @@ async function loadVodLines(vodId) {
 
 function onLineSelectionChange(rows) {
   selectedPlayIds.value = rows.map(r => r.id)
+  resetPreview()
 }
 
 function selectAllLines() {
@@ -675,59 +763,79 @@ function clearSelectedLines() {
   selectedPlayIds.value = []
 }
 
+function buildTaskPayload() {
+  const common = {
+    rangeMode: job.value.rangeMode,
+    strategyIds: job.value.strategyIds,
+    dryRun: job.value.runMode === 'dry_run',
+    skipCleaned: Boolean(job.value.skipCleaned),
+  }
+  let payload = {}
+  if (job.value.rangeMode === 'vod') {
+    if (!job.value.vodId) throw new Error('请先选择精确影片')
+    if (!selectedPlayIds.value.length) throw new Error('请勾选要清洗的线路')
+    payload = { ...common, vodId: job.value.vodId, playIds: selectedPlayIds.value }
+  } else if (job.value.rangeMode === 'line') {
+    const playId = Number(job.value.playId)
+    if (!Number.isInteger(playId) || playId <= 0) throw new Error('请先选择一条线路')
+    payload = { ...common, vodId: job.value.vodId || undefined, playId }
+  } else {
+    const categoryNames = Array.isArray(job.value.categoryNames) ? job.value.categoryNames.filter(Boolean) : []
+    if (!job.value.sourceId && !categoryNames.length) throw new Error('批量清洗请至少选择采集源或分类')
+    payload = {
+      ...common,
+      sourceId: job.value.sourceId || undefined,
+      categoryNames,
+      limit: job.value.limit,
+    }
+  }
+  if (job.value.episodeMode === 'one') {
+    const rawEpIndex = String(job.value.epIndex || '').trim()
+    if (!/^\d+$/.test(rawEpIndex)) throw new Error('指定集数必须是 0 或正整数')
+    payload.epIndex = Number(rawEpIndex)
+  } else {
+    payload.episodeMode = job.value.episodeMode
+  }
+  return payload
+}
+
+function payloadKey(payload) {
+  return JSON.stringify(payload)
+}
+
+async function previewTask() {
+  previewing.value = true
+  try {
+    const payload = buildTaskPayload()
+    const r = await api.previewHlsCleanTask(payload)
+    preview.value = r.preview || null
+    previewKey.value = payloadKey(payload)
+    if (!preview.value?.candidateEpisodes) ElMessage.warning('预检没有可清洗集数')
+    else ElMessage.success(`预检完成：待处理 ${preview.value.candidateEpisodes} 集`)
+  } catch (e) { ElMessage.error(e.message || '预检失败') }
+  finally { previewing.value = false }
+}
+
 async function startTask() {
   starting.value = true
   try {
-    const common = {
-      rangeMode: job.value.rangeMode,
-      strategyIds: job.value.strategyIds,
-      dryRun: job.value.runMode === 'dry_run',
+    const payload = buildTaskPayload()
+    const key = payloadKey(payload)
+    if (!preview.value || previewKey.value !== key) {
+      ElMessage.warning('请先预检当前范围')
+      return
     }
-    let payload = {}
-    if (job.value.rangeMode === 'vod') {
-      if (!job.value.vodId) {
-        ElMessage.warning('请先选择精确影片')
-        return
-      }
-      if (!selectedPlayIds.value.length) {
-        ElMessage.warning('请勾选要清洗的线路')
-        return
-      }
-      payload = { ...common, vodId: job.value.vodId, playIds: selectedPlayIds.value }
-    } else if (job.value.rangeMode === 'line') {
-      const playId = String(job.value.playId || '').trim()
-      if (!/^\d+$/.test(playId)) {
-        ElMessage.warning('请输入线路ID')
-        return
-      }
-      payload = { ...common, playId }
-    } else {
-      if (!job.value.sourceId && !job.value.categoryName) {
-        ElMessage.warning('批量清洗请至少选择采集源或分类')
-        return
-      }
-      payload = {
-        ...common,
-        sourceId: job.value.sourceId || undefined,
-        categoryName: job.value.categoryName || undefined,
-        limit: job.value.limit,
-      }
-    }
-    if (job.value.episodeMode === 'one') {
-      const rawEpIndex = String(job.value.epIndex || '').trim()
-      if (!/^\d+$/.test(rawEpIndex)) {
-        ElMessage.warning('指定集数必须是 0 或正整数')
-        return
-      }
-      payload.epIndex = Number(rawEpIndex)
-    } else {
-      payload.episodeMode = job.value.episodeMode
+    if (!preview.value.candidateEpisodes) {
+      ElMessage.warning('预检没有可清洗集数')
+      return
     }
     const r = await api.createHlsCleanTask(payload)
     ElMessage.success('已提交清洗任务 #' + r.taskId)
   } catch (e) { ElMessage.error(e.message || '提交失败') }
   finally { starting.value = false }
 }
+
+watch(job, resetPreview, { deep: true })
 
 onMounted(() => { load(); loadResults(1) })
 </script>
@@ -760,10 +868,14 @@ onMounted(() => { load(); loadResults(1) })
 .line-panel-head b { display: block; color: var(--text-1); font-size: 14px; margin-bottom: 4px; }
 .line-panel-head span { color: var(--text-3); font-size: 12px; }
 .line-table { width: 100%; }
+.preview-box { margin: 2px 0 0 90px; max-width: 990px; display: flex; flex-direction: column; gap: 10px; }
+.preview-desc { color: var(--text-3); font-size: 12px; margin-top: 4px; }
+.preview-table { width: 100%; }
 @media (max-width: 980px) {
   .toolbar { align-items: flex-start; flex-direction: column; }
   .job-form { display: block; }
   .line-panel { margin-left: 0; }
+  .preview-box { margin-left: 0; }
   .line-panel-head { align-items: flex-start; flex-direction: column; }
 }
 </style>

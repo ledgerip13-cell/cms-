@@ -272,6 +272,7 @@ export async function createCollectTask(sourceId: number, opts: SyncOptions & { 
 export async function createHlsCleanTask(opts: {
   sourceId?: number | string;
   categoryName?: string;
+  categoryNames?: string[];
   vodId?: number;
   playId?: number;
   playIds?: number[];
@@ -281,12 +282,15 @@ export async function createHlsCleanTask(opts: {
   strategyId?: string;
   strategyIds?: string[];
   dryRun?: boolean;
+  skipCleaned?: boolean;
   priority?: number;
 } = {}) {
   const normalized = normalizeHlsCleanTaskOptions(opts);
   const duplicate = await findActiveHlsCleanTask(normalized.key);
   if (duplicate) return duplicate;
   const playIds = normalized.opts.playIds || [];
+  const categoryNames = normalized.opts.categoryNames || [];
+  const categoryLabel = categoryNames.length > 1 ? `多个分类(${categoryNames.length})` : categoryNames[0] || "";
   const [source, vod] = await Promise.all([
     normalized.opts.sourceId ? prisma.source.findUnique({ where: { id: normalized.opts.sourceId }, select: { name: true } }) : null,
     normalized.opts.vodId ? prisma.vod.findUnique({ where: { id: normalized.opts.vodId }, select: { name: true } }) : null,
@@ -299,12 +303,12 @@ export async function createHlsCleanTask(opts: {
     ? `线路#${normalized.opts.playId}`
     : normalized.opts.vodId
       ? `影片「${vod?.name || normalized.opts.vodId}」`
-      : normalized.opts.sourceId && normalized.opts.categoryName
-        ? `${source?.name || `源#${normalized.opts.sourceId}`} / ${normalized.opts.categoryName}`
+      : normalized.opts.sourceId && categoryLabel
+        ? `${source?.name || `源#${normalized.opts.sourceId}`} / ${categoryLabel}`
         : normalized.opts.sourceId
           ? `${source?.name || `源#${normalized.opts.sourceId}`}`
-          : normalized.opts.categoryName
-            ? normalized.opts.categoryName
+          : categoryLabel
+            ? categoryLabel
             : "全部范围";
   const task = await prisma.task.create({
     data: {
@@ -337,12 +341,20 @@ function normalizeHlsCleanTaskOptions(opts: any = {}) {
   const playIds = Array.isArray(opts.playIds)
     ? [...new Set<number>(opts.playIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b)
     : [];
+  const categoryNames = [
+    ...(Array.isArray(opts.categoryNames) ? opts.categoryNames : []),
+    ...(String(opts.categoryName || "").trim() ? [opts.categoryName] : []),
+  ]
+    .map((x: any) => String(x || "").trim())
+    .filter(Boolean);
+  const uniqueCategoryNames = [...new Set(categoryNames)].sort((a, b) => a.localeCompare(b, "zh-CN"));
   const strategyIds = Array.isArray(opts.strategyIds)
     ? [...new Set<string>(opts.strategyIds.map((x: any) => String(x || "").trim()).filter(Boolean))].sort()
     : undefined;
   const normalized: any = {
     sourceId: normalizeMaybeNumber(opts.sourceId),
-    categoryName: String(opts.categoryName || "").trim() || undefined,
+    categoryName: uniqueCategoryNames.length === 1 ? uniqueCategoryNames[0] : undefined,
+    categoryNames: uniqueCategoryNames.length ? uniqueCategoryNames : undefined,
     vodId: normalizeMaybeNumber(opts.vodId),
     playId: normalizeMaybeNumber(opts.playId),
     playIds: playIds.length ? playIds : undefined,
@@ -352,6 +364,7 @@ function normalizeHlsCleanTaskOptions(opts: any = {}) {
     strategyId: String(opts.strategyId || "").trim() || undefined,
     strategyIds,
     dryRun: typeof opts.dryRun === "boolean" ? opts.dryRun : undefined,
+    skipCleaned: Boolean(opts.skipCleaned),
   };
   for (const key of Object.keys(normalized)) {
     if (typeof normalized[key] === "undefined") delete normalized[key];
@@ -359,6 +372,7 @@ function normalizeHlsCleanTaskOptions(opts: any = {}) {
   const key = JSON.stringify({
     sourceId: normalized.sourceId || null,
     categoryName: normalized.categoryName || "",
+    categoryNames: normalized.categoryNames || [],
     vodId: normalized.vodId || null,
     playId: normalized.playId || null,
     playIds: normalized.playIds || [],
@@ -368,6 +382,7 @@ function normalizeHlsCleanTaskOptions(opts: any = {}) {
     strategyId: normalized.strategyId || "",
     strategyIds: normalized.strategyIds || [],
     dryRun: typeof normalized.dryRun === "boolean" ? normalized.dryRun : null,
+    skipCleaned: Boolean(normalized.skipCleaned),
   });
   return { opts: normalized, key };
 }
@@ -384,6 +399,123 @@ async function findActiveHlsCleanTask(key: string) {
     if (normalizeHlsCleanTaskOptions(opts).key === key) return row;
   }
   return null;
+}
+
+function hlsCleanCategoryNames(opts: any = {}) {
+  return Array.isArray(opts.categoryNames)
+    ? opts.categoryNames.map((x: any) => String(x || "").trim()).filter(Boolean)
+    : String(opts.categoryName || "").trim()
+      ? [String(opts.categoryName).trim()]
+      : [];
+}
+
+function buildHlsCleanPlayWhere(opts: any = {}, applySkipCleaned = true) {
+  const playIds = Array.isArray(opts.playIds)
+    ? opts.playIds.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
+    : [];
+  const categoryNames = hlsCleanCategoryNames(opts);
+  const where: any = {};
+  if (playIds.length) where.id = { in: playIds };
+  else if (opts.playId) where.id = Number(opts.playId);
+  if (opts.sourceId) where.sourceId = Number(opts.sourceId);
+  if (!playIds.length && opts.vodId) where.vodId = Number(opts.vodId);
+  if (categoryNames.length === 1) where.vod = { typeName: categoryNames[0] };
+  else if (categoryNames.length > 1) where.vod = { typeName: { in: categoryNames } };
+  if (applySkipCleaned && opts.skipCleaned) where.hasCleanResult = false;
+  where.flag = { not: "icloudm3u8" };
+  return where;
+}
+
+function buildHlsCleanUnits(
+  plays: Array<{
+    id: number;
+    sourceId: number;
+    episodes: string;
+    hasCleanResult?: boolean;
+    vod: { id: number; name: string; typeName: string | null };
+    source?: { id: number; name: string } | null;
+  }>,
+  opts: any = {},
+) {
+  const units: Array<{ playId: number; sourceId: number; epIndex: number; title: string }> = [];
+  const samples: Array<{
+    playId: number;
+    vodId: number;
+    vodName: string;
+    typeName: string;
+    sourceId: number;
+    sourceName: string;
+    hasCleanResult: boolean;
+    epCount: number;
+    selectedEpisodes: number;
+  }> = [];
+  for (const p of plays) {
+    let eps: Array<{ name?: string; url?: string }> = [];
+    try { eps = JSON.parse(p.episodes || "[]"); } catch {}
+    const before = units.length;
+    if (typeof opts.epIndex === "number" && Number.isFinite(opts.epIndex)) {
+      if (eps[opts.epIndex]?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: opts.epIndex, title: `${p.vod.name} ${eps[opts.epIndex]?.name || ""}` });
+    } else if (opts.episodeMode === "all") {
+      eps.forEach((ep, i) => { if (ep?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: i, title: `${p.vod.name} ${ep.name || `第${i + 1}集`}` }); });
+    } else if (eps[0]?.url) {
+      units.push({ playId: p.id, sourceId: p.sourceId, epIndex: 0, title: `${p.vod.name} ${eps[0]?.name || "第1集"}` });
+    }
+    const selectedEpisodes = units.length - before;
+    if (samples.length < 10 && selectedEpisodes > 0) {
+      samples.push({
+        playId: p.id,
+        vodId: p.vod.id,
+        vodName: p.vod.name,
+        typeName: p.vod.typeName || "未分类",
+        sourceId: p.sourceId,
+        sourceName: p.source?.name || `源#${p.sourceId}`,
+        hasCleanResult: Boolean(p.hasCleanResult),
+        epCount: eps.filter((ep) => ep?.url).length,
+        selectedEpisodes,
+      });
+    }
+  }
+  return { units, samples };
+}
+
+export async function previewHlsCleanTask(opts: {
+  sourceId?: number | string;
+  categoryName?: string;
+  categoryNames?: string[];
+  vodId?: number;
+  playId?: number;
+  playIds?: number[];
+  epIndex?: number;
+  episodeMode?: "first" | "all";
+  limit?: number;
+  skipCleaned?: boolean;
+} = {}) {
+  const normalized = normalizeHlsCleanTaskOptions(opts).opts;
+  const limit = Math.max(1, Math.min(2000, Number(normalized.limit) || 100));
+  const baseWhere = buildHlsCleanPlayWhere(normalized, false);
+  const candidateWhere = buildHlsCleanPlayWhere(normalized, true);
+  const [matchingLines, cleanedLines, candidateLines, plays] = await Promise.all([
+    prisma.play.count({ where: baseWhere }),
+    prisma.play.count({ where: { ...baseWhere, hasCleanResult: true } }),
+    prisma.play.count({ where: candidateWhere }),
+    prisma.play.findMany({
+      where: candidateWhere,
+      include: { vod: { select: { id: true, name: true, typeName: true } }, source: { select: { id: true, name: true } } },
+      orderBy: { id: "asc" },
+      take: limit,
+    }),
+  ]);
+  const { units, samples } = buildHlsCleanUnits(plays, normalized);
+  return {
+    matchingLines,
+    cleanedLines,
+    candidateLines,
+    skippedCleanedLines: normalized.skipCleaned ? Math.max(0, matchingLines - candidateLines) : 0,
+    candidateEpisodes: units.length,
+    limit,
+    skipCleaned: Boolean(normalized.skipCleaned),
+    samples,
+  };
 }
 
 async function pumpHlsCleanQueue() {
@@ -579,6 +711,7 @@ export async function removeArchive(vodId: number) {
 async function runHlsCleanTask(taskId: number, opts: {
   sourceId?: number;
   categoryName?: string;
+  categoryNames?: string[];
   vodId?: number;
   playId?: number;
   playIds?: number[];
@@ -588,6 +721,7 @@ async function runHlsCleanTask(taskId: number, opts: {
   strategyId?: string;
   strategyIds?: string[];
   dryRun?: boolean;
+  skipCleaned?: boolean;
 }) {
   if (canceled.has(taskId)) {
     await taskUpdate({ where: { id: taskId }, data: { status: "canceled", message: "已手动中止", finishedAt: new Date() } });
@@ -606,39 +740,22 @@ async function runHlsCleanTask(taskId: number, opts: {
   let clean = 0, noAds = 0, uncertain = 0, failed = 0, processed = 0, totalUnits = 0;
   try {
     const limit = Math.max(1, Math.min(2000, Number(opts.limit) || 100));
-    const playIds = Array.isArray(opts.playIds) ? opts.playIds.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0) : [];
-    const where: any = {};
-    if (playIds.length) where.id = { in: playIds };
-    else if (opts.playId) where.id = Number(opts.playId);
-    if (opts.sourceId) where.sourceId = Number(opts.sourceId);
-    if (!playIds.length && opts.vodId) where.vodId = Number(opts.vodId);
-    if (opts.categoryName) where.vod = { typeName: String(opts.categoryName) };
-    where.flag = { not: "icloudm3u8" }; // 排除 iCloud 客户端解析链路
+    const normalized = normalizeHlsCleanTaskOptions(opts).opts;
+    const where = buildHlsCleanPlayWhere(normalized, true);
     const plays = await prisma.play.findMany({
       where,
       include: { vod: { select: { id: true, name: true, typeName: true } }, source: { select: { id: true, name: true } } },
       orderBy: { id: "asc" },
       take: limit,
     });
-    const units: Array<{ playId: number; sourceId: number; epIndex: number; title: string }> = [];
-    for (const p of plays) {
-      let eps: Array<{ name?: string; url?: string }> = [];
-      try { eps = JSON.parse(p.episodes || "[]"); } catch {}
-      if (typeof opts.epIndex === "number" && Number.isFinite(opts.epIndex)) {
-        if (eps[opts.epIndex]?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: opts.epIndex, title: `${p.vod.name} ${eps[opts.epIndex]?.name || ""}` });
-      } else if (opts.episodeMode === "all") {
-        eps.forEach((ep, i) => { if (ep?.url) units.push({ playId: p.id, sourceId: p.sourceId, epIndex: i, title: `${p.vod.name} ${ep.name || `第${i + 1}集`}` }); });
-      } else if (eps[0]?.url) {
-        units.push({ playId: p.id, sourceId: p.sourceId, epIndex: 0, title: `${p.vod.name} ${eps[0]?.name || "第1集"}` });
-      }
-    }
+    const { units } = buildHlsCleanUnits(plays, normalized);
     if (!units.length) {
       await taskUpdate({ where: { id: taskId }, data: { status: "done", progress: 100, message: "没有可清洗的 HLS 集数", finishedAt: new Date() } });
       return;
     }
 
     totalUnits = units.length;
-    await taskUpdate({ where: { id: taskId }, data: { pageTotal: units.length, message: `待清洗 ${units.length} 集` } });
+    await taskUpdate({ where: { id: taskId }, data: { pageTotal: units.length, message: `${normalized.skipCleaned ? "已跳过已清洗线路，" : ""}待清洗 ${units.length} 集` } });
     const cfg = await ensureHlsCleanConfig();
     const workerCount = Math.max(1, Math.min(12, Number((cfg as any).workerConcurrency) || 3));
     const sourceLimit = Math.max(1, Math.min(4, Number((cfg as any).sourceConcurrency) || 1));
