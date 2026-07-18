@@ -1068,7 +1068,7 @@ const X8_LOGIN_WALL_CACHE_KEY = 'vcms.x8.login.wall'
 const X8_LOGIN_WALL_CACHE_TTL_MS = 1000 * 60 * 60 * 24
 const X8_LOGIN_WALL_COUNT = 48
 const X8_HISTORY_PAGE_SIZE = 20
-const X8_TRAILER_CACHE_KEY = 'vcms.x8.trailers.v2'
+const X8_TRAILER_CACHE_KEY = 'vcms.x8.trailers.v3'
 const X8_TRAILER_CACHE_TTL_MS = 3 * 60 * 1000
 const X8_TRAILER_COUNT = 8
 let heroTouchX = 0
@@ -1574,16 +1574,16 @@ function heroImage(item) {
 }
 function trailerCoverImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
-  const wide = images.find(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
+  const wide = images.find(img => img.wide && img.source !== 'posterFallback')
   return imgUrl(wide?.url || '')
 }
 function hasTrailerWideImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
-  return images.some(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
+  return images.some(img => img.wide && img.source !== 'posterFallback')
 }
 function withRandomHeroImage(item) {
   const images = Array.isArray(item?.heroImages) ? item.heroImages.filter(img => img?.url) : []
-  const wideImages = images.filter(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
+  const wideImages = images.filter(img => img.wide && img.source !== 'posterFallback')
   const fallbackImages = images.filter(img => !wideImages.includes(img))
   const pool = wideImages.length ? wideImages : fallbackImages
   if (!pool.length) return item

@@ -57,11 +57,9 @@ function heroImageCandidates(vod: any) {
   for (const img of images) {
     if (!img?.url) continue;
     const hasSize = Number(img.width) > 0 && Number(img.height) > 0;
-    const wide = img.type === "poster"
-      ? true
-      : hasSize
-        ? Number(img.width) > Number(img.height)
-        : Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
+    const wide = hasSize
+      ? Number(img.width) > Number(img.height)
+      : Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
     if (img.isHero || img.type === "backdrop" || img.type === "still" || img.type === "poster") push(img.url, wide, img.type || "asset");
   }
   push(vod.officialPic || vod.pic || vod.localPic || "", false, "posterFallback");
@@ -82,7 +80,7 @@ function withHeroImage(vod: any) {
 function hasWideVodImageAsset(vod: any) {
   const images: Array<{ url?: string; type?: string; isHero?: boolean; width?: number; height?: number }> = Array.isArray(vod?.images) ? vod.images : [];
   return images.some((img) => {
-    if (!img?.url || img.type === "poster") return false;
+    if (!img?.url) return false;
     const width = Number(img.width) || 0;
     const height = Number(img.height) || 0;
     return (width > 0 && height > 0 && width > height) || Boolean(img.isHero || img.type === "backdrop" || img.type === "still");
@@ -755,7 +753,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       status: "online",
       typeName: requestedPublicType(publicTypes, TRAILER_TYPE_NAME),
       ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
-      images: { some: { type: { not: "poster" } } },
+      images: { some: {} },
       OR: yearFilters,
     };
     const rows = await prisma.vod.findMany({
