@@ -167,7 +167,7 @@
 
         <x8-panel title="正在热播" :changeable="true" @change="shuffleHot" @more="goRank">
           <div class="x8-card-grid hot">
-            <x8-card v-for="item in hotShowcase" :key="`hot-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
+            <x8-card v-for="item in hotShowcase" :key="`hot-${item.id}`" :item="item" :followed="isCardFollowed(item)" @open="goDetail" @follow="toggleCardFollow" />
             <template v-if="loading && !hotShowcase.length">
               <x8-card-skeleton v-for="index in hotSkeletonCount" :key="`hot-sk-${index}`" />
             </template>
@@ -235,7 +235,7 @@
                 <button class="x8-change" type="button" @click="refreshSection(section)">换一换</button>
               </div>
               <div class="x8-card-grid section">
-                <x8-card v-for="item in section.items" :key="`${section.key}-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
+                <x8-card v-for="item in section.items" :key="`${section.key}-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
                 <template v-if="loading && !section.items.length">
                   <x8-card-skeleton v-for="index in 12" :key="`${section.key}-sk-${index}`" short />
                 </template>
@@ -291,7 +291,7 @@
             <x8-card-skeleton v-for="index in browseSkeletonCount" :key="`browse-sk-${index}`" />
           </template>
           <template v-else>
-            <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" @open="goDetail" @follow="goLogin" />
+            <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" :followed="isCardFollowed(item)" @open="goDetail" @follow="toggleCardFollow" />
           </template>
         </div>
         <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
@@ -421,7 +421,7 @@
         </section>
         <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
           <div class="x8-card-grid section">
-            <x8-card v-for="item in related.slice(0, 12)" :key="`detail-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
+            <x8-card v-for="item in related.slice(0, 12)" :key="`detail-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
           </div>
         </x8-panel>
       </section>
@@ -635,7 +635,7 @@
 
             <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
               <div class="x8-card-grid section">
-                <x8-card v-for="item in related.slice(0, playLikeCount)" :key="`play-rel-${item.id}`" :item="item" short @open="goDetail" @follow="goLogin" />
+                <x8-card v-for="item in related.slice(0, playLikeCount)" :key="`play-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
               </div>
             </x8-panel>
           </section>
@@ -1028,6 +1028,7 @@ const miniLinesEl = ref(null)
 const miniEpisodesEl = ref(null)
 const user = currentUser
 const followed = ref(false)
+const followedVodIds = ref(new Set())
 const x8AvatarBroken = ref(false)
 const loginMode = ref('login')
 const loginConfig = ref({ allowRegister: true, inviteRequired: false })
@@ -1324,6 +1325,7 @@ const X8Card = defineComponent({
   props: {
     item: { type: Object, required: true },
     short: { type: Boolean, default: false },
+    followed: { type: Boolean, default: false },
   },
   emits: ['open', 'follow'],
   setup(props, { emit }) {
@@ -1355,13 +1357,13 @@ const X8Card = defineComponent({
               h('em', `热度值 ${heat()}`),
             ]),
             h('button', {
-              class: 'x8-follow-btn',
+              class: ['x8-follow-btn', props.followed ? 'on' : ''],
               type: 'button',
               onClick: event => {
                 event.stopPropagation()
                 emit('follow', props.item.id)
               },
-            }, '追剧'),
+            }, props.followed ? '追剧中' : '追剧'),
           ]),
         ]),
       ]),
@@ -1653,6 +1655,10 @@ function goUser(tab) {
 }
 async function logoutX8() {
   clearSession()
+  x8UserFollows.value = []
+  x8FollowSelected.value = []
+  followedVodIds.value = new Set()
+  followed.value = false
   x8AvatarBroken.value = false
   await refreshX8Types()
   notifySuccess('已退出登录')
@@ -1758,6 +1764,7 @@ async function submitX8Auth() {
     user.value = result.user
     x8AvatarBroken.value = false
     await refreshX8Types()
+    await refreshFollowedIds()
     notifySuccess(loginMode.value === 'register' ? '注册成功' : '登录成功')
     resetLoginForm()
     const redirect = String(route.query.redirect || '')
@@ -1791,6 +1798,50 @@ function x8FollowVod(item) {
 }
 function x8FollowVodId(item) {
   return Number(x8FollowVod(item)?.id) || 0
+}
+function syncFollowedIds(rows = x8UserFollows.value) {
+  followedVodIds.value = new Set((Array.isArray(rows) ? rows : []).map(x8FollowVodId).filter(Boolean))
+  if (vod.value?.id) followed.value = followedVodIds.value.has(Number(vod.value.id))
+}
+function setFollowedId(id, isFollowed) {
+  const next = new Set(followedVodIds.value)
+  if (isFollowed) next.add(Number(id))
+  else next.delete(Number(id))
+  followedVodIds.value = next
+  if (Number(vod.value?.id) === Number(id)) followed.value = Boolean(isFollowed)
+}
+function isCardFollowed(item) {
+  const id = Number(item?.id) || 0
+  return Boolean(id && followedVodIds.value.has(id))
+}
+async function refreshFollowedIds() {
+  if (!user.value) {
+    syncFollowedIds([])
+    return []
+  }
+  const rows = await api.follows(100).catch(() => [])
+  const nextRows = Array.isArray(rows) ? rows : []
+  x8UserFollows.value = nextRows
+  syncFollowedIds(nextRows)
+  return nextRows
+}
+async function toggleCardFollow(id) {
+  const vodId = Number(id)
+  if (!vodId) return
+  const currentUser = await ensureUser()
+  if (!currentUser) return goLogin()
+  const nextFollowed = !followedVodIds.value.has(vodId)
+  try {
+    const result = nextFollowed ? await api.followVod(vodId) : await api.unfollowVod(vodId)
+    setFollowedId(vodId, Boolean(result?.followed))
+    if (!result?.followed) {
+      x8UserFollows.value = x8UserFollows.value.filter(item => x8FollowVodId(item) !== vodId)
+      x8FollowSelected.value = x8FollowSelected.value.filter(item => item !== vodId)
+    }
+    notifySuccess(result?.followed ? '已加入追剧' : '已取消追剧')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '追剧操作失败'))
+  }
 }
 function goUserHistory(item) {
   const id = item?.vod?.id
@@ -1856,6 +1907,7 @@ async function cancelX8Follows(ids) {
     await Promise.all(nextIds.map(id => api.unfollowVod(id)))
     x8UserFollows.value = x8UserFollows.value.filter(item => !nextIds.includes(x8FollowVodId(item)))
     x8FollowSelected.value = x8FollowSelected.value.filter(id => !nextIds.includes(id))
+    nextIds.forEach(id => setFollowedId(id, false))
     if (!x8UserFollows.value.length) x8FollowEditing.value = false
     notifySuccess(nextIds.length > 1 ? `已取消 ${nextIds.length} 部追剧` : '已取消追剧')
   } catch (error) {
@@ -1971,6 +2023,7 @@ async function loadX8UserCenter() {
     x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
     x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
     x8UserFollows.value = Array.isArray(followRows) ? followRows : []
+    syncFollowedIds(x8UserFollows.value)
     x8FollowSelected.value = x8FollowSelected.value.filter(id => x8UserFollows.value.some(item => x8FollowVodId(item) === id))
     if (!x8UserFollows.value.length) x8FollowEditing.value = false
     x8Prefs.value = Array.isArray(user.value?.favoriteTypes) ? [...user.value.favoriteTypes] : []
@@ -2585,6 +2638,10 @@ async function toggleFollow() {
   }
   const result = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
   followed.value = Boolean(result?.followed)
+  setFollowedId(vod.value.id, Boolean(result?.followed))
+  if (!result?.followed) {
+    x8UserFollows.value = x8UserFollows.value.filter(item => x8FollowVodId(item) !== Number(vod.value.id))
+  }
 }
 async function refreshSection(section) {
   const res = await api.vods({ page: 1 + ((section.page || 1) % 3), size: 12, type: section.type, sort: 'recent' }).catch(() => ({ list: [] }))
@@ -2610,6 +2667,7 @@ async function ensureTypes(force = false) {
 async function loadHome() {
   loading.value = true
   try {
+    void refreshFollowedIds()
     const typeRows = await ensureTypes().catch(() => [])
     const sectionTypes = (typeRows || []).map(item => item.name).filter(Boolean)
     homeSections.value = sectionTypes.map(type => ({
@@ -2668,6 +2726,7 @@ async function loadHome() {
 }
 async function loadBrowse() {
   const requestId = ++browseRequestId
+  void refreshFollowedIds()
   loading.value = true
   try {
     await ensureTypes()
@@ -2699,6 +2758,7 @@ async function loadBrowse() {
 async function loadRanks() {
   loading.value = true
   try {
+    void refreshFollowedIds()
     await ensureTypes()
     const rankTypes = ['电影', '动漫', '电视剧', '短剧', '漫剧']
     const [hot, hotFallback, ...groups] = await Promise.all([
@@ -2773,6 +2833,7 @@ async function loadVod(withPlay = false) {
     ])
     related.value = relatedRows || []
     followed.value = Boolean(state?.followed)
+    if (currentUser) setFollowedId(id, Boolean(state?.followed))
     vodHistory.value = state?.history || localHistoryForVod(id)
     const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
     if (!requestedLineId && historyLine) currentLineId.value = historyLine.id
@@ -2800,6 +2861,7 @@ watch(() => route.fullPath, (_next, prev) => {
 }, { immediate: true })
 watch(x8UserAccessSignature, () => {
   void refreshX8Types()
+  void refreshFollowedIds()
 })
 watch(x8HistoryPageCount, (count) => {
   if (x8HistoryPage.value > count) x8HistoryPage.value = count
@@ -2820,7 +2882,7 @@ onMounted(() => {
   startHeroTimer()
   startSearchHintTimer()
   loadSearchHints()
-  refreshUser().catch(() => {})
+  refreshUser().then(() => refreshFollowedIds()).catch(() => {})
 })
 onBeforeUnmount(() => {
   saveWatchHistory(true)
@@ -3934,6 +3996,11 @@ onBeforeUnmount(() => {
 }
 .x8-card-hover .x8-follow-btn:hover {
   background: #7c8fff;
+}
+.x8-card-hover .x8-follow-btn.on {
+  color: #111;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(255,255,255,.18);
 }
 .x8-card-info {
   height: 48px;
