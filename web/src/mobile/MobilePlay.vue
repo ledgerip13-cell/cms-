@@ -132,6 +132,23 @@
       </p>
     </section>
 
+    <section v-if="vod.lines?.length" class="mp-panel mp-lines-panel">
+      <header>
+        <h2>播放线路</h2>
+        <span>{{ currentLineLabel }}</span>
+      </header>
+      <div class="mp-line-tabs">
+        <button v-for="(line, index) in vod.lines" :key="line.id || index" type="button" :class="{ on: lineIdx === index }" @click="selectLine(index)">
+          {{ lineLabel(line, index) }}
+        </button>
+      </div>
+      <div v-if="channelOptions.length > 1" class="mp-channel-tabs">
+        <button v-for="(channel, index) in channelOptions" :key="channel.id || index" type="button" :class="{ on: chanIdx === index }" @click="selectChannel(index)">
+          {{ channelLabel(channel, index) }}
+        </button>
+      </div>
+    </section>
+
     <section v-if="episodes.length" class="mp-panel">
       <header>
         <h2>选集</h2>
@@ -231,6 +248,7 @@ let playbackSeq = 0
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value] || null)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
+const channelOptions = computed(() => curLine.value?.channels?.length ? curLine.value.channels : [])
 const episodes = computed(() => curChannel.value?.episodes || [])
 const hasPrevEp = computed(() => epIdx.value > 0)
 const hasNextEp = computed(() => epIdx.value < episodes.value.length - 1)
@@ -250,6 +268,12 @@ const playerTitle = computed(() => {
   const name = vod.value?.name || '播放'
   return currentEpisodeName.value ? `${name} · ${currentEpisodeName.value}` : name
 })
+const currentLineLabel = computed(() => {
+  const line = curLine.value
+  if (!line) return '默认线路'
+  const base = lineLabel(line, lineIdx.value)
+  return channelOptions.value.length > 1 ? `${base} · ${channelLabel(curChannel.value, chanIdx.value)}` : base
+})
 const heroStyle = computed(() => {
   const url = poster(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
@@ -257,6 +281,14 @@ const heroStyle = computed(() => {
 
 function poster(row) {
   return imgUrl(row?.officialPic || row?.heroImage || row?.heroPic || row?.pic || row?.localPic || '')
+}
+
+function lineLabel(line, index = 0) {
+  return line?.sourceName || line?.flag || `线路 ${index + 1}`
+}
+
+function channelLabel(channel, index = 0) {
+  return channel?.name || channel?.flag || channel?.sourceName || `通道 ${index + 1}`
 }
 
 function hideBrokenImg(event) {
@@ -765,6 +797,25 @@ function playEp(index) {
   playCurrent()
 }
 
+function selectLine(index) {
+  const next = Math.max(0, Math.min(Number(index) || 0, (vod.value.lines || []).length - 1))
+  if (lineIdx.value === next && chanIdx.value === 0) return
+  lineIdx.value = next
+  chanIdx.value = 0
+  epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
+  retryingLine = false
+  playCurrent()
+}
+
+function selectChannel(index) {
+  const next = Math.max(0, Math.min(Number(index) || 0, channelOptions.value.length - 1))
+  if (chanIdx.value === next) return
+  chanIdx.value = next
+  epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
+  retryingLine = false
+  playCurrent()
+}
+
 function handlePlaybackError() {
   if (tryNextLine()) return
   showNotice('播放失败，请稍后重试')
@@ -926,7 +977,7 @@ onDeactivated(() => {
   min-height: 100dvh;
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
-  background: #f7f7f8;
+  background: #fff;
   color: #15171d;
 }
 .mp-player {
@@ -1306,13 +1357,15 @@ onDeactivated(() => {
 }
 .mp-info,
 .mp-panel {
-  margin: 12px;
-  border-radius: 18px;
+  margin: 0;
+  border-radius: 0;
   background: #fff;
-  box-shadow: 0 10px 28px rgba(25, 28, 36, .06);
+  box-shadow: none;
+  border-top: 8px solid #f5f6f8;
 }
 .mp-info {
-  padding: 12px;
+  padding: 14px 14px 16px;
+  border-top: 0;
 }
 .mp-title-row {
   display: flex;
@@ -1394,7 +1447,7 @@ onDeactivated(() => {
   overflow: hidden;
 }
 .mp-panel {
-  padding: 14px;
+  padding: 16px 14px 18px;
 }
 .mp-panel header {
   display: flex;
@@ -1412,6 +1465,45 @@ onDeactivated(() => {
   color: #8a8f99;
   font-size: 12px;
   font-weight: var(--small-text-max-weight);
+}
+.mp-lines-panel {
+  padding-bottom: 14px;
+}
+.mp-line-tabs,
+.mp-channel-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mp-line-tabs::-webkit-scrollbar,
+.mp-channel-tabs::-webkit-scrollbar {
+  display: none;
+}
+.mp-channel-tabs {
+  margin-top: 10px;
+}
+.mp-line-tabs button,
+.mp-channel-tabs button {
+  flex: 0 0 auto;
+  max-width: 128px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 13px;
+  color: #4b515c;
+  background: #f2f3f5;
+  font-size: 13px;
+  font-weight: var(--small-text-max-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-line-tabs button.on,
+.mp-channel-tabs button.on {
+  color: #fff;
+  background: #15171d;
 }
 .mp-episode-grid {
   display: grid;

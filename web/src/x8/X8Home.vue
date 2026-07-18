@@ -456,8 +456,8 @@
                       @pause="onVideoPause"
                       @volumechange="syncVideoState"
                       @ended="onVideoEnded"
-                      @webkitbeginfullscreen="nativeFullscreen = true"
-                      @webkitendfullscreen="nativeFullscreen = false"
+                      @webkitbeginfullscreen="onNativeVideoFullscreen(true)"
+                      @webkitendfullscreen="onNativeVideoFullscreen(false)"
                     ></video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
@@ -2498,30 +2498,37 @@ async function togglePip() {
 }
 async function requestNativeFullscreen() {
   const video = videoEl.value
-  if (!video) return
+  const box = videoBox.value
+  if (!video && !box) return
   try {
-    video.controls = true
     nativeFullscreen.value = true
     videoFullscreen.value = false
-    if (video.webkitEnterFullscreen) {
+    if (box?.requestFullscreen) {
+      await box.requestFullscreen()
+      return
+    }
+    if (box?.webkitRequestFullscreen) {
+      await box.webkitRequestFullscreen()
+      return
+    }
+    if (video?.webkitEnterFullscreen) {
+      video.controls = false
       video.webkitEnterFullscreen()
-      return
-    }
-    if (video.requestFullscreen) {
-      await video.requestFullscreen()
-      return
-    }
-    if (video.webkitRequestFullscreen) {
-      await video.webkitRequestFullscreen()
     }
   } catch {}
+}
+function onNativeVideoFullscreen(active) {
+  nativeFullscreen.value = Boolean(active)
+  const video = videoEl.value
+  if (video) video.controls = false
 }
 function syncFullscreenState() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
   const video = videoEl.value
+  const box = videoBox.value
   videoFullscreen.value = false
-  nativeFullscreen.value = fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
-  if (!nativeFullscreen.value && video) video.controls = false
+  nativeFullscreen.value = fullscreenElement === box || fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
+  if (video) video.controls = false
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
