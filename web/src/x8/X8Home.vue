@@ -297,7 +297,14 @@
         <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
         <div class="x8-pager" v-if="x8BrowsePageCount > 1 || page > 1 || hasMore">
           <button type="button" :disabled="page <= 1" @click="setBrowse({ page: page - 1 })">上一页</button>
-          <span>{{ x8BrowsePageText }}</span>
+          <button
+            v-for="p in x8BrowsePagerPages"
+            :key="`browse-page-${p}`"
+            type="button"
+            :class="{ active: p === page }"
+            :aria-current="p === page ? 'page' : undefined"
+            @click="setBrowse({ page: p })"
+          >{{ p }}</button>
           <button type="button" :disabled="x8BrowseNextDisabled" @click="setBrowse({ page: page + 1 })">下一页</button>
         </div>
       </section>
@@ -1129,7 +1136,14 @@ const browseSkeletonCount = computed(() => {
   return 6
 })
 const x8BrowsePageCount = computed(() => Math.max(1, Math.ceil((Number(total.value) || 0) / X8_BROWSE_PAGE_SIZE)))
-const x8BrowsePageText = computed(() => `第 ${page.value} / ${x8BrowsePageCount.value} 页`)
+const x8BrowsePagerPages = computed(() => {
+  const totalPages = Math.max(x8BrowsePageCount.value, page.value + (hasMore.value ? 1 : 0))
+  const start = Math.max(1, Math.min(page.value - 3, totalPages - 5))
+  const end = Math.min(totalPages, start + 5)
+  const pages = []
+  for (let p = start; p <= end; p++) pages.push(p)
+  return pages
+})
 const x8BrowseNextDisabled = computed(() => total.value > 0 ? page.value >= x8BrowsePageCount.value : !hasMore.value)
 const hotShowcase = computed(() => rotate(hotItems.value, hotOffset.value).slice(0, hotCols.value * 2))
 const navItems = computed(() => {
@@ -4335,6 +4349,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .x8-filter-line button.active,
+.x8-pager button.active,
 .x8-line-tabs button.active,
 .x8-episode-grid button.active {
   color: #111;
@@ -4348,8 +4363,12 @@ onBeforeUnmount(() => {
 .x8-pager {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 36px;
+}
+.x8-pager button {
+  min-width: 42px;
 }
 .x8-pager button:disabled {
   opacity: .35;

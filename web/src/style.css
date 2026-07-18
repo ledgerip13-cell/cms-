@@ -368,8 +368,9 @@ button { font-family: inherit; }
 .loading, .empty { text-align: center; color: var(--muted); padding: 70px 0; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 36px 0 12px; }
 .pager button { background: var(--card); border: 1px solid var(--line); color: var(--text);
-  padding: 9px 18px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: .15s; }
+  min-width: 42px; padding: 9px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: .15s; }
 .pager button:not(:disabled):hover { border-color: var(--btn-hover-border); color: var(--btn-hover-text); }
+.pager button.active { border-color: var(--btn-primary-bg); background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 700; }
 .pager button:disabled { opacity: .35; cursor: not-allowed; }
 
 .sb-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 65; backdrop-filter: blur(2px); }

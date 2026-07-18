@@ -240,7 +240,13 @@
 
       <div class="pager" v-if="page > 1 || hasMore">
         <button :disabled="page<=1" @click="go(page-1)">上一页</button>
-        <button disabled>{{ pagerText }}</button>
+        <button
+          v-for="p in pagerPages"
+          :key="p"
+          :class="{ active: p === page }"
+          :aria-current="p === page ? 'page' : undefined"
+          @click="go(p)"
+        >{{ p }}</button>
         <button :disabled="nextDisabled" @click="go(page+1)">下一页</button>
       </div>
     </template>
@@ -456,7 +462,14 @@ const sorts = [{ v:'recent', t:'最近更新' }, { v:'year', t:'按年份' }, { 
 const currentSortLabel = computed(() => sorts.find(s => s.v === sort.value)?.t || '最近更新')
 const totalKnown = computed(() => total.value !== null && total.value !== undefined && Number.isFinite(Number(total.value)))
 const pageCount = computed(() => totalKnown.value ? Math.max(1, Math.ceil(Number(total.value) / size)) : Math.max(page.value + (hasMore.value ? 1 : 0), 1))
-const pagerText = computed(() => `第 ${page.value} / ${pageCount.value} 页`)
+const pagerPages = computed(() => {
+  const totalPages = pageCount.value
+  const start = Math.max(1, Math.min(page.value - 3, totalPages - 5))
+  const end = Math.min(totalPages, start + 5)
+  const pages = []
+  for (let p = start; p <= end; p++) pages.push(p)
+  return pages
+})
 const nextDisabled = computed(() => totalKnown.value ? page.value >= pageCount.value : !hasMore.value)
 const filterSummary = computed(() => {
   const items = [sub.value || curType.value || '全部', currentSortLabel.value]
