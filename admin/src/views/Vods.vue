@@ -231,15 +231,19 @@
         </el-tag>
       </div>
       <div v-if="cur.images?.length" class="asset-box">
-        <div class="asset-title">图片资产</div>
+        <div class="asset-title">
+          图片资产
+          <span>封面=影片列表/详情竖图；首页横图=首页 Hero/预告等横版展示图</span>
+        </div>
         <div class="asset-imgs">
           <div v-for="img in cur.images.slice(0, 18)" :key="img.id" class="asset-img-card">
             <el-image :src="imgUrl(img.url)" fit="cover" class="asset-img">
               <template #error><div class="noimg">无图</div></template>
             </el-image>
             <div class="asset-img-actions">
-              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'cover')">设封面</el-button>
-              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'hero')">设首页图</el-button>
+              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'cover')">用作封面</el-button>
+              <el-button size="small" link type="primary" @click="setVodImage(cur, img, 'hero')">用作首页横图</el-button>
+              <el-button size="small" link type="danger" @click="deleteVodImage(cur, img)">删除</el-button>
             </div>
           </div>
         </div>
@@ -1126,7 +1130,15 @@ async function setVodImage(row, image, mode) {
   if (!row?.id || !image?.url) return
   const payload = mode === 'hero' ? { heroPic: image.url } : { officialPic: image.url }
   await api.editVod(row.id, payload)
-  ElMessage.success(mode === 'hero' ? '已设为首页图' : '已设为封面')
+  ElMessage.success(mode === 'hero' ? '已设为首页横图' : '已设为封面')
+  cur.value = await api.vod(row.id)
+  load()
+}
+async function deleteVodImage(row, image) {
+  if (!row?.id || !image?.id) return
+  await ElMessageBox.confirm('确认删除这张图片资产？如果它正被用作封面或首页横图，会同步清空对应设置。', '删除图片资产', { type: 'warning' })
+  await api.deleteVodImage(row.id, image.id)
+  ElMessage.success('图片资产已删除')
   cur.value = await api.vod(row.id)
   load()
 }
@@ -1228,11 +1240,12 @@ watch(() => route.query.kw, (kw) => {
 .cand-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 .cand-actions a { color:#409eff; font-size:12px; text-decoration:none; }
 .asset-box { margin: 14px 0; padding: 12px; border: 1px solid #e4e7ed; border-radius: 10px; background: #fafbfc; }
-.asset-title { font-weight: 700; color: #4a5568; margin-bottom: 10px; }
+.asset-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-weight: 700; color: #4a5568; margin-bottom: 10px; }
+.asset-title span { color:#8a94a6; font-size:12px; font-weight:400; }
 .asset-imgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .asset-img-card { min-width: 0; }
 .asset-img { width: 100%; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden; background: #f0f2f5; }
-.asset-img-actions { display:flex; justify-content:center; gap: 6px; margin-top: 4px; }
+.asset-img-actions { display:flex; justify-content:center; flex-wrap:wrap; gap: 6px; margin-top: 4px; }
 .edit-image-picker { display: grid; grid-template-columns: repeat(6, 44px); gap: 8px; }
 .edit-image-picker.wide { grid-template-columns: repeat(4, 72px); }
 .edit-image-option { width:44px; height:62px; padding:0; border:2px solid transparent; border-radius:6px; overflow:hidden; background:#f0f2f5; cursor:pointer; }

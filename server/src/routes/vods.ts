@@ -1374,6 +1374,25 @@ export default async function vodRoutes(app: FastifyInstance) {
       }
     });
 
+    secured.delete("/api/admin/vods/:id/images/:imageId", async (req, reply) => {
+      const vodId = Number((req.params as any).id);
+      const imageId = Number((req.params as any).imageId);
+      if (!Number.isInteger(vodId) || vodId <= 0 || !Number.isInteger(imageId) || imageId <= 0) {
+        return reply.code(400).send({ ok: false, error: "图片参数无效" });
+      }
+      const image = await prisma.vodImage.findFirst({ where: { id: imageId, vodId }, select: { id: true, url: true } });
+      if (!image) return reply.code(404).send({ ok: false, error: "图片资产不存在" });
+      await prisma.$transaction(async (tx) => {
+        const vod = await tx.vod.findUnique({ where: { id: vodId }, select: { officialPic: true, heroPic: true } });
+        const data: any = {};
+        if (vod?.officialPic === image.url) data.officialPic = "";
+        if (vod?.heroPic === image.url) data.heroPic = "";
+        if (Object.keys(data).length) await tx.vod.update({ where: { id: vodId }, data });
+        await tx.vodImage.delete({ where: { id: image.id } });
+      });
+      return { ok: true };
+    });
+
   });
 
   // 编辑单片（需登录）：只更新允许的字段
