@@ -439,6 +439,8 @@ let resizeRaf = 0
 let fullResizeIgnoreUntil = 0
 let resumeAfterActivate = false
 let resumePlaybackAfterLogin = false
+let routePlayRequestId = 0
+let consumedRoutePlay = ''
 const unitKeys = new Set()
 const unitVodIds = new Set()
 const resolveCache = new Map()
@@ -683,6 +685,19 @@ function appendUnits(items) {
     next.push(unit)
   }
   if (next.length) units.value = [...units.value, ...next]
+}
+
+function insertPlaybackUnit(unit, index = activeIndex.value) {
+  if (!unit?.vod?.id || !unit?.channel?.id) return false
+  const target = Math.max(0, Math.min(Number(index) || 0, Math.max(0, units.value.length)))
+  units.value = [
+    ...units.value.filter(row => row?.vod?.id !== unit.vod.id),
+  ]
+  const nextIndex = Math.max(0, Math.min(target, units.value.length))
+  units.value.splice(nextIndex, 0, unit)
+  activeIndex.value = nextIndex
+  rebuildUnitIndexes()
+  return true
 }
 
 function rebuildUnitIndexes() {
@@ -1563,11 +1578,66 @@ async function loadRelated() {
 function openRelated(vod) {
   if (!vod?.id) return
   episodeDrawerOpen.value = false
-  router.push(`/m/play/${vod.id}`)
+  void playVodInShorts(vod.id)
 }
 
 function goSearch() {
-  router.push('/m/search')
+  router.push({ path: '/m/search', query: { from: 'shorts' } })
+}
+
+async function playVodInShorts(vodId) {
+  const id = Number(vodId) || 0
+  if (!id) return
+  const requestId = ++routePlayRequestId
+  cancelPendingPlayback({ stop: true })
+  clearFullCommitTimer()
+  accessBlock.value = null
+  episodeDrawerOpen.value = false
+  toolMenuOpen.value = false
+  clearScreen.value = false
+  loading.value = !units.value.length
+  try {
+    const detail = await loadVodPlaybackDetail(id)
+    if (requestId !== routePlayRequestId) return
+    const history = user.value ? await api.userVodState(id).catch(() => null) : null
+    if (requestId !== routePlayRequestId) return
+    const requestedEpIndex = Math.max(0, Number(history?.history?.epIndex) || 0)
+    let candidates = playableLineCandidates(detail, requestedEpIndex)
+    const epIndex = candidates.length ? requestedEpIndex : 0
+    if (!candidates.length) candidates = playableLineCandidates(detail, 0)
+    const historyLineId = Number(history?.history?.lineId || 0)
+    const channel = candidates.find(item => Number(item.id) === historyLineId) || candidates[0]
+    const unit = buildUnitFromChannel(detail, channel, { epIndex })
+    if (!unit) {
+      notifyWarning('当前影片暂无可播放线路')
+      return
+    }
+    insertPlaybackUnit(unit)
+    await nextTick()
+    const query = { ...route.query }
+    delete query.play
+    delete query.mode
+    if (String(route.query.play || '')) router.replace({ path: '/m/shorts', query })
+    feedEl.value?.scrollTo({ top: activeIndex.value * Math.max(1, feedEl.value?.clientHeight || 1), behavior: 'auto' })
+    ensureMoreAhead()
+    writeShortsSession()
+    schedulePlay(0)
+  } catch (error) {
+    notifyWarning(apiErrorMessage(error, '影片加载失败'))
+  } finally {
+    if (requestId === routePlayRequestId) loading.value = false
+  }
+}
+
+function consumeRoutePlay(id) {
+  const value = String(id || '').trim()
+  if (!value) {
+    consumedRoutePlay = ''
+    return
+  }
+  if (consumedRoutePlay === value) return
+  consumedRoutePlay = value
+  void playVodInShorts(value)
 }
 
 function setPlaybackRate(rate) {
@@ -1794,6 +1864,10 @@ watch(() => route.query.mode, () => {
   })
 })
 
+watch(() => route.query.play, (id) => {
+  consumeRoutePlay(id)
+})
+
 watch(drawerTab, (tab) => {
   if (tab === 'related' && !relatedItems.value.length) void loadRelated()
 })
@@ -1816,6 +1890,7 @@ onMounted(async () => {
   await loadShortOptions()
   if (!restoreSavedFilter()) sortMode.value = config.value.sortMode
   await reload()
+  consumeRoutePlay(route.query.play)
 })
 
 onDeactivated(() => {
@@ -1835,6 +1910,10 @@ onActivated(() => {
     if (fullMode.value) scrollToFullCurrent('auto')
     else scrollTo(activeIndex.value, 'auto')
     updateLandscapeMetrics()
+    if (route.query.play) {
+      consumeRoutePlay(route.query.play)
+      return
+    }
     if (resumeAfterActivate && playUrl.value && !accessBlock.value) schedulePlay(80)
     resumeAfterActivate = false
   })

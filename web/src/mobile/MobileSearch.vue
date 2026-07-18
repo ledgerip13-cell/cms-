@@ -160,6 +160,7 @@ const resultTabs = [
 ]
 
 const activeKw = computed(() => String(route.query.kw || '').trim())
+const fromShorts = computed(() => String(route.query.from || '') === 'shorts')
 const suggestItems = computed(() => {
   const items = baseSuggestItems.value.filter(vod => vod?.id && vod?.name)
   if (!items.length) return []
@@ -204,12 +205,13 @@ function clearDraft() {
 
 function submitSearch() {
   const kw = draftKw.value.trim()
+  const baseQuery = fromShorts.value ? { from: 'shorts' } : {}
   if (!kw) {
-    router.replace({ path: '/m/search' })
+    router.replace({ path: '/m/search', query: baseQuery })
     return
   }
   saveHistory(kw)
-  router.replace({ path: '/m/search', query: { kw } })
+  router.replace({ path: '/m/search', query: { ...baseQuery, kw } })
 }
 
 function pickWord(word) {
@@ -251,12 +253,20 @@ function onPageScroll() {
 }
 
 function goBack() {
+  if (fromShorts.value) {
+    router.push('/m/shorts')
+    return
+  }
   if (window.history.length > 1) router.back()
   else router.push('/m')
 }
 
 function goVod(vod) {
   if (!vod?.id) return
+  if (fromShorts.value) {
+    router.push({ path: '/m/shorts', query: { play: vod.id } })
+    return
+  }
   router.push(`/m/play/${vod.id}`)
 }
 
