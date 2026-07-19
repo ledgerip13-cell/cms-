@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-19 (GMT+8)｜**对应提交**：本次提交（移动端播放页 UI 与线路级进度）
+> **最后更新**：2026-07-19 (GMT+8)｜**对应提交**：本次提交（X8 系统全屏与键盘控制回修）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-19 X8 系统全屏与键盘控制回修断点**：`web/src/x8/X8Home.vue` 修复 7/18 容器全屏改动导致“系统全屏”仍显示自定义操作栏的问题：`requestNativeFullscreen()` 改回优先对 `<video>` 调 `requestFullscreen/webkitRequestFullscreen/webkitEnterFullscreen`，进入系统全屏时临时打开 `video.controls=true` 使用原生系统播放器，退出后由 `fullscreenchange/webkitfullscreenchange/webkitendfullscreen` 恢复 `video.controls=false`；`shouldHandlePlayerHotkey()` 同步把 `nativeFullscreen` 纳入快捷键接管状态，系统全屏下空格、左右方向键仍可控制播放/前进后退。HLS 页面内全屏 `playerTheater` 语义不变。
 - **2026-07-19 移动端播放页 UI 与线路级进度断点**：`web/src/mobile/MobilePlay.vue` 完善独立移动播放页：播放线路/通道切换后只自动聚焦当前线路/通道按钮，不再纵向滚动到选集区域，也不自动解析播放、不打断当前视频；线路切换仅作为预选，用户点选某个集数/上下集后才使用预选线路播放。历史保存新增“实际正在播放线路/集数”上下文，避免预选线路后把当前播放进度写错线路；选集按 30 集分组，集数按钮按 `lineId + epIndex` 显示上次播放进度百分比/时间与底部进度条；进入页面先读取本地 `vcms.mobile.play.history.v1`，登录用户再用 `/api/user/vods/:id/state` 覆盖，匹配当前线路和集数时在 `loadedmetadata` 后自动续播到上次秒数；保存时本地必写，登录用户额外同步 `/api/user/history`。`web/src/mobile/MobileShorts.vue` 共用同一本地历史键：刷剧完整模式选集抽屉按当前线路显示上次进度，外部打开指定影片时按历史线路/集数/秒数续播。后台和数据库未改动，仍复用 `WatchHistory.lineId/epIndex/progressSec/durationSec`。
 - **2026-07-17 X8 登录页缓存与集数状态适配断点**：`web/src/x8/X8Home.vue` 修复刷新 `/x8/login` 后头部分类只剩“首页”的问题：X8 分类初始化改为读取 `readCachedCategories()`，`ensureTypes()` 拉取成功后写入 `writeCachedCategories()`，登录页 `loadX8Login()` 也会主动 `ensureTypes()`。登录影视墙改为“先复用进入网站时已有封面数据，再读 `vcms.x8.login.wall` 缓存，不够 48 张才补请求热门/评分”，首页 `loadHome()` 完成后同步写缓存，避免每次进入登录页都重新打 4 个请求。采集状态 `remarks` 新增 `(149/180)` 适配：列表/卡片展示 `更新至149集`，详情时长展示 `更新至149集 / 共180集`，当前数大于等于总数时展示 `全180集`。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器冷启动清空分类和影视墙缓存后直接进 `/x8/login`，实测导航为 `首页/电影/电视剧/动漫/短剧/漫剧`，影视墙 48 张，缓存回写 48 条；新前端包 `assets/index-DNBcN2Wk.js / assets/index-CQ4ceMl-.css`。
 - **2026-07-17 X8 个人中心与头像入口断点**：参考站 `https://www.x8kb9k8.com/login` 登录后头部入口和 `/user` 页面结构已解析：登录态头部“登录”替换为 36px 圆形头像，hover/click 下拉含个人中心/我的消息/收藏记录/求片记录/预约记录/退出登录；个人中心路由为 `/user?from=userInfo|historyRecord|myCollect|reportRecord|qpRecord|reserveRecord`，主体为左侧用户卡 + 竖向菜单，右侧 tab 面板。`web/src/x8/X8Home.vue` 接入全局 `currentUser`，登录成功/刷新后显示头像入口，下拉映射为个人中心、历史记录、收藏记录、退出登录；`web/src/views/Profile.vue` 重做为 X8 深色个人中心，支持个人资料、历史记录、收藏记录、偏好保存、推荐列表，消息/未开放项先显示占位。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；本地账号 `kken889` 不存在，未用该凭据污染本地数据；浏览器实测未登录访问 `/me?tab=userInfo` 会回到 `/x8/login`；构建产物已命中 `.x8-user-entry/.x8-user-dropdown/.x8-user-page`；新前端包 `assets/index-Cnu3-iMJ.js / assets/index-CQ4ceMl-.css`。

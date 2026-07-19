@@ -2498,21 +2498,23 @@ async function togglePip() {
 }
 async function requestNativeFullscreen() {
   const video = videoEl.value
-  const box = videoBox.value
-  if (!video && !box) return
+  if (!video) return
   try {
     nativeFullscreen.value = true
     videoFullscreen.value = false
-    if (box?.requestFullscreen) {
-      await box.requestFullscreen()
+    settingsOpen.value = false
+    qualityOpen.value = false
+    rateOpen.value = false
+    video.controls = true
+    if (video.requestFullscreen) {
+      await video.requestFullscreen()
       return
     }
-    if (box?.webkitRequestFullscreen) {
-      await box.webkitRequestFullscreen()
+    if (video.webkitRequestFullscreen) {
+      await video.webkitRequestFullscreen()
       return
     }
     if (video?.webkitEnterFullscreen) {
-      video.controls = false
       video.webkitEnterFullscreen()
     }
   } catch {}
@@ -2520,15 +2522,14 @@ async function requestNativeFullscreen() {
 function onNativeVideoFullscreen(active) {
   nativeFullscreen.value = Boolean(active)
   const video = videoEl.value
-  if (video) video.controls = false
+  if (video) video.controls = Boolean(active)
 }
 function syncFullscreenState() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
   const video = videoEl.value
-  const box = videoBox.value
   videoFullscreen.value = false
-  nativeFullscreen.value = fullscreenElement === box || fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
-  if (video) video.controls = false
+  nativeFullscreen.value = fullscreenElement === video || Boolean(video?.webkitDisplayingFullscreen)
+  if (video) video.controls = nativeFullscreen.value
 }
 function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
@@ -2625,7 +2626,7 @@ function shouldHandlePlayerHotkey(event) {
   const target = event.target
   const tag = String(target?.tagName || '').toLowerCase()
   if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(tag)) return false
-  if (playerTheater.value) return true
+  if (playerTheater.value || nativeFullscreen.value) return true
   return Boolean(videoBox.value?.contains?.(document.activeElement))
 }
 async function ensureUser() {
