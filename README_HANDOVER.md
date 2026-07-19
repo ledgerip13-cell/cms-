@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-18 (GMT+8)｜**对应提交**：本次提交（后台影片库清洗状态）
+> **最后更新**：2026-07-19 (GMT+8)｜**对应提交**：本次提交（移动端播放页 UI 与线路级进度）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-19 移动端播放页 UI 与线路级进度断点**：`web/src/mobile/MobilePlay.vue` 完善独立移动播放页：播放线路/通道切换后只自动聚焦当前线路/通道按钮，不再纵向滚动到选集区域，也不自动解析播放、不打断当前视频；线路切换仅作为预选，用户点选某个集数/上下集后才使用预选线路播放。历史保存新增“实际正在播放线路/集数”上下文，避免预选线路后把当前播放进度写错线路；选集按 30 集分组，集数按钮按 `lineId + epIndex` 显示上次播放进度百分比/时间与底部进度条；进入页面先读取本地 `vcms.mobile.play.history.v1`，登录用户再用 `/api/user/vods/:id/state` 覆盖，匹配当前线路和集数时在 `loadedmetadata` 后自动续播到上次秒数；保存时本地必写，登录用户额外同步 `/api/user/history`。`web/src/mobile/MobileShorts.vue` 共用同一本地历史键：刷剧完整模式选集抽屉按当前线路显示上次进度，外部打开指定影片时按历史线路/集数/秒数续播。后台和数据库未改动，仍复用 `WatchHistory.lineId/epIndex/progressSec/durationSec`。
 - **2026-07-17 X8 登录页缓存与集数状态适配断点**：`web/src/x8/X8Home.vue` 修复刷新 `/x8/login` 后头部分类只剩“首页”的问题：X8 分类初始化改为读取 `readCachedCategories()`，`ensureTypes()` 拉取成功后写入 `writeCachedCategories()`，登录页 `loadX8Login()` 也会主动 `ensureTypes()`。登录影视墙改为“先复用进入网站时已有封面数据，再读 `vcms.x8.login.wall` 缓存，不够 48 张才补请求热门/评分”，首页 `loadHome()` 完成后同步写缓存，避免每次进入登录页都重新打 4 个请求。采集状态 `remarks` 新增 `(149/180)` 适配：列表/卡片展示 `更新至149集`，详情时长展示 `更新至149集 / 共180集`，当前数大于等于总数时展示 `全180集`。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器冷启动清空分类和影视墙缓存后直接进 `/x8/login`，实测导航为 `首页/电影/电视剧/动漫/短剧/漫剧`，影视墙 48 张，缓存回写 48 条；新前端包 `assets/index-DNBcN2Wk.js / assets/index-CQ4ceMl-.css`。
 - **2026-07-17 X8 个人中心与头像入口断点**：参考站 `https://www.x8kb9k8.com/login` 登录后头部入口和 `/user` 页面结构已解析：登录态头部“登录”替换为 36px 圆形头像，hover/click 下拉含个人中心/我的消息/收藏记录/求片记录/预约记录/退出登录；个人中心路由为 `/user?from=userInfo|historyRecord|myCollect|reportRecord|qpRecord|reserveRecord`，主体为左侧用户卡 + 竖向菜单，右侧 tab 面板。`web/src/x8/X8Home.vue` 接入全局 `currentUser`，登录成功/刷新后显示头像入口，下拉映射为个人中心、历史记录、收藏记录、退出登录；`web/src/views/Profile.vue` 重做为 X8 深色个人中心，支持个人资料、历史记录、收藏记录、偏好保存、推荐列表，消息/未开放项先显示占位。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；本地账号 `kken889` 不存在，未用该凭据污染本地数据；浏览器实测未登录访问 `/me?tab=userInfo` 会回到 `/x8/login`；构建产物已命中 `.x8-user-entry/.x8-user-dropdown/.x8-user-page`；新前端包 `assets/index-Cnu3-iMJ.js / assets/index-CQ4ceMl-.css`。
 - **2026-07-17 X8 登录页与历史浮层优化断点**：`web/src/x8/X8Home.vue` 将顶部“我的追剧”图标从播放列表换为书签追剧图标；播放历史 hover 下拉增加 `::after` 桥接热区，覆盖按钮到底部浮层之间的空隙，避免鼠标往下移时浮层消失；后续微调为桥接层默认 `pointer-events:none`，只有历史按钮/菜单已 hover 或 focus 后才接收鼠标，避免从历史下方经过时误弹。`/x8/login` 从占位页改为账号登录/账号注册页：参考金牌登录页 `https://www.x8kb9k8.com/login` 的全屏影视墙背景和居中登录窗，去掉手机号登录，使用本地账号登录/注册接口；背景墙拉取真实影片海报，使用 3D perspective 倾斜铺排和缓慢错位漂移动效，登录窗为液态玻璃质感；登录页隐藏 X8 大 footer 和浮动按钮，仅保留版权；影视墙展示数从 36 张扩到 48 张，12 列布局下多一行。验证：`npm run build`、`docker compose up -d --build web`、`git diff --check`、5150 `/health`、5152 新包检查通过；浏览器实测 `/x8/login` 有 48 张海报、3D transform、玻璃 `blur(30px) saturate(1.25)`、账号登录/账号注册 tab、注册页显示站点邀请码输入、空提交提示“请输入账号”；历史浮层焦点/桥接区实测下拉保持 `display:block`；新前端包 `assets/index-B5oDvllp.js / assets/index-0RY43kj_.css`。

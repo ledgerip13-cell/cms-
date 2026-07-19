@@ -308,10 +308,12 @@
             v-for="episode in visibleEpisodes"
             :key="episode.index"
             type="button"
-            :class="{ on: episode.index === activeUnit.epIndex }"
+            :class="{ on: episode.index === activeUnit.epIndex, resume: isHistoryEpisode(episode.index) }"
             @click="jumpEpisode(episode.index)"
           >
-            {{ episode.index + 1 }}
+            <span>{{ episode.index + 1 }}</span>
+            <em v-if="isHistoryEpisode(episode.index)">{{ episodeHistoryText }}</em>
+            <i v-if="isHistoryEpisode(episode.index)" :style="{ width: episodeHistoryPercent }"></i>
           </button>
         </div>
       </section>
@@ -348,6 +350,7 @@ import { icon } from './icons'
 const SHORTS_MUTED_KEY = 'vcms.mobile.shorts.muted'
 const SHORTS_SESSION_KEY = 'vcms.mobile.shorts.session.v1'
 const SHORTS_FILTER_KEY = 'vcms.mobile.shorts.filter.v1'
+const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
 const SHORTS_SESSION_TTL = 30 * 60 * 1000
 const RESOLVE_CACHE_TTL = 20 * 60 * 1000
 const RESOLVE_CACHE_LIMIT = 80
@@ -421,6 +424,7 @@ const toolMenuOpen = ref(false)
 const clearScreen = ref(false)
 const relatedItems = ref([])
 const relatedLoading = ref(false)
+const vodHistoryState = ref({})
 
 let hls = null
 let playSeq = 0
@@ -499,6 +503,26 @@ const episodeRanges = computed(() => {
 })
 const activeRange = computed(() => episodeRanges.value.find(item => item.start === activeRangeStart.value) || episodeRanges.value[0])
 const visibleEpisodes = computed(() => episodeList.value.slice(activeRange.value.start, activeRange.value.end))
+const activeLineHistory = computed(() => {
+  const unit = activeUnit.value
+  const history = vodHistoryState.value?.[unit?.vod?.id]
+  if (!unit?.channel?.id || !history?.lineId) return null
+  return Number(history.lineId) === Number(unit.channel.id) ? history : null
+})
+const episodeHistoryText = computed(() => {
+  const h = activeLineHistory.value
+  const progress = Number(h?.progressSec) || 0
+  const total = Number(h?.durationSec) || 0
+  if (!h || progress < 20) return ''
+  if (total > 0) return `${Math.max(1, Math.min(99, Math.round((progress / total) * 100)))}%`
+  return formatEpisodeTime(progress)
+})
+const episodeHistoryPercent = computed(() => {
+  const h = activeLineHistory.value
+  const progress = Number(h?.progressSec) || 0
+  const total = Number(h?.durationSec) || 0
+  return total > 0 ? `${Math.max(2, Math.min(100, (progress / total) * 100))}%` : '2px'
+})
 const availableSubtypes = computed(() => {
   const scopeTypes = selectedTypes.value.length
     ? selectedTypes.value
@@ -552,6 +576,70 @@ function isDirectM3u8(url) {
 
 function intro(unit) {
   return unit?.vod?.officialIntro || unit?.vod?.blurb || '精彩内容，继续上滑观看。'
+}
+
+function formatEpisodeTime(value) {
+  const total = Math.max(0, Math.floor(Number(value) || 0))
+  const mins = Math.floor(total / 60)
+  const secs = String(total % 60).padStart(2, '0')
+  return `${mins}:${secs}`
+}
+
+function readLocalHistory(vodId) {
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    return data?.[vodId] || null
+  } catch {
+    return null
+  }
+}
+
+function writeLocalHistory(history) {
+  if (!history?.vodId) return
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    data[history.vodId] = { ...history, updatedAt: Date.now() }
+    const rows = Object.entries(data).sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0)).slice(0, 120)
+    localStorage.setItem(MOBILE_HISTORY_KEY, JSON.stringify(Object.fromEntries(rows)))
+  } catch {}
+}
+
+function isHistoryEpisode(index) {
+  const h = activeLineHistory.value
+  return Boolean(h && episodeHistoryText.value && Number(h.epIndex) === Number(index))
+}
+
+function updateVodHistory(unit, progressSec, durationSecValue) {
+  if (!unit?.vod?.id || !unit?.channel?.id) return
+  vodHistoryState.value = {
+    ...vodHistoryState.value,
+    [unit.vod.id]: {
+      ...(vodHistoryState.value?.[unit.vod.id] || {}),
+      vodId: unit.vod.id,
+      lineId: unit.channel.id,
+      epIndex: unit.epIndex,
+      epName: unit.epName || '',
+      progressSec: Math.max(0, Math.floor(Number(progressSec) || 0)),
+      durationSec: Math.max(0, Math.floor(Number(durationSecValue) || 0)),
+    },
+  }
+  writeLocalHistory(vodHistoryState.value[unit.vod.id])
+}
+
+function applyShortsHistorySeek(video, unit) {
+  const h = vodHistoryState.value?.[unit?.vod?.id]
+  if (!video || !h) return
+  if (Number(h.lineId) !== Number(unit?.channel?.id) || Number(h.epIndex) !== Number(unit?.epIndex)) return
+  const seek = Number(h.progressSec) || 0
+  if (seek < 20) return
+  const total = Number(video.duration) || 0
+  const target = total > 0 ? Math.min(Math.max(0, total - 8), seek) : seek
+  try {
+    video.currentTime = Math.max(0, target)
+    currentSec.value = Math.max(0, Math.floor(target))
+  } catch {}
 }
 
 function hideBrokenImg(event) {
@@ -1172,6 +1260,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
   video.muted = muted.value
   video.autoplay = true
   video.playsInline = true
+  video.addEventListener('loadedmetadata', () => applyShortsHistorySeek(video, attachedUnit), { once: true })
   if (hls) hls.destroy()
   hls = null
   if ((kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)) && Hls.isSupported()) {
@@ -1601,11 +1690,20 @@ async function playVodInShorts(vodId) {
     if (requestId !== routePlayRequestId) return
     const history = user.value ? await api.userVodState(id).catch(() => null) : null
     if (requestId !== routePlayRequestId) return
-    const requestedEpIndex = Math.max(0, Number(history?.history?.epIndex) || 0)
+    const resumeHistory = history?.history || readLocalHistory(id)
+    if (resumeHistory) {
+      updateVodHistory({
+        vod: { id },
+        channel: { id: resumeHistory.lineId },
+        epIndex: resumeHistory.epIndex,
+        epName: resumeHistory.epName,
+      }, resumeHistory.progressSec, resumeHistory.durationSec)
+    }
+    const requestedEpIndex = Math.max(0, Number(resumeHistory?.epIndex) || 0)
     let candidates = playableLineCandidates(detail, requestedEpIndex)
     const epIndex = candidates.length ? requestedEpIndex : 0
     if (!candidates.length) candidates = playableLineCandidates(detail, 0)
-    const historyLineId = Number(history?.history?.lineId || 0)
+    const historyLineId = Number(resumeHistory?.lineId || 0)
     const channel = candidates.find(item => Number(item.id) === historyLineId) || candidates[0]
     const unit = buildUnitFromChannel(detail, channel, { epIndex })
     if (!unit) {
@@ -1703,17 +1801,20 @@ function saveHistoryTick() {
 
 function saveHistory(force = false) {
   const unit = playingUnit || activeUnit.value
-  if (!user.value || !unit?.vod?.id || !playUrl.value) return
+  if (!unit?.vod?.id || !playUrl.value) return
   const video = getVideo()
   const progressSec = Math.floor(Number(video?.currentTime) || currentSec.value || 0)
   if (!force && progressSec < 20) return
+  const historyDurationSec = Math.floor(Number(video?.duration) || durationSec.value || 0)
+  updateVodHistory(unit, progressSec, historyDurationSec)
+  if (!user.value) return
   api.saveHistory({
     vodId: unit.vod.id,
     lineId: unit.channel.id,
     epIndex: unit.epIndex,
     epName: unit.epName,
     progressSec,
-    durationSec: Math.floor(Number(video?.duration) || durationSec.value || 0),
+    durationSec: historyDurationSec,
   }).catch(() => {})
 }
 
@@ -2921,8 +3022,9 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .ms-episode-grid button {
+  position: relative;
   min-width: 0;
-  height: 38px;
+  height: 42px;
   border: 0;
   border-radius: 10px;
   background: #f3f4f6;
@@ -2931,10 +3033,41 @@ onBeforeUnmount(() => {
   font-weight: var(--small-text-max-weight);
   touch-action: manipulation;
   transition: transform .16s ease, background .16s ease, color .16s ease;
+  overflow: hidden;
+}
+.ms-episode-grid button span {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+.ms-episode-grid button em {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+  opacity: .86;
+}
+.ms-episode-grid button i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #f04438;
+}
+.ms-episode-grid button.resume:not(.on) {
+  background: #fff0ed;
+  color: #f04438;
 }
 .ms-episode-grid button.on {
   background: linear-gradient(120deg, #ff4d3d, #ff7a38);
   color: #fff;
+}
+.ms-episode-grid button.on i {
+  background: rgba(255,255,255,.72);
 }
 .ms-related-state {
   min-height: 120px;

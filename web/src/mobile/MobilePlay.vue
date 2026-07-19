@@ -137,26 +137,33 @@
         <h2>播放线路</h2>
         <span>{{ currentLineLabel }}</span>
       </header>
-      <div class="mp-line-tabs">
+      <div ref="lineTabsEl" class="mp-line-tabs">
         <button v-for="(line, index) in vod.lines" :key="line.id || index" type="button" :class="{ on: lineIdx === index }" @click="selectLine(index)">
           {{ lineLabel(line, index) }}
         </button>
       </div>
-      <div v-if="channelOptions.length > 1" class="mp-channel-tabs">
+      <div v-if="channelOptions.length > 1" ref="channelTabsEl" class="mp-channel-tabs">
         <button v-for="(channel, index) in channelOptions" :key="channel.id || index" type="button" :class="{ on: chanIdx === index }" @click="selectChannel(index)">
           {{ channelLabel(channel, index) }}
         </button>
       </div>
     </section>
 
-    <section v-if="episodes.length" class="mp-panel">
+    <section v-if="episodes.length" ref="episodePanelEl" class="mp-panel">
       <header>
         <h2>选集</h2>
         <span>{{ epIdx + 1 }} / {{ episodes.length }}</span>
       </header>
+      <div v-if="episodeRanges.length > 1" class="mp-episode-ranges">
+        <button v-for="range in episodeRanges" :key="range.start" type="button" :class="{ on: activeEpisodeRange.start === range.start }" @click="selectEpisodeRange(range.start)">
+          {{ range.label }}
+        </button>
+      </div>
       <div class="mp-episode-grid">
-        <button v-for="(ep, index) in episodes" :key="index" type="button" :class="{ on: epIdx === index }" @click="playEp(index)">
-          {{ ep.name || index + 1 }}
+        <button v-for="ep in visibleEpisodes" :key="ep.index" type="button" :class="{ on: epIdx === ep.index, resume: isHistoryEpisode(ep.index) }" @click="playEp(ep.index)">
+          <span>{{ ep.name || ep.index + 1 }}</span>
+          <em v-if="isHistoryEpisode(ep.index)">{{ historyProgressText }}</em>
+          <i v-if="isHistoryEpisode(ep.index)" :style="{ width: historyProgressPercent }"></i>
         </button>
       </div>
     </section>
@@ -200,6 +207,9 @@ const route = useRoute()
 const router = useRouter()
 const user = currentUser
 const videoEl = ref(null)
+const lineTabsEl = ref(null)
+const channelTabsEl = ref(null)
+const episodePanelEl = ref(null)
 const vod = ref({})
 const related = ref([])
 const loading = ref(true)
@@ -213,6 +223,12 @@ const mode = ref('hls')
 const lineIdx = ref(0)
 const chanIdx = ref(0)
 const epIdx = ref(0)
+const activeEpisodeRangeStart = ref(0)
+const historyState = ref(null)
+const pendingSeekSec = ref(0)
+const playingChannel = ref(null)
+const playingEpIndex = ref(0)
+const playingEpName = ref('')
 const isPlaying = ref(false)
 const isMuted = ref(false)
 const controlsVisible = ref(false)
@@ -226,6 +242,8 @@ const menuOpen = ref(false)
 const playerLandscape = ref(false)
 const fullscreenPortrait = ref(false)   // 全屏时的实际方向：true=竖屏全屏，false=横屏全屏
 const speedOptions = [0.75, 1, 1.25, 1.5, 2]
+const EPISODE_GROUP_SIZE = 30
+const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
 // 横滑调进度手势状态
 const seeking = ref(false)
 const seekPreviewTime = ref(0)
@@ -252,8 +270,42 @@ const channelOptions = computed(() => curLine.value?.channels?.length ? curLine.
 const episodes = computed(() => curChannel.value?.episodes || [])
 const hasPrevEp = computed(() => epIdx.value > 0)
 const hasNextEp = computed(() => epIdx.value < episodes.value.length - 1)
+const episodeRanges = computed(() => {
+  const total = episodes.value.length
+  const ranges = []
+  for (let start = 0; start < total; start += EPISODE_GROUP_SIZE) {
+    const end = Math.min(total, start + EPISODE_GROUP_SIZE)
+    ranges.push({ start, end, label: `${start + 1}-${end}` })
+  }
+  return ranges
+})
+const activeEpisodeRange = computed(() => episodeRanges.value.find(item => item.start === activeEpisodeRangeStart.value) || episodeRanges.value[0] || { start: 0, end: episodes.value.length })
+const visibleEpisodes = computed(() => episodes.value.slice(activeEpisodeRange.value.start, activeEpisodeRange.value.end).map((ep, offset) => ({
+  ...ep,
+  index: activeEpisodeRange.value.start + offset,
+})))
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
+const historyMatchesCurrentLine = computed(() => {
+  const h = historyState.value
+  return Boolean(h?.lineId && curChannel.value?.id && Number(h.lineId) === Number(curChannel.value.id))
+})
+const historyProgressText = computed(() => {
+  const h = historyState.value
+  if (!h || !historyMatchesCurrentLine.value) return ''
+  const progress = Number(h.progressSec) || 0
+  const total = Number(h.durationSec) || 0
+  if (progress < 20) return ''
+  if (total > 0) return `${Math.max(1, Math.min(99, Math.round((progress / total) * 100)))}%`
+  return formatTime(progress)
+})
+const historyProgressPercent = computed(() => {
+  const h = historyState.value
+  if (!h || !historyMatchesCurrentLine.value) return '0%'
+  const progress = Number(h.progressSec) || 0
+  const total = Number(h.durationSec) || 0
+  return total > 0 ? `${Math.max(2, Math.min(100, (progress / total) * 100))}%` : '2px'
+})
 const showQualityControl = computed(() => qualityOptions.value.length > 1)
 const showCenterControls = computed(() => controlsVisible.value && centerControlsVisible.value && !seeking.value)
 const qualityLabel = computed(() => {
@@ -289,6 +341,27 @@ function lineLabel(line, index = 0) {
 
 function channelLabel(channel, index = 0) {
   return channel?.name || channel?.flag || channel?.sourceName || `通道 ${index + 1}`
+}
+
+function readLocalHistory(vodId) {
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    return data?.[vodId] || null
+  } catch {
+    return null
+  }
+}
+
+function writeLocalHistory(history) {
+  if (!history?.vodId) return
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    data[history.vodId] = { ...history, updatedAt: Date.now() }
+    const rows = Object.entries(data).sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0)).slice(0, 120)
+    localStorage.setItem(MOBILE_HISTORY_KEY, JSON.stringify(Object.fromEntries(rows)))
+  } catch {}
 }
 
 function hideBrokenImg(event) {
@@ -682,6 +755,98 @@ function formatTime(value) {
   return `${mins}:${secs}`
 }
 
+function isHistoryEpisode(index) {
+  const h = historyState.value
+  return Boolean(historyMatchesCurrentLine.value && historyProgressText.value && Number(h?.epIndex) === Number(index))
+}
+
+function alignEpisodeRange(index = epIdx.value) {
+  const total = episodes.value.length
+  if (!total) {
+    activeEpisodeRangeStart.value = 0
+    return
+  }
+  const start = Math.floor(Math.max(0, Number(index) || 0) / EPISODE_GROUP_SIZE) * EPISODE_GROUP_SIZE
+  activeEpisodeRangeStart.value = Math.min(start, Math.floor((total - 1) / EPISODE_GROUP_SIZE) * EPISODE_GROUP_SIZE)
+}
+
+function selectEpisodeRange(start) {
+  activeEpisodeRangeStart.value = Math.max(0, Number(start) || 0)
+}
+
+function focusActiveButton(container) {
+  const button = container?.querySelector?.('button.on')
+  if (button && container) {
+    const left = button.offsetLeft - (container.clientWidth - button.clientWidth) / 2
+    container.scrollTo?.({ left: Math.max(0, left), behavior: 'smooth' })
+  }
+  button?.focus?.({ preventScroll: true })
+}
+
+function focusPlaybackContext(kind = 'line') {
+  nextTick(() => {
+    focusActiveButton(lineTabsEl.value)
+    if (kind === 'channel') focusActiveButton(channelTabsEl.value)
+  })
+}
+
+function applyHistorySeek(video) {
+  const seek = Number(pendingSeekSec.value) || 0
+  if (!video || seek < 20) return
+  const total = Number(video.duration) || 0
+  const target = total > 0 ? Math.min(Math.max(0, total - 8), seek) : seek
+  try {
+    video.currentTime = Math.max(0, target)
+    currentTime.value = Math.max(0, target)
+    pendingSeekSec.value = 0
+    if (target > 0) showNotice(`已续播到 ${formatTime(target)}`)
+  } catch {}
+}
+
+function syncPendingHistorySeek() {
+  const h = historyState.value
+  pendingSeekSec.value = historyMatchesCurrentLine.value && Number(h?.epIndex) === Number(epIdx.value)
+    ? Math.max(0, Number(h?.progressSec) || 0)
+    : 0
+}
+
+function updateLocalHistory(progressSec, durationSecValue, options = {}) {
+  const channel = options.channel || curChannel.value
+  const historyEpIndex = Math.max(0, Number(options.epIndex ?? epIdx.value) || 0)
+  if (!vod.value?.id || !channel?.id) return
+  const ep = channel?.episodes?.[historyEpIndex]
+  historyState.value = {
+    ...(historyState.value || {}),
+    vodId: vod.value.id,
+    lineId: channel.id,
+    epIndex: historyEpIndex,
+    epName: options.epName || ep?.name || '',
+    progressSec: Math.max(0, Math.floor(Number(progressSec) || 0)),
+    durationSec: Math.max(0, Math.floor(Number(durationSecValue) || 0)),
+  }
+  writeLocalHistory(historyState.value)
+}
+
+function applyHistorySelection(history) {
+  historyState.value = history || null
+  const h = historyState.value
+  if (h?.lineId && vod.value.lines?.length) {
+    for (let li = 0; li < vod.value.lines.length; li++) {
+      const line = vod.value.lines[li]
+      const channels = line?.channels?.length ? line.channels : [line]
+      const ci = channels.findIndex(c => Number(c?.id) === Number(h.lineId))
+      if (ci >= 0) {
+        lineIdx.value = li
+        chanIdx.value = ci
+        break
+      }
+    }
+  }
+  epIdx.value = Math.max(0, Math.min(Number(h?.epIndex) || 0, episodes.value.length - 1))
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
+}
+
 function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
   if (!isPlaybackCurrent(seq)) return
   clearPlaybackMedia()
@@ -693,6 +858,7 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
     if (!video || !isPlaybackCurrent(seq)) return
     const isM3u8 = kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)
     const nativeHls = isM3u8 && video.canPlayType('application/vnd.apple.mpegurl')
+    video.addEventListener('loadedmetadata', () => applyHistorySeek(video), { once: true })
     if (nativeHls) {
       video.src = url
       try { video.load() } catch {}
@@ -764,13 +930,18 @@ function handleAccessAction() {
 async function playCurrent() {
   const channel = curChannel.value
   if (!vod.value?.id || !channel?.id) return
+  const playEpIndex = Math.max(0, Math.min(epIdx.value, (channel.episodes || []).length - 1))
+  const playEp = channel.episodes?.[playEpIndex]
   const seq = nextPlaybackSeq()
   resolving.value = true
   accessBlock.value = null
   try {
-    const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: epIdx.value })
+    const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex })
     if (!isPlaybackCurrent(seq)) return
     if (result?.ok && result.url) {
+      playingChannel.value = channel
+      playingEpIndex.value = playEpIndex
+      playingEpName.value = playEp?.name || ''
       playDirect(result.url, result.kind || '', seq)
       showControls(1800)
       saveHistory(0)
@@ -792,7 +963,10 @@ async function playCurrent() {
 }
 
 function playEp(index) {
+  pendingSeekSec.value = 0
   epIdx.value = Math.max(0, Math.min(index, episodes.value.length - 1))
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
   retryingLine = false
   playCurrent()
 }
@@ -800,20 +974,26 @@ function playEp(index) {
 function selectLine(index) {
   const next = Math.max(0, Math.min(Number(index) || 0, (vod.value.lines || []).length - 1))
   if (lineIdx.value === next && chanIdx.value === 0) return
+  saveHistory()
   lineIdx.value = next
   chanIdx.value = 0
   epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
   retryingLine = false
-  playCurrent()
+  focusPlaybackContext('line')
 }
 
 function selectChannel(index) {
   const next = Math.max(0, Math.min(Number(index) || 0, channelOptions.value.length - 1))
   if (chanIdx.value === next) return
+  saveHistory()
   chanIdx.value = next
   epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
   retryingLine = false
-  playCurrent()
+  focusPlaybackContext('channel')
 }
 
 function handlePlaybackError() {
@@ -845,7 +1025,11 @@ function tryNextLine() {
   retryingLine = true
   lineIdx.value = next.li
   chanIdx.value = next.ci
+  epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
   showNotice('线路异常，已自动切换')
+  focusPlaybackContext('line')
   const seq = playbackSeq
   window.setTimeout(() => {
     if (!isPlaybackCurrent(seq)) return
@@ -856,16 +1040,24 @@ function tryNextLine() {
 }
 
 function saveHistory(progressOverride = null) {
-  if (!user.value || !vod.value?.id || !curChannel.value?.id || !curUrl.value) return
+  const historyChannel = playingChannel.value || curChannel.value
+  const historyEpIndex = Math.max(0, Number(playingChannel.value ? playingEpIndex.value : epIdx.value) || 0)
+  const historyEpName = playingChannel.value ? playingEpName.value : episodes.value[epIdx.value]?.name || ''
+  if (!vod.value?.id || !historyChannel?.id || !curUrl.value) return
   const video = videoEl.value
-  const ep = episodes.value[epIdx.value]
+  const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
+  const durationSec = Math.floor(Number(video?.duration) || 0)
+  if (Number(progressSec) >= 20 || Number(durationSec) > 0) {
+    updateLocalHistory(progressSec, durationSec, { channel: historyChannel, epIndex: historyEpIndex, epName: historyEpName })
+  }
+  if (!user.value) return
   api.saveHistory({
     vodId: vod.value.id,
-    lineId: curChannel.value.id,
-    epIndex: epIdx.value,
-    epName: ep?.name || '',
-    progressSec: progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride,
-    durationSec: Math.floor(Number(video?.duration) || 0),
+    lineId: historyChannel.id,
+    epIndex: historyEpIndex,
+    epName: historyEpName,
+    progressSec,
+    durationSec,
   }).catch(() => {})
 }
 
@@ -905,10 +1097,17 @@ async function loadVod(id) {
   lineIdx.value = 0
   chanIdx.value = 0
   epIdx.value = 0
+  activeEpisodeRangeStart.value = 0
+  historyState.value = null
+  pendingSeekSec.value = 0
+  playingChannel.value = null
+  playingEpIndex.value = 0
+  playingEpName.value = ''
   try {
     const data = await api.vod(id)
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     vod.value = data || {}
+    applyHistorySelection(readLocalHistory(id))
     await nextTick()
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     if (user.value) {
@@ -917,19 +1116,10 @@ async function loadVod(id) {
         if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
         followed.value = Boolean(state?.followed)
         const h = state?.history
-        if (h?.lineId && vod.value.lines?.length) {
-          for (let li = 0; li < vod.value.lines.length; li++) {
-            const ci = (vod.value.lines[li].channels || []).findIndex(c => c.id === h.lineId)
-            if (ci >= 0) {
-              lineIdx.value = li
-              chanIdx.value = ci
-              break
-            }
-          }
-        }
-        epIdx.value = Math.max(0, Number(h?.epIndex) || 0)
+        if (h) applyHistorySelection(h)
       } catch {}
     }
+    alignEpisodeRange(epIdx.value)
     if (vod.value.lines?.length) playCurrent()
     const items = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => [])
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
@@ -1512,14 +1702,41 @@ onDeactivated(() => {
   color: #fff;
   background: #15171d;
 }
+.mp-episode-ranges {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 10px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mp-episode-ranges::-webkit-scrollbar {
+  display: none;
+}
+.mp-episode-ranges button {
+  flex: 0 0 auto;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: #606874;
+  background: #f2f3f5;
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-episode-ranges button.on {
+  color: #fff;
+  background: #15171d;
+}
 .mp-episode-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 .mp-episode-grid button {
+  position: relative;
   min-width: 0;
-  height: 38px;
+  height: 42px;
   border: 0;
   border-radius: 11px;
   color: #4b515c;
@@ -1527,12 +1744,43 @@ onDeactivated(() => {
   font-size: 13px;
   font-weight: var(--small-text-max-weight);
   overflow: hidden;
+}
+.mp-episode-grid button span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mp-episode-grid button em {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+  opacity: .86;
+}
+.mp-episode-grid button i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 999px 999px 0;
+  background: #f04438;
+}
+.mp-episode-grid button.resume:not(.on) {
+  color: #f04438;
+  background: #fff0ed;
 }
 .mp-episode-grid button.on {
   color: #fff;
   background: #f04438;
+}
+.mp-episode-grid button.on i {
+  background: rgba(255,255,255,.72);
 }
 .mp-stills {
   display: grid;
