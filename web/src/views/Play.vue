@@ -12,34 +12,27 @@
           <div class="play-lock-desc">{{ accessBlock.desc }}</div>
           <button class="play-lock-btn" type="button" @click="handleAccessAction">{{ accessBlock.actionText }}</button>
         </div>
-        <video v-show="!accessBlock && mode==='hls'" ref="videoEl" controls autoplay playsinline webkit-playsinline x-webkit-airplay="allow" airplay="allow" class="video" @timeupdate="onVideoTimeUpdate" @error="onVideoError">
-          <track v-for="(s,i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i===0" />
-        </video>
-        <button v-if="!accessBlock && mode==='hls' && qualities.length" class="quality-toggle"
-          :class="{on: qualityOpen}" :title="'清晰度：' + (curQualityLabel)" @click.stop="qualityOpen = !qualityOpen">
-          <span class="qt-label">{{ curQualityLabel }}</span>
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div v-if="!accessBlock && mode==='hls' && qualities.length && qualityOpen" class="quality-menu" @click.stop>
-          <button type="button" :class="{on: preferredRes===0}" @click="switchQuality(0); qualityOpen=false">自动</button>
-          <button v-for="q in qualities" :key="q.resolution" type="button" :class="{on: preferredRes===q.resolution}" @click="switchQuality(q.resolution); qualityOpen=false">{{ q.name || (q.resolution + 'P') }}</button>
-        </div>
-        <button v-if="!accessBlock && mode==='hls' && subtitles.length" class="sub-toggle"
-          :class="{on: subSyncOpen}" title="字幕设置" @click.stop="subSyncOpen = !subSyncOpen">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 15h3M7 11h6M14 15h3" stroke-linecap="round"/></svg>
-        </button>
-        <div v-if="!accessBlock && mode==='hls' && subtitles.length && subSyncOpen" class="sub-sync" @click.stop>
-          <span class="ss-tag">字幕同步</span>
-          <button class="ss-btn" @click="adjustSubtitle(-0.5)" title="字幕提前0.5秒">−0.5s</button>
-          <span class="ss-val">{{ (subtitleOffset>0?'+':'') + subtitleOffset.toFixed(1) }}s</span>
-          <button class="ss-btn" @click="adjustSubtitle(0.5)" title="字幕延后0.5秒">+0.5s</button>
-          <button class="ss-reset" v-if="subtitleOffset!==0" @click="resetSubtitle">复位</button>
-        </div>
-        <iframe v-if="!accessBlock && mode==='iframe'" :src="curUrl" class="video" frameborder="0"
-          allowfullscreen allow="autoplay; fullscreen"></iframe>
-        <div v-if="!accessBlock && mode==='iframe'" class="iframe-note">该源为加密分享页，解析未命中，已回退内嵌播放器</div>
-        <div v-if="!accessBlock && playNotice" class="play-notice">{{ playNotice }}</div>
-        <div v-if="!accessBlock && resolving" class="video-ph">正在解析播放地址...</div>
+        <DesktopVideoPlayer
+          v-if="!accessBlock"
+          ref="playerRef"
+          :src="curUrl"
+          :kind="mode"
+          :poster="pic(vod)"
+          :title="currentPlayTitle"
+          :qualities="qualities"
+          :selected-quality="preferredRes"
+          :subtitles="subtitles"
+          :resolving="resolving"
+          :notice="playNotice"
+          :can-next="canPlayNextEp"
+          :seek-to="pendingSeekSec"
+          @play="playResolvedEp(epIdx)"
+          @next="playNextEp"
+          @state="onPlayerState"
+          @ended="onPlayerEnded"
+          @error="onPlayerError"
+          @quality-change="switchQuality"
+        />
       </div>
 
       <div class="now-playing" v-if="curEp">
@@ -225,11 +218,11 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
 import { currentUser } from '../userStore'
+import DesktopVideoPlayer from '../components/DesktopVideoPlayer.vue'
 defineOptions({ name: 'Play' })
 
 const route = useRoute()
@@ -240,27 +233,20 @@ const related = ref([])
 const introOpen = ref(false)
 const galleryOpen = ref(false)
 const galleryIdx = ref(0)
-const videoEl = ref(null)
+const playerRef = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
-const subtitles = ref([]); const subtitleOffset = ref(0); const subSyncOpen = ref(false)
-const qualities = ref([]); const preferredRes = ref(0); const qualityOpen = ref(false) // 0=自动(最高清)；用户选择跨集持续
-const curQualityLabel = computed(() => {
-  if (!qualities.value.length) return ''
-  if (preferredRes.value === 0) return '自动'
-  const hit = qualities.value.find(q => q.resolution === preferredRes.value)
-  return hit ? (hit.name || (hit.resolution + 'P')) : '自动'
-})
+const subtitles = ref([])
+const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
 const historyState = ref(null)
 const historyLineStates = ref([])
-let hls = null
-let hlsRecoverCount = 0
 let selfHealTried = false // 自愈：sign 过期(403)时重解析一次拿新地址
-let pendingSeekSec = 0
+const pendingSeekSec = ref(0)
+const playerState = ref({ currentTime: 0, duration: 0 })
 let lastHistorySaveAt = 0
 let playNoticeTimer = 0
 let playWatchdogTimer = 0
@@ -292,7 +278,7 @@ function clearPlayWatchdog() {
 function schedulePlayWatchdog(url) {
   clearPlayWatchdog()
   playWatchdogTimer = window.setTimeout(() => {
-    const video = videoEl.value
+    const video = currentVideo()
     if (curUrl.value !== url || mode.value !== 'hls' || Number(video?.readyState || 0) > 0) return
     showPlayNotice('连接超时或被当前网络拦截，已尝试切换线路')
     if (tryCleanFallback(url)) return
@@ -305,10 +291,6 @@ function describePlaybackError(data) {
   if (code === 404 || code === 410) return '播放地址已失效，已尝试切换线路'
   if (String(data?.details || '').toLowerCase().includes('timeout')) return '连接超时或被当前网络拦截，已尝试切换线路'
   return '当前网络无法访问，已尝试切换线路'
-}
-function onVideoError() {
-  if (!curUrl.value) return
-  showPlayNotice('播放失败，请切换线路或稍后重试')
 }
 function tryCleanFallback(failedUrl) {
   if (!cleanFallbackUrl.value || failedUrl !== curUrl.value) return false
@@ -329,6 +311,12 @@ const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || cu
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
 const canPlayPrevEp = computed(() => epIdx.value > 0)
 const canPlayNextEp = computed(() => epIdx.value < (curChannel.value?.episodes?.length || 0) - 1)
+const currentPlayTitle = computed(() => {
+  const line = curLine.value?.sourceName || curLine.value?.flag || ''
+  const channel = curLine.value?.channels?.length > 1 ? (chanIdx.value === 0 ? '推荐通道' : `线路${chanIdx.value + 1}`) : ''
+  const ep = curEp.value?.name || ''
+  return [vod.value?.name, line, channel, ep].filter(Boolean).join(' · ')
+})
 const historyProgressText = computed(() => {
   const h = activeLineHistory()
   if (!h) return ''
@@ -448,13 +436,12 @@ function applyHistorySelection(history, lineHistories = []) {
     }
   }
   epIdx.value = Math.max(0, Number(h?.epIndex) || 0)
-  pendingSeekSec = Math.max(0, Number(h?.progressSec) || 0)
+  pendingSeekSec.value = Math.max(0, Number(h?.progressSec) || 0)
 }
 
 function stopPlayback() {
   clearPlayWatchdog()
-  if (hls) { hls.destroy(); hls = null }
-  const video = videoEl.value
+  const video = currentVideo()
   if (video) {
     try { video.pause() } catch {}
     video.removeAttribute('src')
@@ -497,50 +484,18 @@ function handleAccessAction() {
   router.push('/me')
 }
 
+function currentVideo() {
+  return playerRef.value?.getVideo?.() || null
+}
+
+function currentPlayerState() {
+  return playerRef.value?.getState?.() || playerState.value || { currentTime: 0, duration: 0 }
+}
+
 function playHls(url) {
   mode.value = 'hls'
   curUrl.value = url
-  const video = videoEl.value
-  if (hls) { hls.destroy(); hls = null }
-  hlsRecoverCount = 0
-  const seekToPending = () => {
-    if (!video || pendingSeekSec < 8) return
-    const duration = Number(video.duration) || 0
-    if (duration && pendingSeekSec >= duration - 6) return
-    try { video.currentTime = pendingSeekSec } catch {}
-  }
-  video?.addEventListener('loadedmetadata', seekToPending, { once: true })
   schedulePlayWatchdog(url)
-  if (Hls.isSupported()) {
-    hls = new Hls({ maxBufferLength: 30 })
-    hls.loadSource(url)
-    hls.attachMedia(video)
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      clearPlayWatchdog()
-      seekToPending()
-      video.play().catch(()=>{})
-    })
-    hls.on(Hls.Events.ERROR, (_, data) => {
-      if (!data?.fatal || !hls) return
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && hlsRecoverCount < 2) {
-        hlsRecoverCount++
-        hls.startLoad()
-        return
-      }
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hlsRecoverCount < 4) {
-        hlsRecoverCount++
-        hls.recoverMediaError()
-        return
-      }
-      clearPlayWatchdog()
-      if (trySelfHeal()) return // 先尝试重解析拿新 sign(治 sign 过期/403)
-      showPlayNotice(describePlaybackError(data))
-      if (tryCleanFallback(url)) return
-      tryNextPlayback()
-    })
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = url; video.play().catch(()=>{})
-  }
 }
 
 function isIcloudUrl(u) { return typeof u === 'string' && u.includes('/iclouddrive/') }
@@ -557,34 +512,10 @@ async function waitForServiceWorker(timeoutMs = 4000) {
 }
 
 function playDirectUrl(url, kind = '') {
-  if (hls) { hls.destroy(); hls = null }
   if (kind === 'm3u8' || isDirectM3u8(url)) { playHls(url); return }
   mode.value = 'hls'
   curUrl.value = url
-  const video = videoEl.value
-  if (!video) return
-  video.src = url
-  video.play().catch(()=>{})
 }
-
-// 字幕轨（iCloud 系源经 resolve 返回同源代理地址）
-// 同步面板是完全独立的设置面板：默认收起，只有用户点击字幕设置图标才展开，
-// 与原生 video 的 CC 开关状态完全解耦（浏览器原生菜单无法嵌入自定义 UI，只能做独立入口）
-function applySubtitleOffset() {
-  const video = videoEl.value; if (!video) return
-  const tracks = video.textTracks || []
-  for (let i = 0; i < tracks.length; i++) {
-    const tr = tracks[i]; if (tr.kind !== 'subtitles' || !tr.cues) continue
-    for (let j = 0; j < tr.cues.length; j++) {
-      const cue = tr.cues[j]
-      if (cue._o0 === undefined) { cue._o0 = cue.startTime; cue._o1 = cue.endTime }
-      cue.startTime = Math.max(0, cue._o0 + subtitleOffset.value)
-      cue.endTime = Math.max(0, cue._o1 + subtitleOffset.value)
-    }
-  }
-}
-function adjustSubtitle(d) { subtitleOffset.value = Math.round((subtitleOffset.value + d) * 10) / 10; applySubtitleOffset() }
-function resetSubtitle() { subtitleOffset.value = 0; applySubtitleOffset() }
 
 function trySelfHeal() {
   if (selfHealTried) return false
@@ -598,14 +529,21 @@ async function playResolvedEp(i, opts = {}) {
   if (!channel?.id || !vod.value?.id) return
   if (!opts.fresh) selfHealTried = false // 正常起播重置自愈标记
   accessBlock.value = null
-  subtitles.value = []; subtitleOffset.value = 0
+  subtitles.value = []
   resolving.value = true
   try {
     const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i, ...(opts.fresh ? { fresh: 1 } : {}) })
+    if (r.ok && r.url && r.kind === 'iframe') {
+      cleanFallbackUrl.value = ''
+      qualities.value = []
+      mode.value = 'iframe'
+      curUrl.value = r.url
+      saveWatchHistory(i, pendingSeekSec.value || 0)
+      return
+    }
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
-      subSyncOpen.value = false
       // 多清晰度（金牌直连源）：记录可选档，按用户偏好选 URL
       const qs = Array.isArray(r.qualities) ? r.qualities : []
       qualities.value = qs
@@ -618,7 +556,7 @@ async function playResolvedEp(i, opts = {}) {
       // 首次访问时 App.vue 的 SW 注册与本组件加载存在竞态，实测确认过这个时序问题。
       if (isIcloudUrl(playUrl)) await waitForServiceWorker()
       playDirectUrl(playUrl, r.kind)
-      saveWatchHistory(i, pendingSeekSec || 0)
+      saveWatchHistory(i, pendingSeekSec.value || 0)
       return
     }
     if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(r.code)) {
@@ -632,15 +570,16 @@ async function playResolvedEp(i, opts = {}) {
 }
 
 // 切换清晰度：保留当前播放位置重新加载选定档 URL
-function switchQuality(res) {
+function switchQuality(payload) {
+  const res = typeof payload === 'object' ? Number(payload?.resolution || 0) : Number(payload || 0)
   if (res === preferredRes.value) return
   preferredRes.value = res
   const qs = qualities.value || []
   const hit = res ? qs.find((q) => q.resolution === res) : qs[0]
   const url = hit?.url
   if (!url) return
-  const video = videoEl.value
-  pendingSeekSec = Math.floor(Number(video?.currentTime) || 0)
+  const current = typeof payload === 'object' ? Number(payload?.currentTime || 0) : Number(currentPlayerState().currentTime || 0)
+  pendingSeekSec.value = Math.floor(current)
   playDirectUrl(url, 'm3u8')
 }
 
@@ -670,9 +609,9 @@ function tryNextPlayback() {
 function saveWatchHistory(i, progressOverride = null) {
   if (!vod.value?.id || !curUrl.value) return
   const ep = curChannel.value?.episodes?.[i]
-  const video = videoEl.value
-  const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
-  const durationSec = Math.floor(Number(video?.duration) || 0)
+  const state = currentPlayerState()
+  const progressSec = progressOverride === null ? Math.floor(Number(state.currentTime) || 0) : progressOverride
+  const durationSec = Math.floor(Number(state.duration) || 0)
   const payload = {
     vodId: vod.value.id,
     lineId: curChannel.value?.id,
@@ -698,10 +637,31 @@ function onVideoTimeUpdate() {
   lastHistorySaveAt = now
   saveWatchHistory(epIdx.value)
 }
+
+function onPlayerState(state) {
+  playerState.value = state || { currentTime: 0, duration: 0 }
+  clearPlayWatchdog()
+  onVideoTimeUpdate()
+}
+
+function onPlayerEnded(payload) {
+  saveWatchHistory(epIdx.value)
+  if (payload?.autoNext && canPlayNextEp.value) playNextEp()
+}
+
+function onPlayerError(data) {
+  if (!curUrl.value) return
+  clearPlayWatchdog()
+  if (trySelfHeal()) return
+  showPlayNotice(describePlaybackError(data))
+  if (tryCleanFallback(curUrl.value)) return
+  tryNextPlayback()
+}
+
 function playEp(i, opts = {}) {
   epIdx.value = i
   cleanFallbackUrl.value = ''
-  if (!opts.keepResume) pendingSeekSec = 0
+  if (!opts.keepResume) pendingSeekSec.value = 0
   playResolvedEp(i)
 }
 function playPrevEp() {
@@ -781,26 +741,7 @@ async function toggleFollow() {
   }
 }
 
-// 键盘快捷键（桌面/平板）：仅在非输入态 + 视频已加载时生效，不影响手机触控
-function onPlayerKeydown(e) {
-  const video = videoEl.value
-  if (!video || mode.value !== 'hls' || accessBlock.value) return
-  const el = document.activeElement
-  const tag = (el?.tagName || '').toLowerCase()
-  if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return
-  switch (e.key) {
-    case ' ': case 'k': e.preventDefault(); video.paused ? video.play().catch(()=>{}) : video.pause(); break
-    case 'f': e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen?.(); else (video.closest('.player-box') || video).requestFullscreen?.(); break
-    case 'ArrowLeft': e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 5); break
-    case 'ArrowRight': e.preventDefault(); video.currentTime = Math.min(video.duration || 1e9, video.currentTime + 5); break
-    case 'ArrowUp': e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); break
-    case 'ArrowDown': e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); break
-    case 'm': e.preventDefault(); video.muted = !video.muted; break
-  }
-}
-
-function onGlobalClickCloseSubSync() { subSyncOpen.value = false }
-onMounted(() => { loadVod(route.params.id); window.addEventListener('keydown', onPlayerKeydown); document.addEventListener('click', onGlobalClickCloseSubSync) })
+onMounted(() => { loadVod(route.params.id) })
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
@@ -810,10 +751,7 @@ watch([epIdx, curChannel], () => {
 })
 onBeforeUnmount(() => {
   if (curUrl.value) saveWatchHistory(epIdx.value)
-  if (hls) hls.destroy()
   clearPlayWatchdog()
-  window.removeEventListener('keydown', onPlayerKeydown)
-  document.removeEventListener('click', onGlobalClickCloseSubSync)
 })
 </script>
 
