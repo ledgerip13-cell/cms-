@@ -1211,7 +1211,8 @@ onDeactivated(() => {
   min-height: 100dvh;
   padding-top: env(safe-area-inset-top);
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
-  background: #fff;
+  background-color: #fff;
+  background-image: linear-gradient(180deg, #000 0, #000 env(safe-area-inset-top), #fff env(safe-area-inset-top), #fff 100%);
   color: #15171d;
 }
 .mp-player {
