@@ -665,10 +665,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /></svg>
               <span>我的追剧</span>
             </button>
-            <button type="button" :class="{ active: x8UserTab === 'password' }" @click="selectX8UserTab('password')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-              <span>修改密码</span>
-            </button>
           </nav>
           <button class="x8-user-side-logout" type="button" @click="logoutX8">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5" /></svg>
@@ -689,30 +685,50 @@
           </div>
 
           <div v-else-if="x8UserTab === 'userInfo'" class="x8-user-info-panel">
-            <div class="x8-user-stats">
-              <div class="x8-user-info-row"><span>账号</span><strong>{{ user?.username || '-' }}</strong></div>
-              <div class="x8-user-info-row"><span>邮箱</span><strong>{{ user?.email || '未绑定' }}</strong></div>
-              <div class="x8-user-info-row"><span>昵称</span><strong>{{ user?.nickname || user?.username || '-' }}</strong></div>
-              <div class="x8-user-info-row"><span>观看记录</span><strong>{{ x8UserHistory.length }} 条</strong></div>
-              <div class="x8-user-info-row"><span>我的追剧</span><strong>{{ x8UserFollows.length }} 部</strong></div>
+            <div class="x8-user-inner-tabs">
+              <button type="button" :class="{ active: x8ProfileTab === 'profile' }" @click="x8ProfileTab = 'profile'">个人资料</button>
+              <button type="button" :class="{ active: x8ProfileTab === 'prefs' }" @click="x8ProfileTab = 'prefs'">个人喜好</button>
+              <button type="button" :class="{ active: x8ProfileTab === 'password' }" @click="x8ProfileTab = 'password'">修改密码</button>
             </div>
-            <div class="x8-user-email">
+            <div v-if="x8ProfileTab === 'profile'" class="x8-user-email">
               <div class="x8-user-section-head">
                 <div>
-                  <strong>{{ user?.email ? '邮箱管理' : '绑定邮箱' }}</strong>
-                  <span>{{ user?.email ? '更新后可继续使用邮箱登录' : '绑定后可使用邮箱登录账号' }}</span>
+                  <strong>个人资料</strong>
+                  <span>账号只读，资料修改后会同步到当前登录状态</span>
                 </div>
-                <button class="x8-user-save" type="button" :disabled="x8EmailSaving" @click="saveX8Email">{{ x8EmailSaving ? '保存中...' : (user?.email ? '保存邮箱' : '绑定邮箱') }}</button>
+                <button class="x8-user-save" type="button" :disabled="x8ProfileSaving" @click="saveX8Profile">{{ x8ProfileSaving ? '保存中...' : '确认保存' }}</button>
               </div>
               <div class="x8-user-email-grid">
                 <label>
+                  <span>用户账号</span>
+                  <input :value="user?.username || '-'" readonly />
+                </label>
+                <label>
+                  <span>个人昵称</span>
+                  <input v-model.trim="x8ProfileForm.nickname" autocomplete="nickname" maxlength="32" placeholder="请输入昵称" @input="x8ProfileMsg = ''" />
+                </label>
+                <label>
                   <span>邮箱地址</span>
-                  <input v-model.trim="x8EmailForm.email" type="email" autocomplete="email" maxlength="120" placeholder="请输入邮箱地址" @input="x8EmailMsg = ''" />
+                  <input v-model.trim="x8ProfileForm.email" type="email" autocomplete="email" maxlength="120" placeholder="请输入邮箱地址" @input="x8ProfileMsg = ''" />
+                </label>
+                <label>
+                  <span>性别</span>
+                  <select v-model="x8ProfileForm.gender" @change="x8ProfileMsg = ''">
+                    <option value="">未设置</option>
+                    <option value="male">男</option>
+                    <option value="female">女</option>
+                    <option value="other">其他</option>
+                    <option value="unknown">保密</option>
+                  </select>
+                </label>
+                <label>
+                  <span>最后登录</span>
+                  <input :value="formatX8Time(user?.lastLogin) || '暂无记录'" readonly />
                 </label>
               </div>
-              <div v-if="x8EmailMsg" class="x8-user-form-msg">{{ x8EmailMsg }}</div>
+              <div v-if="x8ProfileMsg" class="x8-user-form-msg">{{ x8ProfileMsg }}</div>
             </div>
-            <div class="x8-user-pref">
+            <div v-else-if="x8ProfileTab === 'prefs'" class="x8-user-pref">
               <div class="x8-user-section-head">
                 <div>
                   <strong>个人喜好</strong>
@@ -746,31 +762,30 @@
                 </section>
               </div>
             </div>
-          </div>
-
-          <div v-else-if="x8UserTab === 'password'" class="x8-user-password">
-            <div class="x8-user-section-head">
-              <div>
-                <strong>修改密码</strong>
-                <span>定期更新密码，保护账号安全</span>
+            <div v-else class="x8-user-password">
+              <div class="x8-user-section-head">
+                <div>
+                  <strong>修改密码</strong>
+                  <span>定期更新密码，保护账号安全</span>
+                </div>
+                <button class="x8-user-save" type="button" :disabled="x8PasswordSaving" @click="changeX8Password">{{ x8PasswordSaving ? '保存中...' : '确认保存' }}</button>
               </div>
-              <button class="x8-user-save" type="button" :disabled="x8PasswordSaving" @click="changeX8Password">{{ x8PasswordSaving ? '保存中...' : '保存密码' }}</button>
+              <div class="x8-user-password-grid">
+                <label>
+                  <span>原密码</span>
+                  <input v-model="x8PasswordForm.oldPassword" type="password" autocomplete="current-password" placeholder="请输入原密码" @input="x8PasswordMsg = ''" />
+                </label>
+                <label>
+                  <span>新密码</span>
+                  <input v-model="x8PasswordForm.newPassword" type="password" autocomplete="new-password" placeholder="至少6位" @input="x8PasswordMsg = ''" />
+                </label>
+                <label>
+                  <span>再次输入</span>
+                  <input v-model="x8PasswordForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" @input="x8PasswordMsg = ''" />
+                </label>
+              </div>
+              <div v-if="x8PasswordMsg" class="x8-user-form-msg">{{ x8PasswordMsg }}</div>
             </div>
-            <div class="x8-user-password-grid">
-              <label>
-                <span>当前密码</span>
-                <input v-model="x8PasswordForm.oldPassword" type="password" autocomplete="current-password" placeholder="请输入当前密码" @input="x8PasswordMsg = ''" />
-              </label>
-              <label>
-                <span>新密码</span>
-                <input v-model="x8PasswordForm.newPassword" type="password" autocomplete="new-password" placeholder="至少6位" @input="x8PasswordMsg = ''" />
-              </label>
-              <label>
-                <span>确认新密码</span>
-                <input v-model="x8PasswordForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" @input="x8PasswordMsg = ''" />
-              </label>
-            </div>
-            <div v-if="x8PasswordMsg" class="x8-user-form-msg">{{ x8PasswordMsg }}</div>
           </div>
 
           <div v-else-if="x8UserTab === 'history'" class="x8-user-history-panel">
@@ -1036,6 +1051,10 @@ const loginConfig = ref({ allowRegister: true, inviteRequired: false })
 const loginLoading = ref(false)
 const loginError = ref('')
 const loginForm = reactive({ username: '', email: '', password: '', nickname: '', inviteCode: '' })
+const x8ProfileTab = ref('profile')
+const x8ProfileForm = reactive({ nickname: '', email: '', gender: '' })
+const x8ProfileSaving = ref(false)
+const x8ProfileMsg = ref('')
 const x8EmailForm = reactive({ email: '' })
 const x8EmailSaving = ref(false)
 const x8EmailMsg = ref('')
@@ -1174,7 +1193,6 @@ const x8UserTab = computed(() => normalizeX8UserTab(route.query.tab))
 const x8UserTabTitle = computed(() => {
   if (x8UserTab.value === 'history') return '观看历史'
   if (x8UserTab.value === 'follows') return '我的追剧'
-  if (x8UserTab.value === 'password') return '修改密码'
   return '个人资料'
 })
 const x8AllFollowsSelected = computed(() => {
@@ -1785,7 +1803,11 @@ function goDetail(id) {
 }
 function normalizeX8UserTab(tab) {
   const value = Array.isArray(tab) ? tab[0] : tab
-  if (value === 'history' || value === 'follows' || value === 'password') return value
+  if (value === 'password') {
+    x8ProfileTab.value = 'password'
+    return 'userInfo'
+  }
+  if (value === 'history' || value === 'follows') return value
   return 'userInfo'
 }
 function selectX8UserTab(tab) {
@@ -1924,6 +1946,52 @@ function cancelSelectedX8Follows() {
 function cancelOneX8Follow(id) {
   return cancelX8Follows([id])
 }
+function syncX8ProfileForm() {
+  x8ProfileForm.nickname = user.value?.nickname || user.value?.username || ''
+  x8ProfileForm.email = user.value?.email || ''
+  x8ProfileForm.gender = user.value?.gender || ''
+  x8ProfileMsg.value = ''
+}
+function validateX8Profile() {
+  const nickname = String(x8ProfileForm.nickname || '').trim()
+  const email = String(x8ProfileForm.email || '').trim()
+  if (!nickname) return '请输入个人昵称'
+  if (nickname.length > 32) return '昵称最多32个字符'
+  if (!email) return '请输入邮箱'
+  if (email.length > 120) return '邮箱过长'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '邮箱格式不正确'
+  return ''
+}
+async function saveX8Profile() {
+  if (!user.value) return goLogin()
+  const invalid = validateX8Profile()
+  if (invalid) {
+    x8ProfileMsg.value = invalid
+    notifyWarning(invalid)
+    return
+  }
+  x8ProfileSaving.value = true
+  x8ProfileMsg.value = ''
+  try {
+    const updated = await api.updateUserProfile({
+      nickname: x8ProfileForm.nickname,
+      favoriteTypes: x8Prefs.value,
+      email: x8ProfileForm.email,
+      gender: x8ProfileForm.gender,
+    })
+    user.value = updated
+    localStorage.setItem('vcms.user', JSON.stringify(updated))
+    syncX8ProfileForm()
+    syncX8EmailForm()
+    x8ProfileMsg.value = '资料已保存'
+    notifySuccess('资料已保存')
+  } catch (error) {
+    x8ProfileMsg.value = apiErrorMessage(error, '保存失败')
+    notifyError(x8ProfileMsg.value)
+  } finally {
+    x8ProfileSaving.value = false
+  }
+}
 function syncX8EmailForm() {
   x8EmailForm.email = user.value?.email || ''
   x8EmailMsg.value = ''
@@ -2030,6 +2098,7 @@ async function loadX8UserCenter() {
     if (!x8UserFollows.value.length) x8FollowEditing.value = false
     x8Prefs.value = Array.isArray(user.value?.favoriteTypes) ? [...user.value.favoriteTypes] : []
     x8SelectedPrefTypes.value.forEach(type => { void loadX8PrefSubtypes(type) })
+    syncX8ProfileForm()
     syncX8EmailForm()
   } finally {
     x8UserLoading.value = false

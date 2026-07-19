@@ -399,6 +399,7 @@ docker compose up -d --build
 ### 🔴 下一步（接班切入点，源自 `docs/backlog.md`）
 - **2026-07-19 观看历史线路级后端升级断点**：`server/prisma/schema.prisma` 将 `WatchHistory` 唯一键从 `userId+vodId` 调整为 `userId+vodId+lineId`，并新增 `userId+vodId+updatedAt` 索引；`server/src/routes/users.ts` 的 `/api/user/vods/:id/state` 现在返回最近 `history` 与全部 `lineHistories`，`POST /api/user/history` 按线路 upsert；`server/src/routes/vods.ts` 合并影片时按线路保留观看历史。已确认线上现有 693 条历史无新唯一键冲突，`lineId` 无空值；已执行 `prisma db push --accept-data-loss` 同步 schema。
 - **2026-07-19 三套模板观看历史线路级前台断点**：`web/src/views/Play.vue` 普通自适应 PC 补游客本地观看历史 `vcms.play.local.history`，并按当前线路显示选集进度/续播；`web/src/x8/X8Home.vue` 本地历史从同片覆盖改为同片同线路覆盖，登录态读取 `lineHistories`；`web/src/mobile/MobilePlay.vue` 与 `web/src/mobile/MobileShorts.vue` 兼容移动本地历史新结构 `latest + lineHistories`，同一影片不同线路不再互相覆盖。旧本地历史结构仍可读。
+- **2026-07-19 X8 个人中心资料页升级断点**：`server/prisma/schema.prisma` 为 `WebUser` 新增 `gender` 字段；`server/src/routes/users.ts` 的前台/后台用户输出补 `gender/lastLogin`，前台 `PUT /api/user/profile` 支持更新 `gender`。`web/src/x8/X8Home.vue` 将“修改密码”从左侧菜单抽离到个人资料页内 tab，并把个人资料页拆为 `个人资料 / 个人喜好 / 修改密码`：账号、最后登录只读，昵称/邮箱/性别可编辑，修改密码保持原密码/新密码/再次输入表单。待执行 `prisma db push`、部署与分身验收。
 1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。
 2. **播放访问模型重构**：把分类访问从「两个独立开关」改为**层级模型**；隐藏/禁用展示必须一律等于不可观看（含直连 `/api/resolve`）；观看权限统一按 `展示允许 AND 观看允许` 评估，后台 UI 禁止出现「隐藏展示 + 公开观看」等矛盾配置；抽公共的**服务端展示过滤 / 可观看过滤** helper（勿在历史/关注/推荐里复用基于展示的 `enabledTypeNames()`）；观看历史写入**延迟到 resolve 成功后**，避免被拒播放产生历史记录。
 
