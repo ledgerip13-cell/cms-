@@ -212,6 +212,7 @@ model WebUser {
   username      String               @unique
   email         String?              @unique
   nickname      String               @default("")
+  gender        String               @default("") // unknown / male / female / other（前台资料展示）
   password      String
   enabled       Boolean              @default(true)
   isVip         Boolean              @default(false) // legacy：旧VIP开关，仅用于迁移，不再作为权限来源

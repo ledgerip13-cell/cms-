@@ -96,13 +96,20 @@ async function findWebUserByLogin(login: string, include: any = undefined) {
   });
 }
 
-function publicUser(u: { id: number; username: string; email?: string | null; nickname: string; favoriteTypes: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
+function normalizeGender(value: any) {
+  const gender = String(value || "").trim();
+  return ["male", "female", "other", "unknown"].includes(gender) ? gender : "";
+}
+
+function publicUser(u: { id: number; username: string; email?: string | null; nickname: string; gender?: string; favoriteTypes: string; lastLogin?: Date | null; vipExpireAt?: Date | null; vipLevel?: any | null }) {
   return {
     id: u.id,
     username: u.username,
     email: u.email || "",
     nickname: u.nickname,
+    gender: u.gender || "",
     favoriteTypes: parseJsonArray(u.favoriteTypes),
+    lastLogin: u.lastLogin || null,
     isVip: isVipLevelActive(u),
     vipExpireAt: u.vipExpireAt || null,
     vipLevel: publicVipLevel(u.vipLevel),
@@ -114,6 +121,7 @@ function adminUser(u: {
   username: string;
   email?: string | null;
   nickname: string;
+  gender?: string;
   enabled: boolean;
   vipExpireAt: Date | null;
   vipLevel?: any | null;
@@ -128,6 +136,7 @@ function adminUser(u: {
     username: u.username,
     email: u.email || "",
     nickname: u.nickname,
+    gender: u.gender || "",
     enabled: u.enabled,
     isVip: isVipLevelActive(u),
     vipExpireAt: u.vipExpireAt,
@@ -392,6 +401,7 @@ export default async function userRoutes(app: FastifyInstance) {
     const favoriteTypes = normalizeTypes(b.favoriteTypes);
     const nickname = String(b.nickname || "").trim().slice(0, 32);
     const data: any = { nickname, favoriteTypes: JSON.stringify(favoriteTypes) };
+    if (Object.prototype.hasOwnProperty.call(b, "gender")) data.gender = normalizeGender(b.gender);
     if (Object.prototype.hasOwnProperty.call(b, "email")) {
       const email = normalizeEmail(b.email);
       const emailError = validateEmail(email);
