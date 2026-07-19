@@ -615,13 +615,12 @@ async function mergeVods(targetId: number, sourceIds: number[]) {
     `;
     await tx.$executeRaw`
       INSERT INTO "WatchHistory" ("userId", "vodId", "lineId", "epIndex", "epName", "progressSec", "durationSec", "createdAt", "updatedAt")
-      SELECT DISTINCT ON ("userId")
+      SELECT DISTINCT ON ("userId", "lineId")
         "userId", ${targetId}, "lineId", "epIndex", "epName", "progressSec", "durationSec", "createdAt", "updatedAt"
       FROM "WatchHistory"
       WHERE "vodId" IN (${Prisma.join(sourceIdList)})
-      ORDER BY "userId", "updatedAt" DESC
-      ON CONFLICT ("userId", "vodId") DO UPDATE SET
-        "lineId" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."lineId" ELSE "WatchHistory"."lineId" END,
+      ORDER BY "userId", "lineId", "updatedAt" DESC
+      ON CONFLICT ("userId", "vodId", "lineId") DO UPDATE SET
         "epIndex" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."epIndex" ELSE "WatchHistory"."epIndex" END,
         "epName" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."epName" ELSE "WatchHistory"."epName" END,
         "progressSec" = CASE WHEN EXCLUDED."updatedAt" > "WatchHistory"."updatedAt" THEN EXCLUDED."progressSec" ELSE "WatchHistory"."progressSec" END,

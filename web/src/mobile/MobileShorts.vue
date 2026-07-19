@@ -506,8 +506,9 @@ const visibleEpisodes = computed(() => episodeList.value.slice(activeRange.value
 const activeLineHistory = computed(() => {
   const unit = activeUnit.value
   const history = vodHistoryState.value?.[unit?.vod?.id]
-  if (!unit?.channel?.id || !history?.lineId) return null
-  return Number(history.lineId) === Number(unit.channel.id) ? history : null
+  const histories = Array.isArray(history?.lineHistories) ? history.lineHistories : (history ? [history] : [])
+  if (!unit?.channel?.id) return null
+  return histories.find(item => Number(item?.lineId || 0) === Number(unit.channel.id)) || null
 })
 const episodeHistoryText = computed(() => {
   const h = activeLineHistory.value
@@ -589,9 +590,22 @@ function readLocalHistory(vodId) {
   try {
     const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
     const data = raw ? JSON.parse(raw) : {}
-    return data?.[vodId] || null
+    const entry = data?.[vodId]
+    return entry?.latest || entry || null
   } catch {
     return null
+  }
+}
+
+function readLocalLineHistories(vodId) {
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    const entry = data?.[vodId]
+    if (Array.isArray(entry?.lineHistories)) return entry.lineHistories
+    return entry ? [entry] : []
+  } catch {
+    return []
   }
 }
 
@@ -600,7 +614,14 @@ function writeLocalHistory(history) {
   try {
     const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
     const data = raw ? JSON.parse(raw) : {}
-    data[history.vodId] = { ...history, updatedAt: Date.now() }
+    const previous = data[history.vodId]
+    const existingLines = Array.isArray(previous?.lineHistories) ? previous.lineHistories : (previous ? [previous] : [])
+    const updated = { ...history, updatedAt: Date.now() }
+    const lineHistories = [
+      updated,
+      ...existingLines.filter(item => Number(item?.lineId || 0) !== Number(updated.lineId || 0)),
+    ].slice(0, 20)
+    data[history.vodId] = { ...updated, latest: updated, lineHistories }
     const rows = Object.entries(data).sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0)).slice(0, 120)
     localStorage.setItem(MOBILE_HISTORY_KEY, JSON.stringify(Object.fromEntries(rows)))
   } catch {}
@@ -613,23 +634,35 @@ function isHistoryEpisode(index) {
 
 function updateVodHistory(unit, progressSec, durationSecValue) {
   if (!unit?.vod?.id || !unit?.channel?.id) return
+  const previous = vodHistoryState.value?.[unit.vod.id]
+  const existingLines = Array.isArray(previous?.lineHistories) ? previous.lineHistories : (previous ? [previous] : [])
+  const current = {
+    vodId: unit.vod.id,
+    lineId: unit.channel.id,
+    epIndex: unit.epIndex,
+    epName: unit.epName || '',
+    progressSec: Math.max(0, Math.floor(Number(progressSec) || 0)),
+    durationSec: Math.max(0, Math.floor(Number(durationSecValue) || 0)),
+  }
+  const lineHistories = [
+    current,
+    ...existingLines.filter(item => Number(item?.lineId || 0) !== Number(current.lineId || 0)),
+  ]
   vodHistoryState.value = {
     ...vodHistoryState.value,
     [unit.vod.id]: {
-      ...(vodHistoryState.value?.[unit.vod.id] || {}),
-      vodId: unit.vod.id,
-      lineId: unit.channel.id,
-      epIndex: unit.epIndex,
-      epName: unit.epName || '',
-      progressSec: Math.max(0, Math.floor(Number(progressSec) || 0)),
-      durationSec: Math.max(0, Math.floor(Number(durationSecValue) || 0)),
+      ...current,
+      latest: current,
+      lineHistories,
     },
   }
-  writeLocalHistory(vodHistoryState.value[unit.vod.id])
+  writeLocalHistory(current)
 }
 
 function applyShortsHistorySeek(video, unit) {
-  const h = vodHistoryState.value?.[unit?.vod?.id]
+  const state = vodHistoryState.value?.[unit?.vod?.id]
+  const histories = Array.isArray(state?.lineHistories) ? state.lineHistories : (state ? [state] : [])
+  const h = histories.find(item => Number(item?.lineId || 0) === Number(unit?.channel?.id || 0))
   if (!video || !h) return
   if (Number(h.lineId) !== Number(unit?.channel?.id) || Number(h.epIndex) !== Number(unit?.epIndex)) return
   const seek = Number(h.progressSec) || 0
@@ -1691,13 +1724,14 @@ async function playVodInShorts(vodId) {
     const history = user.value ? await api.userVodState(id).catch(() => null) : null
     if (requestId !== routePlayRequestId) return
     const resumeHistory = history?.history || readLocalHistory(id)
+    const lineHistories = Array.isArray(history?.lineHistories) && history.lineHistories.length
+      ? history.lineHistories
+      : readLocalLineHistories(id)
     if (resumeHistory) {
-      updateVodHistory({
-        vod: { id },
-        channel: { id: resumeHistory.lineId },
-        epIndex: resumeHistory.epIndex,
-        epName: resumeHistory.epName,
-      }, resumeHistory.progressSec, resumeHistory.durationSec)
+      vodHistoryState.value = {
+        ...vodHistoryState.value,
+        [id]: { ...resumeHistory, latest: resumeHistory, lineHistories: lineHistories.length ? lineHistories : [resumeHistory] },
+      }
     }
     const requestedEpIndex = Math.max(0, Number(resumeHistory?.epIndex) || 0)
     let candidates = playableLineCandidates(detail, requestedEpIndex)

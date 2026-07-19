@@ -1016,6 +1016,7 @@ const playUrl = ref('')
 const playKind = ref('')
 const resolving = ref(false)
 const vodHistory = ref(null)
+const vodLineHistories = ref([])
 const videoEl = ref(null)
 const videoBox = ref(null)
 const navEl = ref(null)
@@ -1282,7 +1283,7 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
 })
 const historyPercent = computed(() => {
-  const h = vodHistory.value
+  const h = activeLineHistory()
   const durationSec = Number(h?.durationSec || 0)
   const progressSec = Number(h?.progressSec || 0)
   if (!durationSec || !progressSec) return 0
@@ -2252,6 +2253,10 @@ function saveWatchHistory(force = false) {
     durationSec,
   }
   vodHistory.value = { ...(vodHistory.value || {}), ...payload }
+  vodLineHistories.value = [
+    payload,
+    ...vodLineHistories.value.filter(item => !(Number(item?.lineId) === Number(payload.lineId))),
+  ]
   saveLocalHistory(payload)
   if (user.value) api.saveHistory(payload).catch(() => {})
 }
@@ -2278,7 +2283,7 @@ function saveLocalHistory(payload) {
       year: vod.value.year,
     },
   }
-  const rows = readLocalHistory().filter(item => Number(item.vodId) !== Number(row.vodId))
+  const rows = readLocalHistory().filter(item => !(Number(item.vodId) === Number(row.vodId) && Number(item.lineId) === Number(row.lineId)))
   const next = [row, ...rows].slice(0, 30)
   localHistoryRows.value = next
   try {
@@ -2293,6 +2298,9 @@ function clearLocalHistory() {
 }
 function localHistoryForVod(id) {
   return readLocalHistory().find(item => Number(item.vodId) === Number(id)) || null
+}
+function localLineHistoriesForVod(id) {
+  return readLocalHistory().filter(item => Number(item.vodId) === Number(id))
 }
 function historyItemProgress(item) {
   const durationSec = Number(item?.durationSec || 0)
@@ -2317,14 +2325,22 @@ function goHistoryItem(item) {
   })
 }
 function isHistoryEpisode(index, lineId = currentLineId.value) {
-  const h = vodHistory.value
+  const h = activeLineHistory(lineId)
   if (!h || Number(h.epIndex) !== Number(index)) return false
-  if (h.lineId && lineId && Number(h.lineId) !== Number(lineId)) return false
   return true
 }
 function episodeProgressStyle(index, lineId = currentLineId.value) {
   if (!isHistoryEpisode(index, lineId)) return undefined
   return { '--x8-episode-progress': `${historyPercent.value || 100}%` }
+}
+function activeLineHistory(lineId = currentLineId.value) {
+  const histories = Array.isArray(vodLineHistories.value) ? vodLineHistories.value : []
+  const hit = histories.find(item => Number(item?.lineId || 0) === Number(lineId || 0))
+  if (hit) return hit
+  const h = vodHistory.value
+  if (!h) return null
+  if (h.lineId && lineId && Number(h.lineId) !== Number(lineId)) return null
+  return h
 }
 function showPlayerControls() {
   controlsVisible.value = true
@@ -2825,6 +2841,7 @@ async function loadVod(withPlay = false) {
   selectedPlayGroupIdx.value = 0
   followed.value = false
   vodHistory.value = null
+  vodLineHistories.value = []
   historySaveAt = 0
   try {
     await ensureTypes()
@@ -2843,7 +2860,8 @@ async function loadVod(withPlay = false) {
     related.value = relatedRows || []
     followed.value = Boolean(state?.followed)
     if (currentUser) setFollowedId(id, Boolean(state?.followed))
-    vodHistory.value = state?.history || localHistoryForVod(id)
+    vodLineHistories.value = Array.isArray(state?.lineHistories) && state.lineHistories.length ? state.lineHistories : localLineHistoriesForVod(id)
+    vodHistory.value = state?.history || vodLineHistories.value[0] || localHistoryForVod(id)
     const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
     if (!requestedLineId && historyLine) currentLineId.value = historyLine.id
     if (withPlay && currentLineId.value) playCurrent()

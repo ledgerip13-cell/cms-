@@ -225,6 +225,7 @@ const chanIdx = ref(0)
 const epIdx = ref(0)
 const activeEpisodeRangeStart = ref(0)
 const historyState = ref(null)
+const historyLineStates = ref([])
 const pendingSeekSec = ref(0)
 const playingChannel = ref(null)
 const playingEpIndex = ref(0)
@@ -287,11 +288,11 @@ const visibleEpisodes = computed(() => episodes.value.slice(activeEpisodeRange.v
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
 const historyMatchesCurrentLine = computed(() => {
-  const h = historyState.value
+  const h = activeLineHistory()
   return Boolean(h?.lineId && curChannel.value?.id && Number(h.lineId) === Number(curChannel.value.id))
 })
 const historyProgressText = computed(() => {
-  const h = historyState.value
+  const h = activeLineHistory()
   if (!h || !historyMatchesCurrentLine.value) return ''
   const progress = Number(h.progressSec) || 0
   const total = Number(h.durationSec) || 0
@@ -300,7 +301,7 @@ const historyProgressText = computed(() => {
   return formatTime(progress)
 })
 const historyProgressPercent = computed(() => {
-  const h = historyState.value
+  const h = activeLineHistory()
   if (!h || !historyMatchesCurrentLine.value) return '0%'
   const progress = Number(h.progressSec) || 0
   const total = Number(h.durationSec) || 0
@@ -347,9 +348,22 @@ function readLocalHistory(vodId) {
   try {
     const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
     const data = raw ? JSON.parse(raw) : {}
-    return data?.[vodId] || null
+    const entry = data?.[vodId]
+    return entry?.latest || entry || null
   } catch {
     return null
+  }
+}
+
+function readLocalLineHistories(vodId) {
+  try {
+    const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    const entry = data?.[vodId]
+    if (Array.isArray(entry?.lineHistories)) return entry.lineHistories
+    return entry ? [entry] : []
+  } catch {
+    return []
   }
 }
 
@@ -358,7 +372,14 @@ function writeLocalHistory(history) {
   try {
     const raw = localStorage.getItem(MOBILE_HISTORY_KEY)
     const data = raw ? JSON.parse(raw) : {}
-    data[history.vodId] = { ...history, updatedAt: Date.now() }
+    const previous = data[history.vodId]
+    const existingLines = Array.isArray(previous?.lineHistories) ? previous.lineHistories : (previous ? [previous] : [])
+    const updated = { ...history, updatedAt: Date.now() }
+    const lineHistories = [
+      updated,
+      ...existingLines.filter(item => Number(item?.lineId || 0) !== Number(updated.lineId || 0)),
+    ].slice(0, 20)
+    data[history.vodId] = { ...updated, latest: updated, lineHistories }
     const rows = Object.entries(data).sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0)).slice(0, 120)
     localStorage.setItem(MOBILE_HISTORY_KEY, JSON.stringify(Object.fromEntries(rows)))
   } catch {}
@@ -756,7 +777,7 @@ function formatTime(value) {
 }
 
 function isHistoryEpisode(index) {
-  const h = historyState.value
+  const h = activeLineHistory()
   return Boolean(historyMatchesCurrentLine.value && historyProgressText.value && Number(h?.epIndex) === Number(index))
 }
 
@@ -804,10 +825,20 @@ function applyHistorySeek(video) {
 }
 
 function syncPendingHistorySeek() {
-  const h = historyState.value
+  const h = activeLineHistory()
   pendingSeekSec.value = historyMatchesCurrentLine.value && Number(h?.epIndex) === Number(epIdx.value)
     ? Math.max(0, Number(h?.progressSec) || 0)
     : 0
+}
+
+function activeLineHistory(lineId = curChannel.value?.id) {
+  const histories = Array.isArray(historyLineStates.value) ? historyLineStates.value : []
+  const hit = histories.find(item => Number(item?.lineId || 0) === Number(lineId || 0))
+  if (hit) return hit
+  const h = historyState.value
+  if (!h) return null
+  if (h.lineId && lineId && Number(h.lineId) !== Number(lineId)) return null
+  return h
 }
 
 function updateLocalHistory(progressSec, durationSecValue, options = {}) {
@@ -824,11 +855,16 @@ function updateLocalHistory(progressSec, durationSecValue, options = {}) {
     progressSec: Math.max(0, Math.floor(Number(progressSec) || 0)),
     durationSec: Math.max(0, Math.floor(Number(durationSecValue) || 0)),
   }
+  historyLineStates.value = [
+    historyState.value,
+    ...historyLineStates.value.filter(item => Number(item?.lineId || 0) !== Number(historyState.value?.lineId || 0)),
+  ]
   writeLocalHistory(historyState.value)
 }
 
-function applyHistorySelection(history) {
+function applyHistorySelection(history, lineHistories = []) {
   historyState.value = history || null
+  historyLineStates.value = Array.isArray(lineHistories) && lineHistories.length ? lineHistories : (history ? [history] : [])
   const h = historyState.value
   if (h?.lineId && vod.value.lines?.length) {
     for (let li = 0; li < vod.value.lines.length; li++) {
@@ -1099,6 +1135,7 @@ async function loadVod(id) {
   epIdx.value = 0
   activeEpisodeRangeStart.value = 0
   historyState.value = null
+  historyLineStates.value = []
   pendingSeekSec.value = 0
   playingChannel.value = null
   playingEpIndex.value = 0
@@ -1107,7 +1144,7 @@ async function loadVod(id) {
     const data = await api.vod(id)
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     vod.value = data || {}
-    applyHistorySelection(readLocalHistory(id))
+    applyHistorySelection(readLocalHistory(id), readLocalLineHistories(id))
     await nextTick()
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     if (user.value) {
@@ -1116,7 +1153,7 @@ async function loadVod(id) {
         if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
         followed.value = Boolean(state?.followed)
         const h = state?.history
-        if (h) applyHistorySelection(h)
+        if (h) applyHistorySelection(h, state?.lineHistories)
       } catch {}
     }
     alignEpisodeRange(epIdx.value)

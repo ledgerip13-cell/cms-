@@ -499,8 +499,9 @@ model WatchHistory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([userId, vodId])
+  @@unique([userId, vodId, lineId])
   @@index([userId, updatedAt])
+  @@index([userId, vodId, updatedAt])
   @@index([vodId])
 }
 

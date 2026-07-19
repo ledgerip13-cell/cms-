@@ -140,7 +140,12 @@
         </div>
         <div class="eps-grid">
           <span v-for="item in visibleEpisodes" :key="item.index" class="ep"
-            :class="{on: epIdx===item.index}" @click="playEp(item.index)">{{ item.episode.name }}</span>
+            :class="{on: epIdx===item.index, watched: isHistoryEpisode(item.index)}"
+            :style="episodeProgressStyle(item.index)"
+            @click="playEp(item.index)">
+            <span>{{ item.episode.name }}</span>
+            <em v-if="isHistoryEpisode(item.index)">{{ historyProgressText }}</em>
+          </span>
         </div>
       </div>
     </div>
@@ -250,6 +255,8 @@ const curQualityLabel = computed(() => {
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
+const historyState = ref(null)
+const historyLineStates = ref([])
 let hls = null
 let hlsRecoverCount = 0
 let selfHealTried = false // 自愈：sign 过期(403)时重解析一次拿新地址
@@ -257,6 +264,7 @@ let pendingSeekSec = 0
 let lastHistorySaveAt = 0
 let playNoticeTimer = 0
 let playWatchdogTimer = 0
+const PLAY_LOCAL_HISTORY_KEY = 'vcms.play.local.history'
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
 function onErr(e, fallback = '') {
@@ -321,6 +329,21 @@ const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || cu
 const curEp = computed(() => curChannel.value?.episodes?.[epIdx.value])
 const canPlayPrevEp = computed(() => epIdx.value > 0)
 const canPlayNextEp = computed(() => epIdx.value < (curChannel.value?.episodes?.length || 0) - 1)
+const historyProgressText = computed(() => {
+  const h = activeLineHistory()
+  if (!h) return ''
+  const progress = Number(h.progressSec) || 0
+  const total = Number(h.durationSec) || 0
+  if (progress < 20) return ''
+  if (total > 0) return `${Math.max(1, Math.min(99, Math.round((progress / total) * 100)))}%`
+  return formatHistoryTime(progress)
+})
+const historyProgressPercent = computed(() => {
+  const h = activeLineHistory()
+  const progress = Number(h?.progressSec || 0)
+  const total = Number(h?.durationSec || 0)
+  return total > 0 ? `${Math.max(2, Math.min(100, (progress / total) * 100))}%` : '2px'
+})
 const EPISODE_GROUP_SIZE = 50
 const activeEpGroupIndex = ref(0)
 const episodeGroups = computed(() => {
@@ -342,6 +365,91 @@ const playerBackdropStyle = computed(() => {
   const url = pic(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
 })
+
+function formatHistoryTime(value) {
+  const total = Math.max(0, Math.floor(Number(value) || 0))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  if (hours) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function activeLineHistory(lineId = curChannel.value?.id) {
+  const histories = Array.isArray(historyLineStates.value) ? historyLineStates.value : []
+  const hit = histories.find(item => Number(item?.lineId || 0) === Number(lineId || 0))
+  if (hit) return hit
+  const h = historyState.value
+  if (!h) return null
+  if (h.lineId && lineId && Number(h.lineId) !== Number(lineId)) return null
+  return h
+}
+
+function isHistoryEpisode(index) {
+  const h = activeLineHistory()
+  return Boolean(h && historyProgressText.value && Number(h.epIndex) === Number(index))
+}
+
+function episodeProgressStyle(index) {
+  if (!isHistoryEpisode(index)) return undefined
+  return { '--play-episode-progress': historyProgressPercent.value }
+}
+
+function readLocalHistory(vodId) {
+  try {
+    const raw = localStorage.getItem(PLAY_LOCAL_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    const entry = data?.[vodId]
+    return entry?.latest || entry || null
+  } catch {
+    return null
+  }
+}
+
+function readLocalLineHistories(vodId) {
+  try {
+    const raw = localStorage.getItem(PLAY_LOCAL_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    const entry = data?.[vodId]
+    if (Array.isArray(entry?.lineHistories)) return entry.lineHistories
+    return entry ? [entry] : []
+  } catch {
+    return []
+  }
+}
+
+function writeLocalHistory(history) {
+  if (!history?.vodId) return
+  try {
+    const raw = localStorage.getItem(PLAY_LOCAL_HISTORY_KEY)
+    const data = raw ? JSON.parse(raw) : {}
+    const previous = data[history.vodId]
+    const existingLines = Array.isArray(previous?.lineHistories) ? previous.lineHistories : (previous ? [previous] : [])
+    const updated = { ...history, updatedAt: Date.now() }
+    const lineHistories = [
+      updated,
+      ...existingLines.filter(item => Number(item?.lineId || 0) !== Number(updated.lineId || 0)),
+    ].slice(0, 20)
+    data[history.vodId] = { ...updated, latest: updated, lineHistories }
+    const rows = Object.entries(data).sort((a, b) => Number(b[1]?.updatedAt || 0) - Number(a[1]?.updatedAt || 0)).slice(0, 120)
+    localStorage.setItem(PLAY_LOCAL_HISTORY_KEY, JSON.stringify(Object.fromEntries(rows)))
+  } catch {}
+}
+
+function applyHistorySelection(history, lineHistories = []) {
+  historyState.value = history || null
+  historyLineStates.value = Array.isArray(lineHistories) && lineHistories.length ? lineHistories : (history ? [history] : [])
+  const h = historyState.value
+  if (h?.lineId && vod.value.lines?.length) {
+    for (let li = 0; li < vod.value.lines.length; li++) {
+      const channels = vod.value.lines[li].channels || []
+      const ci = channels.findIndex(c => Number(c.id) === Number(h.lineId))
+      if (ci >= 0) { lineIdx.value = li; chanIdx.value = ci; break }
+    }
+  }
+  epIdx.value = Math.max(0, Number(h?.epIndex) || 0)
+  pendingSeekSec = Math.max(0, Number(h?.progressSec) || 0)
+}
 
 function stopPlayback() {
   clearPlayWatchdog()
@@ -560,22 +668,31 @@ function tryNextPlayback() {
 }
 
 function saveWatchHistory(i, progressOverride = null) {
-  if (!user.value || !vod.value?.id || !curUrl.value) return
+  if (!vod.value?.id || !curUrl.value) return
   const ep = curChannel.value?.episodes?.[i]
   const video = videoEl.value
   const progressSec = progressOverride === null ? Math.floor(Number(video?.currentTime) || 0) : progressOverride
   const durationSec = Math.floor(Number(video?.duration) || 0)
-  api.saveHistory({
+  const payload = {
     vodId: vod.value.id,
     lineId: curChannel.value?.id,
     epIndex: i,
     epName: ep?.name || '',
     progressSec,
     durationSec,
-  }).catch(() => {})
+  }
+  if (Number(progressSec) >= 20 || Number(durationSec) > 0) {
+    historyState.value = { ...(historyState.value || {}), ...payload }
+    historyLineStates.value = [
+      historyState.value,
+      ...historyLineStates.value.filter(item => Number(item?.lineId || 0) !== Number(payload.lineId || 0)),
+    ]
+    writeLocalHistory(payload)
+  }
+  if (user.value) api.saveHistory(payload).catch(() => {})
 }
 function onVideoTimeUpdate() {
-  if (!user.value || mode.value !== 'hls') return
+  if (mode.value !== 'hls') return
   const now = Date.now()
   if (now - lastHistorySaveAt < 15000) return
   lastHistorySaveAt = now
@@ -610,6 +727,7 @@ async function loadVod(id) {
   introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
   galleryOpen.value = false; galleryIdx.value = 0
   notFound.value = false; vod.value = {}; followed.value = false; accessBlock.value = null
+  historyState.value = null; historyLineStates.value = []
   try {
     vod.value = await api.vod(id)
   } catch (e) {
@@ -618,20 +736,12 @@ async function loadVod(id) {
   }
   if (!vod.value?.id) { notFound.value = true; return }
   await nextTick()
+  applyHistorySelection(readLocalHistory(id), readLocalLineHistories(id))
   if (user.value) {
     try {
       const state = await api.userVodState(id)
       followed.value = state.followed
-      const h = state.history
-      if (h?.lineId && vod.value.lines?.length) {
-        for (let li = 0; li < vod.value.lines.length; li++) {
-          const channels = vod.value.lines[li].channels || []
-          const ci = channels.findIndex(c => c.id === h.lineId)
-          if (ci >= 0) { lineIdx.value = li; chanIdx.value = ci; break }
-        }
-      }
-      epIdx.value = Math.max(0, Number(h?.epIndex) || 0)
-      pendingSeekSec = Math.max(0, Number(h?.progressSec) || 0)
+      if (state?.history) applyHistorySelection(state.history, state.lineHistories)
     } catch {}
   }
   if (vod.value.lines?.length) playEp(Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1), { keepResume: true })
@@ -854,11 +964,14 @@ onBeforeUnmount(() => {
 .eps-groups button.on { box-shadow: none; background: var(--play-episode-active-bg); color: var(--play-episode-active-text); }
 .eps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px;
   max-height: 360px; overflow-y: auto; }
-.ep { text-align: center; padding: 9px 4px; background: var(--bg2); border: 0; box-shadow: inset 0 0 0 1px var(--line);
-  border-radius: 7px; font-size: 13px; cursor: pointer; transition: .15s; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; }
+.ep { position: relative; display: grid; place-items: center; gap: 2px; text-align: center; min-height: 38px; padding: 7px 4px; background: var(--bg2); border: 0; box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 7px; font-size: 13px; cursor: pointer; transition: .15s; overflow: hidden; }
+.ep::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--play-episode-progress, 0); background: rgba(255,255,255,.08); pointer-events: none; }
+.ep > span, .ep > em { position: relative; z-index: 1; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep > em { font-style: normal; font-size: 11px; line-height: 1; color: var(--muted); }
 .ep:hover { box-shadow: inset 0 0 0 1px var(--play-episode-active-bg); color: #fff; }
 .ep.on { background: var(--play-episode-active-bg); box-shadow: none; color: var(--play-episode-active-text); }
+.ep.on > em { color: rgba(255,255,255,.82); }
 
 /* 相关推荐 */
 .rec-col { min-width: 0; }

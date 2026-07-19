@@ -427,11 +427,14 @@ export default async function userRoutes(app: FastifyInstance) {
   app.get("/api/user/vods/:id/state", { preHandler: webUserGuard }, async (req) => {
     const mid = (req as any).webUser.mid;
     const vodId = Number((req.params as any).id);
-    const [follow, history] = await Promise.all([
+    const [follow, histories] = await Promise.all([
       prisma.userFollow.findUnique({ where: { userId_vodId: { userId: mid, vodId } } }),
-      prisma.watchHistory.findUnique({ where: { userId_vodId: { userId: mid, vodId } } }),
+      prisma.watchHistory.findMany({
+        where: { userId: mid, vodId },
+        orderBy: { updatedAt: "desc" },
+      }),
     ]);
-    return { followed: Boolean(follow), history };
+    return { followed: Boolean(follow), history: histories[0] || null, lineHistories: histories };
   });
 
   app.get("/api/user/follows", { preHandler: webUserGuard }, async (req) => {
@@ -496,11 +499,11 @@ export default async function userRoutes(app: FastifyInstance) {
     if (!vod) return reply.code(404).send({ error: "影片不存在或已下架" });
     const epIndex = Math.max(0, Number(b.epIndex) || 0);
     const epName = String(b.epName || "").trim().slice(0, 80);
-    const lineId = Number.isFinite(Number(b.lineId)) ? Number(b.lineId) : null;
+    const lineId = Number.isFinite(Number(b.lineId)) ? Number(b.lineId) : 0;
     const progressSec = Math.max(0, Math.floor(Number(b.progressSec) || 0));
     const durationSec = Math.max(0, Math.floor(Number(b.durationSec) || 0));
     const history = await prisma.watchHistory.upsert({
-      where: { userId_vodId: { userId: mid, vodId } },
+      where: { userId_vodId_lineId: { userId: mid, vodId, lineId } },
       create: { userId: mid, vodId, epIndex, epName, lineId, progressSec, durationSec },
       update: { epIndex, epName, lineId, progressSec, durationSec },
     });
