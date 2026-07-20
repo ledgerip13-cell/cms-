@@ -82,7 +82,7 @@
             <el-button :loading="logsLoading" @click="loadAuditLogs">刷新</el-button>
           </div>
           <el-table :data="logs" height="560" v-loading="logsLoading">
-            <el-table-column prop="createdAt" label="时间" width="190" />
+            <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
             <el-table-column prop="actor" label="操作人" width="120" />
             <el-table-column prop="action" label="动作" width="160" />
             <el-table-column prop="target" label="对象" width="180" />
@@ -92,6 +92,103 @@
             :total="logsTotal" :current-page="auditPage" :page-size="auditSize" :page-sizes="[50,100,200]"
             @current-change="p=>{auditPage=p;loadAuditLogs()}"
             @size-change="s=>{auditSize=s;auditPage=1;loadAuditLogs()}" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="播放错误" name="playback-errors">
+        <div class="card">
+          <div class="toolbar">
+            <div class="sec-title">播放错误</div>
+            <div class="actions">
+              <el-input v-model="playbackKeyword" clearable placeholder="影片 / 线路 / IP" size="small" style="width:220px" @keyup.enter="loadPlaybackErrorLogs" />
+              <el-button :loading="playbackLoading" @click="loadPlaybackErrorLogs">刷新</el-button>
+            </div>
+          </div>
+          <el-table :data="playbackLogs" height="560" v-loading="playbackLoading">
+            <el-table-column type="expand">
+              <template #default="{ row }">
+                <div class="log-detail">
+                  <div class="detail-line"><b>页面</b><span>{{ row.page || '—' }}</span></div>
+                  <div class="detail-line"><b>客户端</b><span>{{ row.userAgent || '—' }}</span></div>
+                  <div class="detail-line"><b>归属</b><span>{{ formatLocation(row) }}</span></div>
+                  <el-table :data="lineFailures(row)" size="small" border>
+                    <el-table-column prop="lineName" label="错误线路" width="160" />
+                    <el-table-column prop="epName" label="集数" width="120" />
+                    <el-table-column prop="message" label="报错" min-width="220" show-overflow-tooltip />
+                    <el-table-column prop="url" label="播放地址" min-width="320" show-overflow-tooltip />
+                  </el-table>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
+            <el-table-column prop="vodName" label="影片" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="lineName" label="无法播放线路" width="160" show-overflow-tooltip />
+            <el-table-column prop="message" label="错误" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="ip" label="请求IP" width="150" />
+          </el-table>
+          <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+            :total="playbackTotal" :current-page="playbackPage" :page-size="playbackSize" :page-sizes="[50,100,200]"
+            @current-change="p=>{playbackPage=p;loadPlaybackErrorLogs()}"
+            @size-change="s=>{playbackSize=s;playbackPage=1;loadPlaybackErrorLogs()}" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="登录日志" name="login-logs">
+        <div class="card">
+          <div class="toolbar">
+            <div class="sec-title">登录日志</div>
+            <div class="actions">
+              <el-select v-model="loginUserType" size="small" style="width:130px" @change="loadLoginLogs">
+                <el-option label="全部" value="" />
+                <el-option label="后台" value="admin" />
+                <el-option label="前台" value="web" />
+              </el-select>
+              <el-button :loading="loginLoading" @click="loadLoginLogs">刷新</el-button>
+            </div>
+          </div>
+          <el-table :data="loginLogs" height="560" v-loading="loginLoading">
+            <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
+            <el-table-column prop="userType" label="类型" width="90" />
+            <el-table-column prop="username" label="账号" width="150" />
+            <el-table-column label="结果" width="90">
+              <template #default="{row}"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="message" label="信息" width="150" />
+            <el-table-column prop="ip" label="IP" width="150" />
+            <el-table-column label="归属" min-width="220"><template #default="{row}">{{ formatLocation(row) }}</template></el-table-column>
+            <el-table-column prop="userAgent" label="客户端" min-width="280" show-overflow-tooltip />
+          </el-table>
+          <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+            :total="loginTotal" :current-page="loginPage" :page-size="loginSize" :page-sizes="[50,100,200]"
+            @current-change="p=>{loginPage=p;loadLoginLogs()}"
+            @size-change="s=>{loginSize=s;loginPage=1;loadLoginLogs()}" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="访问日志" name="access-logs">
+        <div class="card">
+          <div class="toolbar">
+            <div class="sec-title">访问日志</div>
+            <div class="actions">
+              <el-input v-model="accessKeyword" clearable placeholder="路径 / IP / 客户端" size="small" style="width:240px" @keyup.enter="loadAccessLogs" />
+              <el-button :loading="accessLoading" @click="loadAccessLogs">刷新</el-button>
+            </div>
+          </div>
+          <el-table :data="accessLogs" height="560" v-loading="accessLoading">
+            <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
+            <el-table-column prop="userType" label="用户" width="90" />
+            <el-table-column prop="method" label="方法" width="90" />
+            <el-table-column prop="status" label="状态" width="90" />
+            <el-table-column prop="ms" label="耗时ms" width="90" />
+            <el-table-column prop="path" label="路径" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="ip" label="IP" width="150" />
+            <el-table-column label="归属" min-width="220"><template #default="{row}">{{ formatLocation(row) }}</template></el-table-column>
+            <el-table-column prop="userAgent" label="客户端" min-width="280" show-overflow-tooltip />
+          </el-table>
+          <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+            :total="accessTotal" :current-page="accessPage" :page-size="accessSize" :page-sizes="[50,100,200]"
+            @current-change="p=>{accessPage=p;loadAccessLogs()}"
+            @size-change="s=>{accessSize=s;accessPage=1;loadAccessLogs()}" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -124,7 +221,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Delete, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
@@ -138,6 +235,24 @@ const logsTotal = ref(0)
 const auditPage = ref(1)
 const auditSize = ref(100)
 const logsLoading = ref(false)
+const playbackLogs = ref([])
+const playbackTotal = ref(0)
+const playbackPage = ref(1)
+const playbackSize = ref(50)
+const playbackKeyword = ref('')
+const playbackLoading = ref(false)
+const loginLogs = ref([])
+const loginTotal = ref(0)
+const loginPage = ref(1)
+const loginSize = ref(50)
+const loginUserType = ref('')
+const loginLoading = ref(false)
+const accessLogs = ref([])
+const accessTotal = ref(0)
+const accessPage = ref(1)
+const accessSize = ref(50)
+const accessKeyword = ref('')
+const accessLoading = ref(false)
 const inviteForm = ref({ count: 10, maxUses: 1, remark: '' })
 const levelDialogOpen = ref(false)
 const levelDialogMode = ref('create')
@@ -170,6 +285,53 @@ async function loadAuditLogs() {
   } finally {
     logsLoading.value = false
   }
+}
+async function loadPlaybackErrorLogs() {
+  playbackLoading.value = true
+  try {
+    const res = await api.playbackErrorLogs({ page: playbackPage.value, size: playbackSize.value, keyword: playbackKeyword.value || undefined })
+    playbackLogs.value = res.list || []
+    playbackTotal.value = res.total || 0
+  } finally {
+    playbackLoading.value = false
+  }
+}
+async function loadLoginLogs() {
+  loginLoading.value = true
+  try {
+    const res = await api.loginLogs({ page: loginPage.value, size: loginSize.value, userType: loginUserType.value || undefined })
+    loginLogs.value = res.list || []
+    loginTotal.value = res.total || 0
+  } finally {
+    loginLoading.value = false
+  }
+}
+async function loadAccessLogs() {
+  accessLoading.value = true
+  try {
+    const res = await api.accessLogs({ page: accessPage.value, size: accessSize.value, keyword: accessKeyword.value || undefined })
+    accessLogs.value = res.list || []
+    accessTotal.value = res.total || 0
+  } finally {
+    accessLoading.value = false
+  }
+}
+function formatLocation(row) {
+  return [row.country, row.region, row.city, row.isp].filter(Boolean).join(' / ') || '—'
+}
+function fmtTime(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+function lineFailures(row) {
+  const failures = row.detail?.failures
+  if (Array.isArray(failures) && failures.length) return failures
+  return [{
+    lineName: row.lineName || row.sourceName || '—',
+    epName: row.epName || (row.epIndex != null ? `第 ${Number(row.epIndex) + 1} 集` : '—'),
+    message: row.message || '—',
+    url: row.detail?.url || '',
+  }]
 }
 async function createInvites() {
   await api.createInvites(inviteForm.value)
@@ -250,6 +412,12 @@ async function deleteLevel(row) {
   load()
 }
 onMounted(load)
+watch(tab, (value) => {
+  if (value === 'audit' && !logs.value.length) void loadAuditLogs()
+  if (value === 'playback-errors' && !playbackLogs.value.length) void loadPlaybackErrorLogs()
+  if (value === 'login-logs' && !loginLogs.value.length) void loadLoginLogs()
+  if (value === 'access-logs' && !accessLogs.value.length) void loadAccessLogs()
+})
 </script>
 
 <style scoped>
@@ -261,5 +429,8 @@ onMounted(load)
 .level-name { display: flex; flex-direction: column; gap: 4px; }
 .color-field { display: flex; align-items: center; gap: 12px; }
 .level-preview-tag { border-radius: 7px; font-weight: 800; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.log-detail { padding: 10px 20px 16px; display: flex; flex-direction: column; gap: 10px; }
+.detail-line { display: grid; grid-template-columns: 72px 1fr; gap: 10px; color: #4b5563; line-height: 1.6; }
+.detail-line span { word-break: break-all; }
 :deep(.el-dialog__body) { padding-top: 12px; }
 </style>

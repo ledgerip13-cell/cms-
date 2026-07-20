@@ -71,7 +71,7 @@ export const DEFAULT_PLAY_CONFIG = {
 
 export const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [],
-  mobileTemplate: 'responsive',
+  mobileTemplate: 'default',
   adaptiveTemplate: 'default',
   showHomeLogo: true,
 }
@@ -195,8 +195,11 @@ export function normalizeHomeConfig(config) {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
   const rest = { ...(raw || {}) }
-  const mobileTemplate = ['responsive', 'shortDrama'].includes(String(raw?.mobileTemplate || ''))
-    ? raw.mobileTemplate
+  const rawMobileTemplate = String(raw?.mobileTemplate || '')
+  const mobileTemplate = rawMobileTemplate === 'responsive'
+    ? 'default'
+    : ['default', 'shortDrama'].includes(rawMobileTemplate)
+      ? rawMobileTemplate
     : DEFAULT_HOME_CONFIG.mobileTemplate
   const adaptiveTemplate = ['default', 'x8'].includes(String(raw?.adaptiveTemplate || ''))
     ? raw.adaptiveTemplate

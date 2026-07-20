@@ -15,11 +15,12 @@ import hotRoutes from "./routes/hot.js";
 import accessRoutes from "./routes/access.js";
 import hlsCleanRoutes from "./routes/hlsClean.js";
 import hlsProxyRoutes from "./routes/hlsProxy.js";
-import { seedAdmin } from "./auth.js";
+import { authGuard, seedAdmin } from "./auth.js";
 import { seedVipLevels } from "./vipLevels.js";
 import { startScheduler } from "./scheduler.js";
 import { recoverOrphanTasks } from "./collector/taskRunner.js";
 import { ensurePerformanceIndexes } from "./db.js";
+import { installAccessLogger, registerLogRoutes } from "./logging.js";
 
 const app = Fastify({ logger: { level: "info" } });
 const corsOrigins = (process.env.CORS_ORIGINS || "http://127.0.0.1:5151,http://localhost:5151,http://127.0.0.1:5152,http://localhost:5152")
@@ -34,8 +35,10 @@ await app.register(cors, {
 });
 
 app.get("/health", async () => ({ ok: true, ts: Date.now() }));
+installAccessLogger(app);
 
 await app.register(authRoutes);
+registerLogRoutes(app, authGuard);
 await app.register(sourceRoutes);
 await app.register(vodRoutes);
 await app.register(categoryRoutes);

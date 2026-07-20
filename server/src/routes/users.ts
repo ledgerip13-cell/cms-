@@ -4,12 +4,14 @@ import { authGuard, checkPassword, hashPassword, signWebToken, webUserGuard } fr
 import { enabledTypeNames, formatPublicRating, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, viewerFromUserId, watchableTypeNames } from "../publicVod.js";
 import { ensureDefaultVipLevel, isVipLevelActive, publicVipLevel } from "../vipLevels.js";
 import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
+import { clientIpOf, recordLoginLog } from "../logging.js";
+import { withHeatFields } from "../heat.js";
 
 const RECOMMENDATION_CACHE_TTL_MS = 60_000;
 const recommendationCache = new Map<string, { ts: number; data: any }>();
 
 function formatRecommendationVod(vod: any) {
-  return { ...vod, rating: formatPublicRating(vod?.rating) };
+  return withHeatFields({ ...vod, rating: formatPublicRating(vod?.rating) });
 }
 
 function recommendationCacheKey(userId: number, take: number) {
@@ -101,7 +103,7 @@ function normalizeGender(value: any) {
   return ["male", "female", "other", "unknown"].includes(gender) ? gender : "";
 }
 
-function publicUser(u: { id: number; username: string; email?: string | null; nickname: string; gender?: string; favoriteTypes: string; lastLogin?: Date | null; vipExpireAt?: Date | null; vipLevel?: any | null }) {
+function publicUser(u: { id: number; username: string; email?: string | null; nickname: string; gender?: string; favoriteTypes: string; lastLogin?: Date | null; lastLoginIp?: string; vipExpireAt?: Date | null; vipLevel?: any | null }) {
   return {
     id: u.id,
     username: u.username,
@@ -110,6 +112,7 @@ function publicUser(u: { id: number; username: string; email?: string | null; ni
     gender: u.gender || "",
     favoriteTypes: parseJsonArray(u.favoriteTypes),
     lastLogin: u.lastLogin || null,
+    lastLoginIp: u.lastLoginIp || "",
     isVip: isVipLevelActive(u),
     vipExpireAt: u.vipExpireAt || null,
     vipLevel: publicVipLevel(u.vipLevel),
@@ -127,6 +130,7 @@ function adminUser(u: {
   vipLevel?: any | null;
   favoriteTypes: string;
   lastLogin: Date | null;
+  lastLoginIp?: string;
   createdAt: Date;
   updatedAt: Date;
   _count?: { follows: number; histories: number };
@@ -143,6 +147,7 @@ function adminUser(u: {
     vipLevel: publicVipLevel(u.vipLevel),
     favoriteTypes: parseJsonArray(u.favoriteTypes),
     lastLogin: u.lastLogin,
+    lastLoginIp: u.lastLoginIp || "",
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
     followCount: u._count?.follows ?? 0,
@@ -216,6 +221,7 @@ export default async function userRoutes(app: FastifyInstance) {
       where.OR = [
         { username: { contains: kw, mode: "insensitive" } },
         { nickname: { contains: kw, mode: "insensitive" } },
+        { email: { contains: kw, mode: "insensitive" } },
       ];
     }
     if (status === "enabled") where.enabled = true;
@@ -267,6 +273,19 @@ export default async function userRoutes(app: FastifyInstance) {
     const data: any = {};
     if ("enabled" in b) data.enabled = Boolean(b.enabled);
     if ("nickname" in b) data.nickname = String(b.nickname || "").trim().slice(0, 32);
+    if ("email" in b) {
+      const email = normalizeEmail(b.email);
+      const emailError = validateEmail(email);
+      if (emailError) return reply.code(400).send({ error: emailError });
+      if (email) {
+        const duplicate = await prisma.webUser.findFirst({
+          where: { id: { not: id }, email: { equals: email, mode: "insensitive" } },
+          select: { id: true },
+        });
+        if (duplicate) return reply.code(409).send({ error: "邮箱已被绑定" });
+      }
+      data.email = email || null;
+    }
     if ("vipLevelId" in b) {
       const vipLevelId = Number(b.vipLevelId);
       const level = Number.isInteger(vipLevelId) && vipLevelId > 0
@@ -376,14 +395,17 @@ export default async function userRoutes(app: FastifyInstance) {
     const u = await findWebUserByLogin(username, { vipLevel: true });
     if (!u || !u.enabled) {
       recordLoginFailure(req, "web", username);
+      recordLoginLog(req, { userType: "web", username, success: false, message: "账号不存在或已禁用" });
       return reply.code(401).send({ error: "账号不存在或已禁用" });
     }
     if (!(await checkPassword(password, u.password))) {
       recordLoginFailure(req, "web", username);
+      recordLoginLog(req, { userType: "web", userId: u.id, username: u.username, success: false, message: "密码错误" });
       return reply.code(401).send({ error: "密码错误" });
     }
     clearLoginFailures(req, "web", username);
-    await prisma.webUser.update({ where: { id: u.id }, data: { lastLogin: new Date() } });
+    await prisma.webUser.update({ where: { id: u.id }, data: { lastLogin: new Date(), lastLoginIp: clientIpOf(req) } });
+    recordLoginLog(req, { userType: "web", userId: u.id, username: u.username, success: true, message: "登录成功" });
     const token = signWebToken({ mid: u.id, username: u.username });
     return { token, user: publicUser(u) };
   });
@@ -536,7 +558,7 @@ export default async function userRoutes(app: FastifyInstance) {
     if (prefOr.length) where.OR = prefOr;
     const list = await prisma.vod.findMany({
       where,
-      orderBy: [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ heatScore: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }],
       take,
       include: { _count: { select: publicPlayCountSelect() } },
     });

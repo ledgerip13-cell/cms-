@@ -13,6 +13,7 @@ import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
+import { withHeatFields } from "../heat.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
@@ -74,7 +75,7 @@ function withHeroImage(vod: any) {
   const { images, ...rest } = vod;
   const heroImages = heroImageCandidates(vod);
   const heroImage = heroImages[0] || { url: "", wide: false };
-  return { ...cleanVodTextFields(rest), rating: formatPublicRating(rest.rating), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages };
+  return withHeatFields({ ...cleanVodTextFields(rest), rating: formatPublicRating(rest.rating), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages });
 }
 
 function hasWideVodImageAsset(vod: any) {
@@ -230,11 +231,11 @@ function vodListTypeWhere(publicTypes: string[], q: any) {
 }
 
 function shortsOrderBy(sortMode: string) {
-  if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { ratingCount: "desc" as const }, { id: "desc" as const }];
-  if (sortMode === "rating") return [{ rating: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
-  if (sortMode === "hot") return [{ ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
-  if (sortMode === "popularity") return [{ popularity: { sort: "desc" as const, nulls: "last" as const } }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
-  return [{ pinned: "desc" as const }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "recent") return [{ updatedAt: "desc" as const }, { heatScore: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "rating") return [{ rating: { sort: "desc" as const, nulls: "last" as const } }, { heatScore: "desc" as const }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "hot") return [{ heatScore: "desc" as const }, { ratingCount: "desc" as const }, { popularity: { sort: "desc" as const, nulls: "last" as const } }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  if (sortMode === "popularity") return [{ popularity: { sort: "desc" as const, nulls: "last" as const } }, { heatScore: "desc" as const }, { ratingCount: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
+  return [{ pinned: "desc" as const }, { heatScore: "desc" as const }, { rating: { sort: "desc" as const, nulls: "last" as const } }, { updatedAt: "desc" as const }, { id: "desc" as const }];
 }
 
 function seededUnit(seed: number, id: number, salt = 0) {
@@ -283,7 +284,7 @@ function diversifyShortFeedRows(rows: any[], limit: number, seed: number, follow
       let score = Math.max(0, 24 - index * 0.24);
       if (followedIds.has(vod.id)) score += 80;
       if (historyIds.has(vod.id)) score -= 55;
-      score += Math.min(34, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 10);
+      score += Math.min(34, Math.log10(Math.max(1, Number(vod.heatScore || vod.ratingCount) || 0) + 1) * 10);
       if (Number(vod.rating) > 0) score += Math.min(10, Number(vod.rating));
       score += seededUnit(seed, Number(vod.id) || index, index) * 42;
       return { vod, score, series: shortFeedSeriesKey(vod) };
@@ -698,9 +699,9 @@ export default async function vodRoutes(app: FastifyInstance) {
     }
     // 排序：recent 最近更新 / hot 热门(评分) / rating 高分 / year 年份新到旧
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
-    if (q.sort === "hot") orderBy = [{ ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
-    else if (q.sort === "popularity") orderBy = [{ popularity: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
-    else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
+    if (q.sort === "hot") orderBy = [{ heatScore: "desc" }, { ratingCount: "desc" }, { popularity: { sort: "desc", nulls: "last" } }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
+    else if (q.sort === "popularity") orderBy = [{ popularity: { sort: "desc", nulls: "last" } }, { heatScore: "desc" }, { ratingCount: "desc" }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
+    else if (q.sort === "rating") orderBy = [{ rating: { sort: "desc", nulls: "last" } }, { heatScore: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     else if (q.sort === "year") orderBy = [{ year: "desc" }, { updatedAt: "desc" }, { id: "desc" }];
     const withTotal = q.withTotal === "1" || q.withTotal === "true";
     const cacheKey = JSON.stringify({
@@ -958,7 +959,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       : rows
         .map((vod: any, index: number) => {
           let score = rows.length - index;
-          score += Math.min(40, Math.log10(Math.max(1, Number(vod.ratingCount) || 0) + 1) * 12);
+          score += Math.min(40, Math.log10(Math.max(1, Number(vod.heatScore || vod.ratingCount) || 0) + 1) * 12);
           if (Number(vod.rating) > 0) score += Number(vod.rating);
           return { vod, score };
         })
@@ -1060,14 +1061,14 @@ export default async function vodRoutes(app: FastifyInstance) {
       });
       pushRows(seriesRows
         .filter((r) => seriesKey(r.name) === currentSeriesKey)
-        .sort((a, b) => seasonNo(a.name) - seasonNo(b.name) || String(a.year || "").localeCompare(String(b.year || "")) || b.ratingCount - a.ratingCount)
+        .sort((a, b) => seasonNo(a.name) - seasonNo(b.name) || String(a.year || "").localeCompare(String(b.year || "")) || b.heatScore - a.heatScore)
       );
     }
     // 2) 同小类
     if (sub) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, subTypes: { some: { name: sub } } },
-        orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ heatScore: "desc" }, { updatedAt: "desc" }],
         take, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }
@@ -1075,7 +1076,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (picks.length < take && type) {
       pushRows(await prisma.vod.findMany({
         where: { ...baseWhere, typeName: requestedPublicType(publicTypes, type), id: { notIn: [...seen] } },
-        orderBy: [{ ratingCount: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ heatScore: "desc" }, { updatedAt: "desc" }],
         take: take - picks.length, include: { _count: { select: publicPlayCountSelect() } },
       }));
     }

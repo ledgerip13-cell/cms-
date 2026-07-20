@@ -132,6 +132,9 @@ export const api = {
     const p = typeof params === 'number' ? { limit: params } : params
     return http.get('/admin/audit-logs', { params: p })
   },
+  playbackErrorLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/playback-errors', { params }),
+  loginLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/logins', { params }),
+  accessLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/access', { params }),
   // site
   site: () => http.get('/site'),
   adminSite: () => http.get('/admin/site'),
@@ -212,7 +215,7 @@ export const DEFAULT_PLAY_CONFIG = {
 
 export const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [],
-  mobileTemplate: 'responsive',
+  mobileTemplate: 'default',
   adaptiveTemplate: 'default',
   showHomeLogo: true,
 }
@@ -338,8 +341,11 @@ export function normalizeHomeConfig(config) {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
   const rest = { ...(raw || {}) }
-  const mobileTemplate = ['responsive', 'shortDrama'].includes(String(raw?.mobileTemplate || ''))
-    ? raw.mobileTemplate
+  const rawMobileTemplate = String(raw?.mobileTemplate || '')
+  const mobileTemplate = rawMobileTemplate === 'responsive'
+    ? 'default'
+    : ['default', 'shortDrama'].includes(rawMobileTemplate)
+      ? rawMobileTemplate
     : DEFAULT_HOME_CONFIG.mobileTemplate
   const adaptiveTemplate = ['default', 'x8'].includes(String(raw?.adaptiveTemplate || ''))
     ? raw.adaptiveTemplate

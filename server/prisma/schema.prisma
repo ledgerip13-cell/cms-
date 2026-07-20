@@ -203,6 +203,7 @@ model User {
   role      String    @default("admin") // admin / editor
   enabled   Boolean   @default(true)
   lastLogin DateTime?
+  lastLoginIp String  @default("")
   createdAt DateTime  @default(now())
 }
 
@@ -221,6 +222,7 @@ model WebUser {
   vipLevelId    Int?
   favoriteTypes String               @default("[]") // JSON: ["动漫","电影"]
   lastLogin     DateTime?
+  lastLoginIp   String               @default("")
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   follows       UserFollow[]
@@ -319,6 +321,93 @@ model AccessAudit {
   @@index([createdAt])
 }
 
+model IpLocationCache {
+  id        Int      @id @default(autoincrement())
+  ip        String   @unique
+  country   String   @default("")
+  region    String   @default("")
+  city      String   @default("")
+  isp       String   @default("")
+  org       String   @default("")
+  asn       String   @default("")
+  source    String   @default("")
+  raw       String   @default("{}")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model PlaybackErrorLog {
+  id         Int      @id @default(autoincrement())
+  vodId      Int?
+  vodName    String   @default("")
+  playId     Int?
+  lineName   String   @default("")
+  sourceName String   @default("")
+  epIndex    Int?
+  epName     String   @default("")
+  page       String   @default("")
+  message    String   @default("")
+  detail     String   @default("{}")
+  ip         String   @default("")
+  country    String   @default("")
+  region     String   @default("")
+  city       String   @default("")
+  isp        String   @default("")
+  userAgent  String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([vodId])
+  @@index([playId])
+  @@index([ip])
+  @@index([createdAt])
+}
+
+model LoginLog {
+  id        Int      @id @default(autoincrement())
+  userType  String   @default("web") // admin / web
+  userId    Int?
+  username  String   @default("")
+  success   Boolean  @default(false)
+  message   String   @default("")
+  ip        String   @default("")
+  country   String   @default("")
+  region    String   @default("")
+  city      String   @default("")
+  isp       String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userType])
+  @@index([userId])
+  @@index([ip])
+  @@index([success])
+  @@index([createdAt])
+}
+
+model RequestAccessLog {
+  id        Int      @id @default(autoincrement())
+  userType  String   @default("") // admin / web / guest
+  userId    Int?
+  method    String
+  path      String
+  status    Int      @default(0)
+  ms        Int      @default(0)
+  ip        String   @default("")
+  country   String   @default("")
+  region    String   @default("")
+  city      String   @default("")
+  isp       String   @default("")
+  userAgent String   @default("")
+  referer   String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([path])
+  @@index([status])
+  @@index([ip])
+  @@index([userType])
+  @@index([createdAt])
+}
+
 // 影片（去重后唯一）
 model Vod {
   id                       Int            @id @default(autoincrement())
@@ -345,6 +434,8 @@ model Vod {
   rating                   Float? // 元数据评分
   ratingCount              Int            @default(0) // 评分人数
   popularity               Float? // TMDB 热度值(popularity)
+  heatScore                Int            @default(0) // 全站统一热度值：第三方评分人数/TMDB popularity 归一后的最大值
+  heatSource               String         @default("") // rating_count / tmdb_popularity
   officialPic              String         @default("") // 元数据高清封面
   officialIntro            String         @default("") // 元数据简介
   genres                   String         @default("") // 类型标签(逗号分隔)
@@ -388,10 +479,12 @@ model Vod {
   @@index([status, pinned, updatedAt, id])
   @@index([status, ratingCount, rating, updatedAt, id])
   @@index([status, rating, ratingCount, updatedAt, id])
+  @@index([status, heatScore, rating, updatedAt, id])
   @@index([status, year, updatedAt, id])
   @@index([status, typeName, pinned, updatedAt, id])
   @@index([status, typeName, ratingCount, rating, updatedAt, id])
   @@index([status, typeName, rating, ratingCount, updatedAt, id])
+  @@index([status, typeName, heatScore, rating, updatedAt, id])
   @@index([status, typeName, year, updatedAt, id])
   @@index([autoCollectEnabled, autoCollectNextAt])
   @@index([archiveStatus])

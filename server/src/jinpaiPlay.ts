@@ -8,6 +8,7 @@
 // 转存：archiveStatus=done 时，本地 HLS 存于 ARCHIVE_DIR/{vodId}/{nid}/index.m3u8。
 import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { buildJinpaiHeaders } from "./collector/jinpaiSign.js";
 
@@ -25,13 +26,51 @@ export interface EpisodeUrlItem {
   needLogin?: boolean;
 }
 
-/** 取请求真实客户端 IP：X-Forwarded-For(首跳) > X-Real-IP > socket。 */
+function normalizeIp(value: any): string {
+  let raw = String(value || "").trim();
+  if (!raw) return "";
+  raw = raw.replace(/^::ffff:/, "");
+  if (raw.startsWith("[") && raw.includes("]")) raw = raw.slice(1, raw.indexOf("]"));
+  else if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(raw)) raw = raw.slice(0, raw.lastIndexOf(":"));
+  return net.isIP(raw) ? raw : "";
+}
+
+function isPrivateIp(ip: string): boolean {
+  const v = net.isIP(ip);
+  if (v === 4) {
+    const parts = ip.split(".").map((x) => Number(x));
+    const [a, b] = parts;
+    return a === 10
+      || a === 127
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168)
+      || (a === 169 && b === 254)
+      || (a === 100 && b >= 64 && b <= 127);
+  }
+  if (v === 6) {
+    const lower = ip.toLowerCase();
+    return lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80:");
+  }
+  return true;
+}
+
+function headerValues(req: any, name: string): string[] {
+  const value = req?.headers?.[name];
+  if (Array.isArray(value)) return value.flatMap((item) => String(item).split(","));
+  return String(value || "").split(",");
+}
+
+/** 取请求真实客户端公网 IP：CDN 真实 IP 头 > X-Forwarded-For 链 > X-Real-IP > socket。 */
 export function clientIpOf(req: any): string {
-  const xff = req?.headers?.["x-forwarded-for"];
-  if (xff) return String(xff).split(",")[0].trim();
-  const xr = req?.headers?.["x-real-ip"];
-  if (xr) return String(xr).trim();
-  return String(req?.ip || "").replace(/^::ffff:/, "");
+  const candidates = [
+    ...headerValues(req, "cf-connecting-ip"),
+    ...headerValues(req, "true-client-ip"),
+    ...headerValues(req, "x-forwarded-for"),
+    ...headerValues(req, "x-real-ip"),
+    req?.ip,
+  ].map(normalizeIp).filter(Boolean);
+  const publicIp = candidates.find((ip) => !isPrivateIp(ip));
+  return publicIp || candidates[0] || "";
 }
 
 /**

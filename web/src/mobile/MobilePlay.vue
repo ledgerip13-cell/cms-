@@ -245,6 +245,7 @@ const fullscreenPortrait = ref(false)   // 全屏时的实际方向：true=竖�
 const speedOptions = [0.75, 1, 1.25, 1.5, 2]
 const EPISODE_GROUP_SIZE = 30
 const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
+const AUTO_SWITCH_MAX_ROUNDS = 2
 // 横滑调进度手势状态
 const seeking = ref(false)
 const seekPreviewTime = ref(0)
@@ -260,6 +261,7 @@ let noticeTimer = 0
 let historyTimer = 0
 let controlsTimer = 0
 let retryingLine = false
+let autoSwitchingLine = false
 let bodyOverflowBeforeLandscape = ''
 let pageActive = false
 let loadSeq = 0
@@ -404,6 +406,41 @@ function showNotice(message) {
   playNotice.value = message
   if (noticeTimer) clearTimeout(noticeTimer)
   noticeTimer = window.setTimeout(() => { playNotice.value = '' }, 3600)
+}
+
+function playbackLineLabel(line = curLine.value, li = lineIdx.value) {
+  return lineLabel(line, li)
+}
+
+function playbackChannelLabel(channel = curChannel.value, ci = chanIdx.value) {
+  return channelOptions.value.length > 1 ? channelLabel(channel, ci) : ''
+}
+
+function playbackErrorPayload(message, failures = []) {
+  return {
+    vodId: vod.value?.id,
+    vodName: vod.value?.name,
+    playId: curChannel.value?.id,
+    lineName: [playbackLineLabel(), playbackChannelLabel()].filter(Boolean).join(' · '),
+    sourceName: curLine.value?.sourceName || curChannel.value?.sourceName || '',
+    epIndex: epIdx.value,
+    epName: episodes.value?.[epIdx.value]?.name || '',
+    page: location.href,
+    message,
+    detail: {
+      failures,
+      current: {
+        lineIndex: lineIdx.value,
+        channelIndex: chanIdx.value,
+        playId: curChannel.value?.id,
+        url: curUrl.value,
+      },
+    },
+  }
+}
+
+function reportPlaybackError(message, failures = []) {
+  void api.reportPlaybackError(playbackErrorPayload(message, failures))
 }
 
 function isPlayRoute() {
@@ -987,12 +1024,10 @@ async function playCurrent() {
       showAccessBlock(result)
       return
     }
-    if (tryNextLine()) return
-    showNotice(result?.error || '当前集暂时无法播放')
+    await tryNextLine(result?.error || '当前集暂时无法播放')
   } catch {
     if (!isPlaybackCurrent(seq)) return
-    if (tryNextLine()) return
-    showNotice('解析播放地址失败')
+    await tryNextLine('解析播放地址失败')
   } finally {
     if (seq === playbackSeq) resolving.value = false
   }
@@ -1033,8 +1068,7 @@ function selectChannel(index) {
 }
 
 function handlePlaybackError() {
-  if (tryNextLine()) return
-  showNotice('播放失败，请稍后重试')
+  void tryNextLine('播放失败')
 }
 
 function playbackSlots() {
@@ -1051,28 +1085,83 @@ function playbackSlots() {
   return slots
 }
 
-function tryNextLine() {
-  if (retryingLine) return false
+async function probePlaybackUrl(url, kind = '') {
+  if (!url || kind === 'iframe') return true
+  if (!/\.m3u8(\?|$)/i.test(url)) return true
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    if (!/#EXTM3U/i.test(text.slice(0, 240))) throw new Error('非标准m3u8')
+    return true
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+async function tryNextLine(reason = '当前线路播放失败') {
+  if (retryingLine || autoSwitchingLine) return false
   const slots = playbackSlots()
-  if (slots.length <= 1) return false
-  const current = slots.findIndex(slot => slot.li === lineIdx.value && slot.ci === chanIdx.value)
-  const next = slots[(Math.max(0, current) + 1) % slots.length]
-  if (!next || (next.li === lineIdx.value && next.ci === chanIdx.value)) return false
+  const failures = []
+  const failMessage = '当前无可播放线路，请稍后重试'
+  if (slots.length <= 1) {
+    failures.push({ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason })
+    reportPlaybackError(failMessage, failures)
+    showNotice(failMessage)
+    return false
+  }
   retryingLine = true
-  lineIdx.value = next.li
-  chanIdx.value = next.ci
-  epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
-  alignEpisodeRange(epIdx.value)
-  syncPendingHistorySeek()
-  showNotice('线路异常，已自动切换')
-  focusPlaybackContext('line')
+  autoSwitchingLine = true
+  showNotice('线路异常，正在自动尝试备用线路')
+  const current = slots.findIndex(slot => slot.li === lineIdx.value && slot.ci === chanIdx.value)
   const seq = playbackSeq
-  window.setTimeout(() => {
-    if (!isPlaybackCurrent(seq)) return
+  try {
+    const totalAttempts = Math.max(0, slots.length * AUTO_SWITCH_MAX_ROUNDS)
+    for (let step = 1; step <= totalAttempts; step++) {
+      if (!isPlaybackCurrent(seq)) return false
+      const next = slots[(Math.max(0, current) + step) % slots.length]
+      if (!next?.channel || next.channel.alive === false || !next.channel.episodes?.length) continue
+      if (next.li === lineIdx.value && next.ci === chanIdx.value) continue
+      const nextEpIndex = Math.max(0, Math.min(epIdx.value, (next.channel.episodes || []).length - 1))
+      const line = vod.value.lines?.[next.li]
+      const label = [lineLabel(line, next.li), line?.channels?.length ? channelLabel(next.channel, next.ci) : ''].filter(Boolean).join(' · ')
+      try {
+        const result = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEpIndex, fresh: 1 })
+        if (!isPlaybackCurrent(seq)) return false
+        if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
+        await probePlaybackUrl(result.url, result.kind || '')
+        if (!isPlaybackCurrent(seq)) return false
+        lineIdx.value = next.li
+        chanIdx.value = next.ci
+        epIdx.value = nextEpIndex
+        alignEpisodeRange(epIdx.value)
+        syncPendingHistorySeek()
+        playingChannel.value = next.channel
+        playingEpIndex.value = nextEpIndex
+        playingEpName.value = next.channel.episodes?.[nextEpIndex]?.name || ''
+        playDirect(result.url, result.kind || '', nextPlaybackSeq())
+        focusPlaybackContext('line')
+        showNotice(`已切换到可播放线路：${label}`)
+        return true
+      } catch (error) {
+        failures.push({
+          playId: next.channel.id,
+          line: label,
+          epIndex: nextEpIndex,
+          error: error?.message || String(error || '播放失败'),
+        })
+      }
+    }
+    reportPlaybackError(failMessage, failures)
+    showNotice(failMessage)
+    clearPlaybackMedia()
+    return false
+  } finally {
     retryingLine = false
-    playCurrent()
-  }, 120)
-  return true
+    autoSwitchingLine = false
+  }
 }
 
 function saveHistory(progressOverride = null) {

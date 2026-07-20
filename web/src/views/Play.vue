@@ -250,6 +250,7 @@ const playerState = ref({ currentTime: 0, duration: 0 })
 let lastHistorySaveAt = 0
 let playNoticeTimer = 0
 let playWatchdogTimer = 0
+let autoSwitchingPlayback = false
 const PLAY_LOCAL_HISTORY_KEY = 'vcms.play.local.history'
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
@@ -270,6 +271,20 @@ function showPlayNotice(message) {
   playNotice.value = message
   if (playNoticeTimer) clearTimeout(playNoticeTimer)
   playNoticeTimer = window.setTimeout(() => { playNotice.value = '' }, 5200)
+}
+function reportPlayError(message, failures = []) {
+  void api.reportPlaybackError({
+    vodId: vod.value?.id || null,
+    vodName: vod.value?.name || '',
+    playId: curChannel.value?.id || null,
+    lineName: curLine.value?.sourceName || curChannel.value?.sourceName || '',
+    sourceName: curChannel.value?.sourceName || '',
+    epIndex: epIdx.value,
+    epName: curEp.value?.name || '',
+    page: location.href,
+    message,
+    detail: { context: 'desktop', failures },
+  })
 }
 function clearPlayWatchdog() {
   if (playWatchdogTimer) clearTimeout(playWatchdogTimer)
@@ -566,7 +581,7 @@ async function playResolvedEp(i, opts = {}) {
   } catch {}
   finally { resolving.value = false }
   cleanFallbackUrl.value = ''
-  tryNextPlayback()
+  void tryNextPlayback()
 }
 
 // 切换清晰度：保留当前播放位置重新加载选定档 URL
@@ -583,7 +598,8 @@ function switchQuality(payload) {
   playDirectUrl(url, 'm3u8')
 }
 
-function tryNextPlayback() {
+async function tryNextPlayback(reason = '当前线路播放失败') {
+  if (autoSwitchingPlayback) return
   const lines = vod.value.lines || []
   const slots = []
   lines.forEach((line, li) => {
@@ -592,17 +608,50 @@ function tryNextPlayback() {
       slots.push({ li, ci, channel })
     })
   })
-  if (slots.length <= 1) return
+  if (slots.length <= 1) {
+    reportPlayError(reason)
+    showPlayNotice('当前无可播放线路，请稍后重试')
+    return
+  }
+  autoSwitchingPlayback = true
+  const failures = []
   const current = slots.findIndex(s => s.li === lineIdx.value && s.ci === chanIdx.value)
   const start = current < 0 ? -1 : current
-  for (let step = 1; step < slots.length; step++) {
-    const next = slots[(start + step) % slots.length]
-    if (!next?.channel || next.channel.alive === false || !next.channel.episodes?.length) continue
-    lineIdx.value = next.li
-    chanIdx.value = next.ci
-    const n = Math.min(epIdx.value, next.channel.episodes.length - 1)
-    playEp(n < 0 ? 0 : n)
-    return
+  try {
+    for (let step = 1; step <= slots.length * 2; step++) {
+      const next = slots[(start + step) % slots.length]
+      if (!next?.channel || next.channel.alive === false || !next.channel.episodes?.length) continue
+      if (next.li === lineIdx.value && next.ci === chanIdx.value) continue
+      const n = Math.min(epIdx.value, next.channel.episodes.length - 1)
+      const nextEp = n < 0 ? 0 : n
+      try {
+        const r = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEp, fresh: 1 })
+        if (r?.ok && r.url) {
+          lineIdx.value = next.li
+          chanIdx.value = next.ci
+          epIdx.value = nextEp
+          cleanFallbackUrl.value = r.fallbackUrl || ''
+          subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
+          qualities.value = Array.isArray(r.qualities) ? r.qualities : []
+          if (r.kind === 'iframe') {
+            mode.value = 'iframe'
+            curUrl.value = r.url
+          } else {
+            playDirectUrl(r.url, r.kind || '')
+          }
+          saveWatchHistory(nextEp, pendingSeekSec.value || 0)
+          showPlayNotice(`已切换到 ${next.channel.sourceName || '备用线路'}`)
+          return
+        }
+        failures.push({ lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: r?.error || '解析失败' })
+      } catch (e) {
+        failures.push({ lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: apiErrorMessage(e, '解析失败') })
+      }
+    }
+    reportPlayError('当前无可播放线路，请稍后重试', failures)
+    showPlayNotice('当前无可播放线路，请稍后重试')
+  } finally {
+    autoSwitchingPlayback = false
   }
 }
 
@@ -655,7 +704,7 @@ function onPlayerError(data) {
   if (trySelfHeal()) return
   showPlayNotice(describePlaybackError(data))
   if (tryCleanFallback(curUrl.value)) return
-  tryNextPlayback()
+  void tryNextPlayback(describePlaybackError(data))
 }
 
 function playEp(i, opts = {}) {

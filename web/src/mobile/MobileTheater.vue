@@ -27,7 +27,7 @@
             <b>{{ index + 1 }}</b>
           </div>
           <strong>{{ vod.name }}</strong>
-          <span>{{ compactCount(vod.ratingCount || vod._count?.plays || 0) }}热度</span>
+          <span>{{ vod.heatValue || compactCount(vod.heatScore || vod.ratingCount || 0) || '暂无' }}热度</span>
         </article>
       </div>
     </section>

@@ -62,10 +62,10 @@
           <el-form :model="form.homeConfig" label-width="130px" class="site-form">
             <el-form-item label="自适应首页模板">
               <el-radio-group v-model="form.homeConfig.adaptiveTemplate">
-                <el-radio-button label="default">默认自适应</el-radio-button>
+                <el-radio-button label="default">默认影视站</el-radio-button>
                 <el-radio-button label="x8">X8 影院模板</el-radio-button>
               </el-radio-group>
-              <div class="hint inline">X8 模板为新建前台模板，可先访问前台 <code>#/x8</code> 预览；切换后桌面/平板首页使用该模板。</div>
+              <div class="hint inline">PC/平板自适应模板；移动端选择“默认”时会跟随这里。</div>
             </el-form-item>
 
             <el-form-item label="首页显示图标">
@@ -73,12 +73,12 @@
               <div class="hint inline">关闭后，首页头部只显示网站名称，不显示基础设置里的网站图标。</div>
             </el-form-item>
 
-            <el-form-item label="移动端模板">
+            <el-form-item label="独立移动端">
               <el-radio-group v-model="form.homeConfig.mobileTemplate">
-                <el-radio-button label="responsive">自适应影视站</el-radio-button>
+                <el-radio-button label="default">默认（跟随PC自适应）</el-radio-button>
                 <el-radio-button label="shortDrama">短剧 App 模板</el-radio-button>
               </el-radio-group>
-              <div class="hint inline">开启短剧 App 模板后，手机访问首页/搜索/分类会进入独立 /m 模板；桌面与旧播放页不受影响。</div>
+              <div class="hint inline">选择具体移动模板后，手机访问首页/搜索/分类会进入独立 <code>/m</code>；默认不单独切移动端。</div>
             </el-form-item>
 
             <el-form-item label="每日更新分类">

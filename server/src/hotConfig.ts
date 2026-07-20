@@ -1,5 +1,6 @@
 import { prisma } from "./db.js";
 import { enabledTypeNames, publicPlayableFilter, publicTypeFilter, requestedPublicType, type AccessViewer } from "./publicVod.js";
+import { invalidateAggregateCache } from "./aggregateCache.js";
 
 export const HOT_SORT_MODES = ["hot", "rating", "recent", "created", "pinned", "popularity"] as const;
 type HotSortMode = (typeof HOT_SORT_MODES)[number];
@@ -52,6 +53,7 @@ export async function ensureHotConfig() {
     create: { id: 1 },
     update: {},
   });
+  invalidateAggregateCache();
   return toDto(row);
 }
 
@@ -85,12 +87,12 @@ export async function updateHotConfig(input: any) {
 
 function orderByFor(sortMode: HotSortMode): any[] {
   const ratingDesc = { rating: { sort: "desc", nulls: "last" } };
-  if (sortMode === "rating") return [ratingDesc, { ratingCount: "desc" }, { updatedAt: "desc" }];
-  if (sortMode === "recent") return [{ updatedAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
-  if (sortMode === "created") return [{ createdAt: "desc" }, { ratingCount: "desc" }, ratingDesc];
-  if (sortMode === "popularity") return [{ popularity: { sort: "desc", nulls: "last" } }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
-  if (sortMode === "pinned") return [{ pinned: "desc" }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
-  return [{ ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
+  if (sortMode === "rating") return [ratingDesc, { heatScore: "desc" }, { updatedAt: "desc" }];
+  if (sortMode === "recent") return [{ updatedAt: "desc" }, { heatScore: "desc" }, ratingDesc];
+  if (sortMode === "created") return [{ createdAt: "desc" }, { heatScore: "desc" }, ratingDesc];
+  if (sortMode === "popularity") return [{ popularity: { sort: "desc", nulls: "last" } }, { heatScore: "desc" }, { ratingCount: "desc" }, ratingDesc, { updatedAt: "desc" }];
+  if (sortMode === "pinned") return [{ pinned: "desc" }, { heatScore: "desc" }, ratingDesc, { updatedAt: "desc" }];
+  return [{ heatScore: "desc" }, { ratingCount: "desc" }, { popularity: { sort: "desc", nulls: "last" } }, ratingDesc, { updatedAt: "desc" }];
 }
 
 export async function hotVodQuery(cat = "hot", limit?: number, viewer: AccessViewer = null) {
@@ -120,7 +122,7 @@ export async function hotVodQuery(cat = "hot", limit?: number, viewer: AccessVie
   if (config.minRating > 0) where.rating = { gte: config.minRating };
   else if (config.sortMode === "hot" || config.sortMode === "rating") where.rating = { not: null };
   if (config.sortMode === "popularity") where.popularity = { not: null };
-  if (config.minRatingCount > 0) where.ratingCount = { gte: config.minRatingCount };
+  if (config.minRatingCount > 0) where.heatScore = { gte: config.minRatingCount };
 
   return {
     config,

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { checkPassword, hashPassword, signToken, authGuard } from "../auth.js";
 import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
+import { clientIpOf, recordLoginLog } from "../logging.js";
 
 export default async function authRoutes(app: FastifyInstance) {
   // 登录
@@ -11,14 +12,17 @@ export default async function authRoutes(app: FastifyInstance) {
     const u = await prisma.user.findUnique({ where: { username: username || "" } });
     if (!u || !u.enabled) {
       recordLoginFailure(req, "admin", username || "");
+      recordLoginLog(req, { userType: "admin", username, success: false, message: "账号不存在或已禁用" });
       return reply.code(401).send({ error: "账号不存在或已禁用" });
     }
     if (!(await checkPassword(password || "", u.password))) {
       recordLoginFailure(req, "admin", username || "");
+      recordLoginLog(req, { userType: "admin", userId: u.id, username: u.username, success: false, message: "密码错误" });
       return reply.code(401).send({ error: "密码错误" });
     }
     clearLoginFailures(req, "admin", username || "");
-    await prisma.user.update({ where: { id: u.id }, data: { lastLogin: new Date() } });
+    await prisma.user.update({ where: { id: u.id }, data: { lastLogin: new Date(), lastLoginIp: clientIpOf(req) } });
+    recordLoginLog(req, { userType: "admin", userId: u.id, username: u.username, success: true, message: "登录成功" });
     const token = signToken({ uid: u.id, username: u.username, role: u.role });
     return { token, user: { id: u.id, username: u.username, role: u.role } };
   });

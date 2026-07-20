@@ -51,7 +51,7 @@ const ARCHIVE_RES_OPTIONS = [0, 480, 720, 1080];
 
 const DEFAULT_HOME_CONFIG = {
   dailyUpdateTypes: [] as string[],
-  mobileTemplate: "responsive",
+  mobileTemplate: "default",
   adaptiveTemplate: "default",
   showHomeLogo: true,
 };
@@ -164,8 +164,11 @@ export function normalizeHomeConfig(value: any) {
     }
   }
   const rest = { ...(raw || {}) };
-  const mobileTemplate = ["responsive", "shortDrama"].includes(String(raw?.mobileTemplate || ""))
-    ? String(raw.mobileTemplate)
+  const rawMobileTemplate = String(raw?.mobileTemplate || "");
+  const mobileTemplate = rawMobileTemplate === "responsive"
+    ? "default"
+    : ["default", "shortDrama"].includes(rawMobileTemplate)
+      ? rawMobileTemplate
     : DEFAULT_HOME_CONFIG.mobileTemplate;
   const adaptiveTemplate = ["default", "x8"].includes(String(raw?.adaptiveTemplate || ""))
     ? String(raw.adaptiveTemplate)

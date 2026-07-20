@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { authGuard } from "../auth.js";
 import { prisma } from "../db.js";
 import { ensureHotConfig, hotVodQuery, updateHotConfig } from "../hotConfig.js";
+import { withHeatFields } from "../heat.js";
 
 export default async function hotRoutes(app: FastifyInstance) {
   app.register(async (admin) => {
@@ -19,7 +20,7 @@ export default async function hotRoutes(app: FastifyInstance) {
         take: q.take,
         include: { _count: { select: { plays: true } } },
       });
-      return { config: q.config, total: list.length, list };
+      return { config: q.config, total: list.length, list: list.map(withHeatFields) };
     });
   });
 }

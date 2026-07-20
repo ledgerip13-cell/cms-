@@ -37,7 +37,7 @@
           <el-form-item label="最低评分">
             <el-input-number v-model="cfg.minRating" :min="0" :max="10" :step="0.1" :precision="1" />
           </el-form-item>
-          <el-form-item label="最低评分人数">
+          <el-form-item label="最低热度值">
             <el-input-number v-model="cfg.minRatingCount" :min="0" :max="100000000" :step="100" />
           </el-form-item>
           <el-form-item label="推荐数量">
@@ -71,7 +71,12 @@
         <el-table-column label="评分" width="90">
           <template #default="{ row }"><span class="rating">{{ row.rating || '—' }}</span></template>
         </el-table-column>
-        <el-table-column prop="ratingCount" label="评分人数" width="110" />
+        <el-table-column label="热度值" width="110">
+          <template #default="{ row }">{{ row.heatValue || row.heatScore || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="热度来源" width="120">
+          <template #default="{ row }">{{ heatSourceText(row.heatSource) }}</template>
+        </el-table-column>
         <el-table-column prop="remarks" label="更新" width="110" show-overflow-tooltip />
       </el-table>
     </div>
@@ -134,6 +139,11 @@ function coverUrl(row) {
   if (row?._coverStage === 'local') return imgUrl(row.localPic || '')
   if (row?._coverStage === 'pic') return imgUrl(row.pic || row.localPic || '')
   return imgUrl(row?.officialPic || row?.pic || row?.localPic || '')
+}
+function heatSourceText(source) {
+  if (source === 'tmdb_popularity') return 'TMDB热度'
+  if (source === 'rating_count') return '评分人数'
+  return '—'
 }
 
 function fallbackCover(row) {

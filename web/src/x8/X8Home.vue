@@ -690,7 +690,7 @@
               <button type="button" :class="{ active: x8ProfileTab === 'prefs' }" @click="x8ProfileTab = 'prefs'">个人喜好</button>
               <button type="button" :class="{ active: x8ProfileTab === 'password' }" @click="x8ProfileTab = 'password'">修改密码</button>
             </div>
-            <div v-if="x8ProfileTab === 'profile'" class="x8-user-email">
+            <div v-if="x8ProfileTab === 'profile'" class="x8-user-profile-form">
               <div class="x8-user-section-head">
                 <div>
                   <strong>个人资料</strong>
@@ -1610,9 +1610,14 @@ function withRandomHeroImage(item) {
   return { ...item, heroImage: picked.url, heroImageWide: wideImages.length > 0 }
 }
 function heatScore(item) {
-  return Number(item?.ratingCount || item?._count?.plays || item?.playCount || item?.viewCount || item?.hits || 0)
+  const n = Number(item?.heatScore || 0)
+  if (n > 0) return n
+  const ratingCount = Math.max(0, Number(item?.ratingCount) || 0)
+  const popularity = Math.max(0, Number(item?.popularity) || 0)
+  return Math.max(ratingCount, popularity > 0 ? Math.round(popularity * 1000) : 0)
 }
 function heatValue(item) {
+  if (item?.heatValue) return String(item.heatValue)
   const n = heatScore(item)
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
@@ -6493,7 +6498,40 @@ onBeforeUnmount(() => {
   font-size: 13px;
   text-align: center;
 }
-.x8-user-email {
+.x8-user-inner-tabs {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 9px;
+  padding: 4px;
+  background: rgba(255,255,255,.045);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  overflow-x: auto;
+}
+.x8-user-inner-tabs button {
+  flex: 0 0 auto;
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 14px;
+  color: rgba(255,255,255,.58);
+  background: transparent;
+  font-size: 13px;
+  line-height: 32px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.x8-user-inner-tabs button:hover {
+  color: #fff;
+}
+.x8-user-inner-tabs button.active {
+  color: #111;
+  background: #fff;
+}
+.x8-user-profile-form {
   min-width: 0;
   display: grid;
   gap: 14px;
@@ -6503,7 +6541,7 @@ onBeforeUnmount(() => {
 }
 .x8-user-email-grid {
   display: grid;
-  grid-template-columns: minmax(0, 420px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .x8-user-email-grid label {
@@ -6519,7 +6557,9 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.x8-user-email-grid input {
+.x8-user-email-grid input,
+.x8-user-email-grid select {
+  appearance: none;
   width: 100%;
   min-width: 0;
   height: 40px;
@@ -6531,7 +6571,23 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.055);
   font-size: 14px;
 }
-.x8-user-email-grid input:focus {
+.x8-user-email-grid input[readonly] {
+  color: rgba(255,255,255,.58);
+  background: rgba(255,255,255,.035);
+}
+.x8-user-email-grid select {
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(255,255,255,.68) 50%), linear-gradient(135deg, rgba(255,255,255,.68) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 17px, calc(100% - 13px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.x8-user-email-grid select option {
+  color: #111;
+  background: #fff;
+}
+.x8-user-email-grid input:focus,
+.x8-user-email-grid select:focus {
   border-color: rgba(255,255,255,.34);
   background: rgba(255,255,255,.08);
 }
@@ -6793,6 +6849,7 @@ onBeforeUnmount(() => {
     gap: 18px;
   }
   .x8-user-records,
+  .x8-user-email-grid,
   .x8-user-password-grid {
     grid-template-columns: 1fr;
   }

@@ -12,6 +12,7 @@ import { upsertLocalPlay, removeLocalPlay } from "./localSource.js";
 import { normalizePlayConfig } from "../routes/site.js";
 import { cleanText } from "../textClean.js";
 import { enabledMetaProviders, metaProviderByKey, type MetaProviderConfig } from "../metaProviders.js";
+import { calcExternalHeat } from "../heat.js";
 
 import { EventEmitter } from "node:events";
 
@@ -1109,6 +1110,7 @@ function syncYearFromMeta(metaYear = "") {
 
 function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending", officialPic = "") {
   const best = r.candidates[0];
+  const heat = r.meta ? calcExternalHeat(r.meta) : { heatScore: 0, heatSource: "" };
   return {
     ...(status === "matched" && r.meta ? {
       metaSource: r.meta.source || "douban",
@@ -1117,6 +1119,8 @@ function matchedMetaData(r: DoubanMatchResult, status: "matched" | "pending", of
       rating: r.meta.rating,
       ratingCount: r.meta.ratingCount,
       ...(typeof r.meta.popularity === "number" ? { popularity: r.meta.popularity } : {}),
+      heatScore: heat.heatScore,
+      heatSource: heat.heatSource,
       ...syncYearFromMeta(r.meta.year),
       ...(officialPic ? { officialPic } : {}),
       officialIntro: cleanText(r.meta.intro, 2000),
@@ -1190,6 +1194,7 @@ async function runManualMetaConfirm(taskId: number, opts: { vodId?: number; prov
       rating: meta.rating,
       ratingCount: meta.ratingCount,
       ...(typeof meta.popularity === "number" ? { popularity: meta.popularity } : {}),
+      ...calcExternalHeat(meta),
       ...syncYearFromMeta(meta.year),
       ...(meta.pic ? { officialPic: meta.pic } : {}),
       officialIntro: cleanText(meta.intro, 2000),

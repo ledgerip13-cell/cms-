@@ -20,6 +20,7 @@ export const api = {
   related: (params) => http.get('/related', { params }),
   weekly: () => http.get('/weekly'),
   resolvePlay: (d) => http.get('/resolve', { params: d }),
+  reportPlaybackError: (d) => http.post('/playback-errors', d).catch(() => null),
   site: () => http.get('/site'),
   registerConfig: () => http.get('/user/register-config'),
   userRegister: (d) => http.post('/user/register', d),

@@ -4,7 +4,7 @@
       <div class="toolbar">
         <div class="sec-title">前台用户</div>
         <div class="ops">
-          <el-input v-model="q.kw" clearable placeholder="账号 / 昵称" style="width:220px" @keyup.enter="load" />
+          <el-input v-model="q.kw" clearable placeholder="账号 / 昵称 / 邮箱" style="width:240px" @keyup.enter="load" />
           <el-select v-model="q.status" style="width:130px" @change="load">
             <el-option label="全部状态" value="" />
             <el-option label="正常" value="enabled" />
@@ -29,6 +29,9 @@
             <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '正常' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="邮箱" min-width="190" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.email || '未绑定' }}</template>
+        </el-table-column>
         <el-table-column label="权益等级" width="140">
           <template #default="{ row }">
             <div class="level-cell">
@@ -49,6 +52,9 @@
         <el-table-column prop="historyCount" label="历史" width="90" />
         <el-table-column label="最近登录" width="180">
           <template #default="{ row }">{{ fmt(row.lastLogin) }}</template>
+        </el-table-column>
+        <el-table-column label="最近登录IP" width="150">
+          <template #default="{ row }">{{ row.lastLoginIp || '—' }}</template>
         </el-table-column>
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
@@ -82,6 +88,10 @@
           <el-tag :type="detail.enabled ? 'success' : 'info'">{{ detail.enabled ? '正常' : '禁用' }}</el-tag>
         </div>
         <el-descriptions :column="1" border>
+          <el-descriptions-item label="账号">{{ detail.username }}</el-descriptions-item>
+          <el-descriptions-item label="昵称">{{ detail.nickname || '未设置昵称' }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detail.email || '未绑定' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ detail.enabled ? '正常' : '禁用' }}</el-descriptions-item>
           <el-descriptions-item label="偏好类型">{{ detail.favoriteTypes.join('、') || '未设置' }}</el-descriptions-item>
           <el-descriptions-item label="VIP等级">
             <el-tag class="level-preview-tag" size="small" :style="levelTagStyle(detail.vipLevel)" effect="plain">{{ detail.vipLevel?.name || '普通会员' }}</el-tag>
@@ -90,6 +100,7 @@
           <el-descriptions-item label="追剧数量">{{ detail.followCount }}</el-descriptions-item>
           <el-descriptions-item label="历史数量">{{ detail.historyCount }}</el-descriptions-item>
           <el-descriptions-item label="最近登录">{{ fmt(detail.lastLogin) }}</el-descriptions-item>
+          <el-descriptions-item label="最近登录IP">{{ detail.lastLoginIp || '—' }}</el-descriptions-item>
         </el-descriptions>
 
         <div class="asset-title">最近追剧</div>
@@ -114,6 +125,7 @@
       <el-form label-width="88px">
         <el-form-item label="账号"><el-input v-model="edit.username" disabled /></el-form-item>
         <el-form-item label="昵称"><el-input v-model="edit.nickname" maxlength="32" /></el-form-item>
+        <el-form-item label="邮箱"><el-input v-model="edit.email" maxlength="120" clearable placeholder="未绑定" /></el-form-item>
         <el-form-item label="状态"><el-switch v-model="edit.enabled" inline-prompt active-text="正常" inactive-text="禁用" /></el-form-item>
         <el-form-item label="VIP等级">
           <el-select v-model="edit.vipLevelId" filterable style="width:100%">
@@ -171,7 +183,7 @@ const detailOpen = ref(false)
 const editOpen = ref(false)
 const pwdOpen = ref(false)
 const detail = ref(null)
-const edit = ref({ id: 0, username: '', nickname: '', enabled: true, vipLevelId: null, vipExpireAt: '', favoriteTypes: [] })
+const edit = ref({ id: 0, username: '', nickname: '', email: '', enabled: true, vipLevelId: null, vipExpireAt: '', favoriteTypes: [] })
 const pwd = ref({ id: 0, username: '', password: '' })
 const typeOptions = ref([])
 const levelOptions = ref([])
@@ -237,6 +249,7 @@ async function saveEdit() {
   try {
     await api.updateAdminUser(edit.value.id, {
       nickname: edit.value.nickname,
+      email: edit.value.email,
       enabled: edit.value.enabled,
       vipLevelId: edit.value.vipLevelId,
       vipExpireAt: selectedEditLevel.value?.isVip ? (edit.value.vipExpireAt || null) : null,

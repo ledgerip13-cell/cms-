@@ -284,7 +284,10 @@ function onImgLoad(event) {
 }
 
 function heatValue(vod) {
-  const n = Number(vod?.ratingCount || vod?._count?.plays || 0)
+  if (vod?.heatValue) return String(vod.heatValue)
+  const ratingCount = Math.max(0, Number(vod?.ratingCount) || 0)
+  const popularity = Math.max(0, Number(vod?.popularity) || 0)
+  const n = Math.max(ratingCount, popularity > 0 ? Math.round(popularity * 1000) : 0)
   if (!n) return ''
   if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
   return String(n)

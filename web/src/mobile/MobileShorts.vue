@@ -1250,6 +1250,22 @@ function clearLineFailures(unit) {
   if (key) playbackLineFailures.delete(key)
 }
 
+function reportShortsPlaybackError(unit, message, failures = []) {
+  if (!unit?.vod?.id) return
+  void api.reportPlaybackError({
+    vodId: unit.vod.id,
+    vodName: unit.vod.name || '',
+    playId: unit.channel?.id || null,
+    lineName: unit.channel?.sourceName || unit.channel?.name || '',
+    sourceName: unit.channel?.sourceName || '',
+    epIndex: unit.epIndex,
+    epName: unit.epName || '',
+    page: location.href,
+    message,
+    detail: { context: 'shorts', failures },
+  })
+}
+
 function applyShortsLineSwitch(unit) {
   if (!unit?.vod?.id || !unit?.channel?.id) return false
   const index = activeIndex.value
@@ -1269,10 +1285,7 @@ async function tryNextShortsLine(unit, triedLineIds = new Set()) {
   if (!next) return null
   const nextUnit = buildUnitFromChannel(detail, next, { epIndex: unit.epIndex })
   if (!nextUnit) return null
-  applyShortsLineSwitch(nextUnit)
-  notifyWarning(`当前线路不可用，已切换到 ${nextUnit.channel.sourceName || '备用线路'}`)
-  await nextTick()
-  return activeUnit.value?.channel?.id === nextUnit.channel.id ? activeUnit.value : nextUnit
+  return nextUnit
 }
 
 async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
@@ -1283,10 +1296,24 @@ async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
   try {
     const nextUnit = await tryNextShortsLine(unit, tried)
     if (!nextUnit) {
+      reportShortsPlaybackError(unit, reason, [{ lineName: unit.channel?.sourceName || unit.channel?.name || '', epName: unit.epName || '', message: reason }])
       notifyWarning(reason)
       stopVideo()
       return false
     }
+    const result = await resolveUnitPlayback(nextUnit, { fresh: true })
+    if (!result?.ok || !result.url) {
+      rememberLineFailure(nextUnit)
+      reportShortsPlaybackError(unit, result?.error || reason, [
+        { lineName: unit.channel?.sourceName || unit.channel?.name || '', epName: unit.epName || '', message: reason },
+        { lineName: nextUnit.channel?.sourceName || nextUnit.channel?.name || '', epName: nextUnit.epName || '', message: result?.error || '解析失败' },
+      ])
+      notifyWarning(reason)
+      stopVideo()
+      return false
+    }
+    applyShortsLineSwitch(nextUnit)
+    notifyWarning(`当前线路不可用，已切换到 ${nextUnit.channel.sourceName || '备用线路'}`)
     schedulePlay(0)
     return true
   } catch {
@@ -1315,6 +1342,11 @@ async function playActive() {
         return
       }
       if (result?.ok && result.url) {
+        if (activeUnit.value?.key !== unit.key) {
+          applyShortsLineSwitch(unit)
+          notifyWarning(`当前线路不可用，已切换到 ${unit.channel.sourceName || '备用线路'}`)
+          await nextTick()
+        }
         await attachVideo(result.url, result.kind || '', seq, unit)
         if (seq !== playSeq) return
         return
@@ -1322,6 +1354,7 @@ async function playActive() {
       const nextUnit = await tryNextShortsLine(unit, triedLineIds)
       if (seq !== playSeq) return
       if (!nextUnit) {
+        reportShortsPlaybackError(unit, result?.error || '当前无可播放线路，请稍后重试', [{ lineName: unit.channel?.sourceName || unit.channel?.name || '', epName: unit.epName || '', message: result?.error || '解析失败' }])
         notifyWarning(result?.error || '当前集暂时无法播放')
         return
       }
