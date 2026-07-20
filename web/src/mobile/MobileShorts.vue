@@ -6,6 +6,13 @@
       class="ms-feed"
       :class="{ frozen: filterOpen || episodeDrawerOpen || toolMenuOpen }"
       @scroll.passive="onScroll"
+      @scrollend.passive="onScrollEnd"
+      @pointerdown.passive="onFullScrollStart"
+      @pointerup.passive="onFullScrollRelease"
+      @pointercancel.passive="onFullScrollRelease"
+      @touchstart.passive="onFullScrollStart"
+      @touchend.passive="onFullScrollRelease"
+      @touchcancel.passive="onFullScrollRelease"
     >
       <article v-for="(unit, index) in displayUnits" :key="unit.key" class="ms-card">
         <div class="ms-bg" :style="posterStyle(unit)"></div>
@@ -89,6 +96,7 @@
         <div
           v-if="isActiveDisplay(index) && !accessBlock && (soundPrompt || (fullMode && videoReady && videoLandscape && !clearScreen))"
           class="ms-prompt-row"
+          :class="{ landscape: fullMode && videoLandscape }"
         >
           <button
             v-if="soundPrompt"
@@ -98,7 +106,7 @@
             @click="openSound"
           >
             <svg viewBox="0 0 24 24" v-html="icon('volume')"></svg>
-            <span>轻触开启声音</span>
+            <span>开启声音</span>
           </button>
           <button
             v-if="fullMode && videoReady && videoLandscape && !clearScreen"
@@ -356,7 +364,9 @@ const RESOLVE_CACHE_TTL = 20 * 60 * 1000
 const RESOLVE_CACHE_LIMIT = 80
 const LANDSCAPE_OBJECT_Y = '36%'
 const LANDSCAPE_CENTER_RATIO = 0.36
-const FULL_SCROLL_SETTLE_MS = 160
+const LANDSCAPE_PROMPT_GAP = 18
+const FULL_SCROLL_IDLE_MS = 90
+const FULL_SCROLL_SNAP_TOLERANCE = 0.08
 const FULL_RESIZE_SUPPRESS_MS = 420
 
 function readMutedPreference() {
@@ -406,6 +416,7 @@ const soundPrompt = ref(false)
 const videoContain = ref(true)
 const videoLandscape = ref(false)
 const landscapePlayY = ref('')
+const landscapePromptY = ref('')
 const videoReady = ref(false)
 const accessBlock = ref(null)
 const currentSec = ref(0)
@@ -435,6 +446,7 @@ let scrollRaf = 0
 let activeTimer = 0
 let fullCommitTimer = 0
 let pendingFullEpIndex = null
+let fullScrollActive = false
 let fullNextPrefetchKey = ''
 let historySaveAt = 0
 let playingUnit = null
@@ -482,6 +494,7 @@ const progressPercent = computed(() => {
 const shortsVars = computed(() => ({
   '--ms-landscape-object-y': LANDSCAPE_OBJECT_Y,
   ...(landscapePlayY.value ? { '--ms-landscape-play-y': landscapePlayY.value } : {}),
+  ...(landscapePromptY.value ? { '--ms-landscape-prompt-y': landscapePromptY.value } : {}),
 }))
 const episodeList = computed(() => {
   const episodes = Array.isArray(activeUnit.value?.channel?.episodes) ? activeUnit.value.channel.episodes : []
@@ -1063,6 +1076,7 @@ function stopVideo() {
   videoContain.value = true
   videoLandscape.value = false
   landscapePlayY.value = ''
+  landscapePromptY.value = ''
   videoReady.value = false
   currentSec.value = 0
   durationSec.value = 0
@@ -1090,6 +1104,47 @@ function clearFullCommitTimer() {
     fullCommitTimer = 0
   }
   pendingFullEpIndex = null
+}
+
+function targetSlotForEpisode(epIndex) {
+  return displayUnits.value.findIndex(unit => Number(unit?.epIndex || 0) === Number(epIndex))
+}
+
+function fullScrollSlotDelta(slot) {
+  const el = feedEl.value
+  if (!el || slot < 0) return Infinity
+  const raw = el.scrollTop / Math.max(1, el.clientHeight)
+  return Math.abs(raw - slot)
+}
+
+function commitPendingFullEpisode() {
+  if (fullCommitTimer) {
+    window.clearTimeout(fullCommitTimer)
+    fullCommitTimer = 0
+  }
+  const current = activeUnit.value
+  const target = pendingFullEpIndex
+  if (!fullMode.value || !current?.vod?.id || !current.channel?.id || target === null) {
+    pendingFullEpIndex = null
+    return
+  }
+  const targetSlot = targetSlotForEpisode(target)
+  if (targetSlot < 0 || fullScrollSlotDelta(targetSlot) > FULL_SCROLL_SNAP_TOLERANCE) {
+    armFullScrollCommit()
+    return
+  }
+  pendingFullEpIndex = null
+  if (target === Number(current.epIndex || 0)) return
+  jumpEpisode(target, { fromScroll: true })
+}
+
+function armFullScrollCommit() {
+  if (fullCommitTimer) window.clearTimeout(fullCommitTimer)
+  if (pendingFullEpIndex === null || !fullMode.value || fullScrollActive) {
+    fullCommitTimer = 0
+    return
+  }
+  fullCommitTimer = window.setTimeout(commitPendingFullEpisode, FULL_SCROLL_IDLE_MS)
 }
 
 function schedulePlay(delay = 0) {
@@ -1408,6 +1463,7 @@ function updateLandscapeMetrics(video = getVideo()) {
   const rect = video?.getBoundingClientRect?.()
   if (!videoLandscape.value || !width || !height || !rect?.width || !rect?.height) {
     landscapePlayY.value = ''
+    landscapePromptY.value = ''
     return
   }
   const renderedHeight = Math.min(rect.height, rect.width * (height / width))
@@ -1415,6 +1471,7 @@ function updateLandscapeMetrics(video = getVideo()) {
   const frameTop = freeY * LANDSCAPE_CENTER_RATIO
   const centerY = frameTop + renderedHeight / 2
   landscapePlayY.value = `${Math.round(centerY)}px`
+  landscapePromptY.value = `${Math.round(frameTop + renderedHeight + LANDSCAPE_PROMPT_GAP)}px`
 }
 
 function scheduleLandscapeMetrics() {
@@ -1550,6 +1607,9 @@ function onScroll() {
         scheduleFullEpisodeCommit((activeUnit.value.epIndex || 0) + 1)
       } else if (raw < currentSlot - 0.55) {
         scheduleFullEpisodeCommit((activeUnit.value.epIndex || 0) - 1)
+      } else if (pendingFullEpIndex !== null && Math.abs(raw - currentSlot) < 0.35) {
+        clearFullCommitTimer()
+        if (!paused.value) schedulePlay(0)
       }
       return
     }
@@ -1561,6 +1621,22 @@ function onScroll() {
   })
 }
 
+function onScrollEnd() {
+  if (!fullMode.value || pendingFullEpIndex === null) return
+  fullScrollActive = false
+  commitPendingFullEpisode()
+}
+
+function onFullScrollStart() {
+  if (fullMode.value) fullScrollActive = true
+}
+
+function onFullScrollRelease() {
+  if (!fullMode.value) return
+  fullScrollActive = false
+  armFullScrollCommit()
+}
+
 function scheduleFullEpisodeCommit(index) {
   const unit = activeUnit.value
   if (!fullMode.value || !unit?.vod?.id || !unit.channel?.id) return
@@ -1568,23 +1644,15 @@ function scheduleFullEpisodeCommit(index) {
   const total = Math.max(1, Number(unit.total) || 1)
   const epIndex = Math.max(0, Math.min(total - 1, Number(index) || 0))
   if (epIndex === Number(unit.epIndex || 0)) return
-  if (pendingFullEpIndex === epIndex) return
+  if (pendingFullEpIndex === epIndex) {
+    armFullScrollCommit()
+    return
+  }
   clearFullCommitTimer()
   pendingFullEpIndex = epIndex
   cancelPendingPlayback({ stop: true })
   saveHistory(true)
-  fullCommitTimer = window.setTimeout(() => {
-    fullCommitTimer = 0
-    const current = activeUnit.value
-    if (!fullMode.value || !current?.vod?.id || !current.channel?.id) {
-      pendingFullEpIndex = null
-      return
-    }
-    const target = pendingFullEpIndex
-    pendingFullEpIndex = null
-    if (target === null || target === Number(current.epIndex || 0)) return
-    jumpEpisode(target, { fromScroll: true })
-  }, FULL_SCROLL_SETTLE_MS)
+  armFullScrollCommit()
 }
 
 function showAccessBlock(result) {
@@ -2157,6 +2225,10 @@ onBeforeUnmount(() => {
 }
 .full-mode .ms-prompt-row {
   bottom: calc(220px + env(safe-area-inset-bottom));
+}
+.full-mode .ms-prompt-row.landscape {
+  top: var(--ms-landscape-prompt-y, calc(var(--ms-landscape-play-y, 50%) + 54px));
+  bottom: auto;
 }
 .ms-prompt-btn {
   height: 40px;
