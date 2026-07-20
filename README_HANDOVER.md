@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-20 (GMT+8)｜**对应提交**：本次提交（金牌源真实 IP 透传修复）
+> **最后更新**：2026-07-20 (GMT+8)｜**对应提交**：本次提交（播放线路静默兜底修复）
 
 ---
 
@@ -170,6 +170,7 @@ docker compose up -d --build
 ## 4. 当前开发进度（断点记录）
 
 - **2026-07-20 金牌源真实 IP 透传修复断点**：定位金牌 `jinpaim3u8` 播放 403 根因：`/api/resolve` 正常返回 `rule=jinpai_client` 的 CDN m3u8，但 CDN 端返回 `403 Forbidden`/`the source ip is forbidden`，符合金牌源“用客户端 IP 签名、前端直连 CDN”模型中签名 IP 与实际播放出口不一致的问题。`web/nginx.conf` 的 `/api/` 反代已补充 `X-Forwarded-For`、`X-Forwarded-Proto`、`CF-Connecting-IP` 透传，并用 `CF-Connecting-IP` 优先填充 `X-Real-IP`；`server/src/jinpaiPlay.ts::clientIpOf()` 改为从 `CF-Connecting-IP / True-Client-IP / X-Forwarded-For / X-Real-IP / socket` 取第一个有效公网 IP，跳过 Docker/内网/回环地址，再把该 IP 放入金牌签名请求头 `X-Forwarded-For`。后台/API 数据模型未改动。
+- **2026-07-20 播放线路静默兜底修复断点**：修正上一轮“播放失败自动切线”理解偏差：遇到不可用线路时，前台不应先切换线路 UI 后再验证，而应在后台静默循环候选线路，只有解析成功且 m3u8 探测可读后，才把前台源/集切到该可播线路；循环一遍仍无可播线路时，才提示“当前无可播放线路，请稍后重试”。`web/src/mobile/MobilePlay.vue` 同时修复 `playbackSlots()` 只保存 `li/ci`、遗漏 `line/channel` 导致备用线路永远被跳过的问题。`web/src/views/Play.vue` 和 `web/src/x8/X8Home.vue` 已补齐静默探测；X8 播放器新增 fatal HLS/video error 后触发同一套兜底。后台/API/数据库未改动。
 - **2026-07-20 移动端全集态滚动提交优化断点**：`web/src/mobile/MobileShorts.vue` 将 `/m/shorts?mode=full` 全集态切集提交从固定 `160ms` 等待改为真实滚动结束/滚动空闲检测：保留原生 `overflow-y:auto + scroll-snap` 手感，滑动越过阈值后先停止旧播放并记录待切集数，随后优先响应 `scrollend`，不支持时在触摸/指针释放且最后一次滚动空闲 `90ms` 后，确认 `scrollTop` 已贴近目标 snap 槽位再执行 `jumpEpisode(..., { fromScroll:true })` 和虚拟窗口复位。若用户回弹到当前槽位，取消待切集并恢复播放，避免三卡 rebase 过早导致松手末尾“一帧跳动”。同次将有声恢复提示文案从“轻触开启声音”改为“开启声音”，全集态横屏视频下“开启声音/全屏观看”提示改为按横屏视频实际底边下移 `18px`，竖屏位置不变。仅改移动端全集态滚动状态机/提示文案/横屏提示定位，后台/API/数据库未改动。
 - **2026-07-19 X8 系统全屏与键盘控制回修断点**：`web/src/x8/X8Home.vue` 修复 7/18 容器全屏改动导致“系统全屏”仍显示自定义操作栏的问题：`requestNativeFullscreen()` 改回优先对 `<video>` 调 `requestFullscreen/webkitRequestFullscreen/webkitEnterFullscreen`，进入系统全屏时临时打开 `video.controls=true` 使用原生系统播放器，退出后由 `fullscreenchange/webkitfullscreenchange/webkitendfullscreen` 恢复 `video.controls=false`；`shouldHandlePlayerHotkey()` 同步把 `nativeFullscreen` 纳入快捷键接管状态，系统全屏下空格、左右方向键仍可控制播放/前进后退。HLS 页面内全屏 `playerTheater` 语义不变。
 - **2026-07-19 移动端播放页 UI 与线路级进度断点**：`web/src/mobile/MobilePlay.vue` 完善独立移动播放页：播放线路/通道切换后只自动聚焦当前线路/通道按钮，不再纵向滚动到选集区域，也不自动解析播放、不打断当前视频；线路切换仅作为预选，用户点选某个集数/上下集后才使用预选线路播放。历史保存新增“实际正在播放线路/集数”上下文，避免预选线路后把当前播放进度写错线路；选集按 30 集分组，集数按钮按 `lineId + epIndex` 显示上次播放进度百分比/时间与底部进度条；进入页面先读取本地 `vcms.mobile.play.history.v1`，登录用户再用 `/api/user/vods/:id/state` 覆盖，匹配当前线路和集数时在 `loadedmetadata` 后自动续播到上次秒数；保存时本地必写，登录用户额外同步 `/api/user/history`。`web/src/mobile/MobileShorts.vue` 共用同一本地历史键：刷剧完整模式选集抽屉按当前线路显示上次进度，外部打开指定影片时按历史线路/集数/秒数续播。后台和数据库未改动，仍复用 `WatchHistory.lineId/epIndex/progressSec/durationSec`。

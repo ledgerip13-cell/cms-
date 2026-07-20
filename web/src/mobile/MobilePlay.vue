@@ -1079,7 +1079,7 @@ function playbackSlots() {
     for (let ci = 0; ci < channels.length; ci++) {
       const channel = channels[ci]
       if (!channel || channel.alive === false || !(channel.episodes || [])[epIdx.value]) continue
-      slots.push({ li, ci })
+      slots.push({ li, ci, line, channel })
     }
   }
   return slots
@@ -1114,7 +1114,6 @@ async function tryNextLine(reason = '当前线路播放失败') {
   }
   retryingLine = true
   autoSwitchingLine = true
-  showNotice('线路异常，正在自动尝试备用线路')
   const current = slots.findIndex(slot => slot.li === lineIdx.value && slot.ci === chanIdx.value)
   const seq = playbackSeq
   try {

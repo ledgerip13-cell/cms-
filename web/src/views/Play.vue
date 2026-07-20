@@ -316,6 +316,22 @@ function tryCleanFallback(failedUrl) {
   return true
 }
 
+async function probePlaybackUrl(url, kind = '') {
+  if (!url || kind === 'iframe') return true
+  if (!/\.m3u8(\?|$)/i.test(url)) return true
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    if (!/#EXTM3U/i.test(text.slice(0, 240))) throw new Error('非标准m3u8')
+    return true
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 const curLine = computed(() => vod.value.lines?.[lineIdx.value])
 const actors = computed(() => (vod.value.people || []).filter(p => p.role === 'actor').slice(0, 12))
 const directors = computed(() => (vod.value.people || []).filter(p => p.role === 'director').slice(0, 6))
@@ -618,7 +634,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
   const current = slots.findIndex(s => s.li === lineIdx.value && s.ci === chanIdx.value)
   const start = current < 0 ? -1 : current
   try {
-    for (let step = 1; step <= slots.length * 2; step++) {
+    for (let step = 1; step < slots.length; step++) {
       const next = slots[(start + step) % slots.length]
       if (!next?.channel || next.channel.alive === false || !next.channel.episodes?.length) continue
       if (next.li === lineIdx.value && next.ci === chanIdx.value) continue
@@ -627,6 +643,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
       try {
         const r = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEp, fresh: 1 })
         if (r?.ok && r.url) {
+          await probePlaybackUrl(r.url, r.kind || '')
           lineIdx.value = next.li
           chanIdx.value = next.ci
           epIdx.value = nextEp

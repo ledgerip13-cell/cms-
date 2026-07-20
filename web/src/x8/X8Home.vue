@@ -456,6 +456,7 @@
                       @pause="onVideoPause"
                       @volumechange="syncVideoState"
                       @ended="onVideoEnded"
+                      @error="handlePlaybackError"
                       @webkitbeginfullscreen="onNativeVideoFullscreen(true)"
                       @webkitendfullscreen="onNativeVideoFullscreen(false)"
                     ></video>
@@ -1100,6 +1101,7 @@ let browseRequestId = 0
 let historySaveAt = 0
 let hls = null
 let trailerHls = null
+let autoSwitchingPlayback = false
 
 const sortItems = [
   { value: 'hot', label: '热门' },
@@ -2334,6 +2336,20 @@ function saveWatchHistory(force = false) {
   saveLocalHistory(payload)
   if (user.value) api.saveHistory(payload).catch(() => {})
 }
+function reportPlaybackError(message, failures = []) {
+  void api.reportPlaybackError({
+    vodId: vod.value?.id || null,
+    vodName: vod.value?.name || '',
+    playId: currentLine.value?.id || null,
+    lineName: currentLine.value?.sourceName || currentLine.value?.flag || '',
+    sourceName: currentLine.value?.sourceName || '',
+    epIndex: currentEpIndex.value,
+    epName: episodes.value?.[currentEpIndex.value]?.name || '',
+    page: location.href,
+    message,
+    detail: { context: 'x8', failures },
+  })
+}
 function readLocalHistory() {
   try {
     const rows = JSON.parse(localStorage.getItem(X8_LOCAL_HISTORY_KEY) || '[]')
@@ -2459,11 +2475,29 @@ function attachVideo(url, kind = '') {
       hls.loadSource(url)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncVideoState).catch(syncVideoState))
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data?.fatal) handlePlaybackError()
+      })
     } else {
       video.src = url
       video.play().then(syncVideoState).catch(syncVideoState)
     }
   })
+}
+async function probePlaybackUrl(url, kind = '') {
+  if (!url || kind === 'iframe') return true
+  if (!/\.m3u8(\?|$)/i.test(url)) return true
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), 8000)
+  try {
+    const res = await fetch(url, { method: 'GET', signal: ctrl.signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    if (!/#EXTM3U/i.test(text.slice(0, 240))) throw new Error('非标准m3u8')
+    return true
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 async function playCurrent() {
   const line = currentLine.value
@@ -2487,10 +2521,80 @@ async function playCurrent() {
       }
       qualityOpen.value = false
       attachVideo(playHere, result.kind || line.playKind || '')
+    } else if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(result?.code)) {
+      notifyWarning(result?.error || '当前影片暂无观看权限')
+    } else {
+      await tryNextPlayback(result?.error || '当前线路播放失败')
     }
+  } catch (error) {
+    await tryNextPlayback(apiErrorMessage(error, '解析播放地址失败'))
   } finally {
     resolving.value = false
   }
+}
+function playbackSlots() {
+  return (vod.value.lines || [])
+    .map((line) => ({ line }))
+    .filter(({ line }) => line?.id && line.alive !== false && (line.episodes || [])[currentEpIndex.value])
+}
+async function tryNextPlayback(reason = '当前线路播放失败') {
+  if (autoSwitchingPlayback) return false
+  const slots = playbackSlots()
+  const failMessage = '当前无可播放线路，请稍后重试'
+  if (slots.length <= 1) {
+    reportPlaybackError(failMessage, [{ playId: currentLine.value?.id, line: currentLine.value?.sourceName || currentLine.value?.flag || '', error: reason }])
+    notifyWarning(failMessage)
+    return false
+  }
+  const current = slots.findIndex(slot => Number(slot.line.id) === Number(currentLineId.value))
+  const start = current < 0 ? -1 : current
+  const failures = []
+  autoSwitchingPlayback = true
+  try {
+    for (let step = 1; step < slots.length; step++) {
+      const next = slots[(start + step) % slots.length]
+      const line = next?.line
+      if (!line?.id || line.alive === false || !(line.episodes || [])[currentEpIndex.value]) continue
+      if (Number(line.id) === Number(currentLineId.value)) continue
+      try {
+        const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value, fresh: 1 })
+        if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
+        await probePlaybackUrl(result.url, result.kind || line.playKind || '')
+        currentLineId.value = line.id
+        qualityOpen.value = false
+        settingsOpen.value = false
+        rateOpen.value = false
+        const qs = Array.isArray(result.qualities) ? result.qualities : []
+        qualities.value = qs
+        defaultQualityUrl.value = result.url
+        let playHere = result.url
+        if (preferredRes.value && qs.length) {
+          const hit = qs.find((q) => q.resolution === preferredRes.value)
+          if (hit?.url) playHere = hit.url
+        }
+        attachVideo(playHere, result.kind || line.playKind || '')
+        syncPlayRouteQuery()
+        focusActivePlayControls()
+        notifySuccess(`已切换到可播放线路：${line.sourceName || line.flag || '备用线路'}`)
+        return true
+      } catch (error) {
+        failures.push({
+          playId: line.id,
+          line: line.sourceName || line.flag || '',
+          epIndex: currentEpIndex.value,
+          error: error?.message || String(error || '播放失败'),
+        })
+      }
+    }
+    reportPlaybackError(failMessage, failures)
+    notifyWarning(failMessage)
+    return false
+  } finally {
+    autoSwitchingPlayback = false
+  }
+}
+function handlePlaybackError() {
+  void tryNextPlayback('播放失败')
 }
 // X8 播放器切换清晰度：保留当前播放位重新加载选定档 URL
 function switchQuality(res) {
