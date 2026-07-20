@@ -1100,6 +1100,10 @@ async function probePlaybackUrl(url, kind = '') {
     window.clearTimeout(timer)
   }
 }
+function shouldProbeResolvedPlayback(result) {
+  // 金牌源 m3u8 由客户端 IP 签名直连，预 fetch 会误判 403；交给播放器实际起播。
+  return result?.rule !== 'jinpai_client'
+}
 
 async function tryNextLine(reason = '当前线路播放失败') {
   if (retryingLine || autoSwitchingLine) return false
@@ -1130,7 +1134,7 @@ async function tryNextLine(reason = '当前线路播放失败') {
         const result = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEpIndex, fresh: 1 })
         if (!isPlaybackCurrent(seq)) return false
         if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
-        await probePlaybackUrl(result.url, result.kind || '')
+        if (shouldProbeResolvedPlayback(result)) await probePlaybackUrl(result.url, result.kind || '')
         if (!isPlaybackCurrent(seq)) return false
         lineIdx.value = next.li
         chanIdx.value = next.ci
