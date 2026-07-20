@@ -136,12 +136,13 @@ export default async function resolveRoutes(app: FastifyInstance) {
         // 客户端 IP 签名 → CDN 直连；返回全部清晰度供前台切换
         try {
           const publicClientIp = clientIpOf(req);
+          const signClientIp = publicClientIp && !publicClientIp.includes(":") ? publicClientIp : "";
           const list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,
             signKey: (play.source as any).signKey,
             vodId: vodSvid,
             nid,
-            clientIp: publicClientIp,
+            clientIp: signClientIp,
           });
           const best = pickBest(list);
           if (!best?.url) return { ok: false, error: "源站无可播地址" };
@@ -152,6 +153,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
             epIndex,
             rule: "jinpai_client",
             clientIp: publicClientIp || "",
+            signClientIp,
             cdnHost: new URL(best.url).host,
             resolutions: qualities.map((x) => x.resolution),
           }, "jinpai resolve");
