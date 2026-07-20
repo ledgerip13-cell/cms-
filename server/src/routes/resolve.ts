@@ -10,7 +10,7 @@ import { getDriver } from "../collector/drivers/index.js";
 import { isICloudShareUrl, resolveICloudDirect } from "../icloud.js";
 import { normalizeShortsConfig } from "./site.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
-import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR, probeJinpaiM3u8 } from "../jinpaiPlay.js";
+import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR } from "../jinpaiPlay.js";
 import { LOCAL_FLAG } from "../collector/localSource.js";
 import fsp from "node:fs";
 import nodePath from "node:path";
@@ -135,7 +135,6 @@ export default async function resolveRoutes(app: FastifyInstance) {
         const vodSvid = String(play.sourceVodId);
         // 客户端 IP 签名 → CDN 直连；返回全部清晰度供前台切换
         try {
-          const viewer = await viewerFromRequest(req);
           const publicClientIp = clientIpOf(req);
           const list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,
@@ -147,36 +146,15 @@ export default async function resolveRoutes(app: FastifyInstance) {
           const best = pickBest(list);
           if (!best?.url) return { ok: false, error: "源站无可播地址" };
           const qualities = list.map((x) => ({ resolution: x.resolution, name: x.resolutionName, url: x.url }));
-          if (!publicClientIp) {
-            const directProbe = await probeJinpaiM3u8(best.url);
-            const serverIp = directProbe.clientIp || "";
-            if (!directProbe.ok && serverIp) {
-              const serverList = await fetchEpisodeUrls({
-                apiUrl: (play.source as any).apiUrl,
-                signKey: (play.source as any).signKey,
-                vodId: vodSvid,
-                nid,
-                clientIp: serverIp,
-              });
-              const serverBest = pickBest(serverList);
-              if (serverBest?.url && (await probeJinpaiM3u8(serverBest.url)).ok) {
-                const proxyUrl = (raw: string) => {
-                  const ref = refererOf(raw);
-                  const tok = signProxyToken({ u: raw, ref, kind: "mp", mode: "proxy", mid: viewer?.id });
-                  return `/api/hls-mp?t=${encodeURIComponent(tok)}`;
-                };
-                return {
-                  ok: true,
-                  url: proxyUrl(serverBest.url),
-                  kind: "m3u8",
-                  rule: "jinpai_proxy",
-                  resolution: serverBest.resolution,
-                  qualities: serverList.map((x) => ({ resolution: x.resolution, name: x.resolutionName, url: proxyUrl(x.url) })),
-                  fallbackUrl: serverBest.url,
-                };
-              }
-            }
-          }
+          req.log.info({
+            vodId,
+            playId,
+            epIndex,
+            rule: "jinpai_client",
+            clientIp: publicClientIp || "",
+            cdnHost: new URL(best.url).host,
+            resolutions: qualities.map((x) => x.resolution),
+          }, "jinpai resolve");
           return { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution, qualities };
         } catch (e: any) {
           return { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };

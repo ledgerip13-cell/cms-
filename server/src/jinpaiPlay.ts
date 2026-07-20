@@ -73,28 +73,6 @@ export function clientIpOf(req: any): string {
   return publicIp || "";
 }
 
-export async function probeJinpaiM3u8(url: string, timeoutMs = 8000): Promise<{ ok: boolean; clientIp?: string; status?: number; error?: string }> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
-        Referer: "https://www.x8kb9k8.com/",
-      },
-    });
-    const text = await res.text().catch(() => "");
-    if (res.ok && /#EXTM3U/i.test(text.slice(0, 240))) return { ok: true, status: res.status };
-    const clientIp = normalizeIp(text.match(/Client_ip:\s*([^<\s]+)/i)?.[1] || "");
-    return { ok: false, status: res.status, clientIp, error: text.slice(0, 160) };
-  } catch (e: any) {
-    return { ok: false, error: String(e?.message || e) };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 /**
  * 向源站换取某集的清晰度列表（带客户端 IP 签名）。
  * @returns 按分辨率降序的清晰度数组
