@@ -20,18 +20,15 @@
         <div class="sec-title" style="margin-bottom:16px">元数据匹配</div>
         <el-alert type="info" :closable="false" style="margin-bottom:16px"
           title="按已启用匹配源抓取评分/简介/高清封面并落库。抓一次存库，前端读库不实时请求；最终来源会在匹配记录中标注。" />
-        <div class="match-mode">
-          <span>匹配模式</span>
-          <el-select v-model="quickProviderMode" style="width:180px">
-            <el-option v-for="item in providerModeOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </div>
         <div class="ops">
-          <el-button type="primary" :icon="MagicStick" @click="run(false)">
+          <el-button type="primary" :icon="MagicStick" @click="runUnprocessed">
             匹配未处理（{{ stat.none || 0 }} 部）
           </el-button>
-          <el-button :icon="RefreshRight" @click="run(true)">
-            重刷失败/全部（{{ stat.failed || 0 }} 失败）
+          <el-button :icon="RefreshRight" @click="retryFailed">
+            重试失败（{{ stat.failed || 0 }} 部）
+          </el-button>
+          <el-button type="warning" plain :icon="RefreshRight" @click="refreshAll">
+            全量重刷
           </el-button>
         </div>
         <div class="manual-scope">
@@ -65,53 +62,9 @@
       <!-- 参数设置 -->
       <div class="card">
         <div class="toolbar">
-          <div class="sec-title">采集参数设置</div>
+          <div class="sec-title">匹配源配置</div>
           <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
         </div>
-        <el-divider>全局设置</el-divider>
-        <el-form :model="cfg" label-width="120px" class="global-meta-form">
-          <el-form-item label="限速间隔">
-            <el-input-number v-model="cfg.intervalMs" :min="1000" :max="10000" :step="500" />
-            <span class="unit">毫秒/条（旧版默认值，启用匹配源优先使用源级配置）</span>
-          </el-form-item>
-          <el-form-item label="任务数量上限">
-            <el-input-number v-model="cfg.batchLimit" :min="10" :max="500" :step="10" />
-            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
-          </el-form-item>
-          <el-form-item label="保存图片">
-            <el-switch v-model="cfg.saveImages" inline-prompt active-text="开启" inactive-text="关闭" />
-            <span class="unit">所有元数据源生效；保存海报/剧照到本地兜底</span>
-          </el-form-item>
-          <el-divider>置信分设置</el-divider>
-          <el-form-item label="自动通过分">
-            <el-input-number v-model="cfg.autoMatchScore" :min="0" :max="100" :step="1" />
-            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
-          </el-form-item>
-          <el-form-item label="待确认分">
-            <el-input-number v-model="cfg.pendingMatchScore" :min="0" :max="cfg.autoMatchScore || 100" :step="1" />
-            <span class="unit">旧版默认值；启用匹配源优先使用源级配置</span>
-          </el-form-item>
-          <el-divider>定时自动匹配</el-divider>
-          <el-form-item label="自动匹配">
-            <el-switch v-model="cfg.autoMatch" inline-prompt active-text="开启" inactive-text="关闭" />
-            <span class="unit">所有启用源按优先级执行</span>
-          </el-form-item>
-          <template v-if="cfg.autoMatch">
-            <el-form-item label="匹配频率">
-              <el-select v-model="cfg.cronExpr" style="width:220px">
-                <el-option label="每 6 小时" value="0 */6 * * *" />
-                <el-option label="每 12 小时" value="0 */12 * * *" />
-                <el-option label="每天凌晨 4 点" value="0 4 * * *" />
-                <el-option label="每天凌晨 2 点" value="0 2 * * *" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="一并重试失败">
-              <el-switch v-model="cfg.redoFailed" inline-prompt active-text="开启" inactive-text="关闭" />
-              <span class="unit">开启则定时任务也重刷之前失败的</span>
-            </el-form-item>
-          </template>
-        </el-form>
-        <el-divider>采集匹配源管理</el-divider>
         <div class="provider-list">
           <div v-for="provider in cfg.providersConfig.providers" :key="provider.key" class="provider-card">
             <div class="provider-head">
@@ -161,6 +114,37 @@
             </el-form>
           </div>
         </div>
+        <el-divider>通用策略</el-divider>
+        <el-form :model="cfg" label-width="120px" class="global-meta-form">
+          <el-form-item label="图片资产兜底">
+            <el-switch v-model="cfg.saveImages" inline-prompt active-text="保存" inactive-text="不保存" />
+            <span class="unit">保存元数据图片到本地，远程图失效时作为兜底</span>
+          </el-form-item>
+        </el-form>
+        <el-collapse v-model="advancedActive" class="advanced-meta-collapse">
+          <el-collapse-item title="自动化设置" name="auto">
+            <el-form :model="cfg" label-width="120px" class="global-meta-form">
+              <el-form-item label="自动匹配">
+                <el-switch v-model="cfg.autoMatch" inline-prompt active-text="开启" inactive-text="关闭" />
+                <span class="unit">所有启用源按优先级执行</span>
+              </el-form-item>
+              <template v-if="cfg.autoMatch">
+                <el-form-item label="匹配频率">
+                  <el-select v-model="cfg.cronExpr" style="width:220px">
+                    <el-option label="每 6 小时" value="0 */6 * * *" />
+                    <el-option label="每 12 小时" value="0 */12 * * *" />
+                    <el-option label="每天凌晨 4 点" value="0 4 * * *" />
+                    <el-option label="每天凌晨 2 点" value="0 2 * * *" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="一并重试失败">
+                  <el-switch v-model="cfg.redoFailed" inline-prompt active-text="开启" inactive-text="关闭" />
+                  <span class="unit">开启则定时任务也重刷之前失败的</span>
+                </el-form-item>
+              </template>
+            </el-form>
+          </el-collapse-item>
+        </el-collapse>
       </div>
       </el-tab-pane>
 
@@ -268,7 +252,7 @@ const rows = ref([])
 const rowTotal = ref(0)
 const rowLoading = ref(false)
 const selectedRows = ref([])
-const quickProviderMode = ref('')
+const advancedActive = ref([])
 const q = ref({ page: 1, size: 20, provider: '', status: 'pending', sourceId: '', categoryName: '', kw: '' })
 const candOpen = ref(false)
 const candRow = ref(null)
@@ -407,14 +391,25 @@ async function load() {
   categories.value = cs
   await loadRows()
 }
-async function run(redo) {
+async function submitMetaBatch(payload, title) {
   try {
-    const payload = metaTaskPayload({ redo, split: true, ...(redo ? { status: 'all' } : { status: 'none' }) }, quickProviderMode.value)
-    const ok = await confirmMetaSubmit(payload, redo ? '重刷全部影片元数据' : '匹配未处理影片')
+    const ok = await confirmMetaSubmit(payload, title)
     if (!ok) return
     const r = await api.metaBatch(payload)
     ElMessage.success(r.message || '任务已提交，去「采集任务」看进度')
   } catch (e) { ElMessage.error(e.message || '提交失败') }
+}
+
+async function runUnprocessed() {
+  await submitMetaBatch(metaTaskPayload({ redo: false, split: true, status: 'none' }), '匹配未处理影片')
+}
+
+async function retryFailed() {
+  await submitMetaBatch(metaTaskPayload({ redo: true, split: true, status: 'failed' }), '重试失败影片元数据')
+}
+
+async function refreshAll() {
+  await submitMetaBatch(metaTaskPayload({ redo: true, split: true, status: 'all' }), '全量重刷影片元数据')
 }
 function applyRows() {
   q.value.page = 1
@@ -554,10 +549,10 @@ onMounted(load)
 .meta-tabs { margin-top: 4px; }
 .overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
-.match-mode { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-2); font-size: 13px; }
 .manual-scope { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .scope-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
 .scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.advanced-meta-collapse { margin-top: 8px; border-top: 1px solid var(--border); border-bottom: none; }
 .provider-list { display: grid; gap: 12px; margin-bottom: 18px; }
 .global-meta-form { margin-bottom: 18px; }
 .global-meta-form :deep(.el-form-item__content) { min-width: 0; flex-wrap: wrap; gap: 4px 8px; line-height: 1.4; }

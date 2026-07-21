@@ -65,7 +65,7 @@
       <div class="toolbar">
         <div>
           <div class="sec-title">策略管理</div>
-          <div class="hint">这里控制全局默认策略链；单源、分类、单线路仍可在“源/分类策略”里覆盖。</div>
+          <div class="hint">这里控制全局默认策略链；单源、分类仍可在“源/分类策略”里覆盖。</div>
         </div>
         <el-tag type="info">执行顺序：{{ strategyChainLabel(cfg.defaultStrategies) }}</el-tag>
       </div>
@@ -105,7 +105,7 @@
       <div class="toolbar">
         <div>
           <div class="sec-title">手动清洗</div>
-          <div class="hint">可以按源、分类、精确影片、线路或单集发起清洗；未命中 clean 时播放自动回退原始源。</div>
+          <div class="hint">可以按源、分类、精确影片下的指定线路或指定集发起清洗；未命中 clean 时播放自动回退原始源。</div>
         </div>
         <div class="actions">
           <el-button type="primary" plain :icon="Check" @click="previewTask" :loading="previewing">预检</el-button>
@@ -116,7 +116,6 @@
         <el-form-item label="清洗范围">
           <el-radio-group v-model="job.rangeMode" @change="onRangeModeChange">
             <el-radio-button value="vod">精确影片</el-radio-button>
-            <el-radio-button value="line">单线路</el-radio-button>
             <el-radio-button value="batch">批量范围</el-radio-button>
           </el-radio-group>
         </el-form-item>
@@ -149,52 +148,6 @@
             <el-table ref="lineTableRef" :data="vodLines" stripe class="line-table"
               @selection-change="onLineSelectionChange">
               <el-table-column type="selection" width="46" />
-              <el-table-column prop="id" label="线路ID" width="82" />
-              <el-table-column prop="sourceName" label="来源" min-width="140" />
-              <el-table-column prop="flag" label="标识" width="110" show-overflow-tooltip />
-              <el-table-column prop="epCount" label="集数" width="76" />
-              <el-table-column label="清洗" width="88">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.hasCleanResult ? 'success' : 'info'">{{ row.hasCleanResult ? '已清洗' : '未清洗' }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="状态" width="88">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.alive ? 'success' : 'info'">{{ row.alive ? '可用' : '失效' }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="score" label="评分" width="72" />
-            </el-table>
-          </div>
-        </template>
-
-        <template v-else-if="job.rangeMode === 'line'">
-          <el-form-item label="选择影片">
-            <el-select v-model="job.vodId" clearable filterable remote reserve-keyword
-              placeholder="输入片名搜索，再选择线路" :remote-method="searchVods" :loading="vodSearching"
-              style="width:420px" @change="loadVodLines">
-              <el-option v-for="v in vodOptions" :key="v.id" :label="vodLabel(v)" :value="v.id">
-                <div class="vod-option">
-                  <span>{{ v.name }}</span>
-                  <em>{{ v.typeName || '未分类' }} · {{ v.year || '—' }} · {{ v._count?.plays || 0 }} 条线路</em>
-                </div>
-              </el-option>
-            </el-select>
-          </el-form-item>
-
-          <div v-if="selectedVod" class="line-panel">
-            <div class="line-panel-head">
-              <div>
-                <b>{{ selectedVod.name }}</b>
-                <span>{{ selectedVod.typeName || '未分类' }} · {{ selectedVod.year || '—' }} · 已选线路 {{ job.playId || '未选择' }}</span>
-              </div>
-            </div>
-            <el-table :data="vodLines" stripe class="line-table">
-              <el-table-column label="" width="54">
-                <template #default="{ row }">
-                  <el-radio v-model="job.playId" :value="row.id" />
-                </template>
-              </el-table-column>
               <el-table-column prop="id" label="线路ID" width="82" />
               <el-table-column prop="sourceName" label="来源" min-width="140" />
               <el-table-column prop="flag" label="标识" width="110" show-overflow-tooltip />
@@ -289,7 +242,7 @@
       <div class="toolbar">
         <div>
           <div class="sec-title">源 / 分类策略</div>
-          <div class="hint">优先级：单线路策略 > 源策略 > 分类策略 > 全局配置。</div>
+          <div class="hint">优先级：源策略 > 分类策略 > 全局配置。</div>
         </div>
       </div>
       <el-tabs>
@@ -486,7 +439,6 @@ const job = ref({
   sourceId: null,
   categoryNames: [],
   vodId: null,
-  playId: '',
   epIndex: '',
   episodeMode: 'first',
   limit: 100,
@@ -702,11 +654,10 @@ function resetPreview() {
 }
 
 function onRangeModeChange() {
-  job.value.playId = ''
   job.value.sourceId = null
   job.value.categoryNames = []
   resetPreview()
-  if (!['vod', 'line'].includes(job.value.rangeMode)) {
+  if (job.value.rangeMode !== 'vod') {
     job.value.vodId = null
     resetVodLines()
   }
@@ -735,7 +686,6 @@ function flattenVodLines(vod) {
 
 async function loadVodLines(vodId) {
   resetVodLines()
-  if (job.value.rangeMode === 'line') job.value.playId = ''
   if (!vodId) return
   loading.value = true
   try {
@@ -775,10 +725,6 @@ function buildTaskPayload() {
     if (!job.value.vodId) throw new Error('请先选择精确影片')
     if (!selectedPlayIds.value.length) throw new Error('请勾选要清洗的线路')
     payload = { ...common, vodId: job.value.vodId, playIds: selectedPlayIds.value }
-  } else if (job.value.rangeMode === 'line') {
-    const playId = Number(job.value.playId)
-    if (!Number.isInteger(playId) || playId <= 0) throw new Error('请先选择一条线路')
-    payload = { ...common, vodId: job.value.vodId || undefined, playId }
   } else {
     const categoryNames = Array.isArray(job.value.categoryNames) ? job.value.categoryNames.filter(Boolean) : []
     if (!job.value.sourceId && !categoryNames.length) throw new Error('批量清洗请至少选择采集源或分类')
