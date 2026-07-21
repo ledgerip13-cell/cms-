@@ -1097,7 +1097,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const vod = await prisma.vod.findUnique({
       where: { id },
       include: {
-        plays: { where: { source: { enabled: true } }, include: { source: true } },
+        plays: { where: { source: { enabled: true }, sourceTypeMapped: true }, include: { source: true } },
         people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
         images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
       },

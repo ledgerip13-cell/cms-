@@ -263,15 +263,16 @@ export async function refreshVod(vodId: number) {
   return { vodId, updated, total: vod.plays.length, remarks: latestRemarks, pic: picStatus, picUrl, lines: results };
 }
 
-// 解析分类：查/建 SourceTypeMap，返回映射后的统一分类名（未映射则回退源分类名）
+// 解析分类：查/建 SourceTypeMap，返回映射后的统一分类名（未映射则回退源分类名）和源分类快照
 async function resolveCategory(
   cache: Map<string, string>,
   sourceId: number,
   typeId: string,
   typeName: string
-): Promise<string> {
+): Promise<{ categoryName: string; sourceTypeId: string; sourceTypeName: string; mapped: boolean }> {
   const key = `${sourceId}:${typeId}`;
-  if (cache.has(key)) return cache.get(key)!;
+  const cached = cache.get(key);
+  if (cached) return JSON.parse(cached);
   // upsert 映射记录（首次发现该源type则登记，categoryId 留空待人工映射）
   const map = await prisma.sourceTypeMap.upsert({
     where: { sourceId_sourceTypeId: { sourceId, sourceTypeId: typeId } },
@@ -280,9 +281,14 @@ async function resolveCategory(
     include: { category: true },
   });
   // 已人工映射→用大类；否则走分类器兵底（保证新采集也是干净大类）
-  const name = map.category?.name || classifyType(typeName);
-  cache.set(key, name);
-  return name;
+  const result = {
+    categoryName: map.category?.name || classifyType(typeName),
+    sourceTypeId: map.sourceTypeId,
+    sourceTypeName: map.sourceTypeName || typeName || "",
+    mapped: Boolean(map.categoryId),
+  };
+  cache.set(key, JSON.stringify(result));
+  return result;
 }
 
 async function upsertVod(
@@ -295,12 +301,13 @@ async function upsertVod(
   if (!lines.length) return { vodId: 0, added: 0, updated: 0, merged: 0 };
 
   const fp = makeFingerprint(raw.vod_name, raw.vod_year);
-  const typeName = await resolveCategory(
+  const categoryInfo = await resolveCategory(
     catCache,
     sourceId,
     String(raw.type_id ?? ""),
     raw.type_name || ""
   );
+  const typeName = categoryInfo.categoryName;
 
   const direct = await prisma.vod.findUnique({ where: { fingerprint: fp } });
   const alias = direct ? null : await prisma.vodAlias.findUnique({
@@ -370,6 +377,9 @@ async function upsertVod(
     const payload = {
       vodId: vod.id,
       sourceId,
+      sourceTypeId: categoryInfo.sourceTypeId,
+      sourceTypeName: categoryInfo.sourceTypeName,
+      sourceTypeMapped: categoryInfo.mapped,
       flag: line.flag,
       sourceVodId: String(raw.vod_id),
       episodes: JSON.stringify(line.episodes),

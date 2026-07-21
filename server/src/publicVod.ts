@@ -227,24 +227,25 @@ export async function enabledCleanOnlySourceIds() {
 }
 
 export function publicPlayableFilter(sourceIds?: number[], cleanOnlySourceIds?: number[]) {
+  const mappedSourceType = { sourceTypeMapped: true };
   const cleanSet = new Set(cleanOnlySourceIds?.length ? cleanOnlySourceIds : []);
   if (sourceIds) {
     const normalIds = sourceIds.filter((id) => !cleanSet.has(id));
     const cleanIds = sourceIds.filter((id) => cleanSet.has(id));
     if (!cleanIds.length) {
-      return { plays: { some: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } };
+      return { plays: { some: { sourceId: { in: sourceIds.length ? sourceIds : [-1] }, ...mappedSourceType } } };
     }
     const conditions: any[] = [];
-    if (normalIds.length) conditions.push({ sourceId: { in: normalIds } });
-    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true });
+    if (normalIds.length) conditions.push({ sourceId: { in: normalIds }, ...mappedSourceType });
+    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true, ...mappedSourceType });
     return { plays: { some: { OR: conditions } } };
   }
-  const normalSources = { source: { enabled: true, cleanOnly: false } };
-  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true };
+  const normalSources = { source: { enabled: true, cleanOnly: false }, ...mappedSourceType };
+  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true, ...mappedSourceType };
   if (cleanSet.size > 0) {
     return { plays: { some: { OR: [normalSources, cleanSources] } } };
   }
-  return { plays: { some: { source: { enabled: true } } } };
+  return { plays: { some: { source: { enabled: true }, ...mappedSourceType } } };
 }
 
 export function formatPublicRating(value: unknown) {
@@ -255,24 +256,25 @@ export function formatPublicRating(value: unknown) {
 }
 
 export function publicPlayCountSelect(sourceIds?: number[], cleanOnlySourceIds?: number[]) {
+  const mappedSourceType = { sourceTypeMapped: true };
   const cleanSet = new Set(cleanOnlySourceIds?.length ? cleanOnlySourceIds : []);
   if (sourceIds) {
     const normalIds = sourceIds.filter((id) => !cleanSet.has(id));
     const cleanIds = sourceIds.filter((id) => cleanSet.has(id));
     if (!cleanIds.length) {
-      return { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] } } } };
+      return { plays: { where: { sourceId: { in: sourceIds.length ? sourceIds : [-1] }, ...mappedSourceType } } };
     }
     const conditions: any[] = [];
-    if (normalIds.length) conditions.push({ sourceId: { in: normalIds } });
-    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true });
+    if (normalIds.length) conditions.push({ sourceId: { in: normalIds }, ...mappedSourceType });
+    conditions.push({ sourceId: { in: cleanIds.length ? cleanIds : [-1] }, hasCleanResult: true, ...mappedSourceType });
     return { plays: { where: { OR: conditions } } };
   }
-  const normalSources = { source: { enabled: true, cleanOnly: false } };
-  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true };
+  const normalSources = { source: { enabled: true, cleanOnly: false }, ...mappedSourceType };
+  const cleanSources = { source: { enabled: true, cleanOnly: true }, hasCleanResult: true, ...mappedSourceType };
   if (cleanSet.size > 0) {
     return { plays: { where: { OR: [normalSources, cleanSources] } } };
   }
-  return { plays: { where: { source: { enabled: true } } } };
+  return { plays: { where: { source: { enabled: true }, ...mappedSourceType } } };
 }
 
 export function requestedPublicType(types: string[], type: string) {

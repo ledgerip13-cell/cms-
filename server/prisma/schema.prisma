@@ -606,6 +606,9 @@ model Play {
   vodId          Int
   source         Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   sourceId       Int
+  sourceTypeId   String    @default("") // 线路来自源站哪个 type_id；前台只展示已映射 SourceTypeMap 的线路
+  sourceTypeName String    @default("") // 源站分类名快照，辅助排查未映射线路
+  sourceTypeMapped Boolean @default(false) // 采集时该源分类是否已人工映射；公共侧只展示 true 的线路
   flag           String // 播放器标识 from(如 rym3u8/wjm3u8)，同源同片可有多条不同flag线路
   sourceVodId    String // 该源内的原始 vod_id（增量更新用）
   episodes       String    @default("[]") // JSON: [{name,url}] 集数+m3u8
@@ -625,6 +628,7 @@ model Play {
   @@index([vodId])
   @@index([sourceId, sourceVodId])
   @@index([sourceId, vodId])
+  @@index([sourceId, sourceTypeId])
 }
 
 // 采集任务（异步执行，前端点击后立即返回，去任务页看进度）

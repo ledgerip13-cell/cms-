@@ -80,7 +80,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
         where: { id: playId },
         include: { vod: true, source: { select: { enabled: true, proxyMode: true, apiUrl: true, driver: true, signKey: true } } },
       });
-      if (!play || !play.source.enabled || play.vodId !== vodId || play.vod.status !== "online") {
+      if (!play || !play.source.enabled || !play.sourceTypeMapped || play.vodId !== vodId || play.vod.status !== "online") {
         return { ok: false, error: "播放资源不存在或不可用" };
       }
       const viewer = await viewerFromRequest(req);
@@ -212,9 +212,9 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (!playId) return reply.code(400).send("missing playId");
     const play = await prisma.play.findUnique({
       where: { id: playId },
-      include: { source: { select: { enabled: true, apiUrl: true, driver: true } } },
+      include: { vod: { select: { status: true } }, source: { select: { enabled: true, apiUrl: true, driver: true } } },
     });
-    if (!play || !play.source.enabled || play.flag !== "icloudm3u8") return reply.code(404).send("not found");
+    if (!play || !play.source.enabled || !play.sourceTypeMapped || play.vod.status !== "online" || play.flag !== "icloudm3u8") return reply.code(404).send("not found");
     try {
       const drv = getDriver((play.source as any).driver);
       if (!drv.fetchSubtitle) return reply.code(404).send("no subtitle");
