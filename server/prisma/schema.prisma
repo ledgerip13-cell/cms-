@@ -345,6 +345,13 @@ model PlaybackErrorLog {
   sourceName String   @default("")
   epIndex    Int?
   epName     String   @default("")
+  url        String   @default("")
+  rule       String   @default("")
+  proxyMode  String   @default("")
+  cleanId    Int?
+  fallbackUrl String  @default("")
+  hlsErrorData String @default("{}")
+  ipType     String   @default("")
   page       String   @default("")
   message    String   @default("")
   detail     String   @default("{}")
@@ -358,6 +365,8 @@ model PlaybackErrorLog {
 
   @@index([vodId])
   @@index([playId])
+  @@index([sourceName])
+  @@index([ipType])
   @@index([ip])
   @@index([createdAt])
 }
@@ -619,6 +628,12 @@ model Play {
   checkMs        Int       @default(0) // 探活响应耗时(ms)
   lastCheck      DateTime? // 最近探活时间
   score          Int       @default(0) // 健康评分(越高越优先)
+  playSuccessCount Int     @default(0) // 前台/解析成功计数
+  playFailureCount Int     @default(0) // 播放失败计数
+  avgResponseMs  Int       @default(0) // 解析/探测平均耗时
+  lastSuccessAt  DateTime? // 最近成功
+  lastFailureAt  DateTime? // 最近失败
+  healthReason   String    @default("") // 健康评分原因
   playKind       String    @default("hls") // hls(直链) / iframe(分享页) / resolved(已解析)
   hasCleanResult Boolean   @default(false) // 反范式：是否已有 HLS 清洗成功结果
 
@@ -629,6 +644,7 @@ model Play {
   @@index([sourceId, sourceVodId])
   @@index([sourceId, vodId])
   @@index([sourceId, sourceTypeId])
+  @@index([score, lastSuccessAt])
 }
 
 // 采集任务（异步执行，前端点击后立即返回，去任务页看进度）

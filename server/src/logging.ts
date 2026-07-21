@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import net from "node:net";
 import { adminUserFromToken, verifyToken } from "./auth.js";
 import { prisma } from "./db.js";
+import { recordPlayHealth } from "./playHealth.js";
 
 const LOCATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const inflightLocations = new Map<string, Promise<any>>();
@@ -196,20 +197,41 @@ export function recordLoginLog(req: FastifyRequest, data: { userType: "admin" | 
 
 export function recordPlaybackError(req: FastifyRequest, payload: any) {
   const ip = clientIpOf(req);
+  const detail = payload?.detail && typeof payload.detail === "object" ? payload.detail : {};
+  const failures = Array.isArray(detail?.failures) ? detail.failures : [];
+  const firstFailure = failures.find((item: any) => item && typeof item === "object") || {};
+  const current = detail?.current && typeof detail.current === "object" ? detail.current : {};
+  const hlsErrorData = payload?.hlsErrorData || payload?.hlsError || detail?.hlsErrorData || detail?.hlsError || firstFailure?.hlsErrorData || {};
+  const playId = Number(payload?.playId ?? current?.playId ?? firstFailure?.playId) || null;
+  const lineName = String(payload?.lineName || firstFailure?.lineName || firstFailure?.line || "").slice(0, 160);
+  const sourceName = String(payload?.sourceName || firstFailure?.sourceName || lineName || "").slice(0, 160);
+  const url = String(payload?.url || current?.url || firstFailure?.url || detail?.url || "").slice(0, 1200);
+  const rule = String(payload?.rule || current?.rule || firstFailure?.rule || detail?.rule || "").slice(0, 80);
+  const proxyMode = String(payload?.proxyMode || current?.proxyMode || firstFailure?.proxyMode || detail?.proxyMode || "").slice(0, 40);
+  const cleanId = Number(payload?.cleanId ?? current?.cleanId ?? firstFailure?.cleanId ?? detail?.cleanId) || null;
+  const fallbackUrl = String(payload?.fallbackUrl || current?.fallbackUrl || firstFailure?.fallbackUrl || detail?.fallbackUrl || "").slice(0, 1200);
+  const ipKind = net.isIP(ip) === 6 ? "ipv6" : net.isIP(ip) === 4 ? "ipv4" : "";
   void (async () => {
     const loc = await ipLocation(ip).catch(() => null as any);
     await prisma.playbackErrorLog.create({
       data: {
         vodId: Number(payload?.vodId) || null,
         vodName: String(payload?.vodName || "").slice(0, 160),
-        playId: Number(payload?.playId) || null,
-        lineName: String(payload?.lineName || "").slice(0, 160),
-        sourceName: String(payload?.sourceName || "").slice(0, 160),
-        epIndex: Number.isFinite(Number(payload?.epIndex)) ? Number(payload.epIndex) : null,
-        epName: String(payload?.epName || "").slice(0, 120),
+        playId,
+        lineName,
+        sourceName,
+        epIndex: Number.isFinite(Number(payload?.epIndex ?? firstFailure?.epIndex)) ? Number(payload?.epIndex ?? firstFailure?.epIndex) : null,
+        epName: String(payload?.epName || firstFailure?.epName || "").slice(0, 120),
+        url,
+        rule,
+        proxyMode,
+        cleanId,
+        fallbackUrl,
+        hlsErrorData: JSON.stringify(hlsErrorData || {}),
+        ipType: ipKind,
         page: String(payload?.page || "").slice(0, 260),
-        message: String(payload?.message || "").slice(0, 500),
-        detail: JSON.stringify(payload?.detail || {}),
+        message: String(payload?.message || firstFailure?.error || "").slice(0, 500),
+        detail: JSON.stringify({ ...detail, normalized: { url, rule, proxyMode, cleanId, fallbackUrl, ipType: ipKind } }),
         ip,
         country: loc?.country || "",
         region: loc?.region || "",
@@ -218,6 +240,7 @@ export function recordPlaybackError(req: FastifyRequest, payload: any) {
         userAgent: userAgentOf(req),
       },
     }).catch(() => {});
+    await recordPlayHealth(playId, false, { reason: String(payload?.message || firstFailure?.error || "playback_error") });
   })();
 }
 
@@ -287,6 +310,41 @@ export function registerLogRoutes(app: FastifyInstance, authGuard: any) {
       prisma.playbackErrorLog.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: size }),
     ]);
     return { total, page, size, list: rows.map((row) => ({ ...row, detail: parseJson(row.detail) })) };
+  });
+
+  app.get("/api/admin/logs/playback-errors/aggregate", { preHandler: authGuard }, async (req) => {
+    const q = (req.query as any) || {};
+    const by = ["vod", "line", "source", "region", "ipType"].includes(String(q.by)) ? String(q.by) : "vod";
+    const sinceHours = Math.max(1, Math.min(24 * 30, Number(q.sinceHours) || 24 * 7));
+    const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+    const field = by === "vod" ? "vodId" : by === "line" ? "playId" : by === "source" ? "sourceName" : by === "region" ? "region" : "ipType";
+    const rows = await prisma.playbackErrorLog.groupBy({
+      by: [field as any],
+      where: { createdAt: { gte: since } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+      orderBy: { _count: { [field]: "desc" } } as any,
+      take: Math.max(10, Math.min(100, Number(q.size) || 30)),
+    } as any);
+    const vodIds = by === "vod" ? rows.map((r: any) => Number(r.vodId)).filter(Boolean) : [];
+    const playIds = by === "line" ? rows.map((r: any) => Number(r.playId)).filter(Boolean) : [];
+    const [vods, plays] = await Promise.all([
+      vodIds.length ? prisma.vod.findMany({ where: { id: { in: vodIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+      playIds.length ? prisma.play.findMany({ where: { id: { in: playIds } }, select: { id: true, flag: true, source: { select: { name: true } }, vod: { select: { name: true } } } }) : Promise.resolve([]),
+    ]);
+    const vodMap = new Map(vods.map((v) => [v.id, v.name]));
+    const playMap = new Map(plays.map((p) => [p.id, `${p.vod.name} / ${p.source.name || p.flag}`]));
+    return {
+      by,
+      sinceHours,
+      list: rows.map((r: any) => {
+        const key = r[field] ?? "";
+        const label = by === "vod" ? (vodMap.get(Number(key)) || String(key || "未知影片"))
+          : by === "line" ? (playMap.get(Number(key)) || String(key || "未知线路"))
+            : String(key || "未归类");
+        return { key, label, count: r._count?._all || 0, lastAt: r._max?.createdAt || null };
+      }),
+    };
   });
 
   app.get("/api/admin/logs/logins", { preHandler: authGuard }, async (req) => {

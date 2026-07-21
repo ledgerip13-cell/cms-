@@ -1260,9 +1260,14 @@ function reportShortsPlaybackError(unit, message, failures = []) {
     sourceName: unit.channel?.sourceName || '',
     epIndex: unit.epIndex,
     epName: unit.epName || '',
+    url: unit.lastResolve?.url || '',
+    rule: unit.lastResolve?.rule || '',
+    proxyMode: unit.lastResolve?.proxyMode || '',
+    cleanId: unit.lastResolve?.cleanId || null,
+    fallbackUrl: unit.lastResolve?.fallbackUrl || '',
     page: location.href,
     message,
-    detail: { context: 'shorts', failures },
+    detail: { context: 'shorts', failures, current: unit.lastResolve || {} },
   })
 }
 
@@ -1342,6 +1347,7 @@ async function playActive() {
         return
       }
       if (result?.ok && result.url) {
+        unit.lastResolve = result
         if (activeUnit.value?.key !== unit.key) {
           applyShortsLineSwitch(unit)
           notifyWarning(`当前线路不可用，已切换到 ${unit.channel.sourceName || '备用线路'}`)

@@ -1030,6 +1030,7 @@ const currentLineId = ref(0)
 const currentEpIndex = ref(0)
 const playUrl = ref('')
 const playKind = ref('')
+const currentResolve = ref(null)
 const resolving = ref(false)
 const vodHistory = ref(null)
 const vodLineHistories = ref([])
@@ -2345,9 +2346,15 @@ function reportPlaybackError(message, failures = [], override = {}) {
     sourceName: override.sourceName ?? currentLine.value?.sourceName ?? '',
     epIndex: override.epIndex ?? currentEpIndex.value,
     epName: override.epName ?? episodes.value?.[currentEpIndex.value]?.name ?? '',
+    url: override.url ?? currentResolve.value?.url ?? playUrl.value,
+    rule: override.rule ?? currentResolve.value?.rule ?? '',
+    proxyMode: override.proxyMode ?? currentResolve.value?.proxyMode ?? '',
+    cleanId: override.cleanId ?? currentResolve.value?.cleanId ?? null,
+    fallbackUrl: override.fallbackUrl ?? currentResolve.value?.fallbackUrl ?? '',
+    hlsErrorData: override.hlsErrorData ?? {},
     page: location.href,
     message,
-    detail: { context: 'x8', failures, event: override.event || '' },
+    detail: { context: 'x8', failures, event: override.event || '', current: currentResolve.value || {} },
   })
 }
 function readLocalHistory() {
@@ -2514,6 +2521,7 @@ async function playCurrent() {
   try {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value })
     if (result?.ok !== false && result?.url) {
+      currentResolve.value = result
       // 多清晰度（金牌直连源）：记录可选档位，按用户偏好选 URL
       const qs = Array.isArray(result.qualities) ? result.qualities : []
       qualities.value = qs
@@ -2564,6 +2572,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
       try {
         const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value, fresh: 1 })
         if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
+        currentResolve.value = result
         if (shouldProbeResolvedPlayback(result)) await probePlaybackUrl(result.url, result.kind || line.playKind || '')
         currentLineId.value = line.id
         qualityOpen.value = false

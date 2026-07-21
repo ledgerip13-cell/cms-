@@ -219,6 +219,7 @@ const followed = ref(false)
 const accessBlock = ref(null)
 const playNotice = ref('')
 const curUrl = ref('')
+const currentResolve = ref(null)
 const mode = ref('hls')
 const lineIdx = ref(0)
 const chanIdx = ref(0)
@@ -425,6 +426,12 @@ function playbackErrorPayload(message, failures = [], override = {}) {
     sourceName: override.sourceName ?? curLine.value?.sourceName ?? curChannel.value?.sourceName ?? '',
     epIndex: override.epIndex ?? epIdx.value,
     epName: override.epName ?? episodes.value?.[epIdx.value]?.name ?? '',
+    url: override.url ?? currentResolve.value?.url ?? curUrl.value,
+    rule: override.rule ?? currentResolve.value?.rule ?? '',
+    proxyMode: override.proxyMode ?? currentResolve.value?.proxyMode ?? '',
+    cleanId: override.cleanId ?? currentResolve.value?.cleanId ?? null,
+    fallbackUrl: override.fallbackUrl ?? currentResolve.value?.fallbackUrl ?? '',
+    hlsErrorData: override.hlsErrorData ?? {},
     page: location.href,
     message,
     detail: {
@@ -435,6 +442,10 @@ function playbackErrorPayload(message, failures = [], override = {}) {
         channelIndex: chanIdx.value,
         playId: curChannel.value?.id,
         url: curUrl.value,
+        rule: currentResolve.value?.rule || '',
+        proxyMode: currentResolve.value?.proxyMode || '',
+        cleanId: currentResolve.value?.cleanId || null,
+        fallbackUrl: currentResolve.value?.fallbackUrl || '',
       },
     },
   }
@@ -1013,6 +1024,7 @@ async function playCurrent() {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex })
     if (!isPlaybackCurrent(seq)) return
     if (result?.ok && result.url) {
+      currentResolve.value = result
       playingChannel.value = channel
       playingEpIndex.value = playEpIndex
       playingEpName.value = playEp?.name || ''
@@ -1136,6 +1148,7 @@ async function tryNextLine(reason = '当前线路播放失败') {
         const result = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEpIndex, fresh: 1 })
         if (!isPlaybackCurrent(seq)) return false
         if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
+        currentResolve.value = result
         if (shouldProbeResolvedPlayback(result)) await probePlaybackUrl(result.url, result.kind || '')
         if (!isPlaybackCurrent(seq)) return false
         lineIdx.value = next.li

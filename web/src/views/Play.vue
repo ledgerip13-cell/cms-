@@ -242,6 +242,7 @@ const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；
 const playNotice = ref('')
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
+const currentResolve = ref(null)
 const historyState = ref(null)
 const historyLineStates = ref([])
 let selfHealTried = false // 自愈：sign 过期(403)时重解析一次拿新地址
@@ -281,9 +282,15 @@ function reportPlayError(message, failures = [], override = {}) {
     sourceName: override.sourceName ?? curChannel.value?.sourceName ?? '',
     epIndex: override.epIndex ?? epIdx.value,
     epName: override.epName ?? curEp.value?.name ?? '',
+    url: override.url ?? currentResolve.value?.url ?? curUrl.value,
+    rule: override.rule ?? currentResolve.value?.rule ?? '',
+    proxyMode: override.proxyMode ?? currentResolve.value?.proxyMode ?? '',
+    cleanId: override.cleanId ?? currentResolve.value?.cleanId ?? null,
+    fallbackUrl: override.fallbackUrl ?? currentResolve.value?.fallbackUrl ?? '',
+    hlsErrorData: override.hlsErrorData ?? {},
     page: location.href,
     message,
-    detail: { context: 'desktop', failures, event: override.event || '' },
+    detail: { context: 'desktop', failures, event: override.event || '', current: currentResolve.value || {} },
   })
 }
 function clearPlayWatchdog() {
@@ -569,6 +576,7 @@ async function playResolvedEp(i, opts = {}) {
   try {
     const r = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: i, ...(opts.fresh ? { fresh: 1 } : {}) })
     if (r.ok && r.url && r.kind === 'iframe') {
+      currentResolve.value = r
       cleanFallbackUrl.value = ''
       qualities.value = []
       mode.value = 'iframe'
@@ -577,6 +585,7 @@ async function playResolvedEp(i, opts = {}) {
       return
     }
     if (r.ok && r.url && (r.kind === 'm3u8' || r.kind === 'mp4' || /\.m3u8(\?|$)/i.test(r.url))) {
+      currentResolve.value = r
       cleanFallbackUrl.value = r.fallbackUrl || ''
       subtitles.value = Array.isArray(r.subtitles) ? r.subtitles : []
       // 多清晰度（金牌直连源）：记录可选档，按用户偏好选 URL
@@ -648,6 +657,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
       try {
         const r = await api.resolvePlay({ vodId: vod.value.id, playId: next.channel.id, epIndex: nextEp, fresh: 1 })
         if (r?.ok && r.url) {
+          currentResolve.value = r
           if (shouldProbeResolvedPlayback(r)) await probePlaybackUrl(r.url, r.kind || '')
           lineIdx.value = next.li
           chanIdx.value = next.ci

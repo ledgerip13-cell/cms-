@@ -12,6 +12,7 @@ import { normalizeShortsConfig } from "./site.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR } from "../jinpaiPlay.js";
 import { LOCAL_FLAG } from "../collector/localSource.js";
+import { recordPlayHealth } from "../playHealth.js";
 import fsp from "node:fs";
 import nodePath from "node:path";
 
@@ -138,7 +139,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
     if (playId && vodId) {
       const play = await prisma.play.findUnique({
         where: { id: playId },
-        include: { vod: true, source: { select: { enabled: true, proxyMode: true, apiUrl: true, driver: true, signKey: true } } },
+        include: { vod: true, source: { select: { enabled: true, cleanOnly: true, proxyMode: true, apiUrl: true, driver: true, signKey: true } } },
       });
       if (!play || !play.source.enabled || !play.sourceTypeMapped || play.vodId !== vodId || play.vod.status !== "online") {
         return { ok: false, error: "播放资源不存在或不可用" };
@@ -186,6 +187,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
             subtitles = tracks.map((t, i) => ({ lang: t.lang, label: t.label, url: `/api/subtitle?playId=${playId}&epIndex=${epIndex}&i=${i}` }));
           }
         } catch { /* 字幕失败不阻断播放 */ }
+        void recordPlayHealth(play.id, true, { reason: "resolve_icloud" });
         return { ok: true, url: icloudUrl, kind: "m3u8", rule: "icloud_client", subtitles };
       }
       // 本地源（转存产物独立线路）：url 存该集 nid，直接服务本站本地 HLS。
@@ -194,6 +196,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
         const nid = String(url).trim();
         const vodSvid = String(play.sourceVodId);
         if (isEpisodeArchived(vodSvid, nid)) {
+          void recordPlayHealth(play.id, true, { reason: "resolve_local_archive" });
           return {
             ok: true,
             url: localArchiveUrl({ sourceVodId: vodSvid, nid, vodId: play.vodId, playId: play.id, sourceId: play.sourceId, epIndex, mid: viewer?.id }),
@@ -233,46 +236,67 @@ export default async function resolveRoutes(app: FastifyInstance) {
             cdnHost: new URL(best.url).host,
             resolutions: qualities.map((x) => x.resolution),
           }, "jinpai resolve");
-          return { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution, qualities };
+          void recordPlayHealth(play.id, true, { reason: "resolve_jinpai_client" });
+          return {
+            ok: true,
+            url: best.url,
+            kind: "m3u8",
+            rule: "jinpai_client",
+            resolution: best.resolution,
+            qualities,
+            jinpai: {
+              clientIp: publicClientIp || "",
+              signClientIp,
+              cdnHost: new URL(best.url).host,
+              resolutions: qualities.map((x) => x.resolution),
+            },
+          };
         } catch (e: any) {
           return { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };
         }
       }
       const fresh = q.fresh === "1" || q.fresh === "true"; // 前端撞 403 时传 fresh=1 强制重解拿新 sign
+      const startedAt = Date.now();
       const result = await resolveWithCache(`play:${playId}:${epIndex}`, url, fresh);
       if (!result?.ok || !result.url || !/\.m3u8(\?|$)/i.test(result.url)) return result;
-      // 回源模式：source.proxyMode(inherit→全局)。key/proxy 才走本站中转，direct 保持原逻辑
+      const cfg = await ensureHlsCleanConfig();
+      if (cfg.enabled) {
+        const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);
+        if (clean) {
+          const token = signPlaybackToken({ cleanId: clean.id, playId: play.id, vodId: play.vodId, mid: viewer?.id });
+          void recordPlayHealth(play.id, true, { ms: Date.now() - startedAt, reason: "resolve_hls_clean" });
+          return {
+            ...result,
+            url: `/api/hls-clean/${clean.id}/index.m3u8?t=${encodeURIComponent(token)}`,
+            kind: "m3u8",
+            rule: "hls_clean",
+            cleanId: clean.id,
+            fallbackUrl: result.url,
+          };
+        }
+        if (cfg.autoQueueOnMiss) {
+          void createHlsCleanTask({ playId: play.id, epIndex, episodeMode: "first", limit: 1 }).catch(() => {});
+        }
+        if ((play.source as any).cleanOnly || cfg.requireCleanPlayback) {
+          return {
+            ok: false,
+            code: "hls_clean_missing",
+            error: cfg.autoQueueOnMiss ? "该线路尚未完成清洗，已提交后台清洗任务" : "该线路尚未完成清洗",
+          };
+        }
+      } else if ((play.source as any).cleanOnly) {
+        return { ok: false, code: "hls_clean_disabled", error: "该源设置为仅清洗播放，但 HLS 清洗未启用" };
+      }
+      // 优先级：clean 命中 > proxy/key > direct。cleanOnly 源不允许落到 proxy/direct。
       const globalMode = await getGlobalProxyMode();
       const effMode = resolveEffectiveMode((play.source as any).proxyMode, globalMode);
       if (effMode !== "direct") {
         const ref = refererOf(result.url);
         const tok = signProxyToken({ u: result.url, ref, kind: "mp", mode: effMode, mid: viewer?.id });
-        return { ...result, url: `/api/hls-mp?t=${encodeURIComponent(tok)}`, kind: "m3u8", rule: `proxy_${effMode}`, fallbackUrl: result.url };
+        void recordPlayHealth(play.id, true, { ms: Date.now() - startedAt, reason: `resolve_proxy_${effMode}` });
+        return { ...result, url: `/api/hls-mp?t=${encodeURIComponent(tok)}`, kind: "m3u8", rule: `proxy_${effMode}`, proxyMode: effMode, fallbackUrl: result.url };
       }
-      const cfg = await ensureHlsCleanConfig();
-      if (!cfg.enabled) return result;
-      const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);
-      if (clean) {
-        const token = signPlaybackToken({ cleanId: clean.id, playId: play.id, vodId: play.vodId, mid: viewer?.id });
-        return {
-          ...result,
-          url: `/api/hls-clean/${clean.id}/index.m3u8?t=${encodeURIComponent(token)}`,
-          kind: "m3u8",
-          rule: "hls_clean",
-          cleanId: clean.id,
-          fallbackUrl: result.url,
-        };
-      }
-      if (cfg.autoQueueOnMiss) {
-        void createHlsCleanTask({ playId: play.id, epIndex, episodeMode: "first", limit: 1 }).catch(() => {});
-      }
-      if (cfg.requireCleanPlayback) {
-        return {
-          ok: false,
-          code: "hls_clean_missing",
-          error: cfg.autoQueueOnMiss ? "该线路尚未完成清洗，已提交后台清洗任务" : "该线路尚未完成清洗",
-        };
-      }
+      void recordPlayHealth(play.id, true, { ms: Date.now() - startedAt, reason: "resolve_direct" });
       return result;
     }
 

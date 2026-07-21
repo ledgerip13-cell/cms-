@@ -8,6 +8,7 @@ import { probeTsBytes, type SegmentProfile } from "./tsProbe.js";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120";
 const RANGE_BYTES = 320 * 1024;
+const HLS_CLEAN_MAX_AGE_HOURS = Math.max(1, Number(process.env.HLS_CLEAN_MAX_AGE_HOURS) || 24 * 7);
 
 export interface HlsStrategy {
   id: string;
@@ -920,6 +921,7 @@ export async function findCleanResultForPlayback(play: { id: number; sourceId: n
   if (!decision.enabled || decision.dryRun) return null;
   const sourceUrlHash = hashText(resolvedUrl);
   const strategyId = decision.strategyIds.join(",");
+  const freshSince = new Date(Date.now() - HLS_CLEAN_MAX_AGE_HOURS * 60 * 60 * 1000);
   const exact = await prisma.hlsCleanResult.findFirst({
     where: {
       playId: play.id,
@@ -927,6 +929,7 @@ export async function findCleanResultForPlayback(play: { id: number; sourceId: n
       strategyId,
       status: "clean",
       confidence: { gte: decision.minConfidence },
+      checkedAt: { gte: freshSince },
     },
     orderBy: { checkedAt: "desc" },
   });
@@ -940,6 +943,7 @@ export async function findCleanResultForPlayback(play: { id: number; sourceId: n
       sourceUrlHash,
       status: "clean",
       confidence: { gte: decision.minConfidence },
+      checkedAt: { gte: freshSince },
     },
     orderBy: { checkedAt: "desc" },
     take: 10,

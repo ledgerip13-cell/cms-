@@ -133,6 +133,7 @@ export const api = {
     return http.get('/admin/audit-logs', { params: p })
   },
   playbackErrorLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/playback-errors', { params }),
+  playbackErrorAggregate: (params = {}) => http.get('/admin/logs/playback-errors/aggregate', { params }),
   loginLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/logins', { params }),
   accessLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/access', { params }),
   // site

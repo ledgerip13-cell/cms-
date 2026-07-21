@@ -101,9 +101,21 @@
             <div class="sec-title">播放错误</div>
             <div class="actions">
               <el-input v-model="playbackKeyword" clearable placeholder="影片 / 线路 / IP" size="small" style="width:220px" @keyup.enter="loadPlaybackErrorLogs" />
+              <el-select v-model="playbackAggBy" size="small" style="width:120px" @change="loadPlaybackErrorAggregate">
+                <el-option label="按影片" value="vod" />
+                <el-option label="按线路" value="line" />
+                <el-option label="按源" value="source" />
+                <el-option label="按地区" value="region" />
+                <el-option label="按IP类型" value="ipType" />
+              </el-select>
               <el-button :loading="playbackLoading" @click="loadPlaybackErrorLogs">刷新</el-button>
             </div>
           </div>
+          <el-table :data="playbackAgg" size="small" height="180" v-loading="playbackAggLoading" class="mini-table">
+            <el-table-column prop="label" label="聚合对象" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="count" label="错误数" width="100" />
+            <el-table-column label="最近发生" width="190"><template #default="{row}">{{ fmtTime(row.lastAt) }}</template></el-table-column>
+          </el-table>
           <el-table :data="playbackLogs" height="560" v-loading="playbackLoading">
             <el-table-column type="expand">
               <template #default="{ row }">
@@ -123,7 +135,12 @@
             <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
             <el-table-column prop="vodName" label="影片" min-width="180" show-overflow-tooltip />
             <el-table-column prop="lineName" label="无法播放线路" width="160" show-overflow-tooltip />
+            <el-table-column prop="sourceName" label="源" width="120" show-overflow-tooltip />
+            <el-table-column prop="rule" label="规则" width="120" />
+            <el-table-column prop="proxyMode" label="代理" width="90" />
+            <el-table-column prop="url" label="播放地址" min-width="240" show-overflow-tooltip />
             <el-table-column prop="message" label="错误" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="ipType" label="IP类型" width="90" />
             <el-table-column prop="ip" label="请求IP" width="150" />
           </el-table>
           <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
@@ -241,6 +258,9 @@ const playbackPage = ref(1)
 const playbackSize = ref(50)
 const playbackKeyword = ref('')
 const playbackLoading = ref(false)
+const playbackAgg = ref([])
+const playbackAggBy = ref('vod')
+const playbackAggLoading = ref(false)
 const loginLogs = ref([])
 const loginTotal = ref(0)
 const loginPage = ref(1)
@@ -292,8 +312,18 @@ async function loadPlaybackErrorLogs() {
     const res = await api.playbackErrorLogs({ page: playbackPage.value, size: playbackSize.value, keyword: playbackKeyword.value || undefined })
     playbackLogs.value = res.list || []
     playbackTotal.value = res.total || 0
+    void loadPlaybackErrorAggregate()
   } finally {
     playbackLoading.value = false
+  }
+}
+async function loadPlaybackErrorAggregate() {
+  playbackAggLoading.value = true
+  try {
+    const res = await api.playbackErrorAggregate({ by: playbackAggBy.value, sinceHours: 24 * 7, size: 30 })
+    playbackAgg.value = res.list || []
+  } finally {
+    playbackAggLoading.value = false
   }
 }
 async function loadLoginLogs() {
@@ -325,12 +355,19 @@ function fmtTime(value) {
 }
 function lineFailures(row) {
   const failures = row.detail?.failures
-  if (Array.isArray(failures) && failures.length) return failures
+  if (Array.isArray(failures) && failures.length) {
+    return failures.map(item => ({
+      lineName: item.lineName || item.line || row.lineName || row.sourceName || '—',
+      epName: item.epName || (item.epIndex != null ? `第 ${Number(item.epIndex) + 1} 集` : row.epName || '—'),
+      message: item.message || item.error || row.message || '—',
+      url: item.url || row.url || row.detail?.current?.url || '',
+    }))
+  }
   return [{
     lineName: row.lineName || row.sourceName || '—',
     epName: row.epName || (row.epIndex != null ? `第 ${Number(row.epIndex) + 1} 集` : '—'),
     message: row.message || '—',
-    url: row.detail?.url || '',
+    url: row.url || row.detail?.url || row.detail?.current?.url || '',
   }]
 }
 async function createInvites() {

@@ -262,7 +262,14 @@
             <el-tag size="small" type="success">{{ l.sourceName }}</el-tag>
             <span style="margin:0 10px">flag={{ l.flag }}</span>
             <span style="color:#9aa4b2">{{ l.epCount }} 集</span>
+            <span style="margin-left:10px;color:#64748b">健康 {{ l.score ?? 0 }} · 成功 {{ l.playSuccessCount || 0 }} / 失败 {{ l.playFailureCount || 0 }}</span>
           </template>
+          <div class="line-health">
+            <span>平均 {{ l.avgResponseMs || l.checkMs || 0 }}ms</span>
+            <span>最近成功 {{ fmtDate(l.lastSuccessAt) || '—' }}</span>
+            <span>最近失败 {{ fmtDate(l.lastFailureAt) || '—' }}</span>
+            <span v-if="l.healthReason">原因 {{ l.healthReason }}</span>
+          </div>
           <div class="eps">
             <span v-for="(e,i) in visibleEpisodes(l)" :key="i" class="ep-wrap">
               <el-tag size="small" effect="plain" class="ep" @click="copy(e.url)" :title="e.url">{{ e.name }}</el-tag>
@@ -1199,6 +1206,7 @@ watch(() => route.query.kw, (kw) => {
 .ellip { display:inline-block; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
 .blurb { margin-top:14px; font-size:13px; color:#667085; line-height:1.7; max-height:120px; overflow:auto; }
 .eps { display: flex; flex-wrap: wrap; gap: 6px; }
+.line-health { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; color: #64748b; font-size: 12px; }
 .ep { cursor: pointer; }
 .ep-wrap { display: inline-flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid #edf0f5; }
 .db-score { color: #ff9900; font-weight: 700; }

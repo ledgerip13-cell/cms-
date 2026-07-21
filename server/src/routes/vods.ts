@@ -13,6 +13,7 @@ import { cleanText, cleanVodTextFields } from "../textClean.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
 import { withHeatFields } from "../heat.js";
 import { assertSafeUrl } from "../playProxy.js";
+import { clientIpOf } from "../logging.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
@@ -154,6 +155,17 @@ function corsState(headers: Record<string, any>) {
     ok: allowOrigin === "*" || Boolean(allowOrigin),
     allowOrigin,
     allowMethods,
+  };
+}
+
+function requestIpContext(req: any) {
+  return {
+    clientIp: clientIpOf(req),
+    cfIp: String(req.headers["cf-connecting-ip"] || ""),
+    cfIpv6: String(req.headers["cf-connecting-ipv6"] || ""),
+    trueClientIp: String(req.headers["true-client-ip"] || ""),
+    xForwardedFor: String(req.headers["x-forwarded-for"] || ""),
+    xRealIp: String(req.headers["x-real-ip"] || ""),
   };
 }
 
@@ -1392,6 +1404,17 @@ export default async function vodRoutes(app: FastifyInstance) {
         ...result,
         probe,
         probeSummary: probe.summary,
+        jinpaiStatus: result?.rule === "jinpai_client" ? {
+          sourcePlayable: Boolean(result?.ok && result?.url),
+          siteSignedPlayable: Boolean(result?.ok && result?.url),
+          userSidePlayable: probe.ok ? "probable" : "requires_user_browser_check",
+          ipContext: requestIpContext(req),
+          signClientIp: result?.jinpai?.signClientIp || "",
+          clientIp: result?.jinpai?.clientIp || "",
+          cdnHost: result?.jinpai?.cdnHost || "",
+          whip: result?.jinpai?.whip || "",
+          note: "金牌原线路诊断只走前台签名链，不使用本地转存结果；用户侧仍以浏览器实际播放为准。",
+        } : null,
         rawUrl: ep.url,
         source: play.source.name,
         sourceEnabled: play.source.enabled,
@@ -1417,6 +1440,8 @@ export default async function vodRoutes(app: FastifyInstance) {
       const channels = vod.plays.map((p) => ({
         id: p.id, sourceId: p.sourceId, sourceName: p.source.name, priority: p.source.priority,
         flag: p.flag, epCount: p.epCount, alive: p.alive, score: p.score, checkMs: p.checkMs, hasCleanResult: p.hasCleanResult,
+        playSuccessCount: p.playSuccessCount, playFailureCount: p.playFailureCount, avgResponseMs: p.avgResponseMs,
+        lastSuccessAt: p.lastSuccessAt, lastFailureAt: p.lastFailureAt, healthReason: p.healthReason,
         playKind: p.playKind, episodes: parseEpisodes(p.episodes),
       }));
       const byHealth = (a: any, b: any) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.score !== a.score ? b.score - a.score : a.priority - b.priority);
