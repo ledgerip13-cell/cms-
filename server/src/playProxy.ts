@@ -82,6 +82,46 @@ export async function safeFetch(url: string, referer?: string, timeoutMs = 12000
   }
 }
 
+export async function safeFetchStream(
+  url: string,
+  referer?: string,
+  options: { timeoutMs?: number; maxBytes?: number } = {}
+): Promise<{
+  body: ReadableStream<Uint8Array>;
+  contentType: string;
+  contentLength: number | null;
+  abort: () => void;
+  clearTimeout: () => void;
+}> {
+  const safe = await assertSafeUrl(url);
+  if (!safe) throw new Error("unsafe url");
+  const ctrl = new AbortController();
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 20000);
+  const maxBytes = Math.max(0, Number(options.maxBytes) || 0);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const headers: Record<string, string> = { "User-Agent": UA };
+    if (referer) { headers["Referer"] = referer; headers["Origin"] = new URL(referer).origin; }
+    const res = await fetch(url, { signal: ctrl.signal, headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.body) throw new Error("empty response body");
+    const contentLength = Number(res.headers.get("content-length") || "");
+    const size = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : null;
+    if (maxBytes && size && size > maxBytes) throw new Error(`body too large: ${size}`);
+    return {
+      body: res.body,
+      contentType: res.headers.get("content-type") || "",
+      contentLength: size,
+      abort: () => ctrl.abort(),
+      clearTimeout: () => clearTimeout(t),
+    };
+  } catch (e) {
+    clearTimeout(t);
+    ctrl.abort();
+    throw e;
+  }
+}
+
 // 源站惯用 referer：取 m3u8 origin + "/"
 export function refererOf(url: string): string {
   try { return new URL(url).origin + "/"; } catch { return ""; }

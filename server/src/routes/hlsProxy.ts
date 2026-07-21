@@ -1,14 +1,43 @@
 // 回源代理路由：m3u8 重写 / key 代理 / TS 代理
 // 仅当某源 proxyMode = key|proxy 时，resolve 才会下发 /api/hls-mp 入口(默认 direct 不经过这里)
 import type { FastifyInstance } from "fastify";
+import { Readable, Transform } from "node:stream";
 import { signProxyToken, verifyProxyToken } from "../auth.js";
 import {
   safeFetch,
+  safeFetchStream,
   rewriteM3u8,
   refererOf,
   type ProxyMode,
   type RewriteCtx,
 } from "../playProxy.js";
+
+const TS_PROXY_TIMEOUT_MS = Math.max(3000, Number(process.env.TS_PROXY_TIMEOUT_MS) || 20000);
+const TS_PROXY_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.TS_PROXY_MAX_BYTES) || 64 * 1024 * 1024);
+const TS_PROXY_MAX_CONCURRENCY = Math.max(1, Number(process.env.TS_PROXY_MAX_CONCURRENCY) || 24);
+let activeTsProxyStreams = 0;
+
+function acquireTsProxySlot() {
+  if (activeTsProxyStreams >= TS_PROXY_MAX_CONCURRENCY) return null;
+  activeTsProxyStreams += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeTsProxyStreams = Math.max(0, activeTsProxyStreams - 1);
+  };
+}
+
+function limitBytes(maxBytes: number) {
+  let bytes = 0;
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxBytes) cb(new Error(`ts proxy body too large: ${bytes}`));
+      else cb(null, chunk);
+    },
+  });
+}
 
 export default async function hlsProxyRoutes(app: FastifyInstance) {
   // m3u8 抓取+重写(含递归子 playlist)
@@ -60,12 +89,35 @@ export default async function hlsProxyRoutes(app: FastifyInstance) {
     const token = String((req.query as any)?.t || "");
     let data: any;
     try { data = verifyProxyToken(token, "ts"); } catch { return reply.code(403).send("denied"); }
+    const release = acquireTsProxySlot();
+    if (!release) return reply.code(429).send("too many ts proxy streams");
+    let upstream: Awaited<ReturnType<typeof safeFetchStream>> | null = null;
     try {
-      const r = await safeFetch(String(data.u || ""), String(data.ref || ""), 20000);
-      reply.header("Content-Type", r.contentType || "video/mp2t");
+      upstream = await safeFetchStream(String(data.u || ""), String(data.ref || ""), {
+        timeoutMs: TS_PROXY_TIMEOUT_MS,
+        maxBytes: TS_PROXY_MAX_BYTES,
+      });
+      reply.header("Content-Type", upstream.contentType || "video/mp2t");
       reply.header("Cache-Control", "public, max-age=600");
-      return reply.send(r.buf);
-    } catch {
+      if (upstream.contentLength) reply.header("Content-Length", String(upstream.contentLength));
+      const source = Readable.fromWeb(upstream.body as any);
+      const limited = limitBytes(TS_PROXY_MAX_BYTES);
+      const cleanup = () => {
+        upstream?.clearTimeout();
+        release();
+      };
+      req.raw.on("close", () => upstream?.abort());
+      source.on("error", () => upstream?.abort());
+      limited.on("error", () => upstream?.abort());
+      limited.on("close", cleanup);
+      limited.on("end", cleanup);
+      return reply.send(source.pipe(limited));
+    } catch (e: any) {
+      upstream?.clearTimeout();
+      upstream?.abort();
+      release();
+      const msg = String(e?.message || "");
+      if (msg.includes("too large")) return reply.code(413).send("ts too large");
       return reply.code(502).send("fetch ts failed");
     }
   });

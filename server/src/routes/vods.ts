@@ -1,30 +1,22 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
-import { authGuard, signPlaybackToken } from "../auth.js";
+import { authGuard } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { normalizeName } from "../collector/dedupe.js";
-import { resolveShareUrl } from "../collector/resolver.js";
-import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived } from "../jinpaiPlay.js";
 import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
 import { withHeatFields } from "../heat.js";
+import { assertSafeUrl } from "../playProxy.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
 const TRAILER_CACHE_TTL_MS = 3 * 60 * 1000;
-const LOCAL_ARCHIVE_TOKEN_SCOPE = "jinpai_local";
-
-function localArchiveUrl(params: { sourceVodId: string; nid: string; vodId: number; playId: number; sourceId: number; epIndex: number }) {
-  const token = signPlaybackToken({ ...params, scope: LOCAL_ARCHIVE_TOKEN_SCOPE });
-  return `/api/jinpai-local/${params.sourceVodId}/${params.nid}/index.m3u8?token=${encodeURIComponent(token)}`;
-}
-
 function recentShanghaiDates(days: number) {
   const now = new Date();
   const shanghaiNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
@@ -115,6 +107,147 @@ function parseEpisodes(value: string | null | undefined): Array<{ name?: string;
   } catch {
     return [];
   }
+}
+
+function headerOf(headers: Record<string, any>, name: string) {
+  const value = headers[name.toLowerCase()] ?? headers[name];
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+function resolveMediaUri(uri: string, baseUrl: string) {
+  const raw = String(uri || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  try {
+    if (/^https?:\/\//i.test(baseUrl)) return new URL(raw, baseUrl).toString();
+    if (raw.startsWith("/")) return raw;
+    const u = new URL(raw, `http://vcms.local${baseUrl.startsWith("/") ? baseUrl : `/${baseUrl}`}`);
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return raw;
+  }
+}
+
+function firstM3u8Media(text: string, baseUrl: string) {
+  let keyUrl = "";
+  let segmentUrl = "";
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (!keyUrl && /^#EXT-X-KEY/i.test(trimmed)) {
+      const m = trimmed.match(/URI="([^"]+)"/i);
+      if (m?.[1]) keyUrl = resolveMediaUri(m[1], baseUrl);
+    }
+    if (!trimmed.startsWith("#") && !segmentUrl) {
+      segmentUrl = resolveMediaUri(trimmed, baseUrl);
+    }
+    if (keyUrl && segmentUrl) break;
+  }
+  return { keyUrl, segmentUrl };
+}
+
+function corsState(headers: Record<string, any>) {
+  const allowOrigin = headerOf(headers, "access-control-allow-origin");
+  const allowMethods = headerOf(headers, "access-control-allow-methods");
+  return {
+    required: true,
+    ok: allowOrigin === "*" || Boolean(allowOrigin),
+    allowOrigin,
+    allowMethods,
+  };
+}
+
+async function readFetchBody(res: Response, maxBytes: number) {
+  const reader = res.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) throw new Error(`probe body too large: ${total}`);
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf8");
+}
+
+async function probeUrl(app: FastifyInstance, targetUrl: string, options: { range?: string; maxBytes?: number; timeoutMs?: number } = {}) {
+  const maxBytes = Math.max(1024, Number(options.maxBytes) || 512 * 1024);
+  const headers: Record<string, string> = { Origin: "http://127.0.0.1:5152" };
+  if (options.range) headers.Range = options.range;
+  if (targetUrl.startsWith("/")) {
+    const res = await app.inject({ method: "GET", url: targetUrl, headers });
+    return {
+      ok: res.statusCode >= 200 && res.statusCode < 300,
+      status: res.statusCode,
+      contentType: headerOf(res.headers as any, "content-type"),
+      cors: { required: false, ok: true, allowOrigin: "same-origin", allowMethods: "" },
+      body: res.payload.slice(0, maxBytes),
+    };
+  }
+  const safe = await assertSafeUrl(targetUrl);
+  if (!safe) return { ok: false, status: 0, contentType: "", cors: { required: true, ok: false, allowOrigin: "", allowMethods: "" }, body: "unsafe url" };
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), Math.max(1000, Number(options.timeoutMs) || 8000));
+  try {
+    const res = await fetch(targetUrl, { signal: ctrl.signal, headers: { ...headers, "User-Agent": "video-cms-diagnose/1.0" } });
+    const body = await readFetchBody(res, maxBytes).catch((e) => String(e?.message || e));
+    const rawHeaders = Object.fromEntries(res.headers.entries());
+    return {
+      ok: res.ok,
+      status: res.status,
+      contentType: res.headers.get("content-type") || "",
+      cors: corsState(rawHeaders),
+      body,
+    };
+  } catch (e: any) {
+    return { ok: false, status: 0, contentType: "", cors: { required: true, ok: false, allowOrigin: "", allowMethods: "" }, body: String(e?.message || e) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function probePlayback(app: FastifyInstance, result: any) {
+  const url = String(result?.url || "");
+  const rule = String(result?.rule || "");
+  if (!result?.ok || !url) return { ok: false, summary: result?.error || "无解析地址", stages: [] };
+  if (rule === "icloud_client") {
+    return {
+      ok: true,
+      summary: "iCloud 客户端链路：需前台 Service Worker/CloudKit 解析，后台不代替浏览器下载分片",
+      swRequired: true,
+      stages: [{ name: "resolve", ok: true, rule, url }],
+    };
+  }
+  const stages: any[] = [];
+  const m3u8 = await probeUrl(app, url, { maxBytes: 1024 * 1024, timeoutMs: 10000 });
+  stages.push({ name: "m3u8", url, ok: m3u8.ok, status: m3u8.status, contentType: m3u8.contentType, cors: m3u8.cors });
+  if (!m3u8.ok) return { ok: false, summary: `m3u8 探测失败：${m3u8.status || m3u8.body}`, stages };
+  if (!String(m3u8.body || "").includes("#EXTM3U")) {
+    return { ok: true, summary: `非 HLS 地址探测通过：${m3u8.status}`, stages };
+  }
+  let media = firstM3u8Media(m3u8.body, url);
+  if (media.segmentUrl && /\.m3u8(\?|$)/i.test(media.segmentUrl)) {
+    const child = await probeUrl(app, media.segmentUrl, { maxBytes: 1024 * 1024, timeoutMs: 10000 });
+    stages.push({ name: "child_m3u8", url: media.segmentUrl, ok: child.ok, status: child.status, contentType: child.contentType, cors: child.cors });
+    if (!child.ok) return { ok: false, summary: `子 m3u8 探测失败：${child.status || child.body}`, stages };
+    media = firstM3u8Media(child.body, media.segmentUrl);
+  }
+  if (media.keyUrl) {
+    const key = await probeUrl(app, media.keyUrl, { maxBytes: 4096, timeoutMs: 8000 });
+    stages.push({ name: "key", url: media.keyUrl, ok: key.ok, status: key.status, contentType: key.contentType, cors: key.cors });
+    if (!key.ok) return { ok: false, summary: `key 探测失败：${key.status || key.body}`, stages };
+  }
+  if (media.segmentUrl) {
+    const ts = await probeUrl(app, media.segmentUrl, { range: "bytes=0-2047", maxBytes: 256 * 1024, timeoutMs: 10000 });
+    stages.push({ name: "first_ts", url: media.segmentUrl, ok: ts.ok, status: ts.status, contentType: ts.contentType, cors: ts.cors });
+    if (!ts.ok) return { ok: false, summary: `首个 ts 探测失败：${ts.status || ts.body}`, stages };
+  }
+  const corsFailures = stages.filter((s) => s.cors?.required && !s.cors?.ok);
+  if (corsFailures.length) return { ok: false, summary: `CORS 不满足：${corsFailures.map((s) => s.name).join(",")}`, stages };
+  return { ok: true, summary: `真实播放链路探测通过：${stages.map((s) => `${s.name}=${s.status}`).join("，")}`, stages };
 }
 
 function publicEpisodes(value: Array<{ name?: string; url?: string }>) {
@@ -1236,48 +1369,36 @@ export default async function vodRoutes(app: FastifyInstance) {
       const episodes = parseEpisodes(play.episodes);
       const ep = episodes[epIndex];
       if (!ep?.url) return { ok: false, error: "播放集数不存在", source: play.source.name, epIndex };
-      // 金牌影院系（jinpai）：ep.url 存的是该集 nid（纯数字），不能丢给通用分享页解析器，
-      // 否则 new URL(nid) 报错→“非法地址”→诊断永远失败。需走与 /api/resolve 同源的签名解析。
+      const fresh = q.fresh === "1" || q.fresh === "true";
+      const auth = String(req.headers.authorization || "");
+      const resolved = await app.inject({
+        method: "GET",
+        url: `/api/resolve?vodId=${encodeURIComponent(String(id))}&playId=${encodeURIComponent(String(playId))}&epIndex=${encodeURIComponent(String(epIndex))}&diagnose=1${fresh ? "&fresh=1" : ""}`,
+        headers: {
+          authorization: auth,
+          "cf-connecting-ipv6": String(req.headers["cf-connecting-ipv6"] || ""),
+          "cf-connecting-ip": String(req.headers["cf-connecting-ip"] || ""),
+          "true-client-ip": String(req.headers["true-client-ip"] || ""),
+          "x-forwarded-for": String(req.headers["x-forwarded-for"] || ""),
+          "x-real-ip": String(req.headers["x-real-ip"] || ""),
+          "user-agent": String(req.headers["user-agent"] || ""),
+        },
+      });
       let result: any;
-      if (play.flag === JINPAI_FLAG) {
-        const nid = String(ep.url).trim();
-        const vodSvid = String(play.sourceVodId);
-        if (play.vod.archiveStatus === "done" && isEpisodeArchived(vodSvid, nid)) {
-          result = {
-            ok: true,
-            url: localArchiveUrl({ sourceVodId: vodSvid, nid, vodId: play.vodId, playId: play.id, sourceId: play.sourceId, epIndex }),
-            kind: "m3u8",
-            rule: "jinpai_local",
-          };
-        } else {
-          try {
-            const list = await fetchEpisodeUrls({
-              apiUrl: (play.source as any).apiUrl,
-              signKey: (play.source as any).signKey,
-              vodId: vodSvid,
-              nid,
-              clientIp: clientIpOf(req),
-            });
-            const best = pickBest(list);
-            result = best?.url
-              ? { ok: true, url: best.url, kind: "m3u8", rule: "jinpai_client", resolution: best.resolution }
-              : { ok: false, error: "源站无可播地址" };
-          } catch (e: any) {
-            result = { ok: false, error: `源站解析失败: ${String(e?.message || e).slice(0, 80)}` };
-          }
-        }
-      } else {
-        result = await resolveShareUrl(ep.url);
-      }
+      try { result = JSON.parse(resolved.payload || "{}"); } catch { result = { ok: false, error: resolved.payload || "解析失败" }; }
+      if (resolved.statusCode >= 400 && !result?.error) result.error = `resolve HTTP ${resolved.statusCode}`;
+      const probe = await probePlayback(app, result);
       return {
         ...result,
+        probe,
+        probeSummary: probe.summary,
         rawUrl: ep.url,
         source: play.source.name,
         sourceEnabled: play.source.enabled,
         playId: play.id,
         epIndex,
         epName: ep.name || `第${epIndex + 1}集`,
-        note: "后台诊断仅检查线路解析，不套用前台登录/VIP观看权限。",
+        note: "后台诊断复用前台播放解析规则，并继续探测 m3u8/key/首个 ts/CORS；登录/VIP观看权限由 diagnose=1 后台模式绕过。",
       };
     });
 

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-21 (GMT+8)｜**对应提交**：本次提交（P0 后台鉴权/访问日志/本地转存入口加固）
+> **最后更新**：2026-07-21 (GMT+8)｜**对应提交**：本次提交（P0 TS 代理流式化与真实播放诊断）
 
 ---
 
@@ -169,6 +169,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-21 TS 代理流式化与真实播放诊断断点**：`/api/hls-ts` 已从整段 `arrayBuffer()` 进内存改为 `Readable.fromWeb(...).pipe(Transform)` 流式转发，仅 TS 分片走流式，m3u8/key 继续走小体积 `safeFetch`；新增默认限制 `TS_PROXY_TIMEOUT_MS=20000`、`TS_PROXY_MAX_BYTES=67108864`、`TS_PROXY_MAX_CONCURRENCY=24`（均可选 env 覆盖），回源前按 `Content-Length` 预拒超大响应，流中累计字节超过上限会 abort，并发超限返回 429，超大返回 413。后台“线路播放诊断”不再手写解析线路，而是内部调用同一条 `/api/resolve?diagnose=1` 真实播放规则链：覆盖 clean、proxy/key、iCloud 客户端 SW、金牌签名、本地转存 token 等最终 URL 形态；随后服务端继续探测 m3u8、key、首个 ts Range 与 CORS 头，返回 `probeSummary/probe.stages`，后台 UI 优先展示真实链路阶段状态，解决“后台只显示可解析但前台实际播不了”的假绿问题。`diagnose=1` 只在携带有效后台 admin token 时绕过登录/VIP观看权限，不影响普通前台 `/api/resolve`。
 - **2026-07-21 本地转存播放入口 token 权限断点**：`/api/resolve` 返回 `rule=local_archive` 时不再下发裸 `/api/jinpai-local/.../index.m3u8`，改为追加 30 分钟播放 token；token 复用现有 `signPlaybackToken`，额外写入 `scope=jinpai_local`、`sourceVodId`、`nid`、`playId`、`sourceId`、`epIndex`，本地 HLS 路由校验 `scope/sourceVodId/nid` 后才允许读取。`/api/jinpai-local/:vodId/:nid/:file` 现在对 `index.m3u8`、`seg_*.ts`、`key_*.key` 全部校验 `token/t`，失败 403，非法文件名/缺文件仍 404；下发 m3u8 文本时会把 archive 内相对 `seg_*.ts` 和 `key_*.key` 自动改写为带同一 `token` 的相对 URL，播放器后续请求可继续通过校验。仅保护本地 archive 文件入口，不代理金牌源，不新增依赖；后台诊断本地链接同步带 token。
 - **2026-07-21 后台鉴权底座加固断点**：`server/src/auth.ts` 的后台 `signToken()` 统一写入 `kind="admin"`；新增 `adminUserFromToken()` 作为后台 token 唯一校验入口，先 `verifyToken`，再要求 `payload.kind === "admin"` 且 `uid` 为有效正整数，随后查 `User` 当前库记录并要求 `enabled=true`，禁用、非后台 token、用户不存在统一返回 401。`authGuard`、访问日志 admin 识别、`/api/tasks/stream` SSE query token 均复用该校验，避免前台 WebUser token 或未验签 token 进入后台边界。`req.user` 由数据库当前用户快照生成，保留 `id/uid/username/role/kind` 兼容审计与现有写接口；`server/src/routes/auth.ts` 登录响应补齐 `uid/kind`，`/api/auth/me` 返回 guard 注入的当前后台用户基础信息，避免继续信任 token 旧数据。未引入新依赖，未改前台 token、播放 token、代理 token、publicVod。
 - **2026-07-20 金牌源真实 IP 透传修复断点**：定位金牌 `jinpaim3u8` 播放 403 根因：`/api/resolve` 正常返回 `rule=jinpai_client` 的 CDN m3u8，但 CDN 端返回 `403 Forbidden`/`the source ip is forbidden`，符合金牌源“用客户端 IP 签名、前端直连 CDN”模型中签名 IP 与实际播放出口不一致的问题。`web/nginx.conf` 的 `/api/` 反代已补充 `X-Forwarded-For`、`X-Forwarded-Proto`、`CF-Connecting-IP` 透传，并用 `CF-Connecting-IP` 优先填充 `X-Real-IP`；`server/src/jinpaiPlay.ts::clientIpOf()` 改为从 `CF-Connecting-IP / True-Client-IP / X-Forwarded-For / X-Real-IP / socket` 取第一个有效公网 IP，跳过 Docker/内网/回环地址，再把该 IP 放入金牌签名请求头 `X-Forwarded-For`。后台/API 数据模型未改动。

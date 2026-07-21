@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { resolveShareUrl } from "../collector/resolver.js";
-import { signPlaybackToken, signProxyToken, verifyPlaybackToken } from "../auth.js";
+import { adminUserFromToken, signPlaybackToken, signProxyToken, verifyPlaybackToken } from "../auth.js";
 import { getGlobalProxyMode, resolveEffectiveMode, refererOf } from "../playProxy.js";
 import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
@@ -145,6 +145,17 @@ export default async function resolveRoutes(app: FastifyInstance) {
       }
       const viewer = await viewerFromRequest(req);
       const watchAccess = await accessForType(play.vod.typeName, "watch", viewer);
+      const diagnoseAsAdmin = String(q.diagnose || "") === "1" && await (async () => {
+        const h = String(req.headers.authorization || "");
+        const token = h.startsWith("Bearer ") ? h.slice(7) : "";
+        if (!token) return false;
+        try {
+          await adminUserFromToken(token);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
       const site = await prisma.siteConfig.findUnique({ where: { id: 1 } });
       const shortsConfig = normalizeShortsConfig((site as any)?.shortsConfig);
       const shortsPreviewAllowed = shortsConfig.enabled
@@ -153,7 +164,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
         && vodInShortsScope(play.vod, shortsConfig)
         && epIndex < shortsConfig.guestPreviewEpisodes
         && SHORTS_PREVIEW_CODES.has(String(watchAccess.code || ""));
-      if (!watchAccess.allowed && !shortsPreviewAllowed) {
+      if (!diagnoseAsAdmin && !watchAccess.allowed && !shortsPreviewAllowed) {
         return { ok: false, code: watchAccess.code, error: watchAccess.message || "无观看权限", requirement: (watchAccess as any).requirement || null };
       }
       let episodes: Array<{ name?: string; url?: string }> = [];

@@ -518,7 +518,14 @@
           <el-button size="small" link type="primary" @click="copy(diag.result.fallbackUrl)">复制</el-button>
         </div>
       </el-descriptions-item>
-      <el-descriptions-item label="探测结果">{{ diag.probe || '未探测' }}</el-descriptions-item>
+      <el-descriptions-item label="探测结果">{{ diag.result?.probeSummary || diag.probe || '未探测' }}</el-descriptions-item>
+      <el-descriptions-item v-if="diag.result?.probe?.stages?.length" label="真实链路">
+        <div class="diag-stages">
+          <el-tag v-for="s in diag.result.probe.stages" :key="s.name" size="small" :type="s.ok ? 'success' : 'danger'">
+            {{ s.name }} {{ s.status || '' }}
+          </el-tag>
+        </div>
+      </el-descriptions-item>
       <el-descriptions-item label="说明">{{ diag.result?.note || '后台诊断只检查线路解析，不代表用户可直接观看。' }}</el-descriptions-item>
     </el-descriptions>
     <template #footer>
@@ -1019,7 +1026,7 @@ async function diagnoseEp(line, ep, visibleIndex, fresh = false) {
   diag.value = { loading: true, line, ep, epIndex, result: null, probe: '' }
   try {
     const result = await api.diagnoseVod(cur.value.id, { playId: line.id, epIndex, ...(fresh ? { fresh: 1 } : {}) })
-    const probe = result?.url ? await probeResolvedUrl(result.url) : ''
+    const probe = result?.probeSummary || (result?.url ? await probeResolvedUrl(result.url) : '')
     diag.value = { loading: false, line, ep, epIndex, result, probe }
   } catch (e) {
     diag.value = { loading: false, line, ep, epIndex, result: { ok: false, error: e.message || '解析失败' }, probe: '' }
@@ -1205,6 +1212,7 @@ watch(() => route.query.kw, (kw) => {
 .diag-head span { color: #98a1b0; font-size: 12px; margin-top: 4px; }
 .diag-url { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .diag-url code { flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: normal; color: #4a5568; }
+.diag-stages { display: flex; flex-wrap: wrap; gap: 6px; }
 .batch-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; margin-bottom: 12px;
