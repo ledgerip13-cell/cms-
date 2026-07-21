@@ -68,6 +68,15 @@ body { margin: 0; background: var(--page-bg); color: var(--text-1);
 /* 分页右对齐 */
 .pager { margin-top: var(--sp-5); display: flex; justify-content: flex-end; }
 
+/* 统一统计卡片 */
+.stat-row { display: grid; gap: 16px; margin-bottom: 20px; }
+.stat-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 20px; box-shadow: var(--shadow-card);
+}
+.stat-card .stat-num { font-size: 26px; font-weight: 750; line-height: 1.15; }
+.stat-card .stat-label { font-size: 13px; color: var(--text-3); margin-top: 4px; }
+
 /* 通用行内图标按钮间距 */
 .el-button + .el-button { margin-left: var(--sp-2); }
 

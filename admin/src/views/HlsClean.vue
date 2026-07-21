@@ -245,38 +245,36 @@
           <div class="hint">优先级：源策略 > 分类策略 > 全局配置。</div>
         </div>
       </div>
-      <el-tabs>
-        <el-tab-pane label="按源">
-          <el-table :data="sourceRows" stripe>
-            <el-table-column prop="name" label="源" min-width="180" />
-            <el-table-column label="模式" width="170">
-              <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('source', row)" /></template>
-            </el-table-column>
-            <el-table-column label="策略链" width="360">
-              <template #default="{ row }">
-                <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('source', row)">
-                  <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
-                </el-select>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="按分类">
-          <el-table :data="categoryRows" stripe>
-            <el-table-column prop="name" label="分类" min-width="180" />
-            <el-table-column label="模式" width="170">
-              <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('category', row)" /></template>
-            </el-table-column>
-            <el-table-column label="策略链" width="360">
-              <template #default="{ row }">
-                <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('category', row)">
-                  <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
-                </el-select>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+      <el-radio-group v-model="policyView" class="policy-toggle">
+        <el-radio-button value="source">按源</el-radio-button>
+        <el-radio-button value="category">按分类</el-radio-button>
+      </el-radio-group>
+      <el-table v-if="policyView === 'source'" :data="sourceRows" stripe>
+        <el-table-column prop="name" label="源" min-width="180" />
+        <el-table-column label="模式" width="170">
+          <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('source', row)" /></template>
+        </el-table-column>
+        <el-table-column label="策略链" width="360">
+          <template #default="{ row }">
+            <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('source', row)">
+              <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
+            </el-select>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-table v-else :data="categoryRows" stripe>
+        <el-table-column prop="name" label="分类" min-width="180" />
+        <el-table-column label="模式" width="170">
+          <template #default="{ row }"><PolicyMode v-model="row.mode" @change="savePolicy('category', row)" /></template>
+        </el-table-column>
+        <el-table-column label="策略链" width="360">
+          <template #default="{ row }">
+            <el-select v-model="row.strategyIds" multiple clearable collapse-tags collapse-tags-tooltip placeholder="继承全局" @change="savePolicy('category', row)">
+              <el-option v-for="s in strategies" :key="s.id" :label="s.label" :value="s.id" />
+            </el-select>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
     </el-tab-pane>
 
@@ -388,6 +386,7 @@ import { Check, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../api'
 const htab = ref('config')
+const policyView = ref('source')
 
 const PolicyMode = defineComponent({
   props: { modelValue: { type: String, default: 'inherit' } },
@@ -817,6 +816,7 @@ onMounted(() => { load(); loadResults(1) })
 .preview-box { margin: 2px 0 0 90px; max-width: 990px; display: flex; flex-direction: column; gap: 10px; }
 .preview-desc { color: var(--text-3); font-size: 12px; margin-top: 4px; }
 .preview-table { width: 100%; }
+.policy-toggle { margin-bottom: 14px; }
 @media (max-width: 980px) {
   .toolbar { align-items: flex-start; flex-direction: column; }
   .job-form { display: block; }

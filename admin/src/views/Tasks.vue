@@ -1,6 +1,6 @@
 <template>
   <div class="card">
-    <div class="bar">
+    <div class="toolbar">
       <div class="sec-title">采集任务
         <el-tag v-if="active" type="warning" size="small">{{ active }} 个进行中</el-tag>
         <span class="live" :class="{on: connected}">
@@ -306,7 +306,7 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
 </script>
 
 <style scoped>
-.bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .sec-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .task-tabs { margin-bottom: 10px; }

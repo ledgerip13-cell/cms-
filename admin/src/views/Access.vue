@@ -6,13 +6,15 @@
           <div class="toolbar">
             <div class="sec-title">邀请码池</div>
             <div class="actions">
+              <span class="field-label">数量</span>
               <el-input-number v-model="inviteForm.count" :min="1" :max="200" size="small" />
+              <span class="field-label">可用次数</span>
               <el-input-number v-model="inviteForm.maxUses" :min="1" :max="9999" size="small" />
               <el-input v-model="inviteForm.remark" placeholder="备注" size="small" style="width:180px" />
               <el-button type="primary" @click="createInvites">生成</el-button>
             </div>
           </div>
-          <el-table :data="invites" height="520">
+          <el-table :data="invites" :max-height="tableMaxH">
             <el-table-column prop="code" label="邀请码" width="150" />
             <el-table-column prop="remark" label="备注" />
             <el-table-column label="使用" width="100">
@@ -43,7 +45,7 @@
               <el-button type="primary" :icon="Plus" @click="openLevelCreate">新增VIP等级</el-button>
             </div>
           </div>
-          <el-table :data="levels" height="520">
+          <el-table :data="levels" :max-height="tableMaxH">
             <el-table-column label="等级" width="190">
               <template #default="{row}">
                 <div class="level-name">
@@ -81,7 +83,7 @@
             <div class="sec-title">操作审计</div>
             <el-button :loading="logsLoading" @click="loadAuditLogs">刷新</el-button>
           </div>
-          <el-table :data="logs" height="560" v-loading="logsLoading">
+          <el-table :data="logs" :max-height="tableMaxH" v-loading="logsLoading">
             <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
             <el-table-column prop="actor" label="操作人" width="120" />
             <el-table-column prop="action" label="动作" width="160" />
@@ -116,7 +118,7 @@
             <el-table-column prop="count" label="错误数" width="100" />
             <el-table-column label="最近发生" width="190"><template #default="{row}">{{ fmtTime(row.lastAt) }}</template></el-table-column>
           </el-table>
-          <el-table :data="playbackLogs" height="560" v-loading="playbackLoading">
+          <el-table :data="playbackLogs" :max-height="tableMaxH" v-loading="playbackLoading">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <div class="log-detail">
@@ -163,7 +165,7 @@
               <el-button :loading="loginLoading" @click="loadLoginLogs">刷新</el-button>
             </div>
           </div>
-          <el-table :data="loginLogs" height="560" v-loading="loginLoading">
+          <el-table :data="loginLogs" :max-height="tableMaxH" v-loading="loginLoading">
             <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
             <el-table-column prop="userType" label="类型" width="90" />
             <el-table-column prop="username" label="账号" width="150" />
@@ -191,7 +193,7 @@
               <el-button :loading="accessLoading" @click="loadAccessLogs">刷新</el-button>
             </div>
           </div>
-          <el-table :data="accessLogs" height="560" v-loading="accessLoading">
+          <el-table :data="accessLogs" :max-height="tableMaxH" v-loading="accessLoading">
             <el-table-column label="时间" width="190"><template #default="{row}">{{ fmtTime(row.createdAt) }}</template></el-table-column>
             <el-table-column prop="userType" label="用户" width="90" />
             <el-table-column prop="method" label="方法" width="90" />
@@ -244,6 +246,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 import { DEFAULT_LEVEL_TAG_COLOR, LEVEL_TAG_COLOR_PRESETS, levelTagStyle } from '../levelTag'
 
+const tableMaxH = computed(() => Math.max(400, window.innerHeight - 280))
 const tab = ref('invites')
 const invites = ref([])
 const levels = ref([])
@@ -459,6 +462,7 @@ watch(tab, (value) => {
 
 <style scoped>
 .access-page { display: flex; flex-direction: column; gap: 16px; }
+.field-label { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .toolbar { gap: 12px; }
 .toolbar .sec-title { white-space: nowrap; }

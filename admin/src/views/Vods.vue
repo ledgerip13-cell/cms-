@@ -1,6 +1,6 @@
 <template>
   <div class="card">
-    <div class="bar">
+    <div class="toolbar">
       <div class="filters">
         <el-input v-model="q.kw" placeholder="搜索片名" clearable style="width:180px" @keyup.enter="applyFilters" :prefix-icon="Search" />
         <el-select v-model="q.type" placeholder="全部分类" clearable style="width:140px" @change="applyFilters">
@@ -18,14 +18,16 @@
           <el-option label="仅看未清洗" value="uncleaned" />
         </el-select>
         <el-button type="primary" @click="applyFilters">查询</el-button>
+      </div>
+      <div class="actions">
         <el-button type="success" :icon="Plus" @click="kwDlg=true">按片名采集</el-button>
         <el-button type="warning" :icon="MagicStick" @click="metaBatch">
           元数据匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
         <el-button type="danger" plain @click="openCleanup">影片清理</el-button>
+        <span class="vod-count">去重后 {{ total }} 部</span>
       </div>
-      <div class="vod-count">去重后 {{ total }} 部</div>
     </div>
 
     <!-- 按片名采集（两步：搜索预览 → 勾选确认） -->
@@ -35,11 +37,11 @@
         <el-button type="primary" :loading="kwSearching" @click="searchKeyword">搜索</el-button>
       </div>
 
-      <div v-if="kwSearching" style="text-align:center;color:#9aa4b2;padding:30px 0">正在遍历所有采集源搜索…</div>
+      <div v-if="kwSearching" style="text-align:center;color:var(--text-3);padding:30px 0">正在遍历所有采集源搜索…</div>
 
       <template v-else-if="kwCandidates.length">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span style="font-size:13px;color:#9aa4b2">共找到 {{ kwCandidates.length }} 个候选，选中后只采集所选项</span>
+          <span style="font-size:13px;color:var(--text-3)">共找到 {{ kwCandidates.length }} 个候选，选中后只采集所选项</span>
           <div>
             <el-button size="small" link @click="kwChecked = kwCandidates.map(c=>c.fingerprint)">全选</el-button>
             <el-button size="small" link @click="kwChecked = []">清空</el-button>
@@ -47,22 +49,22 @@
         </div>
         <el-checkbox-group v-model="kwChecked" style="max-height:360px;overflow-y:auto;display:block">
           <div v-for="c in kwCandidates" :key="c.fingerprint"
-            style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e4e7ed;border-radius:8px;margin-bottom:8px">
+            style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
             <el-checkbox :value="c.fingerprint" style="flex:1;min-width:0">
               <span style="font-weight:600">{{ c.name }}</span>
-              <span v-if="c.year" style="color:#9aa4b2;margin-left:6px">({{ c.year }})</span>
+              <span v-if="c.year" style="color:var(--text-3);margin-left:6px">({{ c.year }})</span>
             </el-checkbox>
             <div style="flex-shrink:0;display:flex;gap:6px;align-items:center">
               <el-tag size="small" type="success">{{ c.sources.length }} 个源</el-tag>
               <el-tooltip :content="c.sources.map(s=>s.sourceName+' x'+s.hits).join('\n')" placement="top">
-                <span style="font-size:12px;color:#9aa4b2;cursor:help">详情</span>
+                <span style="font-size:12px;color:var(--text-3);cursor:help">详情</span>
               </el-tooltip>
             </div>
           </div>
         </el-checkbox-group>
       </template>
 
-      <div v-else-if="kwSearched" style="text-align:center;color:#9aa4b2;padding:30px 0">没有搜到相关影片</div>
+      <div v-else-if="kwSearched" style="text-align:center;color:var(--text-3);padding:30px 0">没有搜到相关影片</div>
       <el-alert v-else type="info" :closable="false"
         title="输入片名先搜索预览，按片名+年份分组展示命中源数，选中后再采集，不会误采不相关的同名片。" />
 
@@ -182,14 +184,14 @@
             <el-tag v-if="rowProvider(cur)" size="small" effect="plain" style="margin-right:6px">{{ providerLabel(rowProvider(cur)) }}</el-tag>
             <span v-if="cur.rating" class="rating"><el-icon><StarFilled /></el-icon>{{ cur.rating }}</span>
             <el-tag v-else-if="cur.metaMatched==='pending'" size="small" type="warning">待确认 {{ cur.metaScore || '' }}</el-tag>
-            <span v-else style="color:#9aa4b2">{{ cur.metaMatched==='failed' ? failedMetaLabel(cur) : '未匹配' }}</span>
+            <span v-else style="color:var(--text-3)">{{ cur.metaMatched==='failed' ? failedMetaLabel(cur) : '未匹配' }}</span>
             <el-button size="small" text type="primary" @click="matchOne(cur.id)">
               {{ cur.rating ? '重新匹配' : '匹配元数据' }}
             </el-button>
             <a v-if="cur.doubanId" :href="`https://movie.douban.com/subject/${cur.doubanId}/`" target="_blank"
-              style="font-size:12px;color:#409eff">查看豆瓣页 ↗</a>
+              style="font-size:12px;color:var(--el-color-primary)">查看豆瓣页 ↗</a>
             <a v-if="metadataUrl(cur)" :href="metadataUrl(cur)" target="_blank"
-              style="font-size:12px;color:#409eff">查看{{ providerLabel(rowProvider(cur)) }}页 ↗</a>
+              style="font-size:12px;color:var(--el-color-primary)">查看{{ providerLabel(rowProvider(cur)) }}页 ↗</a>
           </p>
           <p v-if="cur.matchedTitle || cur.metaScore">
             <b>置信:</b> {{ cur.metaScore || 0 }}<span v-if="cur.matchedTitle"> · {{ cur.matchedTitle }} {{ cur.matchedYear ? '(' + cur.matchedYear + ')' : '' }}</span>
@@ -222,7 +224,7 @@
         </div>
       </div>
       <p class="blurb" v-if="cur.officialIntro" style="border-left:3px solid #409eff;padding-left:10px">
-        <b style="color:#409eff">元数据简介:</b> {{ cur.officialIntro }}
+        <b style="color:var(--el-color-primary)">元数据简介:</b> {{ cur.officialIntro }}
       </p>
       <div v-if="cur.people?.length" class="asset-box">
         <div class="asset-title">人物资产</div>
@@ -261,7 +263,7 @@
           <template #title>
             <el-tag size="small" type="success">{{ l.sourceName }}</el-tag>
             <span style="margin:0 10px">flag={{ l.flag }}</span>
-            <span style="color:#9aa4b2">{{ l.epCount }} 集</span>
+            <span style="color:var(--text-3)">{{ l.epCount }} 集</span>
             <span style="margin-left:10px;color:#64748b">健康 {{ l.score ?? 0 }} · 成功 {{ l.playSuccessCount || 0 }} / 失败 {{ l.playFailureCount || 0 }}</span>
           </template>
           <div class="line-health">
@@ -1191,18 +1193,19 @@ watch(() => route.query.kw, (kw) => {
 </script>
 
 <style scoped>
-.bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-.sec-title { font-size: 16px; font-weight: 600; } .sec-title small { color:#9aa4b2; font-weight:400; margin-left:6px; }
-.filters { display: flex; align-items: center; gap: 10px; flex: 1 1 760px; min-width: 0; flex-wrap: wrap; }
+.toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.sec-title { font-size: 16px; font-weight: 600; } .sec-title small { color: var(--text-3); font-weight:400; margin-left:6px; }
+.filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .filters :deep(.el-button + .el-button) { margin-left: 0; }
-.vod-count { flex: 0 0 auto; color:#9aa4b2; font-size:13px; line-height:32px; white-space: nowrap; }
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vod-count { flex: 0 0 auto; color: var(--text-3); font-size:13px; line-height:32px; white-space: nowrap; margin-left: auto; }
 .alias-line { margin-top: 4px; color:#98a1b0; font-size:12px; line-height:1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.noimg { width:44px; height:60px; background:#f0f2f5; color:#b8c0cc; font-size:12px;
+.noimg { width:44px; height:60px; background:var(--page-bg); color:var(--text-3); font-size:12px;
   display:flex; align-items:center; justify-content:center; border-radius:4px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .detail-head { display: flex; gap: 16px; }
-.meta p { margin: 4px 0; font-size: 13px; color: #4a5568; }
-.meta code { background:#f0f2f5; padding:1px 6px; border-radius:4px; color:#409eff; }
+.meta p { margin: 4px 0; font-size: 13px; color: var(--text-2); }
+.meta code { background:var(--page-bg); padding:1px 6px; border-radius:4px; color:var(--el-color-primary); }
 .ellip { display:inline-block; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
 .blurb { margin-top:14px; font-size:13px; color:#667085; line-height:1.7; max-height:120px; overflow:auto; }
 .eps { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1214,12 +1217,12 @@ watch(() => route.query.kw, (kw) => {
 .vod-actions .el-button + .el-button {
   margin-left: 0;
 }
-.episode-more { width: 100%; display: flex; align-items: center; gap: 8px; color:#9aa4b2; font-size: 12px; margin-top: 2px; }
+.episode-more { width: 100%; display: flex; align-items: center; gap: 8px; color:var(--text-3); font-size: 12px; margin-top: 2px; }
 .diag-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .diag-head b, .diag-head span { display: block; }
 .diag-head span { color: #98a1b0; font-size: 12px; margin-top: 4px; }
 .diag-url { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.diag-url code { flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: normal; color: #4a5568; }
+.diag-url code { flex: 1 1 auto; min-width: 0; word-break: break-all; white-space: normal; color: var(--text-2); }
 .diag-stages { display: flex; flex-wrap: wrap; gap: 6px; }
 .batch-bar {
   display: flex; align-items: center; gap: 10px;
@@ -1228,7 +1231,7 @@ watch(() => route.query.kw, (kw) => {
   font-size: 13px; color: #b88230;
 }
 .merge-list { display: grid; gap: 10px; margin-top: 14px; }
-.merge-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #e4e7ed; border-radius: 8px; cursor: pointer; }
+.merge-item { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .merge-item.on { border-color: #409eff; background: #ecf5ff; }
 .merge-cover { width: 44px; height: 60px; border-radius: 4px; flex-shrink: 0; }
 .merge-info { min-width: 0; display: grid; gap: 3px; font-size: 12px; color: #8a94a7; }
@@ -1243,7 +1246,7 @@ watch(() => route.query.kw, (kw) => {
 .auto-collect-row :deep(.el-checkbox) { margin-right: 0; }
 .weekday-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .weekday-group :deep(.el-checkbox-button__inner) { border-left: 1px solid var(--el-border-color); border-radius: 6px; }
-.muted { color: #9aa4b2; font-size: 12px; }
+.muted { color: var(--text-3); font-size: 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }
 .cand-item { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px; background:#fff; border-radius:8px; margin-bottom:8px; }
@@ -1254,9 +1257,9 @@ watch(() => route.query.kw, (kw) => {
 .cand-year { color:#98a1b0; margin-left:4px; }
 .cand-sub { color:#98a1b0; font-size:12px; margin-top:3px; word-break:break-all; }
 .cand-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-.cand-actions a { color:#409eff; font-size:12px; text-decoration:none; }
-.asset-box { margin: 14px 0; padding: 12px; border: 1px solid #e4e7ed; border-radius: 10px; background: #fafbfc; }
-.asset-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-weight: 700; color: #4a5568; margin-bottom: 10px; }
+.cand-actions a { color:var(--el-color-primary); font-size:12px; text-decoration:none; }
+.asset-box { margin: 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fafbfc; }
+.asset-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-weight: 700; color: var(--text-2); margin-bottom: 10px; }
 .asset-title span { color:#8a94a6; font-size:12px; font-weight:400; }
 .asset-imgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .asset-img-card { min-width: 0; }
@@ -1264,7 +1267,7 @@ watch(() => route.query.kw, (kw) => {
 .asset-img-actions { display:flex; justify-content:center; flex-wrap:wrap; gap: 6px; margin-top: 4px; }
 .edit-image-picker { display: grid; grid-template-columns: repeat(6, 44px); gap: 8px; }
 .edit-image-picker.wide { grid-template-columns: repeat(4, 72px); }
-.edit-image-option { width:44px; height:62px; padding:0; border:2px solid transparent; border-radius:6px; overflow:hidden; background:#f0f2f5; cursor:pointer; }
+.edit-image-option { width:44px; height:62px; padding:0; border:2px solid transparent; border-radius:6px; overflow:hidden; background:var(--page-bg); cursor:pointer; }
 .edit-image-option.wide { width:72px; height:42px; }
 .edit-image-option.on { border-color:#2563eb; }
 .edit-image-option img { width:100%; height:100%; object-fit:cover; display:block; }

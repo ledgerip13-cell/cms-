@@ -1,7 +1,7 @@
 <template>
   <router-view v-if="$route.meta.public" />
   <el-container v-else class="layout">
-    <el-aside width="220px" class="side">
+    <el-aside :width="collapsed ? '64px' : '220px'" class="side" :class="{ collapsed }">
       <div class="brand">
         <div v-if="site.logo" class="brand-mark"><img :src="site.logo" alt="logo" /></div>
         <div class="brand-text">
@@ -11,11 +11,11 @@
       </div>
       <el-menu
         :default-active="$route.path"
-        :default-openeds="defaultOpeneds"
+        :default-openeds="collapsed ? [] : defaultOpeneds"
         router
         unique-opened
         class="menu"
-        :collapse="false"
+        :collapse="collapsed"
       >
         <template v-for="section in menuSections" :key="section.index">
           <el-sub-menu v-if="section.children" :index="section.index">
@@ -35,13 +35,20 @@
           </el-menu-item>
         </template>
       </el-menu>
+      <div class="collapse-btn" @click="collapsed = !collapsed">
+        <el-icon><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+      </div>
     </el-aside>
 
     <el-container>
       <el-header class="header">
         <div class="crumb">
-          <img v-if="site.logo" class="crumb-logo" :src="site.logo" alt="logo" />
-          <span>{{ $route.meta.title }}</span>
+          <el-icon class="collapse-trigger" @click="collapsed = !collapsed"><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+          <template v-if="breadcrumb.length > 1">
+            <span class="crumb-parent">{{ breadcrumb[0] }}</span>
+            <span class="crumb-sep">/</span>
+          </template>
+          <span>{{ breadcrumb[breadcrumb.length - 1] }}</span>
         </div>
         <el-dropdown @command="onCmd" trigger="click">
           <div class="user">
@@ -77,7 +84,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation } from '@element-plus/icons-vue'
+import { DataLine, Connection, Link, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation, Expand, Fold } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
@@ -94,7 +101,7 @@ const menuSections = [
     label: '采集引擎',
     icon: Connection,
     children: [
-      { path: '/sources', label: '采集源管理', icon: Connection },
+      { path: '/sources', label: '采集源管理', icon: Link },
       { path: '/tasks', label: '采集任务进度', icon: List },
       { path: '/categories', label: '分类映射面板', icon: Files },
     ],
@@ -109,21 +116,42 @@ const menuSections = [
       { path: '/hot', label: '热门推荐', icon: StarFilled },
     ],
   },
-  { index: 'playback', path: '/hls-clean', label: '播放治理', icon: VideoPlay },
-  { index: 'ops', path: '/ops', label: '运营中心', icon: Operation },
+  {
+    index: 'playback',
+    label: '播放治理',
+    icon: VideoPlay,
+    children: [
+      { path: '/hls-clean', label: 'HLS清洗', icon: VideoPlay },
+      { path: '/playback', label: '播放策略', icon: Setting },
+    ],
+  },
+  { index: 'ops', path: '/ops', label: '质量监控', icon: Operation },
   {
     index: 'users-security',
     label: '用户与权限',
     icon: UserFilled,
     children: [
       { path: '/users', label: '用户管理', icon: UserFilled },
-      { path: '/access', label: '权限访问', icon: Key },
+      { path: '/access', label: '权限管理', icon: Key },
     ],
   },
   { index: 'settings', path: '/site', label: '系统设置', icon: Setting },
 ]
+const collapsed = ref(false)
 const flatMenus = computed(() => menuSections.flatMap(s => s.children || [s]))
 const defaultOpeneds = computed(() => menuSections.filter(s => s.children?.some(m => m.path === route.path)).map(s => s.index))
+const breadcrumb = computed(() => {
+  const path = route.path
+  for (const sec of menuSections) {
+    if (sec.children) {
+      const child = sec.children.find(m => m.path === path)
+      if (child) return [sec.label, child.label]
+    } else if (sec.path === path) {
+      return [sec.label]
+    }
+  }
+  return [route.meta?.title || '']
+})
 
 const activeTasks = ref(0)
 async function pollActive() { try { activeTasks.value = (await api.taskActiveCount()).active } catch {} }
@@ -160,8 +188,10 @@ async function doPwd() {
 .layout { height: 100vh; }
 
 /* 侧边栏 */
-.side { background: var(--side-bg); display: flex; flex-direction: column; }
-.brand { display: flex; align-items: center; gap: 12px; padding: 20px 20px 18px; }
+.side { background: var(--side-bg); display: flex; flex-direction: column; transition: width .25s ease; overflow: hidden; }
+.brand { display: flex; align-items: center; gap: 12px; padding: 20px 20px 18px; overflow: hidden; white-space: nowrap; }
+.collapsed .brand-text { display: none; }
+.collapsed .brand { justify-content: center; padding: 20px 12px 18px; }
 .brand-mark { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(255,255,255,.08); }
 .brand-mark img { width: 100%; height: 100%; object-fit: cover; }
@@ -176,7 +206,8 @@ async function doPwd() {
 }
 .menu :deep(.el-sub-menu__title) {
   color: var(--side-text); height: 44px; line-height: 44px; border-radius: 8px;
-  margin-bottom: 4px; font-size: 14px;
+  margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+  opacity: .7;
 }
 .menu :deep(.el-menu-item:hover) { background: var(--side-bg-hover); color: #fff; }
 .menu :deep(.el-sub-menu__title:hover) { background: var(--side-bg-hover); color: #fff; }
@@ -195,7 +226,10 @@ async function doPwd() {
 .header { display: flex; align-items: center; justify-content: space-between;
   background: #fff; border-bottom: 1px solid var(--border); height: 60px; padding: 0 24px; }
 .crumb { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--text-1); }
-.crumb-logo { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; flex: 0 0 22px; }
+.crumb-parent { color: var(--text-3); font-weight: 400; font-size: 14px; }
+.crumb-sep { color: var(--text-3); font-weight: 400; font-size: 14px; }
+.collapse-trigger { cursor: pointer; font-size: 18px; color: var(--text-3); flex-shrink: 0; }
+.collapse-trigger:hover { color: var(--brand-1); }
 .user { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
 .user:hover { background: var(--page-bg); }
 .user-avatar { background: linear-gradient(135deg, var(--brand-1), var(--brand-2)); color: #fff; }
@@ -204,4 +238,14 @@ async function doPwd() {
 
 .main { background: var(--page-bg); padding: 24px; }
 :deep(.el-dropdown-menu__item .el-icon) { margin-right: 6px; }
+
+/* 折叠按钮 */
+.collapse-btn { margin-top: auto; padding: 14px 0; display: flex; justify-content: center;
+  color: var(--side-text); cursor: pointer; border-top: 1px solid rgba(255,255,255,.06); }
+.collapse-btn:hover { color: #fff; }
+
+/* 折叠态菜单微调 */
+.collapsed .menu { padding: 6px 4px; }
+.collapsed .menu :deep(.el-menu-item) { padding: 0 !important; justify-content: center; }
+.collapsed .menu :deep(.el-tooltip__trigger) { padding: 0 !important; display: flex; justify-content: center; }
 </style>

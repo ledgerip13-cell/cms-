@@ -17,13 +17,13 @@
               <el-button :loading="qcLoading" @click="loadQc()">刷新</el-button>
             </div>
           </div>
-          <div class="metric-row">
-            <div v-for="item in qcSummaryCards" :key="item.key" class="metric">
-              <span>{{ item.label }}</span>
-              <strong>{{ item.value }}</strong>
+          <div class="stat-row">
+            <div v-for="item in qcSummaryCards" :key="item.key" class="stat-card">
+              <div class="stat-num">{{ item.value }}</div>
+              <div class="stat-label">{{ item.label }}</div>
             </div>
           </div>
-          <el-table :data="qcList" height="560" v-loading="qcLoading">
+          <el-table :data="qcList" :max-height="tableMaxH" v-loading="qcLoading">
             <el-table-column label="类型" width="140"><template #default="{row}">{{ issueTypeLabel(row.type) }}</template></el-table-column>
             <el-table-column label="级别" width="90"><template #default="{row}"><el-tag :type="severityTag(row.severity)" effect="plain">{{ row.severity }}</el-tag></template></el-table-column>
             <el-table-column prop="targetName" label="对象" min-width="180" show-overflow-tooltip />
@@ -32,12 +32,19 @@
             <el-table-column prop="assignee" label="负责人" width="110" />
             <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
             <el-table-column label="最近发现" width="170"><template #default="{row}">{{ fmtTime(row.lastSeenAt) }}</template></el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
+            <el-table-column label="操作" width="150" fixed="right">
               <template #default="{row}">
                 <el-button size="small" @click="actQc(row, 'claim')">认领</el-button>
-                <el-button size="small" @click="actQc(row, 'handle')">处理</el-button>
-                <el-button size="small" type="success" plain @click="actQc(row, 'close')">关闭</el-button>
-                <el-button size="small" type="warning" plain @click="actQc(row, 'review')">复核</el-button>
+                <el-dropdown trigger="click" @command="cmd => actQc(row, cmd)">
+                  <el-button size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="handle">处理</el-dropdown-item>
+                      <el-dropdown-item command="close">关闭</el-dropdown-item>
+                      <el-dropdown-item command="review">复核</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -60,7 +67,7 @@
               <el-button :loading="slaLoading" @click="loadSla">刷新</el-button>
             </div>
           </div>
-          <el-table :data="slaList" height="650" v-loading="slaLoading">
+          <el-table :data="slaList" :max-height="tableMaxH" v-loading="slaLoading">
             <el-table-column label="排名" width="70"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
             <el-table-column prop="name" label="源" min-width="160" show-overflow-tooltip />
             <el-table-column label="状态" width="90"><template #default="{row}"><el-tag :type="row.enabled && row.status !== 'fail' ? 'success' : 'danger'">{{ row.enabled ? row.status : 'disabled' }}</el-tag></template></el-table-column>
@@ -85,9 +92,11 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 
+const tableMaxH = computed(() => Math.max(400, window.innerHeight - 280))
 const tab = ref('qc')
 const qcLoading = ref(false)
 const qcList = ref([])
@@ -198,9 +207,6 @@ onMounted(async () => {
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .sec-title { font-size: 16px; font-weight: 700; color: var(--text-1); }
-.metric-row { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.metric { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #fafbff; }
-.metric span { display: block; color: var(--text-3); font-size: 12px; }
-.metric strong { display: block; margin-top: 6px; color: var(--text-1); font-size: 22px; line-height: 1; }
+.stat-row { grid-template-columns: repeat(5, minmax(120px, 1fr)); }
 .pager { justify-content: flex-end; margin-top: 14px; }
 </style>

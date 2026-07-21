@@ -1,12 +1,19 @@
 <template>
   <div class="card">
-    <div class="bar">
+    <div class="toolbar">
       <div class="sec-title">采集源管理 <small>共 {{ list.length }} 个</small></div>
-      <div>
+      <div class="actions">
         <el-button @click="load" :icon="Refresh">刷新</el-button>
         <el-button type="warning" :loading="probing" @click="doProbe">探活线路</el-button>
-        <el-button type="success" :loading="batchCleaning" @click="batchCleanOnly(true)">全部开启仅清洗</el-button>
-        <el-button type="danger" :loading="batchCleaning" @click="batchCleanOnly(false)">全部关闭仅清洗</el-button>
+        <el-dropdown trigger="click" @command="onBatchCmd">
+          <el-button :loading="batchCleaning">批量操作<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="cleanOn">全部开启仅清洗</el-dropdown-item>
+              <el-dropdown-item command="cleanOff">全部关闭仅清洗</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button type="primary" :icon="Plus" @click="openAdd">新增采集源</el-button>
       </div>
     </div>
@@ -305,7 +312,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Refresh, Close } from '@element-plus/icons-vue'
+import { ArrowDown, Plus, Refresh, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../api'
 const router = useRouter()
@@ -446,6 +453,10 @@ async function toggleCleanOnly(row) {
     ElMessage.error('仅清洗切换失败: ' + (e.message || e))
     load()
   }
+}
+function onBatchCmd(cmd) {
+  if (cmd === 'cleanOn') batchCleanOnly(true)
+  else if (cmd === 'cleanOff') batchCleanOnly(false)
 }
 async function batchCleanOnly(enabled) {
   try {
@@ -614,9 +625,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sec-title { font-size: 16px; font-weight: 600; }
-.sec-title small { color: #9aa4b2; font-weight: 400; margin-left: 6px; }
+.sec-title small { color: var(--text-3); font-weight: 400; margin-left: 6px; }
 :deep(.el-table) { overflow-x: auto; }
 .muted { color: #9aa4b2; font-size: 12px; }
 .domain-count { color: #9aa4b2; font-size: 12px; white-space: nowrap; }

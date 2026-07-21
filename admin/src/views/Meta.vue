@@ -541,11 +541,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.stat-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 20px; }
-.stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
-  padding: 18px 20px; box-shadow: var(--shadow-card); }
-.stat-num { font-size: 26px; font-weight: 750; }
-.stat-label { font-size: 13px; color: var(--text-3); margin-top: 4px; }
+.stat-row { grid-template-columns: repeat(6, 1fr); }
 .meta-tabs { margin-top: 4px; }
 .overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }

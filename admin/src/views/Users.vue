@@ -59,15 +59,20 @@
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDetail(row)">详情</el-button>
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" :type="row.enabled ? 'warning' : 'success'" @click="toggle(row)">
-              {{ row.enabled ? '禁用' : '启用' }}
-            </el-button>
-            <el-button size="small" type="danger" plain @click="openPwd(row)">重置密码</el-button>
-            <el-button size="small" type="danger" plain :icon="Delete" @click="deleteUser(row)">删除</el-button>
+            <el-dropdown trigger="click" @command="cmd => onUserCmd(cmd, row)">
+              <el-button size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item command="toggle">{{ row.enabled ? '禁用' : '启用' }}</el-dropdown-item>
+                  <el-dropdown-item command="pwd" divided>重置密码</el-dropdown-item>
+                  <el-dropdown-item command="delete" style="color:var(--el-color-danger)">删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -167,7 +172,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Delete, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
@@ -236,6 +241,12 @@ function openEdit(row) {
 function openPwd(row) {
   pwd.value = { id: row.id, username: row.username, password: '' }
   pwdOpen.value = true
+}
+function onUserCmd(cmd, row) {
+  if (cmd === 'edit') openEdit(row)
+  else if (cmd === 'toggle') toggle(row)
+  else if (cmd === 'pwd') openPwd(row)
+  else if (cmd === 'delete') deleteUser(row)
 }
 function goVod(vod) {
   const kw = String(vod?.name || '').trim()

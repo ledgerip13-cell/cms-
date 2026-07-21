@@ -1,9 +1,9 @@
 <template>
-  <el-row :gutter="16">
+  <el-row :gutter="16" class="cat-layout">
     <!-- 统一分类 -->
-    <el-col :span="11">
+    <el-col :xs="24" :lg="11">
       <div class="card">
-        <div class="bar">
+        <div class="toolbar">
           <div class="sec-title">统一分类体系</div>
           <el-button type="primary" size="small" :icon="Plus" @click="openAdd">新增分类</el-button>
         </div>
@@ -44,9 +44,9 @@
     </el-col>
 
     <!-- 源分类映射 -->
-    <el-col :span="13">
+    <el-col :xs="24" :lg="13">
       <div class="card">
-        <div class="bar">
+        <div class="toolbar">
           <div class="sec-title">源分类映射
             <el-tag v-if="unmapped" type="warning" size="small">{{ unmapped }} 项未映射</el-tag>
           </div>
@@ -354,7 +354,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+.cat-layout { row-gap: 16px; }
 .batch-map-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -2px 0 12px; }
 .sec-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .hint { margin-left: 10px; color: #9aa4b2; font-size: 12px; }

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 运营中心 + PWA/搜索联想）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 前台/增长首段 + 后台布局优化）
 
 ---
 
@@ -92,6 +92,7 @@ video-cms/
 │       │   ├── hot.ts          #   热榜配置
 │       │   ├── access.ts       #   邀请码/VIP等级/操作审计
 │       │   ├── ops.ts          #   QC问题队列 + 源SLA面板
+│       │   ├── seo.ts          #   影片真实落地页 /vod/:id + sitemap.xml + robots.txt
 │       │   ├── hlsClean.ts     #   HLS 清洗配置 + 结果
 │       │   └── hlsProxy.ts     #   HLS 播放代理
 │       │
@@ -113,18 +114,36 @@ video-cms/
 │           └── tsProbe.ts      #   TS 分片探测
 │
 ├── admin/                      # 运营后台(Vue3 + Element Plus)
-│   └── src/views/             # Login/Dashboard/Sources/Vods/Categories/Tasks/Meta/Site/Users/Hot/Access/HlsClean/Ops
+│   └── src/
+│       ├── App.vue             # 后台壳：侧栏菜单/折叠、顶栏面包屑、任务角标、用户下拉
+│       ├── main.js             # vue-router：后台路由与登录守卫
+│       ├── theme.css           # 后台全局设计变量、卡片/工具栏/统计卡规范
+│       └── views/
+│           ├── Dashboard.vue   # 运行概览：核心指标、今日动态、待处理、分类/源概览
+│           ├── Sources.vue     # 采集源管理
+│           ├── Vods.vue        # 影片库管理
+│           ├── Categories.vue  # 统一分类 + 源分类映射
+│           ├── Tasks.vue       # 采集/元数据/HLS 清洗任务队列
+│           ├── Meta.vue        # 元数据匹配
+│           ├── HlsClean.vue    # HLS 广告清洗配置/策略/手动任务/结果
+│           ├── Playback.vue    # 播放策略（从 Site.vue 拆出）
+│           ├── Ops.vue         # 质量监控：QC 队列 + 源 SLA
+│           ├── Users.vue       # 前台用户管理
+│           ├── Access.vue      # 邀请码/VIP/审计/播放错误/访问日志
+│           ├── Hot.vue         # 热门推荐配置与预览
+│           ├── Site.vue        # 站点设置壳：加载/保存/Tab 装配
+│           └── site/           # Site.vue 子组件：Basic/Home/Shorts/PWA/Theme/Preview + siteTheme
 │
 └── web/                        # 观众前端(Vue3 + hls.js)
     └── src/
         ├── views/             # Home/Play/Shorts/Auth/Profile (PC)
-        ├── mobile/            # MobileShell/Home/Search/Shorts/Theater/Me (独立移动模板)
+        ├── mobile/            # MobileShell/Home/Search/Detail/Person/Shorts/Theater/Me/Play (独立移动模板)
         ├── x8/                # X8 深色影院自适应模板（首页/分类/排行/详情/播放/登录壳）
         └── components/        # AuthModal/ToastStack
 ```
 
-### Prisma 数据模型（34 个）
-`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `Vod` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
+### Prisma 数据模型（35 个）
+`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `SearchLog` `Vod` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
 
 ---
 
@@ -170,6 +189,8 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 P1 前台/增长首段断点**：本轮避开并行代理正在修改的 `admin/`，只改 `server/`、`web/` 与交接文档。SEO 基础新增真实影片落地页 `server/src/routes/seo.ts`：`/vod/:id` 输出影片级 `title/description/canonical`、OG/Twitter card、`Movie/VideoObject` JSON-LD，并新增 `/sitemap.xml`、`/robots.txt`；`web/nginx.conf` 将 `/vod/`、`/sitemap.xml`、`/robots.txt` 反代到 server。移动端新增 `/m/detail/:id` 与 `/m/person/:id`：首页/搜索/剧场入口默认进详情页（刷剧搜索仍回 `/m/shorts`），详情展示简介、演员/导演、线路、选集、相关推荐、追剧、分享，演员/导演可进人物聚合页；详情页播放会带 `line/ep` query，`MobilePlay.vue` 按 query 还原线路/集数。搜索增强首段落地：`/api/vods` 支持地区、语言、年份、完结状态、VIP/免费、评分、排序筛选；移动搜索页新增筛选胶囊；新增 `SearchLog` 表和 `/api/search-logs`、`/api/search-hot-terms`，搜索结果首屏会记录搜索词并在空搜索页展示运营热搜词。已执行 `pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir web build`、`pnpm --dir server db:push` 通过；播放器“跳片头片尾/字幕样式”仍未接后台配置，留下一轮。
+- **2026-07-22 后台布局优化 + 系统设置组件拆分断点**：后台菜单/卡片布局完成三批优化：菜单标题与路由标题统一，`运营中心` 改名 `质量监控`，`播放治理` 升级为分组并新增独立 `admin/src/views/Playback.vue`；侧栏支持折叠，顶栏改面包屑；用户/质量监控/权限等表格行操作收敛，Access 裸数字输入补标签，日志表高改自适应；Vods/Sources/Tasks/Categories/Dashboard 工具栏统一，Sources 批量仅清洗收进下拉并保留确认，Vods 筛选与动作分区，Categories 加响应式断点，Dashboard 指标瘦身、双表大屏并排、可播放率低于 60% 标红，HlsClean 源/分类策略内嵌 Tab 拍平成 radio。`admin/src/views/Site.vue` 从约 56KB 巨型 5-Tab 文件拆成壳组件（加载/保存/Tab 装配）与 `admin/src/views/site/` 子组件：`SiteBasicTab.vue`、`SiteHomeTab.vue`、`SiteShortsTab.vue`、`SitePwaTab.vue`、`SiteThemeTab.vue`、`SitePreview.vue`、`siteTheme.js`；功能保持原有站点配置保存链路不变。已执行 `npm run build`（admin）、`git diff --check`、`docker compose up -d --build admin` 通过；运行态 `5151` 返回 HTTP 200，`vcms-admin/vcms-server` 均 Up。
 - **2026-07-22 P1 运营中心 + 前台体验断点**：新增 `QcIssue` 持久模型与 `server/src/routes/ops.ts`，后台 `/ops` 提供 QC 问题队列（无线路、全死链、无封面、元数据待确认、HLS 清洗失败、播放错误高发）及认领/处理/关闭/复核动作；源 SLA 面板按 7/30 天展示成功率、平均耗时、最近失败原因、质量排行和趋势。操作审计补齐影片上下架/编辑/删除/图片/转存、源新增/修改/删除/启停/仅清洗、分类/映射、元数据确认、任务暂停/恢复/重试/取消、前台用户/VIP 修改，detail 统一记录 `before/after/result`，操作者/IP 由 `AuditLog` 保留。前台新增 `/api/vods/suggest`，移动搜索和 X8 顶部搜索输入时下拉后台匹配影片名，最多 10 个；PWA Service Worker 新增片库/详情/分类/热榜 JSON network-first 缓存，离线时可回退最近成功数据，视频流和写接口仍不缓存。
 - **2026-07-22 P1 播放治理升级断点**：播放错误日志结构已统一，`PlaybackErrorLog` 新增 `url/rule/proxyMode/cleanId/fallbackUrl/hlsErrorData/ipType` 字段，服务端 `recordPlaybackError()` 会从根字段、`detail.current`、`detail.failures[0]` 兜底归一，避免后台空线路/空 URL；后台“播放错误”页新增按影片/线路/源/地区/IP 类型聚合接口与 UI，并展示源、规则、代理、URL、IP 类型。线路健康评分落到 `Play`：新增 `playSuccessCount/playFailureCount/avgResponseMs/lastSuccessAt/lastFailureAt/healthReason`，`/api/resolve` 成功与 `/api/playback-errors` 失败都会更新健康分，前台/后台原有按 `score` 排序自然降权失败线路，后台线路抽屉展示成功/失败和最近时间。clean/proxy/direct 优先级已明确为 `clean 命中 > proxy/key > direct`；`cleanOnly` 源无 clean 命中时直接返回 `hls_clean_missing/hls_clean_disabled`，不再回源原始 m3u8，clean 命中新增默认 7 天新鲜度限制，可用 `HLS_CLEAN_MAX_AGE_HOURS` 覆盖。金牌诊断结果新增 `jinpai/jinpaiStatus`，展示客户端 IP、CF IP、签名 IP、CDN host、源站签名状态、本站探测状态与用户侧提示；后台诊断金牌原线路只走前台签名链，不再用本地转存结果冒充原线路可播。
 - **2026-07-21 TS 代理流式化与真实播放诊断断点**：`/api/hls-ts` 已从整段 `arrayBuffer()` 进内存改为 `Readable.fromWeb(...).pipe(Transform)` 流式转发，仅 TS 分片走流式，m3u8/key 继续走小体积 `safeFetch`；新增默认限制 `TS_PROXY_TIMEOUT_MS=20000`、`TS_PROXY_MAX_BYTES=67108864`、`TS_PROXY_MAX_CONCURRENCY=24`（均可选 env 覆盖），回源前按 `Content-Length` 预拒超大响应，流中累计字节超过上限会 abort，并发超限返回 429，超大返回 413。后台“线路播放诊断”不再手写解析线路，而是内部调用同一条 `/api/resolve?diagnose=1` 真实播放规则链：覆盖 clean、proxy/key、iCloud 客户端 SW、金牌签名、本地转存 token 等最终 URL 形态；随后服务端继续探测 m3u8、key、首个 ts Range 与 CORS 头，返回 `probeSummary/probe.stages`，后台 UI 优先展示真实链路阶段状态，解决“后台只显示可解析但前台实际播不了”的假绿问题。`diagnose=1` 只在携带有效后台 admin token 时绕过登录/VIP观看权限，不影响普通前台 `/api/resolve`。

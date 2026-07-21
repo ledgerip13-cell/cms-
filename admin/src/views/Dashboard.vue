@@ -1,8 +1,8 @@
 <template>
   <div class="dashboard" v-loading="loading">
     <el-row :gutter="16" class="metric-row">
-      <el-col :xs="12" :sm="8" :lg="6" :xl="3" v-for="item in metrics" :key="item.key">
-        <div class="card metric-card">
+      <el-col :xs="12" :sm="8" :lg="4" v-for="item in metrics" :key="item.key">
+        <div class="card metric-card" :style="{ borderLeftColor: item.color }">
           <div class="metric-label">{{ item.label }}</div>
           <div class="metric-value">{{ num(item.value) }}</div>
           <div class="metric-note">{{ item.note }}</div>
@@ -13,7 +13,7 @@
     <el-row :gutter="16">
       <el-col :xs="24" :lg="14">
         <div class="card panel">
-          <div class="panel-head">
+          <div class="toolbar">
             <div>
               <div class="sec-title">今日内容动态</div>
               <div class="muted">按入库时间和内容更新时间分开看</div>
@@ -57,7 +57,7 @@
 
       <el-col :xs="24" :lg="10">
         <div class="card panel">
-          <div class="panel-head">
+          <div class="toolbar">
             <div>
               <div class="sec-title">待处理</div>
               <div class="muted">优先处理会影响前台体验的数据缺口</div>
@@ -79,14 +79,16 @@
       </el-col>
     </el-row>
 
+    <el-row :gutter="16" class="table-pair">
+    <el-col :xl="12" :xs="24">
     <div class="card panel">
-      <div class="panel-head">
+      <div class="toolbar">
         <div>
           <div class="sec-title">分类分布</div>
           <div class="muted">总量、在线、可播放与今日变化</div>
         </div>
       </div>
-      <el-table :data="categories" stripe table-layout="fixed" style="width:100%">
+      <el-table :data="categories" stripe table-layout="fixed" style="width:100%" :max-height="420">
         <el-table-column prop="name" label="分类" min-width="120" show-overflow-tooltip />
         <el-table-column prop="total" label="总量" width="90" sortable />
         <el-table-column prop="online" label="在线" width="90" sortable />
@@ -96,22 +98,23 @@
         <el-table-column label="可播放率" min-width="180" sortable :sort-method="sortByPlayableRate">
           <template #default="{ row }">
             <div class="rate-cell">
-              <el-progress :percentage="Math.min(100, Number(row.playableRate) || 0)" :stroke-width="8" :show-text="false" />
+              <el-progress :percentage="Math.min(100, Number(row.playableRate) || 0)" :stroke-width="8" :show-text="false" :status="Number(row.playableRate) < 60 ? 'exception' : undefined" />
               <span>{{ percent(row.playableRate) }}</span>
             </div>
           </template>
         </el-table-column>
       </el-table>
     </div>
-
+    </el-col>
+    <el-col :xl="12" :xs="24">
     <div class="card panel">
-      <div class="panel-head">
+      <div class="toolbar">
         <div>
           <div class="sec-title">采集源贡献</div>
           <div class="muted">看每个源贡献的影片、线路和今日变化</div>
         </div>
       </div>
-      <el-table :data="sourcesOverview" stripe table-layout="fixed" style="width:100%">
+      <el-table :data="sourcesOverview" stripe table-layout="fixed" style="width:100%" :max-height="420">
         <el-table-column prop="name" label="采集源" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
@@ -133,6 +136,8 @@
         </el-table-column>
       </el-table>
     </div>
+    </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -147,14 +152,12 @@ const stat = ref({})
 const activityTab = ref('added')
 
 const metrics = computed(() => [
-  { key: 'vods', label: '影片总数', value: stat.value.vods, note: '去重后片库规模' },
-  { key: 'online', label: '在线影片', value: stat.value.online, note: '前台可展示基础量' },
-  { key: 'playable', label: '可播放影片', value: stat.value.playable, note: '含仅清洗源过滤' },
-  { key: 'plays', label: '播放线路', value: stat.value.plays, note: '全部入库线路' },
-  { key: 'todayAdded', label: '今日新增', value: stat.value.todayAdded, note: '今日新入库影片' },
-  { key: 'todayUpdated', label: '今日更新', value: stat.value.todayUpdated, note: '今日剧集/内容更新' },
-  { key: 'weekAdded', label: '近7天新增', value: stat.value.weekAdded, note: '近7日入库趋势' },
-  { key: 'weekUpdated', label: '近7天更新', value: stat.value.weekUpdated, note: '近7日更新趋势' },
+  { key: 'vods', label: '影片总数', value: stat.value.vods, note: '去重后片库规模', color: '#2563eb' },
+  { key: 'online', label: '在线影片', value: stat.value.online, note: '前台可展示基础量', color: '#059669' },
+  { key: 'playable', label: '可播放影片', value: stat.value.playable, note: '含仅清洗源过滤', color: '#7c3aed' },
+  { key: 'plays', label: '播放线路', value: stat.value.plays, note: '全部入库线路', color: '#0891b2' },
+  { key: 'weekAdded', label: '近7天新增', value: stat.value.weekAdded, note: '近7日入库趋势', color: '#d97706' },
+  { key: 'weekUpdated', label: '近7天更新', value: stat.value.weekUpdated, note: '近7日更新趋势', color: '#e11d48' },
 ])
 
 const issues = computed(() => {
@@ -230,12 +233,13 @@ onMounted(load)
 <style scoped>
 .dashboard { display: flex; flex-direction: column; gap: 16px; }
 .metric-row { row-gap: 16px; }
-.metric-card { min-height: 112px; display: flex; flex-direction: column; justify-content: center; }
-.metric-label { font-size: 13px; color: #6b7280; }
-.metric-value { margin-top: 6px; font-size: 28px; line-height: 1.15; font-weight: 700; color: #1f2937; }
-.metric-note { margin-top: 8px; font-size: 12px; color: #9aa4b2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metric-card { min-height: 112px; display: flex; flex-direction: column; justify-content: center;
+  border-left: 3px solid var(--brand-1); transition: border-color .2s; }
+.metric-label { font-size: 13px; color: var(--text-3); }
+.metric-value { margin-top: 6px; font-size: 28px; line-height: 1.15; font-weight: 700; color: var(--text-1); }
+.metric-note { margin-top: 8px; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .panel { overflow: hidden; }
-.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .sec-title { font-size: 16px; font-weight: 700; color: #1f2937; }
 .muted { color: #9aa4b2; font-size: 12px; }
 .vod-list { display: flex; flex-direction: column; gap: 8px; min-height: 336px; }
@@ -258,6 +262,7 @@ onMounted(load)
 .source-pill b { margin-left: 4px; color: #1f2937; }
 .rate-cell { display: grid; grid-template-columns: minmax(90px, 1fr) 48px; align-items: center; gap: 10px; }
 .rate-cell span { color: #596273; font-size: 12px; text-align: right; }
+.table-pair { row-gap: 16px; }
 @media (max-width: 760px) {
   .metric-value { font-size: 24px; }
   .vod-row { grid-template-columns: minmax(0, 1fr); }

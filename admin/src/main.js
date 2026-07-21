@@ -17,6 +17,7 @@ import Users from './views/Users.vue'
 import Hot from './views/Hot.vue'
 import Access from './views/Access.vue'
 import HlsClean from './views/HlsClean.vue'
+import Playback from './views/Playback.vue'
 import Ops from './views/Ops.vue'
 
 const router = createRouter({
@@ -30,7 +31,8 @@ const router = createRouter({
     { path: '/categories', component: Categories, meta: { title: '分类映射面板' } },
     { path: '/vods', component: Vods, meta: { title: '影片库管理' } },
     { path: '/hot', component: Hot, meta: { title: '热门推荐' } },
-    { path: '/hls-clean', component: HlsClean, meta: { title: '播放治理' } },
+    { path: '/hls-clean', component: HlsClean, meta: { title: 'HLS清洗' } },
+    { path: '/playback', component: Playback, meta: { title: '播放策略' } },
     { path: '/ops', component: Ops, meta: { title: '质量监控' } },
     { path: '/users', component: Users, meta: { title: '用户管理' } },
     { path: '/access', component: Access, meta: { title: '权限访问' } },
