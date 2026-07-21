@@ -2336,18 +2336,18 @@ function saveWatchHistory(force = false) {
   saveLocalHistory(payload)
   if (user.value) api.saveHistory(payload).catch(() => {})
 }
-function reportPlaybackError(message, failures = []) {
+function reportPlaybackError(message, failures = [], override = {}) {
   void api.reportPlaybackError({
     vodId: vod.value?.id || null,
     vodName: vod.value?.name || '',
-    playId: currentLine.value?.id || null,
-    lineName: currentLine.value?.sourceName || currentLine.value?.flag || '',
-    sourceName: currentLine.value?.sourceName || '',
-    epIndex: currentEpIndex.value,
-    epName: episodes.value?.[currentEpIndex.value]?.name || '',
+    playId: override.playId ?? currentLine.value?.id ?? null,
+    lineName: override.lineName ?? currentLine.value?.sourceName ?? currentLine.value?.flag ?? '',
+    sourceName: override.sourceName ?? currentLine.value?.sourceName ?? '',
+    epIndex: override.epIndex ?? currentEpIndex.value,
+    epName: override.epName ?? episodes.value?.[currentEpIndex.value]?.name ?? '',
     page: location.href,
     message,
-    detail: { context: 'x8', failures },
+    detail: { context: 'x8', failures, event: override.event || '' },
   })
 }
 function readLocalHistory() {
@@ -2543,6 +2543,7 @@ function playbackSlots() {
 }
 async function tryNextPlayback(reason = '当前线路播放失败') {
   if (autoSwitchingPlayback) return false
+  reportPlaybackError(reason, [{ playId: currentLine.value?.id, line: currentLine.value?.sourceName || currentLine.value?.flag || '', epIndex: currentEpIndex.value, error: reason }], { event: 'current_line_failed' })
   const slots = playbackSlots()
   const failMessage = '当前无可播放线路，请稍后重试'
   if (slots.length <= 1) {
@@ -2582,11 +2583,20 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
         notifySuccess(`已切换到可播放线路：${line.sourceName || line.flag || '备用线路'}`)
         return true
       } catch (error) {
-        failures.push({
+        const failure = {
           playId: line.id,
           line: line.sourceName || line.flag || '',
           epIndex: currentEpIndex.value,
           error: error?.message || String(error || '播放失败'),
+        }
+        failures.push(failure)
+        reportPlaybackError(failure.error, [failure], {
+          playId: line.id,
+          lineName: line.sourceName || line.flag || '',
+          sourceName: line.sourceName || '',
+          epIndex: currentEpIndex.value,
+          epName: episodes.value?.[currentEpIndex.value]?.name || '',
+          event: 'fallback_line_failed',
         })
       }
     }

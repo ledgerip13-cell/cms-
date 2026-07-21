@@ -416,19 +416,20 @@ function playbackChannelLabel(channel = curChannel.value, ci = chanIdx.value) {
   return channelOptions.value.length > 1 ? channelLabel(channel, ci) : ''
 }
 
-function playbackErrorPayload(message, failures = []) {
+function playbackErrorPayload(message, failures = [], override = {}) {
   return {
     vodId: vod.value?.id,
     vodName: vod.value?.name,
-    playId: curChannel.value?.id,
-    lineName: [playbackLineLabel(), playbackChannelLabel()].filter(Boolean).join(' · '),
-    sourceName: curLine.value?.sourceName || curChannel.value?.sourceName || '',
-    epIndex: epIdx.value,
-    epName: episodes.value?.[epIdx.value]?.name || '',
+    playId: override.playId ?? curChannel.value?.id,
+    lineName: override.lineName ?? [playbackLineLabel(), playbackChannelLabel()].filter(Boolean).join(' · '),
+    sourceName: override.sourceName ?? curLine.value?.sourceName ?? curChannel.value?.sourceName ?? '',
+    epIndex: override.epIndex ?? epIdx.value,
+    epName: override.epName ?? episodes.value?.[epIdx.value]?.name ?? '',
     page: location.href,
     message,
     detail: {
       failures,
+      event: override.event || '',
       current: {
         lineIndex: lineIdx.value,
         channelIndex: chanIdx.value,
@@ -439,8 +440,8 @@ function playbackErrorPayload(message, failures = []) {
   }
 }
 
-function reportPlaybackError(message, failures = []) {
-  void api.reportPlaybackError(playbackErrorPayload(message, failures))
+function reportPlaybackError(message, failures = [], override = {}) {
+  void api.reportPlaybackError(playbackErrorPayload(message, failures, override))
 }
 
 function isPlayRoute() {
@@ -1107,6 +1108,7 @@ function shouldProbeResolvedPlayback(result) {
 
 async function tryNextLine(reason = '当前线路播放失败') {
   if (retryingLine || autoSwitchingLine) return false
+  reportPlaybackError(reason, [{ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason }], { event: 'current_line_failed' })
   const slots = playbackSlots()
   const failures = []
   const failMessage = '当前无可播放线路，请稍后重试'
@@ -1149,11 +1151,20 @@ async function tryNextLine(reason = '当前线路播放失败') {
         showNotice(`已切换到可播放线路：${label}`)
         return true
       } catch (error) {
-        failures.push({
+        const failure = {
           playId: next.channel.id,
           line: label,
           epIndex: nextEpIndex,
           error: error?.message || String(error || '播放失败'),
+        }
+        failures.push(failure)
+        reportPlaybackError(failure.error, [failure], {
+          playId: next.channel.id,
+          lineName: label,
+          sourceName: line?.sourceName || next.channel.sourceName || '',
+          epIndex: nextEpIndex,
+          epName: next.channel.episodes?.[nextEpIndex]?.name || '',
+          event: 'fallback_line_failed',
         })
       }
     }

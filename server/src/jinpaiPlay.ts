@@ -42,6 +42,7 @@ function isPrivateIp(ip: string): boolean {
     const [a, b] = parts;
     return a === 10
       || a === 127
+      || a >= 240
       || (a === 172 && b >= 16 && b <= 31)
       || (a === 192 && b === 168)
       || (a === 169 && b === 254)
@@ -63,6 +64,7 @@ function headerValues(req: any, name: string): string[] {
 /** 取请求真实客户端公网 IP：CDN 真实 IP 头 > X-Forwarded-For 链 > X-Real-IP > socket。 */
 export function clientIpOf(req: any): string {
   const candidates = [
+    ...headerValues(req, "cf-connecting-ipv6"),
     ...headerValues(req, "cf-connecting-ip"),
     ...headerValues(req, "true-client-ip"),
     ...headerValues(req, "x-forwarded-for"),

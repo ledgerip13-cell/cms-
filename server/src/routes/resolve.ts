@@ -136,7 +136,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
         // 客户端 IP 签名 → CDN 直连；返回全部清晰度供前台切换
         try {
           const publicClientIp = clientIpOf(req);
-          const signClientIp = publicClientIp && !publicClientIp.includes(":") ? publicClientIp : "";
+          const signClientIp = publicClientIp || "";
           const list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,
             signKey: (play.source as any).signKey,

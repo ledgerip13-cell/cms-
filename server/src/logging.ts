@@ -27,6 +27,7 @@ export function isPrivateIp(ip: string): boolean {
     const [a, b] = ip.split(".").map((x) => Number(x));
     return a === 10
       || a === 127
+      || a >= 240
       || (a === 172 && b >= 16 && b <= 31)
       || (a === 192 && b === 168)
       || (a === 169 && b === 254)
@@ -41,6 +42,7 @@ export function isPrivateIp(ip: string): boolean {
 
 export function clientIpOf(req: FastifyRequest | any): string {
   const candidates = [
+    ...headerValues(req, "cf-connecting-ipv6"),
     ...headerValues(req, "cf-connecting-ip"),
     ...headerValues(req, "true-client-ip"),
     ...headerValues(req, "x-forwarded-for"),
@@ -180,9 +182,15 @@ export function recordPlaybackError(req: FastifyRequest, payload: any) {
 export function installAccessLogger(app: FastifyInstance) {
   app.addHook("onResponse", async (req: FastifyRequest, reply: FastifyReply) => {
     const url = req.url || "";
-    if (url === "/health" || url.startsWith("/api/admin/logs") || url.startsWith("/api/playback-errors")) return;
-    const ip = clientIpOf(req);
+    if (
+      url === "/health"
+      || url.startsWith("/api/admin/")
+      || url.startsWith("/api/playback-errors")
+      || url.startsWith("/api/auth/")
+    ) return;
     const auth = authUserOf(req);
+    if (auth.userType === "admin") return;
+    const ip = clientIpOf(req);
     const ms = Math.max(0, Math.round((reply as any).elapsedTime || 0));
     void (async () => {
       const loc = await ipLocation(ip).catch(() => null as any);

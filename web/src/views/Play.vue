@@ -272,18 +272,18 @@ function showPlayNotice(message) {
   if (playNoticeTimer) clearTimeout(playNoticeTimer)
   playNoticeTimer = window.setTimeout(() => { playNotice.value = '' }, 5200)
 }
-function reportPlayError(message, failures = []) {
+function reportPlayError(message, failures = [], override = {}) {
   void api.reportPlaybackError({
     vodId: vod.value?.id || null,
     vodName: vod.value?.name || '',
-    playId: curChannel.value?.id || null,
-    lineName: curLine.value?.sourceName || curChannel.value?.sourceName || '',
-    sourceName: curChannel.value?.sourceName || '',
-    epIndex: epIdx.value,
-    epName: curEp.value?.name || '',
+    playId: override.playId ?? curChannel.value?.id ?? null,
+    lineName: override.lineName ?? curLine.value?.sourceName ?? curChannel.value?.sourceName ?? '',
+    sourceName: override.sourceName ?? curChannel.value?.sourceName ?? '',
+    epIndex: override.epIndex ?? epIdx.value,
+    epName: override.epName ?? curEp.value?.name ?? '',
     page: location.href,
     message,
-    detail: { context: 'desktop', failures },
+    detail: { context: 'desktop', failures, event: override.event || '' },
   })
 }
 function clearPlayWatchdog() {
@@ -620,6 +620,7 @@ function switchQuality(payload) {
 
 async function tryNextPlayback(reason = '当前线路播放失败') {
   if (autoSwitchingPlayback) return
+  reportPlayError(reason, [{ playId: curChannel.value?.id, lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '', epName: curEp.value?.name || '', message: reason }], { event: 'current_line_failed' })
   const lines = vod.value.lines || []
   const slots = []
   lines.forEach((line, li) => {
@@ -664,9 +665,27 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
           showPlayNotice(`已切换到 ${next.channel.sourceName || '备用线路'}`)
           return
         }
-        failures.push({ lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: r?.error || '解析失败' })
+        const failure = { lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: r?.error || '解析失败' }
+        failures.push(failure)
+        reportPlayError(failure.message, [failure], {
+          playId: next.channel.id,
+          lineName: failure.lineName,
+          sourceName: next.channel.sourceName || '',
+          epIndex: nextEp,
+          epName: failure.epName,
+          event: 'fallback_line_failed',
+        })
       } catch (e) {
-        failures.push({ lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: apiErrorMessage(e, '解析失败') })
+        const failure = { lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: apiErrorMessage(e, '解析失败') }
+        failures.push(failure)
+        reportPlayError(failure.message, [failure], {
+          playId: next.channel.id,
+          lineName: failure.lineName,
+          sourceName: next.channel.sourceName || '',
+          epIndex: nextEp,
+          epName: failure.epName,
+          event: 'fallback_line_failed',
+        })
       }
     }
     reportPlayError('当前无可播放线路，请稍后重试', failures)
