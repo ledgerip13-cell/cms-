@@ -77,7 +77,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay } from '@element-plus/icons-vue'
+import { DataLine, Connection, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
@@ -110,6 +110,7 @@ const menuSections = [
     ],
   },
   { index: 'playback', path: '/hls-clean', label: '播放治理', icon: VideoPlay },
+  { index: 'ops', path: '/ops', label: '运营中心', icon: Operation },
   {
     index: 'users-security',
     label: '用户与权限',

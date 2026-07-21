@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { adminUserFromToken, authGuard } from "../auth.js";
 import { requestCancel, requestPause, clearPause, wakeTaskQueues, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 import { previewByKeyword } from "../collector/sync.js";
+import { writeAudit } from "./access.js";
 
 export default async function taskRoutes(app: FastifyInstance) {
   function taskStatusWhere(q: any) {
@@ -183,6 +184,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     }
     emitTaskChange();
     wakeTaskQueues();
+    await writeAudit(req, `task.batch.${action}`, `Task:${ids.join(",")}`, { before: rows, after: { count: ok, skipped, taskIds }, result: "ok" });
     return { ok: true, action, count: ok, skipped, taskIds };
   });
 
@@ -193,6 +195,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const result = await cancelTaskRecord(t);
     emitTaskChange();
     wakeTaskQueues();
+    await writeAudit(req, "task.cancel", `Task:${id}`, { before: t, after: result, result: result.ok ? "ok" : "failed" });
     return result;
   });
 
@@ -201,6 +204,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const t = await prisma.task.findUnique({ where: { id } });
     const result = await pauseTaskRecord(t);
     emitTaskChange();
+    await writeAudit(req, "task.pause", `Task:${id}`, { before: t, after: result, result: result.ok ? "ok" : "failed" });
     return result;
   });
 
@@ -210,6 +214,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const result = await resumeTaskRecord(t);
     emitTaskChange();
     wakeTaskQueues();
+    await writeAudit(req, "task.resume", `Task:${id}`, { before: t, after: result, result: result.ok ? "ok" : "failed" });
     return result;
   });
 
@@ -222,6 +227,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     await prisma.task.update({ where: { id }, data: { priority } });
     emitTaskChange();
     wakeTaskQueues();
+    await writeAudit(req, "task.priority", `Task:${id}`, { before: t, after: { priority }, result: "ok" });
     return { ok: true, priority };
   });
 
@@ -232,6 +238,7 @@ export default async function taskRoutes(app: FastifyInstance) {
     const result = await retryTaskRecord(t);
     emitTaskChange();
     wakeTaskQueues();
+    await writeAudit(req, "task.retry", `Task:${id}`, { before: t, after: result, result: result.ok ? "ok" : "failed" });
     return result;
   });
 

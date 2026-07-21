@@ -22,7 +22,13 @@
         </button>
         <div class="x8-search-pop">
           <div class="x8-search-pop-scroll">
-            <div class="x8-search-history-box">
+            <div v-if="kw && x8SearchSuggests.length" class="x8-search-suggest-box">
+              <button v-for="vod in x8SearchSuggests" :key="`x8-suggest-${vod.id}`" type="button" @mousedown.prevent @click.stop="pickSearchSuggest(vod)">
+                <strong>{{ vod.name }}</strong>
+                <span>{{ [vod.typeName, vod.year, vod.remarks].filter(Boolean).join(' · ') }}</span>
+              </button>
+            </div>
+            <div v-else class="x8-search-history-box">
               <div class="x8-search-pop-title">
                 <span>搜索历史</span>
                 <button class="x8-search-clear" type="button" aria-label="清空搜索历史" @mousedown.prevent @click.stop="clearSearchHistory">
@@ -1017,6 +1023,7 @@ const searchFocused = ref(false)
 const historyDropdownLeft = ref('10px')
 const userDropdownLeft = ref('10px')
 const searchHints = ref([])
+const x8SearchSuggests = ref([])
 const searchHintIdx = ref(0)
 const searchHistoryRows = ref([])
 const heroIdx = ref(0)
@@ -1097,6 +1104,8 @@ let heroTouchX = 0
 let heroTimer = 0
 let searchHintTimer = 0
 let searchBlurTimer = 0
+let x8SuggestTimer = 0
+let x8SuggestSeq = 0
 let controlsTimer = 0
 let browseRequestId = 0
 let historySaveAt = 0
@@ -1747,6 +1756,25 @@ function clearSearchHistory() {
 }
 function pickSearchWord(word) {
   submitSearch(word)
+}
+function pickSearchSuggest(vod) {
+  submitSearch(vod?.name || '')
+}
+async function loadX8SearchSuggests() {
+  const text = String(kw.value || '').trim()
+  if (!text) {
+    x8SearchSuggests.value = []
+    return
+  }
+  const seq = ++x8SuggestSeq
+  try {
+    const rows = await api.vodSuggest(text, 10)
+    if (seq !== x8SuggestSeq) return
+    x8SearchSuggests.value = Array.isArray(rows) ? rows.filter(item => item?.id && item?.name).slice(0, 10) : []
+    searchFocused.value = true
+  } catch {
+    if (seq === x8SuggestSeq) x8SearchSuggests.value = []
+  }
 }
 function setLoginMode(mode) {
   if (mode === 'register' && !loginConfig.value.allowRegister) {
@@ -3091,6 +3119,10 @@ watch(x8UserAccessSignature, () => {
   void refreshX8Types()
   void refreshFollowedIds()
 })
+watch(kw, () => {
+  clearTimeout(x8SuggestTimer)
+  x8SuggestTimer = window.setTimeout(loadX8SearchSuggests, 180)
+})
 watch(x8HistoryPageCount, (count) => {
   if (x8HistoryPage.value > count) x8HistoryPage.value = count
 })
@@ -3122,6 +3154,7 @@ onBeforeUnmount(() => {
   clearInterval(heroTimer)
   clearInterval(searchHintTimer)
   clearTimeout(searchBlurTimer)
+  clearTimeout(x8SuggestTimer)
   clearTimeout(controlsTimer)
   destroyHls()
   destroyTrailerHls()
@@ -3330,6 +3363,43 @@ onBeforeUnmount(() => {
   position: relative;
   margin: 0 12px;
   color: rgba(255,255,255,.6);
+}
+.x8-search-suggest-box {
+  padding: 8px;
+}
+.x8-search-suggest-box button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+  background: transparent;
+}
+.x8-search-suggest-box button:hover {
+  background: rgba(255, 255, 255, .08);
+  transform: none;
+}
+.x8-search-suggest-box strong,
+.x8-search-suggest-box span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.x8-search-suggest-box strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.x8-search-suggest-box span {
+  flex: 0 0 auto;
+  max-width: 46%;
+  color: #9ca3af;
+  font-size: 12px;
 }
 .x8-search-history-box::after {
   content: "";

@@ -6,6 +6,7 @@ import { ensureDefaultVipLevel, isVipLevelActive, publicVipLevel } from "../vipL
 import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../loginRateLimit.js";
 import { clientIpOf, recordLoginLog } from "../logging.js";
 import { withHeatFields } from "../heat.js";
+import { writeAudit } from "./access.js";
 
 const RECOMMENDATION_CACHE_TTL_MS = 60_000;
 const recommendationCache = new Map<string, { ts: number; data: any }>();
@@ -298,12 +299,14 @@ export default async function userRoutes(app: FastifyInstance) {
     if ("favoriteTypes" in b) data.favoriteTypes = JSON.stringify(normalizeTypes(b.favoriteTypes));
     if (!Object.keys(data).length) return reply.code(400).send({ error: "没有可更新字段" });
     try {
+      const before = await prisma.webUser.findUnique({ where: { id }, include: { vipLevel: true } });
       const u = await prisma.webUser.update({
         where: { id },
         data,
         include: { _count: { select: { follows: true, histories: true } }, vipLevel: true },
       });
       invalidateUserRecommendation(id);
+      await writeAudit(req, "web_user.update", `WebUser:${id}`, { before, after: u, result: "ok" });
       return adminUser(u);
     } catch {
       return reply.code(404).send({ error: "用户不存在" });
@@ -326,8 +329,10 @@ export default async function userRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: "用户ID无效" });
     try {
+      const before = await prisma.webUser.findUnique({ where: { id }, include: { vipLevel: true } });
       await prisma.webUser.delete({ where: { id } });
       invalidateUserRecommendation(id);
+      await writeAudit(req, "web_user.delete", `WebUser:${id}`, { before, after: null, result: "ok" });
       return { ok: true };
     } catch {
       return reply.code(404).send({ error: "用户不存在" });

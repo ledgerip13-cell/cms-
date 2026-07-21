@@ -18,6 +18,7 @@ function serviceWorkerPlugin() {
         source: `
 const VERSION = '${version}';
 const CACHE_NAME = 'vcms-web-' + VERSION;
+const API_CACHE_NAME = 'vcms-api-' + VERSION;
 const SHELL = ['/', '/index.html'];
 
 // ===== iCloud 客户端解析（方案A）——合并自 cloud-worker.js =====
@@ -85,7 +86,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith('vcms-web-') && key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => (key.startsWith('vcms-web-') && key !== CACHE_NAME) || (key.startsWith('vcms-api-') && key !== API_CACHE_NAME)).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -103,7 +104,11 @@ self.addEventListener('fetch', (event) => {
   if (icloudTarget.includes('/iclouddrive/')) { event.respondWith(handleICloud(icloudTarget, request)); return; }
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) {
+    if (shouldCacheApi(url)) event.respondWith(apiNetworkFirst(request));
+    return;
+  }
   if (request.destination === 'video' || request.destination === 'audio') return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(() => caches.match('/index.html')));
@@ -118,6 +123,27 @@ self.addEventListener('fetch', (event) => {
     }))
   );
 });
+function shouldCacheApi(url) {
+  if (url.pathname === '/api/vods') return true;
+  if (url.pathname === '/api/hot' || url.pathname === '/api/types' || url.pathname === '/api/categories') return true;
+  if (/^\\/api\\/vods\\/\\d+$/.test(url.pathname)) return true;
+  return false;
+}
+async function apiNetworkFirst(request) {
+  const cache = await caches.open(API_CACHE_NAME);
+  try {
+    const response = await fetch(request);
+    if (response && response.ok && response.type === 'basic') cache.put(request, response.clone()).catch(() => {});
+    return response;
+  } catch (e) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return new Response(JSON.stringify({ offline: true, error: 'offline_cache_miss' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
+  }
+}
 `.trim(),
       })
     },

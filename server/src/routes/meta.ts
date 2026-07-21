@@ -10,6 +10,7 @@ import {
 } from "../collector/douban.js";
 import { tmdbSuggest } from "../collector/tmdb.js";
 import { enabledMetaProviders, metaProviderByKey, normalizeMetaProviders, type MetaProviderConfig } from "../metaProviders.js";
+import { writeAudit } from "./access.js";
 
 function clampScore(value: unknown, fallback: number) {
   const n = Number(value);
@@ -126,7 +127,7 @@ export default async function metaRoutes(app: FastifyInstance) {
   // 单片手动重匹配：统一走后台任务队列，沿用当前元数据源/并发配置。
   app.post("/api/meta/match/:id", async (req) => {
     const id = Number((req.params as any).id);
-    const v = await prisma.vod.findUnique({ where: { id }, select: { id: true } });
+    const v = await prisma.vod.findUnique({ where: { id } });
     if (!v) return { ok: false, error: "影片不存在" };
     const provider = String((req.body as any)?.provider || "");
     const task = await createMetaTask({
@@ -179,6 +180,7 @@ export default async function metaRoutes(app: FastifyInstance) {
       doubanId: doubanId ? String(doubanId) : undefined,
       priority: 20,
     });
+    await writeAudit(req, "meta.confirm", `Vod:${id}`, { before: v, after: { provider, providerId, taskId: task.id }, result: "ok" });
     return { ok: true, taskId: task.id, message: "已提交后台确认，稍后自动写入元数据" };
   });
 

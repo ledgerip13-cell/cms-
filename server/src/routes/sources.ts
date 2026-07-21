@@ -27,9 +27,13 @@ export default async function sourceRoutes(app: FastifyInstance) {
       ? b.ids.map((x: any) => Number(x)).filter((n: number) => Number.isInteger(n) && n > 0)
       : [];
     if (ids.length) {
+      const before = await prisma.source.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, cleanOnly: true } });
       await prisma.source.updateMany({ where: { id: { in: ids } }, data: { cleanOnly: enabled } });
+      await writeAudit(req, "source.cleanOnly.batch", ids.length ? `Source:${ids.join(",")}` : "Source:*", { before, after: { cleanOnly: enabled }, result: "ok" });
     } else {
+      const before = await prisma.source.findMany({ select: { id: true, name: true, cleanOnly: true } });
       await prisma.source.updateMany({ data: { cleanOnly: enabled } });
+      await writeAudit(req, "source.cleanOnly.batch", "Source:*", { before, after: { cleanOnly: enabled }, result: "ok" });
     }
     invalidatePublicVodCaches("source");
     return { ok: true, cleanOnly: enabled, count: ids.length || undefined };
@@ -70,6 +74,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
     });
     await reloadSchedules();
     invalidatePublicVodCaches("source");
+    await writeAudit(req, "source.create", `Source:${s.id}`, { before: null, after: s, result: "ok" });
     return s;
   });
 
@@ -77,6 +82,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
   app.put("/api/sources/:id", async (req, reply) => {
     const id = Number((req.params as any).id);
     const b = req.body as any;
+    const before = await prisma.source.findUnique({ where: { id } });
     const data: any = {
       name: b.name,
       apiUrl: b.apiUrl,
@@ -105,6 +111,7 @@ export default async function sourceRoutes(app: FastifyInstance) {
     const s = await prisma.source.update({ where: { id }, data });
     await reloadSchedules();
     if (b.enabled !== undefined) invalidatePublicVodCaches("source");
+    await writeAudit(req, "source.update", `Source:${id}`, { before, after: s, result: "ok" });
     return s;
   });
 
@@ -114,9 +121,11 @@ export default async function sourceRoutes(app: FastifyInstance) {
   // 删除
   app.delete("/api/sources/:id", async (req) => {
     const id = Number((req.params as any).id);
+    const before = await prisma.source.findUnique({ where: { id } });
     await prisma.source.delete({ where: { id } });
     await reloadSchedules();
     invalidatePublicVodCaches("source");
+    await writeAudit(req, "source.delete", `Source:${id}`, { before, after: null, result: "ok" });
     return { ok: true };
   });
 

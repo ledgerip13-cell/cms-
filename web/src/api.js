@@ -8,6 +8,7 @@ http.interceptors.request.use(cfg => {
 http.interceptors.response.use(r => r.data)
 export const api = {
   vods: (params) => http.get('/vods', { params }),
+  vodSuggest: (kw, limit = 10) => http.get('/vods/suggest', { params: { kw, limit } }),
   vod: (id) => http.get(`/vods/${id}`),
   types: () => http.get('/types'),
   categories: () => http.get('/categories'),

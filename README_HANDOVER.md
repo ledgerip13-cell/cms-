@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 播放治理升级）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 运营中心 + PWA/搜索联想）
 
 ---
 
@@ -90,7 +90,8 @@ video-cms/
 │       │   ├── img.ts          #   图片代理/服务
 │       │   ├── users.ts        #   后台用户 + Web 用户管理
 │       │   ├── hot.ts          #   热榜配置
-│       │   ├── access.ts       #   访问审计/访问控制
+│       │   ├── access.ts       #   邀请码/VIP等级/操作审计
+│       │   ├── ops.ts          #   QC问题队列 + 源SLA面板
 │       │   ├── hlsClean.ts     #   HLS 清洗配置 + 结果
 │       │   └── hlsProxy.ts     #   HLS 播放代理
 │       │
@@ -112,7 +113,7 @@ video-cms/
 │           └── tsProbe.ts      #   TS 分片探测
 │
 ├── admin/                      # 运营后台(Vue3 + Element Plus)
-│   └── src/views/             # Login/Dashboard/Sources/Vods/Categories/Tasks/Meta/Site/Users/Hot/Access/HlsClean
+│   └── src/views/             # Login/Dashboard/Sources/Vods/Categories/Tasks/Meta/Site/Users/Hot/Access/HlsClean/Ops
 │
 └── web/                        # 观众前端(Vue3 + hls.js)
     └── src/
@@ -122,8 +123,8 @@ video-cms/
         └── components/        # AuthModal/ToastStack
 ```
 
-### Prisma 数据模型（26 个）
-`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `AccessAudit` `Vod` `VodAlias` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
+### Prisma 数据模型（34 个）
+`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `Vod` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
 
 ---
 
@@ -169,6 +170,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 P1 运营中心 + 前台体验断点**：新增 `QcIssue` 持久模型与 `server/src/routes/ops.ts`，后台 `/ops` 提供 QC 问题队列（无线路、全死链、无封面、元数据待确认、HLS 清洗失败、播放错误高发）及认领/处理/关闭/复核动作；源 SLA 面板按 7/30 天展示成功率、平均耗时、最近失败原因、质量排行和趋势。操作审计补齐影片上下架/编辑/删除/图片/转存、源新增/修改/删除/启停/仅清洗、分类/映射、元数据确认、任务暂停/恢复/重试/取消、前台用户/VIP 修改，detail 统一记录 `before/after/result`，操作者/IP 由 `AuditLog` 保留。前台新增 `/api/vods/suggest`，移动搜索和 X8 顶部搜索输入时下拉后台匹配影片名，最多 10 个；PWA Service Worker 新增片库/详情/分类/热榜 JSON network-first 缓存，离线时可回退最近成功数据，视频流和写接口仍不缓存。
 - **2026-07-22 P1 播放治理升级断点**：播放错误日志结构已统一，`PlaybackErrorLog` 新增 `url/rule/proxyMode/cleanId/fallbackUrl/hlsErrorData/ipType` 字段，服务端 `recordPlaybackError()` 会从根字段、`detail.current`、`detail.failures[0]` 兜底归一，避免后台空线路/空 URL；后台“播放错误”页新增按影片/线路/源/地区/IP 类型聚合接口与 UI，并展示源、规则、代理、URL、IP 类型。线路健康评分落到 `Play`：新增 `playSuccessCount/playFailureCount/avgResponseMs/lastSuccessAt/lastFailureAt/healthReason`，`/api/resolve` 成功与 `/api/playback-errors` 失败都会更新健康分，前台/后台原有按 `score` 排序自然降权失败线路，后台线路抽屉展示成功/失败和最近时间。clean/proxy/direct 优先级已明确为 `clean 命中 > proxy/key > direct`；`cleanOnly` 源无 clean 命中时直接返回 `hls_clean_missing/hls_clean_disabled`，不再回源原始 m3u8，clean 命中新增默认 7 天新鲜度限制，可用 `HLS_CLEAN_MAX_AGE_HOURS` 覆盖。金牌诊断结果新增 `jinpai/jinpaiStatus`，展示客户端 IP、CF IP、签名 IP、CDN host、源站签名状态、本站探测状态与用户侧提示；后台诊断金牌原线路只走前台签名链，不再用本地转存结果冒充原线路可播。
 - **2026-07-21 TS 代理流式化与真实播放诊断断点**：`/api/hls-ts` 已从整段 `arrayBuffer()` 进内存改为 `Readable.fromWeb(...).pipe(Transform)` 流式转发，仅 TS 分片走流式，m3u8/key 继续走小体积 `safeFetch`；新增默认限制 `TS_PROXY_TIMEOUT_MS=20000`、`TS_PROXY_MAX_BYTES=67108864`、`TS_PROXY_MAX_CONCURRENCY=24`（均可选 env 覆盖），回源前按 `Content-Length` 预拒超大响应，流中累计字节超过上限会 abort，并发超限返回 429，超大返回 413。后台“线路播放诊断”不再手写解析线路，而是内部调用同一条 `/api/resolve?diagnose=1` 真实播放规则链：覆盖 clean、proxy/key、iCloud 客户端 SW、金牌签名、本地转存 token 等最终 URL 形态；随后服务端继续探测 m3u8、key、首个 ts Range 与 CORS 头，返回 `probeSummary/probe.stages`，后台 UI 优先展示真实链路阶段状态，解决“后台只显示可解析但前台实际播不了”的假绿问题。`diagnose=1` 只在携带有效后台 admin token 时绕过登录/VIP观看权限，不影响普通前台 `/api/resolve`。
 - **2026-07-21 本地转存播放入口 token 权限断点**：`/api/resolve` 返回 `rule=local_archive` 时不再下发裸 `/api/jinpai-local/.../index.m3u8`，改为追加 30 分钟播放 token；token 复用现有 `signPlaybackToken`，额外写入 `scope=jinpai_local`、`sourceVodId`、`nid`、`playId`、`sourceId`、`epIndex`，本地 HLS 路由校验 `scope/sourceVodId/nid` 后才允许读取。`/api/jinpai-local/:vodId/:nid/:file` 现在对 `index.m3u8`、`seg_*.ts`、`key_*.key` 全部校验 `token/t`，失败 403，非法文件名/缺文件仍 404；下发 m3u8 文本时会把 archive 内相对 `seg_*.ts` 和 `key_*.key` 自动改写为带同一 `token` 的相对 URL，播放器后续请求可继续通过校验。仅保护本地 archive 文件入口，不代理金牌源，不新增依赖；后台诊断本地链接同步带 token。

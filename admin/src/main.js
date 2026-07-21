@@ -17,23 +17,25 @@ import Users from './views/Users.vue'
 import Hot from './views/Hot.vue'
 import Access from './views/Access.vue'
 import HlsClean from './views/HlsClean.vue'
+import Ops from './views/Ops.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/login', component: Login, meta: { public: true } },
     { path: '/', redirect: '/dashboard' },
-    { path: '/dashboard', component: Dashboard, meta: { title: '概览' } },
+    { path: '/dashboard', component: Dashboard, meta: { title: '运行概览' } },
     { path: '/sources', component: Sources, meta: { title: '采集源管理' } },
-    { path: '/tasks', component: Tasks, meta: { title: '采集任务' } },
-    { path: '/categories', component: Categories, meta: { title: '分类映射' } },
-    { path: '/vods', component: Vods, meta: { title: '影片库' } },
+    { path: '/tasks', component: Tasks, meta: { title: '采集任务进度' } },
+    { path: '/categories', component: Categories, meta: { title: '分类映射面板' } },
+    { path: '/vods', component: Vods, meta: { title: '影片库管理' } },
     { path: '/hot', component: Hot, meta: { title: '热门推荐' } },
-    { path: '/hls-clean', component: HlsClean, meta: { title: 'HLS清洗' } },
+    { path: '/hls-clean', component: HlsClean, meta: { title: '播放治理' } },
+    { path: '/ops', component: Ops, meta: { title: '质量监控' } },
     { path: '/users', component: Users, meta: { title: '用户管理' } },
-    { path: '/access', component: Access, meta: { title: '权限管理' } },
-    { path: '/meta', component: Meta, meta: { title: '元数据' } },
-    { path: '/site', component: Site, meta: { title: '站点设置' } },
+    { path: '/access', component: Access, meta: { title: '权限访问' } },
+    { path: '/meta', component: Meta, meta: { title: '元数据匹配' } },
+    { path: '/site', component: Site, meta: { title: '系统设置' } },
   ]
 })
 

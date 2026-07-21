@@ -6,8 +6,14 @@
       </button>
       <form class="msr-form" @submit.prevent="submitSearch">
         <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
-        <input ref="inputEl" v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" />
+        <input ref="inputEl" v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" @focus="suggestOpen = true" @blur="closeSuggestSoon" />
         <button v-if="draftKw" class="msr-clear" type="button" aria-label="清空" @click="clearDraft">×</button>
+        <div v-if="suggestOpen && searchSuggests.length" class="msr-suggest-pop">
+          <button v-for="vod in searchSuggests" :key="vod.id" type="button" @mousedown.prevent @click="pickSuggest(vod)">
+            <strong>{{ vod.name }}</strong>
+            <span>{{ [vod.typeName, vod.year, vod.remarks].filter(Boolean).join(' · ') }}</span>
+          </button>
+        </div>
       </form>
       <button class="msr-submit" type="button" @click="submitSearch">搜索</button>
     </header>
@@ -144,6 +150,8 @@ const rankTabsEl = ref(null)
 const resultTabsEl = ref(null)
 let rankRequestId = 0
 let headRaf = 0
+let suggestTimer = 0
+let suggestSeq = 0
 
 const rankTabs = [
   { key: 'hot', label: '综合热搜榜' },
@@ -158,6 +166,8 @@ const resultTabs = [
   { key: 'movie', label: '电影', type: '电影' },
   { key: 'tv', label: '电视剧', type: '电视剧' },
 ]
+const searchSuggests = ref([])
+const suggestOpen = ref(false)
 
 const activeKw = computed(() => String(route.query.kw || '').trim())
 const fromShorts = computed(() => String(route.query.from || '') === 'shorts')
@@ -200,6 +210,7 @@ function refreshSuggest() {
 
 function clearDraft() {
   draftKw.value = ''
+  searchSuggests.value = []
   inputEl.value?.focus?.()
 }
 
@@ -217,6 +228,34 @@ function submitSearch() {
 function pickWord(word) {
   draftKw.value = word
   submitSearch()
+}
+
+function pickSuggest(vod) {
+  draftKw.value = String(vod?.name || '').trim()
+  searchSuggests.value = []
+  suggestOpen.value = false
+  submitSearch()
+}
+
+function closeSuggestSoon() {
+  window.setTimeout(() => { suggestOpen.value = false }, 120)
+}
+
+async function loadSearchSuggests() {
+  const kw = String(draftKw.value || '').trim()
+  if (!kw || kw === activeKw.value) {
+    searchSuggests.value = []
+    return
+  }
+  const seq = ++suggestSeq
+  try {
+    const rows = await api.vodSuggest(kw, 10)
+    if (seq !== suggestSeq) return
+    searchSuggests.value = Array.isArray(rows) ? rows.filter(vod => vod?.id && vod?.name).slice(0, 10) : []
+    suggestOpen.value = true
+  } catch {
+    if (seq === suggestSeq) searchSuggests.value = []
+  }
 }
 
 function pickResultTab(key) {
@@ -413,6 +452,11 @@ watch(activeKw, async (kw) => {
   }
 }, { immediate: true })
 
+watch(draftKw, () => {
+  clearTimeout(suggestTimer)
+  suggestTimer = window.setTimeout(loadSearchSuggests, 180)
+})
+
 watch(rankTab, async () => {
   await Promise.allSettled([loadRank(), syncHorizontalTabs()])
 })
@@ -431,6 +475,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onPageScroll)
   if (headRaf) cancelAnimationFrame(headRaf)
+  clearTimeout(suggestTimer)
 })
 </script>
 
@@ -496,6 +541,7 @@ onBeforeUnmount(() => {
   gap: 9px;
   background: #f2f3f5;
   box-shadow: none;
+  position: relative;
 }
 .msr-form svg {
   width: 18px;
@@ -532,6 +578,52 @@ onBeforeUnmount(() => {
   font-size: 17px;
   font-weight: 800;
   letter-spacing: 0;
+}
+.msr-suggest-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  padding: 6px;
+  border: 1px solid #eceef2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(21, 25, 36, .14);
+}
+.msr-suggest-pop button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+.msr-suggest-pop button:active {
+  background: #f4f5f7;
+}
+.msr-suggest-pop strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f232b;
+  font-size: 14px;
+  font-weight: 500;
+}
+.msr-suggest-pop span {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8d95a1;
+  font-size: 12px;
 }
 .msr-section {
   margin-top: 18px;

@@ -136,6 +136,10 @@ export const api = {
   playbackErrorAggregate: (params = {}) => http.get('/admin/logs/playback-errors/aggregate', { params }),
   loginLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/logins', { params }),
   accessLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/access', { params }),
+  qcIssues: (params = { page: 1, size: 50 }) => http.get('/admin/qc/issues', { params }),
+  scanQcIssues: () => http.post('/admin/qc/issues/scan'),
+  updateQcIssue: (id, action, d = {}) => http.post(`/admin/qc/issues/${id}/${action}`, d),
+  sourceSla: (days = 7) => http.get('/admin/source-sla', { params: { days } }),
   // site
   site: () => http.get('/site'),
   adminSite: () => http.get('/admin/site'),

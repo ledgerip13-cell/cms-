@@ -5,6 +5,7 @@ import { CATEGORIES, classifyType } from "../collector/classify.js";
 import { inferCategoryIcon, normalizeCategoryIcon } from "../categoryIcons.js";
 import { categoryAllowed, invalidatePublicVodCaches, normalizeAccessLevelIds, normalizeDisplayAccessMode, normalizeWatchAccessMode, viewerFromRequest } from "../publicVod.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
+import { writeAudit } from "./access.js";
 
 const CATEGORY_COUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -150,6 +151,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
       invalidatePublicVodCaches("category");
       invalidateCategoryCountCache();
+      await writeAudit(req, "category.create", `Category:${row.id}`, { before: null, after: row, result: "ok" });
       return row;
     });
     admin.put("/api/admin/categories/:id", async (req) => {
@@ -164,6 +166,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       const backfilled = before && b.name && b.name !== before.name ? await backfillCategoryMaps(id) : 0;
       invalidatePublicVodCaches("category");
       invalidateCategoryCountCache();
+      await writeAudit(req, "category.update", `Category:${id}`, { before, after: row, backfilled, result: "ok" });
       return { ...row, backfilled };
     });
     admin.delete("/api/admin/categories/:id", async (req) => {
@@ -174,6 +177,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       for (const m of maps) backfilled += await backfillMapToVods(m.id);
       invalidatePublicVodCaches("category");
       invalidateCategoryCountCache();
+      await writeAudit(req, "category.delete", `Category:${id}`, { before: { id, maps }, after: null, backfilled, result: "ok" });
       return { ok: true, backfilled };
     });
 
@@ -237,6 +241,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       let backfilled = 0;
       for (const row of rows) backfilled += await backfillMapToVods(row.id);
       invalidateCategoryCountCache();
+      await writeAudit(req, "typemap.batch", `SourceTypeMap:${rows.map((row) => row.id).join(",")}`, { before: rows, after: { categoryId }, backfilled, result: "ok" });
       return { ok: true, updated: rows.length, backfilled };
     });
 
@@ -244,6 +249,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
     admin.post("/api/admin/typemaps/:id", async (req) => {
       const id = Number((req.params as any).id);
       const { categoryId } = req.body as any;
+      const before = await prisma.sourceTypeMap.findUnique({ where: { id }, include: { category: true, source: { select: { name: true } } } });
       const row = await prisma.sourceTypeMap.update({
         where: { id },
         data: { categoryId: categoryId ?? null },
@@ -251,6 +257,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
       const backfilled = await backfillMapToVods(id);
       invalidateCategoryCountCache();
+      await writeAudit(req, "typemap.update", `SourceTypeMap:${id}`, { before, after: row, backfilled, result: "ok" });
       return { ...row, backfilled };
     });
 
@@ -260,6 +267,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
       const row = await prisma.sourceTypeMap.findUnique({ where: { id } });
       if (!row) return reply.code(404).send({ error: "映射不存在" });
       await prisma.sourceTypeMap.delete({ where: { id } });
+      await writeAudit(req, "typemap.delete", `SourceTypeMap:${id}`, { before: row, after: null, result: "ok" });
       return { ok: true };
     });
 

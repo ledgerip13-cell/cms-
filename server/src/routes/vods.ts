@@ -14,6 +14,7 @@ import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "
 import { withHeatFields } from "../heat.js";
 import { assertSafeUrl } from "../playProxy.js";
 import { clientIpOf } from "../logging.js";
+import { writeAudit } from "./access.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
@@ -1242,6 +1243,41 @@ export default async function vodRoutes(app: FastifyInstance) {
     return picks.slice(0, take).map(publicVodCard);
   });
 
+  app.get("/api/vods/suggest", async (req) => {
+    const q = (req.query as any) || {};
+    const kw = String(q.kw || "").trim();
+    if (!kw) return [];
+    const limit = Math.max(1, Math.min(10, Number(q.limit) || 10));
+    const viewer = await viewerFromRequest(req);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const rows = await prisma.vod.findMany({
+      where: {
+        status: "online",
+        typeName: publicTypeFilter(publicTypes),
+        ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+        OR: [
+          { name: { contains: kw, mode: "insensitive" } },
+          { aliases: { some: { note: { contains: kw, mode: "insensitive" } } } },
+          { matchedTitle: { contains: kw, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true, typeName: true, year: true, remarks: true, officialPic: true, pic: true, localPic: true, heroPic: true },
+      orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
+      take: limit,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      typeName: row.typeName,
+      year: row.year,
+      remarks: row.remarks,
+      officialPic: row.officialPic,
+      pic: row.pic,
+      localPic: row.localPic,
+      heroPic: row.heroPic,
+    }));
+  });
+
   // 影片详情 + 所有线路（按源优先级排序）
   app.get("/api/vods/:id", async (req, reply) => {
     const id = Number((req.params as any).id);
@@ -1528,14 +1564,17 @@ export default async function vodRoutes(app: FastifyInstance) {
       const ids: number[] = Array.isArray(b.ids) ? b.ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n)) : [];
       const action = String(b.action || "");
       if (!ids.length) return { ok: false, error: "未选择任何影片" };
+      const before = await prisma.vod.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, status: true, typeName: true, updatedAt: true } });
       if (action === "offline") {
         const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "offline" } });
         invalidateAggregateCache();
+        await writeAudit(req, "vod.offline.batch", `Vod:${ids.join(",")}`, { before, after: { status: "offline", count: r.count }, result: "ok" });
         return { ok: true, count: r.count };
       }
       if (action === "online") {
         const r = await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status: "online" } });
         invalidateAggregateCache();
+        await writeAudit(req, "vod.online.batch", `Vod:${ids.join(",")}`, { before, after: { status: "online", count: r.count }, result: "ok" });
         return { ok: true, count: r.count };
       }
       if (action === "delete") {
@@ -1543,6 +1582,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         await prisma.play.deleteMany({ where: { vodId: { in: ids } } });
         const r = await prisma.vod.deleteMany({ where: { id: { in: ids } } });
         invalidateAggregateCache();
+        await writeAudit(req, "vod.delete.batch", `Vod:${ids.join(",")}`, { before, after: null, count: r.count, result: "ok" });
         return { ok: true, count: r.count };
       }
       return { ok: false, error: "不支持的操作类型" };
@@ -1620,6 +1660,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       }
       const image = await prisma.vodImage.findFirst({ where: { id: imageId, vodId }, select: { id: true, url: true } });
       if (!image) return reply.code(404).send({ ok: false, error: "图片资产不存在" });
+      const before = await prisma.vod.findUnique({ where: { id: vodId }, select: { id: true, name: true, officialPic: true, heroPic: true } });
       await prisma.$transaction(async (tx) => {
         const vod = await tx.vod.findUnique({ where: { id: vodId }, select: { officialPic: true, heroPic: true } });
         const data: any = {};
@@ -1628,6 +1669,8 @@ export default async function vodRoutes(app: FastifyInstance) {
         if (Object.keys(data).length) await tx.vod.update({ where: { id: vodId }, data });
         await tx.vodImage.delete({ where: { id: image.id } });
       });
+      const after = await prisma.vod.findUnique({ where: { id: vodId }, select: { id: true, name: true, officialPic: true, heroPic: true } });
+      await writeAudit(req, "vod.image.delete", `Vod:${vodId}:Image:${imageId}`, { before, after, image, result: "ok" });
       return { ok: true };
     });
 
@@ -1638,6 +1681,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const b = (req.body as any) || {};
     const data: any = {};
+    const before = await prisma.vod.findUnique({ where: { id }, include: { aliases: true } });
     const currentForAliases = b.aliases !== undefined
       ? await prisma.vod.findUnique({ where: { id }, select: { name: true, year: true } })
       : null;
@@ -1682,6 +1726,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       vod = await prisma.vod.update({ where: { id }, data });
     }
     if ("typeName" in data || "status" in data || "year" in data) invalidateAggregateCache();
+    await writeAudit(req, "vod.update", `Vod:${id}`, { before, after: vod, result: "ok" });
     return { ok: true, vod };
   });
 
@@ -1700,16 +1745,21 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.post("/api/vods/:id/archive", { preHandler: authGuard }, async (req, reply) => {
     const id = Number((req.params as any).id);
     const force = !!(req.body as any)?.force;
+    const before = await prisma.vod.findUnique({ where: { id }, select: { id: true, name: true, archiveStatus: true, archiveRes: true, archiveSize: true, archiveEps: true } });
     const play = await prisma.play.findFirst({ where: { vodId: id, flag: JINPAI_FLAG }, select: { id: true } });
     if (!play) return reply.code(400).send({ ok: false, error: "该影片无 jinpai 线路，不支持转存" });
     const task = await createArchiveTask({ vodId: id, force, priority: 90 });
+    await writeAudit(req, force ? "vod.archive.retry" : "vod.archive.create", `Vod:${id}`, { before, after: { taskId: task.id, status: task.status }, result: "ok" });
     return { ok: true, taskId: task.id, status: task.status };
   });
 
   // 取消/删除本地转存（清文件 + 置 archiveStatus=off，不再受源级自动转存）
   app.delete("/api/vods/:id/archive", { preHandler: authGuard }, async (req) => {
     const id = Number((req.params as any).id);
+    const before = await prisma.vod.findUnique({ where: { id }, select: { id: true, name: true, archiveStatus: true, archiveRes: true, archiveSize: true, archiveEps: true } });
     await removeArchive(id);
+    const after = await prisma.vod.findUnique({ where: { id }, select: { id: true, name: true, archiveStatus: true, archiveRes: true, archiveSize: true, archiveEps: true } });
+    await writeAudit(req, "vod.archive.cancel", `Vod:${id}`, { before, after, result: "ok" });
     return { ok: true };
   });
 
@@ -1717,11 +1767,13 @@ export default async function vodRoutes(app: FastifyInstance) {
   app.patch("/api/vods/:id", { preHandler: authGuard }, async (req) => {
     const id = Number((req.params as any).id);
     const b = req.body as any;
+    const before = await prisma.vod.findUnique({ where: { id }, select: { id: true, name: true, status: true, pinned: true } });
     const vod = await prisma.vod.update({
       where: { id },
       data: { status: b.status, pinned: b.pinned },
     });
     if (b.status !== undefined) invalidateAggregateCache();
+    await writeAudit(req, b.status !== undefined ? "vod.status.update" : "vod.pin.update", `Vod:${id}`, { before, after: { id: vod.id, name: vod.name, status: vod.status, pinned: vod.pinned }, result: "ok" });
     return vod;
   });
 
