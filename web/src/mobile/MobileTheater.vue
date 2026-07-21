@@ -348,7 +348,7 @@ function applyFilter() {
 
 function goPlay(id) {
   if (!id) return
-  router.push(`/m/play/${id}`)
+  router.push(`/m/detail/${id}`)
 }
 
 function vodParams(extra = {}) {

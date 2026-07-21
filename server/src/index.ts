@@ -16,6 +16,7 @@ import accessRoutes from "./routes/access.js";
 import hlsCleanRoutes from "./routes/hlsClean.js";
 import hlsProxyRoutes from "./routes/hlsProxy.js";
 import opsRoutes from "./routes/ops.js";
+import seoRoutes from "./routes/seo.js";
 import { authGuard, seedAdmin } from "./auth.js";
 import { seedVipLevels } from "./vipLevels.js";
 import { startScheduler } from "./scheduler.js";
@@ -39,6 +40,7 @@ app.get("/health", async () => ({ ok: true, ts: Date.now() }));
 installAccessLogger(app);
 
 await app.register(authRoutes);
+await app.register(seoRoutes);
 registerLogRoutes(app, authGuard);
 await app.register(sourceRoutes);
 await app.register(vodRoutes);

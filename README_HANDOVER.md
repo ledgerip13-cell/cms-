@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 前台/增长首段 + 后台布局优化）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P1 前台/增长首段 + 键盘/Meta布局回修）
 
 ---
 
@@ -189,6 +189,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 键盘控制与元数据概览布局回修断点**：定位键盘控制偶发失效不是数据/播放器状态丢失，而是 PC/X8 播放器快捷键此前要求 `document.activeElement` 位于播放器区域内；点击选集/页面空白/其它按钮后焦点离开播放器，空格与左右方向键不再接管，切换浏览器标签回来时焦点偶然恢复才表现为“恢复可用”。`web/src/components/DesktopVideoPlayer.vue` 与 `web/src/x8/X8Home.vue` 已改为播放页激活且非输入控件场景下全局接管快捷键，仍避开 `input/textarea/select/contenteditable`。`admin/src/views/Meta.vue` 概览页从单张窄卡 `minmax(360px,560px)` 改为大屏双列：左侧保留匹配操作与手动范围，右侧补处理概况、当前策略、匹配源卡片，`<1200px` 自动降为单列，解决大屏只在左侧显示一个小卡片的问题。已执行 `pnpm --dir admin build`、`pnpm --dir web build`、`pnpm --dir server build`、`git diff --check` 通过。
 - **2026-07-22 P1 前台/增长首段断点**：本轮避开并行代理正在修改的 `admin/`，只改 `server/`、`web/` 与交接文档。SEO 基础新增真实影片落地页 `server/src/routes/seo.ts`：`/vod/:id` 输出影片级 `title/description/canonical`、OG/Twitter card、`Movie/VideoObject` JSON-LD，并新增 `/sitemap.xml`、`/robots.txt`；`web/nginx.conf` 将 `/vod/`、`/sitemap.xml`、`/robots.txt` 反代到 server。移动端新增 `/m/detail/:id` 与 `/m/person/:id`：首页/搜索/剧场入口默认进详情页（刷剧搜索仍回 `/m/shorts`），详情展示简介、演员/导演、线路、选集、相关推荐、追剧、分享，演员/导演可进人物聚合页；详情页播放会带 `line/ep` query，`MobilePlay.vue` 按 query 还原线路/集数。搜索增强首段落地：`/api/vods` 支持地区、语言、年份、完结状态、VIP/免费、评分、排序筛选；移动搜索页新增筛选胶囊；新增 `SearchLog` 表和 `/api/search-logs`、`/api/search-hot-terms`，搜索结果首屏会记录搜索词并在空搜索页展示运营热搜词。已执行 `pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir web build`、`pnpm --dir server db:push` 通过；播放器“跳片头片尾/字幕样式”仍未接后台配置，留下一轮。
 - **2026-07-22 后台布局优化 + 系统设置组件拆分断点**：后台菜单/卡片布局完成三批优化：菜单标题与路由标题统一，`运营中心` 改名 `质量监控`，`播放治理` 升级为分组并新增独立 `admin/src/views/Playback.vue`；侧栏支持折叠，顶栏改面包屑；用户/质量监控/权限等表格行操作收敛，Access 裸数字输入补标签，日志表高改自适应；Vods/Sources/Tasks/Categories/Dashboard 工具栏统一，Sources 批量仅清洗收进下拉并保留确认，Vods 筛选与动作分区，Categories 加响应式断点，Dashboard 指标瘦身、双表大屏并排、可播放率低于 60% 标红，HlsClean 源/分类策略内嵌 Tab 拍平成 radio。`admin/src/views/Site.vue` 从约 56KB 巨型 5-Tab 文件拆成壳组件（加载/保存/Tab 装配）与 `admin/src/views/site/` 子组件：`SiteBasicTab.vue`、`SiteHomeTab.vue`、`SiteShortsTab.vue`、`SitePwaTab.vue`、`SiteThemeTab.vue`、`SitePreview.vue`、`siteTheme.js`；功能保持原有站点配置保存链路不变。已执行 `npm run build`（admin）、`git diff --check`、`docker compose up -d --build admin` 通过；运行态 `5151` 返回 HTTP 200，`vcms-admin/vcms-server` 均 Up。
 - **2026-07-22 P1 运营中心 + 前台体验断点**：新增 `QcIssue` 持久模型与 `server/src/routes/ops.ts`，后台 `/ops` 提供 QC 问题队列（无线路、全死链、无封面、元数据待确认、HLS 清洗失败、播放错误高发）及认领/处理/关闭/复核动作；源 SLA 面板按 7/30 天展示成功率、平均耗时、最近失败原因、质量排行和趋势。操作审计补齐影片上下架/编辑/删除/图片/转存、源新增/修改/删除/启停/仅清洗、分类/映射、元数据确认、任务暂停/恢复/重试/取消、前台用户/VIP 修改，detail 统一记录 `before/after/result`，操作者/IP 由 `AuditLog` 保留。前台新增 `/api/vods/suggest`，移动搜索和 X8 顶部搜索输入时下拉后台匹配影片名，最多 10 个；PWA Service Worker 新增片库/详情/分类/热榜 JSON network-first 缓存，离线时可回退最近成功数据，视频流和写接口仍不缓存。

@@ -51,7 +51,7 @@
                 <span class="mh-action-label">立即播放</span>
               </span>
             </button>
-            <button class="mh-secondary" type="button" @click.stop="goPlay(hero.id)">
+            <button class="mh-secondary" type="button" @click.stop="goDetail(hero.id)">
               <span class="mh-action-inner">
                 <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
                 <span class="mh-action-label">追剧</span>
@@ -103,7 +103,7 @@
         <button type="button" @click="goTheater('', block.sort)">更多</button>
       </div>
       <div class="mh-grid">
-        <article v-for="vod in block.items" :key="`${block.key}-${vod.id}`" class="mh-card" @click="goPlay(vod.id)">
+        <article v-for="vod in block.items" :key="`${block.key}-${vod.id}`" class="mh-card" @click="goDetail(vod.id)">
           <div class="mh-poster">
             <img class="m-img-fade" :src="poster(vod)" :alt="vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span v-if="vod.remarks" class="mh-mark">{{ vod.remarks }}</span>
@@ -185,12 +185,17 @@ function goPlay(id) {
   router.push(`/m/play/${id}`)
 }
 
+function goDetail(id) {
+  if (!id) return
+  router.push(`/m/detail/${id}`)
+}
+
 function onHeroClick(id) {
   if (ignoreHeroClick) {
     ignoreHeroClick = false
     return
   }
-  goPlay(id)
+  goDetail(id)
 }
 
 function goTheater(type = '', sort = '') {

@@ -31,6 +31,15 @@
         </div>
       </section>
 
+      <section v-if="hotWords.length" class="msr-section">
+        <div class="msr-section-head">
+          <h2>运营热搜词</h2>
+        </div>
+        <div class="msr-word-grid">
+          <button v-for="word in hotWords" :key="word" type="button" @click="pickWord(word)">{{ word }}</button>
+        </div>
+      </section>
+
       <section v-if="suggestItems.length" class="msr-section">
         <div class="msr-section-head">
           <h2>猜你想搜</h2>
@@ -89,6 +98,18 @@
         </button>
       </nav>
 
+      <section class="msr-filter-panel" aria-label="搜索筛选">
+        <div v-for="group in filterGroups" :key="group.key" class="msr-filter-row">
+          <span>{{ group.label }}</span>
+          <div>
+            <button v-for="item in group.items" :key="`${group.key}-${item.value}`" type="button" :class="{ on: filterValue(group.key) === item.value }" @click="setFilter(group.key, item.value)">
+              {{ item.label }}
+            </button>
+          </div>
+        </div>
+        <button v-if="hasActiveFilters" class="msr-filter-clear" type="button" @click="clearFilters">清除筛选</button>
+      </section>
+
       <section class="msr-results">
         <div v-if="resultLoading && !resultItems.length" class="msr-card-grid">
           <div v-for="i in 8" :key="i" class="msr-card msr-sk">
@@ -128,6 +149,7 @@ import { api, imgUrl } from '../api'
 import { icon } from './icons'
 
 const HISTORY_KEY = 'vcms.mobile.search.history'
+const FILTER_KEYS = ['area', 'lang', 'year', 'finish', 'vip', 'minRating', 'sort']
 
 const route = useRoute()
 const router = useRouter()
@@ -138,6 +160,7 @@ const baseSuggestItems = ref([])
 const suggestOffset = ref(0)
 const rankTab = ref('hot')
 const rankItems = ref([])
+const hotWords = ref([])
 const rankLoading = ref(false)
 const rankCache = ref({})
 const resultTab = ref('all')
@@ -145,7 +168,7 @@ const resultItems = ref([])
 const resultLoading = ref(false)
 const page = ref(1)
 const hasMore = ref(false)
-const headBg = ref('0')
+const headBg = ref('.9')
 const rankTabsEl = ref(null)
 const resultTabsEl = ref(null)
 let rankRequestId = 0
@@ -171,12 +194,60 @@ const suggestOpen = ref(false)
 
 const activeKw = computed(() => String(route.query.kw || '').trim())
 const fromShorts = computed(() => String(route.query.from || '') === 'shorts')
+const filterSignature = computed(() => FILTER_KEYS.map(key => `${key}:${String(route.query[key] || '')}`).join('|'))
+const hasActiveFilters = computed(() => FILTER_KEYS.some(key => Boolean(route.query[key])))
+const filterGroups = computed(() => [
+  { key: 'area', label: '地区', items: optionItems(['大陆', '香港', '台湾', '日本', '韩国', '美国', '泰国', '英国']) },
+  { key: 'lang', label: '语言', items: optionItems(['国语', '粤语', '英语', '日语', '韩语', '泰语']) },
+  { key: 'year', label: '年份', items: optionItems(yearOptions()) },
+  { key: 'finish', label: '状态', items: [{ label: '全部', value: '' }, { label: '完结', value: 'done' }, { label: '连载', value: 'updating' }] },
+  { key: 'vip', label: '权限', items: [{ label: '全部', value: '' }, { label: '免费', value: 'free' }, { label: 'VIP', value: 'vip' }] },
+  { key: 'minRating', label: '评分', items: [{ label: '全部', value: '' }, { label: '6+', value: '6' }, { label: '7+', value: '7' }, { label: '8+', value: '8' }] },
+  { key: 'sort', label: '排序', items: [{ label: '热度', value: '' }, { label: '高分', value: 'rating' }, { label: '最新', value: 'recent' }, { label: '年份', value: 'year' }] },
+])
 const suggestItems = computed(() => {
   const items = baseSuggestItems.value.filter(vod => vod?.id && vod?.name)
   if (!items.length) return []
   const start = Math.min(suggestOffset.value, Math.max(0, items.length - 1))
   return [...items.slice(start), ...items.slice(0, start)].slice(0, 4)
 })
+
+function optionItems(values) {
+  return [{ label: '全部', value: '' }, ...values.map(value => ({ label: value, value }))]
+}
+
+function yearOptions() {
+  const year = new Date().getFullYear()
+  return [year, year - 1, year - 2, year - 3, year - 4, year - 5].map(String).concat('2005年以前')
+}
+
+function currentFilterQuery() {
+  const out = {}
+  for (const key of FILTER_KEYS) {
+    const value = String(route.query[key] || '').trim()
+    if (value) out[key] = value
+  }
+  return out
+}
+
+function filterValue(key) {
+  return String(route.query[key] || '')
+}
+
+function setFilter(key, value) {
+  const query = { ...route.query }
+  if (value) query[key] = value
+  else delete query[key]
+  page.value = 1
+  router.replace({ path: '/m/search', query })
+}
+
+function clearFilters() {
+  const query = { ...route.query }
+  for (const key of FILTER_KEYS) delete query[key]
+  page.value = 1
+  router.replace({ path: '/m/search', query })
+}
 
 function uniqueWords(words) {
   return [...new Set(words.map(x => String(x || '').trim()).filter(Boolean))]
@@ -216,7 +287,7 @@ function clearDraft() {
 
 function submitSearch() {
   const kw = draftKw.value.trim()
-  const baseQuery = fromShorts.value ? { from: 'shorts' } : {}
+  const baseQuery = { ...(fromShorts.value ? { from: 'shorts' } : {}), ...currentFilterQuery() }
   if (!kw) {
     router.replace({ path: '/m/search', query: baseQuery })
     return
@@ -258,6 +329,15 @@ async function loadSearchSuggests() {
   }
 }
 
+async function loadHotWords() {
+  try {
+    const rows = await api.searchHotTerms(10)
+    hotWords.value = Array.isArray(rows) ? rows.map(row => String(row?.kw || '').trim()).filter(Boolean).slice(0, 10) : []
+  } catch {
+    hotWords.value = []
+  }
+}
+
 function pickResultTab(key) {
   resultTab.value = key
   page.value = 1
@@ -283,7 +363,7 @@ async function syncHorizontalTabs() {
 
 function syncHeadBg() {
   headRaf = 0
-  headBg.value = Math.max(0, Math.min(.9, (window.scrollY / 88) * .9)).toFixed(3)
+  headBg.value = Math.max(.9, Math.min(1, .9 + (window.scrollY / 88) * .1)).toFixed(3)
 }
 
 function onPageScroll() {
@@ -306,7 +386,7 @@ function goVod(vod) {
     router.push({ path: '/m/shorts', query: { play: vod.id } })
     return
   }
-  router.push(`/m/play/${vod.id}`)
+  router.push(`/m/detail/${vod.id}`)
 }
 
 function poster(vod) {
@@ -407,9 +487,10 @@ function resultParams(extra = {}) {
   return {
     page: page.value,
     size: 20,
-    sort: 'hot',
+    sort: String(route.query.sort || 'hot'),
     kw: activeKw.value,
     ...(tab.type ? { type: tab.type } : {}),
+    ...currentFilterQuery(),
     ...extra,
   }
 }
@@ -426,6 +507,7 @@ async function loadResults({ append = false } = {}) {
     const next = res.list || []
     resultItems.value = append ? [...resultItems.value, ...next] : next
     hasMore.value = Boolean(res.hasMore)
+    if (!append) api.logSearch({ kw: activeKw.value, source: fromShorts.value ? 'mobile_shorts' : 'mobile', resultCount: Number(res.total ?? next.length) || next.length })
   } catch {
     if (!append) resultItems.value = []
     hasMore.value = false
@@ -439,10 +521,10 @@ async function loadMore() {
   await loadResults({ append: true })
 }
 
-watch(activeKw, async (kw) => {
+watch([activeKw, filterSignature], async ([kw], [oldKw] = []) => {
   draftKw.value = kw
   page.value = 1
-  resultTab.value = 'all'
+  if (kw !== oldKw) resultTab.value = 'all'
   if (kw) await loadResults()
   else {
     resultItems.value = []
@@ -467,7 +549,7 @@ onMounted(async () => {
   syncHeadBg()
   window.addEventListener('scroll', onPageScroll, { passive: true })
   readHistory()
-  await Promise.allSettled([loadSuggest(), loadRank()])
+  await Promise.allSettled([loadSuggest(), loadRank(), loadHotWords()])
   await nextTick()
   syncHorizontalTabs()
   inputEl.value?.focus?.()
@@ -498,7 +580,7 @@ onBeforeUnmount(() => {
   grid-template-columns: 30px minmax(0, 1fr) 46px;
   align-items: center;
   gap: 9px;
-  background: rgb(255 255 255 / calc(.9 + var(--msr-head-bg) * .1));
+  background: rgb(255 255 255 / var(--msr-head-bg));
   backdrop-filter: blur(9px);
   transition: background .16s ease;
 }
@@ -918,6 +1000,62 @@ onBeforeUnmount(() => {
 .msr-result-tabs button.on {
   color: #fff;
   background: linear-gradient(135deg, #ff6a4f, #f04438);
+}
+.msr-filter-panel {
+  margin: 0 -14px 14px;
+  padding: 0 14px 12px;
+  background: #f7f7f8;
+  border-bottom: 1px solid #eceef2;
+}
+.msr-filter-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin-top: 8px;
+}
+.msr-filter-row > span {
+  color: #8b929f;
+  font-size: 12px;
+  line-height: 30px;
+}
+.msr-filter-row > div {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.msr-filter-row > div::-webkit-scrollbar {
+  display: none;
+}
+.msr-filter-row button,
+.msr-filter-clear {
+  border: 0;
+}
+.msr-filter-row button {
+  flex: 0 0 auto;
+  height: 30px;
+  border-radius: 999px;
+  padding: 0 11px;
+  background: #fff;
+  color: #555e6e;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 6px 14px rgba(17, 24, 39, .04);
+}
+.msr-filter-row button.on {
+  background: #111318;
+  color: #fff;
+}
+.msr-filter-clear {
+  height: 30px;
+  margin-top: 10px;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: #fff;
+  color: #f04438;
+  font-size: 12px;
+  font-weight: 700;
 }
 .msr-card-grid {
   display: grid;

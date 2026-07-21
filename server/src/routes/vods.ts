@@ -6,7 +6,7 @@ import { refreshVod } from "../collector/sync.js";
 import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { normalizeName } from "../collector/dedupe.js";
-import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
+import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, normalizeDisplayAccessMode, normalizeWatchAccessMode, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
 import { hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
@@ -114,6 +114,43 @@ function parseEpisodes(value: string | null | undefined): Array<{ name?: string;
 function headerOf(headers: Record<string, any>, name: string) {
   const value = headers[name.toLowerCase()] ?? headers[name];
   return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+function normalizeSearchKw(value: unknown) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function doneRemarksWhere() {
+  return {
+    OR: [
+      { remarks: { contains: "完结" } },
+      { remarks: { contains: "全集" } },
+      { remarks: { contains: "全" } },
+      { remarks: { contains: "大结局" } },
+      { remarks: { contains: "终章" } },
+    ],
+  };
+}
+
+function parseNumberFilter(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(min, Math.min(max, n));
+}
+
+async function vipRestrictedTypeNames() {
+  const rows = await prisma.category.findMany({
+    where: { enabled: true },
+    select: { name: true, displayMode: true, watchMode: true },
+  });
+  return rows
+    .filter((row) => {
+      const displayMode = normalizeDisplayAccessMode(row.displayMode, "public");
+      const watchMode = normalizeWatchAccessMode(row.watchMode, "inherit");
+      return ["vip", "level", "vip_or_level"].includes(displayMode) || ["vip", "level", "vip_or_level"].includes(watchMode);
+    })
+    .map((row) => row.name)
+    .filter(Boolean);
 }
 
 function resolveMediaUri(uri: string, baseUrl: string) {
@@ -824,7 +861,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const page = Math.max(1, Number(q.page) || 1);
     const size = Math.min(100, Number(q.size) || 20);
     const viewer = await viewerFromRequest(req);
-    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const [publicTypes, sourceIds, cleanOnlySourceIds, vipTypeNames] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds(), vipRestrictedTypeNames()]);
     // 观众端只能看到 online 影片，不信任前端传入的 status(避免绕过下架限制)；admin 后台管理页面用另外的 secured 接口查全量
     const where: any = { status: "online", typeName: publicTypeFilter(publicTypes), ...publicPlayableFilter(sourceIds, cleanOnlySourceIds) };
     const and: any[] = [];
@@ -849,6 +886,17 @@ export default async function vodRoutes(app: FastifyInstance) {
     } else if (q.year) {
       where.year = { contains: q.year };
     }
+    if (q.area) where.area = { contains: String(q.area) };
+    if (q.lang) where.lang = { contains: String(q.lang) };
+    const minRating = parseNumberFilter(q.minRating ?? q.ratingMin, 0, 10);
+    if (minRating !== null) where.rating = { gte: minRating };
+    const finishMode = String(q.finish || q.finished || "");
+    if (finishMode === "done") and.push(doneRemarksWhere());
+    else if (finishMode === "updating") and.push({ NOT: doneRemarksWhere() });
+    const vipMode = String(q.vip || "");
+    if (vipMode === "vip") and.push({ typeName: { in: vipTypeNames.length ? vipTypeNames : ["__NO_VIP_TYPE__"] } });
+    else if (vipMode === "free" && vipTypeNames.length) and.push({ typeName: { notIn: vipTypeNames } });
+    if (and.length) where.AND = and;
     // 排序：recent 最近更新 / hot 热门(评分) / rating 高分 / year 年份新到旧
     let orderBy: any = [{ pinned: "desc" }, { updatedAt: "desc" }];
     if (q.sort === "hot") orderBy = [{ heatScore: "desc" }, { ratingCount: "desc" }, { popularity: { sort: "desc", nulls: "last" } }, { rating: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }, { id: "desc" }];
@@ -869,6 +917,11 @@ export default async function vodRoutes(app: FastifyInstance) {
       sub: String(q.sub || ""),
       subs: String(q.subs || ""),
       year: String(q.year || ""),
+      area: String(q.area || ""),
+      lang: String(q.lang || ""),
+      finish: finishMode,
+      vip: vipMode,
+      minRating: String(q.minRating ?? q.ratingMin ?? ""),
       sort: String(q.sort || ""),
       withTotal,
     });
@@ -889,6 +942,54 @@ export default async function vodRoutes(app: FastifyInstance) {
     const data = { total, hasMore, page, size, list: list.map(publicVodCard) };
     aggregateCacheSet(cacheKey, data, TRAILER_CACHE_TTL_MS);
     return data;
+  });
+
+  app.post("/api/search-logs", async (req) => {
+    const body = (req.body as any) || {};
+    const kw = normalizeSearchKw(body.kw);
+    if (!kw) return { ok: true, skipped: true };
+    const viewer = await viewerFromRequest(req);
+    const source = String(body.source || "web").slice(0, 32);
+    const resultCount = Math.max(0, Math.min(100000, Number(body.resultCount) || 0));
+    await prisma.searchLog.create({
+      data: {
+        kw,
+        normalizedKw: normalizeName(kw),
+        source,
+        resultCount,
+        userId: viewer?.id || null,
+        ip: clientIpOf(req).slice(0, 80),
+        userAgent: String(req.headers["user-agent"] || "").slice(0, 500),
+      },
+    });
+    return { ok: true };
+  });
+
+  app.get("/api/search-hot-terms", async (req) => {
+    const limit = Math.max(1, Math.min(20, Number((req.query as any)?.limit) || 10));
+    const since = new Date(Date.now() - 30 * DAY_MS);
+    const rows = await prisma.searchLog.groupBy({
+      by: ["normalizedKw"],
+      where: { createdAt: { gte: since }, normalizedKw: { not: "" } },
+      _count: { _all: true },
+      orderBy: { _count: { normalizedKw: "desc" } },
+      take: limit * 2,
+    });
+    if (!rows.length) return [];
+    const logs = await prisma.searchLog.findMany({
+      where: { normalizedKw: { in: rows.map((row) => row.normalizedKw) } },
+      orderBy: { createdAt: "desc" },
+      select: { normalizedKw: true, kw: true },
+      take: limit * 20,
+    });
+    const latest = new Map<string, string>();
+    for (const row of logs) {
+      if (!latest.has(row.normalizedKw)) latest.set(row.normalizedKw, row.kw);
+    }
+    return rows.slice(0, limit).map((row) => ({
+      kw: latest.get(row.normalizedKw) || row.normalizedKw,
+      count: row._count._all,
+    }));
   });
 
   app.get("/api/trailers", async (req, reply) => {
@@ -1340,6 +1441,36 @@ export default async function vodRoutes(app: FastifyInstance) {
       })
       .sort(byHealth);
     return { ...cleanVodTextFields(vod), plays: undefined, lines };
+  });
+
+  app.get("/api/people/:id", async (req, reply) => {
+    const id = Number((req.params as any).id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(404).send({ error: "not found" });
+    const viewer = await viewerFromRequest(req);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const person = await prisma.person.findUnique({ where: { id } });
+    if (!person) return reply.code(404).send({ error: "not found" });
+    const rows = await prisma.vod.findMany({
+      where: {
+        status: "online",
+        typeName: publicTypeFilter(publicTypes),
+        ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+        people: { some: { personId: id } },
+      },
+      orderBy: [{ heatScore: "desc" }, { updatedAt: "desc" }],
+      take: 60,
+      include: {
+        _count: { select: publicPlayCountSelect(sourceIds, cleanOnlySourceIds) },
+        people: { where: { personId: id }, select: { role: true } },
+        images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+      },
+    });
+    const roleSet = new Set(rows.flatMap((row) => row.people.map((item) => item.role).filter(Boolean)));
+    return {
+      person,
+      roles: [...roleSet],
+      list: rows.map(publicVodCard),
+    };
   });
 
   // 大类下的小类标签聚合（下钻用）

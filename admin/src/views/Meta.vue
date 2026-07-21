@@ -15,46 +15,100 @@
     <el-tabs v-model="activeTab" class="meta-tabs">
       <el-tab-pane label="概览" name="overview">
         <div class="overview-grid">
-      <!-- 手动操作 -->
-      <div class="card">
-        <div class="sec-title" style="margin-bottom:16px">元数据匹配</div>
-        <el-alert type="info" :closable="false" style="margin-bottom:16px"
-          title="按已启用匹配源抓取评分/简介/高清封面并落库。抓一次存库，前端读库不实时请求；最终来源会在匹配记录中标注。" />
-        <div class="ops">
-          <el-button type="primary" :icon="MagicStick" @click="runUnprocessed">
-            匹配未处理（{{ stat.none || 0 }} 部）
-          </el-button>
-          <el-button :icon="RefreshRight" @click="retryFailed">
-            重试失败（{{ stat.failed || 0 }} 部）
-          </el-button>
-          <el-button type="warning" plain :icon="RefreshRight" @click="refreshAll">
-            全量重刷
-          </el-button>
-        </div>
-        <div class="manual-scope">
-          <div class="scope-title">手动范围匹配</div>
-          <div class="scope-row">
-            <el-select v-model="q.provider" style="width:180px">
-              <el-option v-for="item in providerModeOptions" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-            <el-select v-model="q.status" style="width:130px">
-              <el-option label="待确认" value="pending" />
-              <el-option label="待匹配" value="none" />
-              <el-option label="失败/无候选" value="failed" />
-              <el-option label="已匹配" value="matched" />
-              <el-option label="全部" value="all" />
-            </el-select>
-            <el-select v-model="q.categoryName" clearable filterable placeholder="全部分类" style="width:150px">
-              <el-option v-for="c in categories" :key="c.name" :label="c.name" :value="c.name" />
-            </el-select>
-            <el-select v-model="q.sourceId" clearable filterable placeholder="全部采集源" style="width:160px">
-              <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
-            </el-select>
-            <el-button type="success" plain @click="runFiltered">按范围提交</el-button>
+          <div class="card overview-main-card">
+            <div class="overview-card-head">
+              <div>
+                <div class="sec-title">元数据匹配</div>
+                <p>抓取评分、简介、高清封面与演职员，落库后前台直接读取。</p>
+              </div>
+              <el-tag type="success" effect="plain">{{ primaryProvider?.name || '未配置源' }}</el-tag>
+            </div>
+            <el-alert type="info" :closable="false" style="margin-bottom:16px"
+              title="按已启用匹配源优先级执行；最终来源会在匹配记录中标注。" />
+            <div class="ops">
+              <el-button type="primary" :icon="MagicStick" @click="runUnprocessed">
+                匹配未处理（{{ stat.none || 0 }} 部）
+              </el-button>
+              <el-button :icon="RefreshRight" @click="retryFailed">
+                重试失败（{{ stat.failed || 0 }} 部）
+              </el-button>
+              <el-button type="warning" plain :icon="RefreshRight" @click="refreshAll">
+                全量重刷
+              </el-button>
+            </div>
+            <div class="manual-scope">
+              <div class="scope-title">手动范围匹配</div>
+              <div class="scope-row">
+                <el-select v-model="q.provider" style="width:180px">
+                  <el-option v-for="item in providerModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                </el-select>
+                <el-select v-model="q.status" style="width:130px">
+                  <el-option label="待确认" value="pending" />
+                  <el-option label="待匹配" value="none" />
+                  <el-option label="失败/无候选" value="failed" />
+                  <el-option label="已匹配" value="matched" />
+                  <el-option label="全部" value="all" />
+                </el-select>
+                <el-select v-model="q.categoryName" clearable filterable placeholder="全部分类" style="width:150px">
+                  <el-option v-for="c in categories" :key="c.name" :label="c.name" :value="c.name" />
+                </el-select>
+                <el-select v-model="q.sourceId" clearable filterable placeholder="全部采集源" style="width:160px">
+                  <el-option v-for="s in sources" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+                <el-button type="success" plain @click="runFiltered">按范围提交</el-button>
+              </div>
+            </div>
+            <p class="tip">任务在后台运行，进度见「采集任务」页。默认按启用源优先级执行；自动通过分、待确认分、限速按各源独立配置。</p>
           </div>
-        </div>
-        <p class="tip">任务在后台运行，进度见「采集任务」页。默认按启用源优先级执行；自动通过分/待确认分/限速按各源独立配置。</p>
-      </div>
+
+          <div class="overview-side">
+            <div class="card overview-panel">
+              <div class="sec-title">处理概况</div>
+              <div class="overview-progress">
+                <strong>{{ matchRate }}%</strong>
+                <span>已匹配 {{ stat.matched || 0 }} / {{ stat.total || 0 }}</span>
+              </div>
+              <div class="status-list">
+                <div v-for="s in statCards.slice(1)" :key="s.k">
+                  <span><i :style="{ background: s.color }"></i>{{ s.label }}</span>
+                  <b>{{ stat[s.k] || 0 }}</b>
+                </div>
+              </div>
+            </div>
+
+            <div class="card overview-panel">
+              <div class="sec-title">当前策略</div>
+              <div class="strategy-grid">
+                <div>
+                  <span>自动匹配</span>
+                  <b>{{ cfg.autoMatch ? '开启' : '关闭' }}</b>
+                </div>
+                <div>
+                  <span>图片兜底</span>
+                  <b>{{ cfg.saveImages ? '保存' : '不保存' }}</b>
+                </div>
+                <div>
+                  <span>定时频率</span>
+                  <b>{{ cfg.autoMatch ? cfg.cronExpr : '未启用' }}</b>
+                </div>
+                <div>
+                  <span>优先源</span>
+                  <b>{{ primaryProvider?.name || '无' }}</b>
+                </div>
+              </div>
+            </div>
+
+            <div class="card overview-panel overview-provider-panel">
+              <div class="sec-title">匹配源</div>
+              <div class="provider-mini" v-for="provider in cfg.providersConfig.providers" :key="provider.key">
+                <div>
+                  <b>{{ provider.name }}</b>
+                  <span>{{ provider.enabled ? `优先级 ${provider.priority}` : '已停用' }}</span>
+                </div>
+                <em>{{ provider.enabled ? `${metaTaskLimit(provider)} 部/任务` : '停用' }}</em>
+              </div>
+            </div>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -543,7 +597,29 @@ onMounted(load)
 <style scoped>
 .stat-row { grid-template-columns: repeat(6, 1fr); }
 .meta-tabs { margin-top: 4px; }
-.overview-grid { display: grid; grid-template-columns: minmax(360px, 560px); gap: 20px; align-items: start; }
+.overview-grid { display: grid; grid-template-columns: minmax(520px, 1.45fr) minmax(360px, .95fr); gap: 18px; align-items: start; }
+.overview-main-card { min-height: 360px; }
+.overview-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.overview-card-head p { margin: 6px 0 0; color: var(--text-3); font-size: 13px; line-height: 1.5; }
+.overview-side { display: grid; gap: 14px; }
+.overview-panel { padding-bottom: 16px; }
+.overview-progress { margin-top: 12px; padding: 16px; border-radius: 10px; background: linear-gradient(135deg, rgba(79,110,247,.1), rgba(22,163,74,.08)); }
+.overview-progress strong { display: block; color: #4f6ef7; font-size: 34px; line-height: 1; letter-spacing: 0; }
+.overview-progress span { display: block; margin-top: 6px; color: var(--text-3); font-size: 13px; }
+.status-list { display: grid; gap: 10px; margin-top: 14px; }
+.status-list div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
+.status-list span { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; }
+.status-list i { width: 8px; height: 8px; border-radius: 50%; }
+.status-list b { color: var(--text-1); font-size: 15px; }
+.strategy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.strategy-grid div { min-width: 0; padding: 12px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); }
+.strategy-grid span,
+.provider-mini span { display: block; color: var(--text-3); font-size: 12px; line-height: 1.3; }
+.strategy-grid b { display: block; margin-top: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-1); font-size: 14px; }
+.overview-provider-panel { display: grid; gap: 10px; }
+.provider-mini { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft); }
+.provider-mini b { display: block; color: var(--text-1); font-size: 14px; }
+.provider-mini em { flex: 0 0 auto; color: #4f6ef7; font-style: normal; font-size: 12px; font-weight: 700; }
 .ops { display: flex; gap: 12px; flex-wrap: wrap; }
 .manual-scope { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .scope-title { font-size: 13px; font-weight: 700; color: var(--text-1); margin-bottom: 10px; }
@@ -568,5 +644,6 @@ onMounted(load)
 .pager { margin-top: 14px; justify-content: flex-end; }
 .muted { color: var(--text-3); font-size: 12px; }
 .cand-title { font-weight: 700; margin-bottom: 12px; color: var(--text-1); }
-@media (max-width: 1000px) { .overview-grid { grid-template-columns: 1fr; } .stat-row { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 1200px) { .overview-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .stat-row { grid-template-columns: repeat(2,1fr); } .strategy-grid { grid-template-columns: 1fr; } }
 </style>

@@ -2871,8 +2871,7 @@ function shouldHandlePlayerHotkey(event) {
   const target = event.target
   const tag = String(target?.tagName || '').toLowerCase()
   if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(tag)) return false
-  if (playerTheater.value || nativeFullscreen.value) return true
-  return Boolean(videoBox.value?.contains?.(document.activeElement))
+  return true
 }
 async function ensureUser() {
   if (user.value) return user.value

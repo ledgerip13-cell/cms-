@@ -5,6 +5,8 @@
       'shorts-shell': route.path.startsWith('/m/shorts'),
       'shorts-full-shell': route.path.startsWith('/m/shorts') && route.query.mode === 'full',
       'search-shell': route.path.startsWith('/m/search'),
+      'detail-shell': route.path.startsWith('/m/detail'),
+      'person-shell': route.path.startsWith('/m/person'),
       'play-shell': route.path.startsWith('/m/play'),
       'chrome-ready': chromeReady,
     }"
@@ -22,7 +24,7 @@
       <div class="m-edge-guard m-edge-guard-left" aria-hidden="true" @touchstart.prevent @touchmove.prevent @pointerdown.prevent></div>
       <div class="m-edge-guard m-edge-guard-right" aria-hidden="true" @touchstart.prevent @touchmove.prevent @pointerdown.prevent></div>
     </template>
-    <nav v-if="!route.path.startsWith('/m/search') && !route.path.startsWith('/m/play')" class="mtab" aria-label="移动端模板导航">
+    <nav v-if="!route.path.startsWith('/m/search') && !route.path.startsWith('/m/detail') && !route.path.startsWith('/m/person') && !route.path.startsWith('/m/play')" class="mtab" aria-label="移动端模板导航">
       <button v-for="item in tabs" :key="item.path" type="button" :class="{ on: active(item) }" @click="router.push(item.path)">
         <svg viewBox="0 0 24 24" v-html="icon(item.icon)"></svg>
         <span>{{ item.label }}</span>
@@ -54,7 +56,7 @@ function active(item) {
   return item.path === '/m' ? route.path === '/m' : route.path.startsWith(item.path)
 }
 function secondaryLevel(path) {
-  return path.startsWith('/m/play') || path.startsWith('/m/search')
+  return path.startsWith('/m/play') || path.startsWith('/m/search') || path.startsWith('/m/detail') || path.startsWith('/m/person')
 }
 function primaryLevel(path) {
   return path === '/m' || path === '/m/theater' || path === '/m/shorts' || path === '/m/me'
@@ -183,7 +185,7 @@ function mobileChromeSettings() {
       colorScheme: 'light',
     }
   }
-  if (route.path.startsWith('/m/search') || route.path.startsWith('/m/theater')) {
+  if (route.path.startsWith('/m/search') || route.path.startsWith('/m/theater') || route.path.startsWith('/m/detail') || route.path.startsWith('/m/person')) {
     return {
       themeColor: '#fff4f1',
       appleStatusBar: 'black-translucent',

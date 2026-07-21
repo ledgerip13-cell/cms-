@@ -932,6 +932,29 @@ function applyHistorySelection(history, lineHistories = []) {
   syncPendingHistorySeek()
 }
 
+function applyRoutePlaybackSelection() {
+  const requestedLineId = Number(route.query.line || 0)
+  if (requestedLineId && vod.value.lines?.length) {
+    for (let li = 0; li < vod.value.lines.length; li++) {
+      const line = vod.value.lines[li]
+      const channels = line?.channels?.length ? line.channels : [line]
+      const directLineHit = Number(line?.id || 0) === requestedLineId
+      const ci = directLineHit ? 0 : channels.findIndex(c => Number(c?.id || 0) === requestedLineId)
+      if (ci >= 0) {
+        lineIdx.value = li
+        chanIdx.value = Math.max(0, ci)
+        break
+      }
+    }
+  }
+  if (route.query.ep !== undefined || route.query.epIndex !== undefined) {
+    const requestedEp = Math.max(0, Number(route.query.ep ?? route.query.epIndex) || 0)
+    epIdx.value = Math.max(0, Math.min(requestedEp, Math.max(0, episodes.value.length - 1)))
+  }
+  alignEpisodeRange(epIdx.value)
+  syncPendingHistorySeek()
+}
+
 function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
   if (!isPlaybackCurrent(seq)) return
   clearPlaybackMedia()
@@ -1272,6 +1295,7 @@ async function loadVod(id) {
         if (h) applyHistorySelection(h, state?.lineHistories)
       } catch {}
     }
+    applyRoutePlaybackSelection()
     alignEpisodeRange(epIdx.value)
     if (vod.value.lines?.length) playCurrent()
     const items = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => [])

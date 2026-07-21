@@ -392,8 +392,7 @@ function shouldHandleHotkey(event) {
   const target = event.target
   const tag = String(target?.tagName || '').toLowerCase()
   if (target?.isContentEditable || ['input', 'textarea', 'select'].includes(tag)) return false
-  if (theaterMode.value || nativeFullscreen.value) return true
-  return Boolean(boxEl.value?.contains?.(document.activeElement))
+  return true
 }
 function onKeydown(event) {
   if (event.key === 'Escape' && theaterMode.value) {

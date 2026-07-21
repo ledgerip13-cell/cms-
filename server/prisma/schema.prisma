@@ -227,10 +227,30 @@ model WebUser {
   updatedAt     DateTime             @updatedAt
   follows       UserFollow[]
   histories     WatchHistory[]
+  searchLogs    SearchLog[]
   legacyGroups  LegacyWebUserGroup[] // 旧用户分组，仅用于迁移兼容
   usedInvites   InviteCode[]
 
   @@index([vipLevelId])
+}
+
+model SearchLog {
+  id           Int      @id @default(autoincrement())
+  kw           String
+  normalizedKw String   @default("")
+  source       String   @default("web")
+  resultCount  Int      @default(0)
+  user         WebUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId       Int?
+  ip           String   @default("")
+  userAgent    String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([kw])
+  @@index([normalizedKw])
+  @@index([source])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model VipLevel {
