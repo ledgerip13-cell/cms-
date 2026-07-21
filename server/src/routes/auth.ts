@@ -24,12 +24,13 @@ export default async function authRoutes(app: FastifyInstance) {
     await prisma.user.update({ where: { id: u.id }, data: { lastLogin: new Date(), lastLoginIp: clientIpOf(req) } });
     recordLoginLog(req, { userType: "admin", userId: u.id, username: u.username, success: true, message: "登录成功" });
     const token = signToken({ uid: u.id, username: u.username, role: u.role });
-    return { token, user: { id: u.id, username: u.username, role: u.role } };
+    return { token, user: { id: u.id, uid: u.id, username: u.username, role: u.role, kind: "admin" } };
   });
 
   // 当前用户
   app.get("/api/auth/me", { preHandler: authGuard }, async (req) => {
-    return (req as any).user;
+    const user = (req as any).user;
+    return { id: user.id, uid: user.uid, username: user.username, role: user.role, kind: user.kind };
   });
 
   // 修改密码

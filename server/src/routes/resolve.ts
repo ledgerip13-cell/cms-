@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { resolveShareUrl } from "../collector/resolver.js";
-import { signPlaybackToken, signProxyToken } from "../auth.js";
+import { signPlaybackToken, signProxyToken, verifyPlaybackToken } from "../auth.js";
 import { getGlobalProxyMode, resolveEffectiveMode, refererOf } from "../playProxy.js";
 import { accessForType, viewerFromRequest } from "../publicVod.js";
 import { ensureHlsCleanConfig, findCleanResultForPlayback } from "../hls/cleaner.js";
@@ -21,6 +21,7 @@ const inflight = new Map<string, Promise<any>>();
 const TTL = 30 * 60 * 1000; // 30分钟（sign 实测稳定 >1h，配合前端 403 自愈兵双保险）
 const MAX_CACHE = 2000;
 const SHORTS_PREVIEW_CODES = new Set(["login_required", "vip_required", "level_required", "vip_or_level_required"]);
+const LOCAL_ARCHIVE_TOKEN_SCOPE = "jinpai_local";
 
 function vodInShortsScope(vod: { typeName?: string; subType?: string }, config: any) {
   const type = String(vod?.typeName || "");
@@ -30,6 +31,65 @@ function vodInShortsScope(vod: { typeName?: string; subType?: string }, config: 
   if (!types.length && !subtypes.length) return type === config.defaultType;
   if (types.includes(type)) return true;
   return subtypes.some((item: any) => String(item?.type || "") === type && String(item?.name || item?.subType || item?.sub || "") === sub);
+}
+
+function signLocalArchiveToken(payload: {
+  vodId: number;
+  playId: number;
+  sourceId: number;
+  sourceVodId: string;
+  nid: string;
+  epIndex: number;
+  mid?: number;
+}) {
+  return signPlaybackToken({ ...payload, scope: LOCAL_ARCHIVE_TOKEN_SCOPE });
+}
+
+function localArchiveUrl(params: {
+  sourceVodId: string;
+  nid: string;
+  vodId: number;
+  playId: number;
+  sourceId: number;
+  epIndex: number;
+  mid?: number;
+}) {
+  const token = signLocalArchiveToken(params);
+  return `/api/jinpai-local/${params.sourceVodId}/${params.nid}/index.m3u8?token=${encodeURIComponent(token)}`;
+}
+
+function verifyLocalArchiveToken(token: string, sourceVodId: string, nid: string) {
+  const data = verifyPlaybackToken(token);
+  if (data?.scope !== LOCAL_ARCHIVE_TOKEN_SCOPE) throw new Error("bad local archive token");
+  if (String(data?.sourceVodId || "") !== sourceVodId || String(data?.nid || "") !== nid) {
+    throw new Error("local archive token mismatch");
+  }
+  return data;
+}
+
+function appendLocalArchiveToken(uri: string, token: string): string {
+  const hashAt = uri.indexOf("#");
+  const main = hashAt >= 0 ? uri.slice(0, hashAt) : uri;
+  const hash = hashAt >= 0 ? uri.slice(hashAt) : "";
+  const queryAt = main.indexOf("?");
+  const pathname = queryAt >= 0 ? main.slice(0, queryAt) : main;
+  if (!/^(seg_\d+\.ts|key_\d+\.key)$/.test(pathname)) return uri;
+  const withoutOldToken = main.replace(/([?&])token=[^&#]*&?/g, "$1").replace(/[?&]$/, "");
+  const sep = withoutOldToken.includes("?") ? "&" : "?";
+  return `${withoutOldToken}${sep}token=${encodeURIComponent(token)}${hash}`;
+}
+
+function rewriteLocalArchiveM3u8(text: string, token: string): string {
+  return text.split(/\r?\n/).map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+    if (/^#EXT-X-KEY/i.test(trimmed)) {
+      return line.replace(/URI="([^"]+)"/i, (_m, uri) => `URI="${appendLocalArchiveToken(uri, token)}"`);
+    }
+    if (trimmed.startsWith("#")) return line;
+    const rewritten = appendLocalArchiveToken(trimmed, token);
+    return line.slice(0, line.indexOf(trimmed)) + rewritten + line.slice(line.indexOf(trimmed) + trimmed.length);
+  }).join("\n");
 }
 
 export default async function resolveRoutes(app: FastifyInstance) {
@@ -123,7 +183,12 @@ export default async function resolveRoutes(app: FastifyInstance) {
         const nid = String(url).trim();
         const vodSvid = String(play.sourceVodId);
         if (isEpisodeArchived(vodSvid, nid)) {
-          return { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "local_archive" };
+          return {
+            ok: true,
+            url: localArchiveUrl({ sourceVodId: vodSvid, nid, vodId: play.vodId, playId: play.id, sourceId: play.sourceId, epIndex, mid: viewer?.id }),
+            kind: "m3u8",
+            rule: "local_archive",
+          };
         }
         return { ok: false, error: "本地文件不存在(可能已删除或未转存该集)" };
       }
@@ -243,6 +308,12 @@ export default async function resolveRoutes(app: FastifyInstance) {
     const file = String(p.file || "");
     // 只允许 index.m3u8 / seg_xxxxx.ts / key_x.key，防路径穿越
     if (!vodId || !nid || !/^(index\.m3u8|seg_\d+\.ts|key_\d+\.key)$/.test(file)) return reply.code(404).send("not found");
+    const token = String((req.query as any)?.token || (req.query as any)?.t || "");
+    try {
+      verifyLocalArchiveToken(token, vodId, nid);
+    } catch {
+      return reply.code(403).send("local archive access denied");
+    }
     const full = nodePath.join(archiveEpDir(vodId, nid), file);
     if (!full.startsWith(ARCHIVE_DIR)) return reply.code(403).send("forbidden");
     if (!fsp.existsSync(full)) return reply.code(404).send("not found");
@@ -250,6 +321,9 @@ export default async function resolveRoutes(app: FastifyInstance) {
     reply.header("content-type", ct);
     reply.header("cache-control", file.endsWith(".m3u8") ? "no-cache" : "public, max-age=86400");
     reply.header("access-control-allow-origin", "*");
+    if (file.endsWith(".m3u8")) {
+      return reply.send(rewriteLocalArchiveM3u8(fsp.readFileSync(full, "utf8"), token));
+    }
     return reply.send(fsp.createReadStream(full));
   });
 }

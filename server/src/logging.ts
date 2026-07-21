@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import jwt from "jsonwebtoken";
 import net from "node:net";
+import { adminUserFromToken, verifyToken } from "./auth.js";
 import { prisma } from "./db.js";
 
 const LOCATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -57,16 +57,58 @@ function userAgentOf(req: FastifyRequest) {
   return String(req.headers["user-agent"] || "").slice(0, 500);
 }
 
-function authUserOf(req: FastifyRequest) {
+type AccessLogUser = {
+  userType: "admin" | "web" | "guest";
+  userId: number | null;
+};
+
+const GUEST_USER: AccessLogUser = { userType: "guest", userId: null };
+
+function positiveInt(value: any): number | null {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+async function authUserOf(req: FastifyRequest): Promise<AccessLogUser> {
   const h = String(req.headers.authorization || "");
   const token = h.startsWith("Bearer ") ? h.slice(7) : "";
-  if (!token) return { userType: "guest", userId: null as number | null };
+  if (!token) return GUEST_USER;
   try {
-    const data: any = jwt.decode(token);
-    if (data?.kind === "web" && data.mid) return { userType: "web", userId: Number(data.mid) || null };
-    if (data?.uid) return { userType: "admin", userId: Number(data.uid) || null };
+    const data: any = verifyToken(token);
+    if (data?.kind === "web") {
+      const userId = positiveInt(data.mid);
+      if (userId) return { userType: "web", userId };
+    }
+    if (data?.kind === "admin") {
+      const userId = positiveInt(data.uid);
+      if (!userId) return GUEST_USER;
+      await adminUserFromToken(token);
+      return { userType: "admin", userId };
+    }
   } catch {}
-  return { userType: "guest", userId: null as number | null };
+  return GUEST_USER;
+}
+
+function pathOf(url: string) {
+  const i = url.search(/[?#]/);
+  return i >= 0 ? url.slice(0, i) : url;
+}
+
+function shouldSkipAccessLog(url: string) {
+  const path = pathOf(url);
+  if (
+    path === "/health"
+    || path === "/api/hls-mp"
+    || path === "/api/hls-key"
+    || path === "/api/hls-ts"
+    || path === "/api/admin"
+    || path.startsWith("/api/admin/")
+    || path === "/api/playback-errors"
+    || path.startsWith("/api/playback-errors/")
+    || path === "/api/auth"
+    || path.startsWith("/api/auth/")
+  ) return true;
+  return path.startsWith("/api/jinpai-local/") && /\.(m3u8|ts|key)$/i.test(path);
 }
 
 async function fetchJson(url: string, timeoutMs = 2500) {
@@ -182,13 +224,8 @@ export function recordPlaybackError(req: FastifyRequest, payload: any) {
 export function installAccessLogger(app: FastifyInstance) {
   app.addHook("onResponse", async (req: FastifyRequest, reply: FastifyReply) => {
     const url = req.url || "";
-    if (
-      url === "/health"
-      || url.startsWith("/api/admin/")
-      || url.startsWith("/api/playback-errors")
-      || url.startsWith("/api/auth/")
-    ) return;
-    const auth = authUserOf(req);
+    if (shouldSkipAccessLog(url)) return;
+    const auth = await authUserOf(req);
     if (auth.userType === "admin") return;
     const ip = clientIpOf(req);
     const ms = Math.max(0, Math.round((reply as any).elapsedTime || 0));

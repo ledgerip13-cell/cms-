@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
-import { authGuard } from "../auth.js";
+import { authGuard, signPlaybackToken } from "../auth.js";
 import { refreshVod } from "../collector/sync.js";
 import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
@@ -18,6 +18,12 @@ import { withHeatFields } from "../heat.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
 const TRAILER_CACHE_TTL_MS = 3 * 60 * 1000;
+const LOCAL_ARCHIVE_TOKEN_SCOPE = "jinpai_local";
+
+function localArchiveUrl(params: { sourceVodId: string; nid: string; vodId: number; playId: number; sourceId: number; epIndex: number }) {
+  const token = signPlaybackToken({ ...params, scope: LOCAL_ARCHIVE_TOKEN_SCOPE });
+  return `/api/jinpai-local/${params.sourceVodId}/${params.nid}/index.m3u8?token=${encodeURIComponent(token)}`;
+}
 
 function recentShanghaiDates(days: number) {
   const now = new Date();
@@ -1237,7 +1243,12 @@ export default async function vodRoutes(app: FastifyInstance) {
         const nid = String(ep.url).trim();
         const vodSvid = String(play.sourceVodId);
         if (play.vod.archiveStatus === "done" && isEpisodeArchived(vodSvid, nid)) {
-          result = { ok: true, url: `/api/jinpai-local/${vodSvid}/${nid}/index.m3u8`, kind: "m3u8", rule: "jinpai_local" };
+          result = {
+            ok: true,
+            url: localArchiveUrl({ sourceVodId: vodSvid, nid, vodId: play.vodId, playId: play.id, sourceId: play.sourceId, epIndex }),
+            kind: "m3u8",
+            rule: "jinpai_local",
+          };
         } else {
           try {
             const list = await fetchEpisodeUrls({

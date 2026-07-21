@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
-import { authGuard, verifyToken } from "../auth.js";
+import { adminUserFromToken, authGuard } from "../auth.js";
 import { requestCancel, requestPause, clearPause, wakeTaskQueues, createCollectTask, createMetaTask, createSubtypeTask, createKeywordTask, createKeywordConfirmTask, createHlsCleanTask, taskEvents, emitTaskChange } from "../collector/taskRunner.js";
 import { previewByKeyword } from "../collector/sync.js";
 
@@ -18,7 +18,7 @@ export default async function taskRoutes(app: FastifyInstance) {
   // 注意：此路由在 authGuard 钩子之前注册，自行验证 token
   app.get("/api/tasks/stream", async (req, reply) => {
     const token = String((req.query as any).token || "");
-    try { verifyToken(token); } catch { return reply.code(401).send({ error: "未登录" }); }
+    try { await adminUserFromToken(token); } catch { return reply.code(401).send({ error: "未登录" }); }
 
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
