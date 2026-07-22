@@ -491,6 +491,8 @@
                       @click="onVideoClick"
                       @timeupdate="syncVideoState"
                       @loadedmetadata="onVideoLoadedMetadata"
+                      @loadeddata="updateNativeQualityLabel"
+                      @canplay="updateNativeQualityLabel"
                       @play="playing = true"
                       @pause="onVideoPause"
                       @volumechange="syncVideoState"
@@ -531,9 +533,9 @@
                         </div>
                         <div class="x8-control-right">
                           <div class="x8-control-pop">
-                            <button v-if="qualities.length" class="x8-quality-trigger" type="button" :class="{ active: qualityOpen }" @click.stop="toggleQuality">
+                            <button v-if="qualityBadgeLabel" class="x8-quality-trigger" type="button" :class="{ active: qualityOpen }" :disabled="!qualities.length" @click.stop="toggleQuality">
                               <span>清晰度</span>
-                              <b>{{ currentQualityResLabel }}</b>
+                              <b>{{ qualityBadgeLabel }}</b>
                             </button>
                             <div v-if="qualities.length && qualityOpen" class="x8-quality-menu" @click.stop>
                               <button v-for="q in qualities" :key="q.resolution" type="button" :class="{ on: activeQualityResolution === q.resolution }" @click="switchQuality(q.resolution)">
@@ -1248,6 +1250,7 @@ const x8PasswordMsg = ref('')
 const qualities = ref([])
 const preferredRes = ref(0)
 const qualityOpen = ref(false)
+const nativeQualityLabel = ref('')
 const settingsOpen = ref(false)
 const rateOpen = ref(false)
 const subtitleOpen = ref(false)
@@ -1532,6 +1535,13 @@ const activeQualityResolution = computed(() => activeQuality.value?.resolution |
 const currentQualityResLabel = computed(() => {
   const res = activeQualityResolution.value
   return res ? `${res}P` : '自动'
+})
+const qualityBadgeLabel = computed(() => {
+  if (qualities.value.length) {
+    const picked = currentQualityResLabel.value
+    return picked === '自动' && nativeQualityLabel.value ? `自动 · ${nativeQualityLabel.value}` : picked
+  }
+  return nativeQualityLabel.value
 })
 const progressPercent = computed(() => {
   if (!duration.value) return 0
@@ -2738,6 +2748,7 @@ function syncVideoState() {
   tickDanmaku()
 }
 function onVideoLoadedMetadata() {
+  updateNativeQualityLabel()
   syncVideoState()
   applySubtitleMode()
   applySkipIntro()
@@ -2745,6 +2756,11 @@ function onVideoLoadedMetadata() {
   danmakuRows.value = []
   danmakuLoadAt = 0
   void loadDanmakuWindow(true)
+}
+function updateNativeQualityLabel() {
+  const video = videoEl.value
+  const height = Math.floor(Number(video?.videoHeight) || 0)
+  nativeQualityLabel.value = height > 0 ? `${height}P` : ''
 }
 function defaultSubtitleValue() {
   return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
@@ -3028,6 +3044,7 @@ function attachVideo(url, kind = '') {
   playUrl.value = url
   playKind.value = kind === 'iframe' ? 'iframe' : ''
   destroyHls()
+  nativeQualityLabel.value = ''
   introSkippedUrl = ''
   outroSkippedUrl = ''
   if (playKind.value === 'iframe') return
@@ -3609,6 +3626,7 @@ async function loadVod(withPlay = false) {
   qualityOpen.value = false
   qualities.value = []
   defaultQualityUrl.value = ''
+  nativeQualityLabel.value = ''
   currentTime.value = 0
   duration.value = 0
   playing.value = false
@@ -6721,6 +6739,11 @@ onBeforeUnmount(() => {
 }
 .x8-quality-trigger b {
   font-weight: 800;
+}
+.x8-quality-trigger:disabled {
+  opacity: 1;
+  cursor: default;
+  transform: none;
 }
 .x8-player-detail {
   width: 100%;

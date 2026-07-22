@@ -23,6 +23,8 @@
       @click="onVideoClick"
       @timeupdate="syncState"
       @loadedmetadata="onLoadedMetadata"
+      @loadeddata="updateNativeQualityLabel"
+      @canplay="updateNativeQualityLabel"
       @durationchange="syncState"
       @play="playing = true"
       @pause="onPause"
@@ -71,9 +73,9 @@
         </div>
         <div class="desktop-control-right">
           <div class="desktop-pop">
-            <button v-if="qualities.length" class="desktop-quality-trigger" type="button" :class="{ active: qualityOpen }" @click.stop="toggleQuality">
+            <button v-if="qualityBadgeLabel" class="desktop-quality-trigger" type="button" :class="{ active: qualityOpen }" :disabled="!qualities.length" @click.stop="toggleQuality">
               <span>清晰度</span>
-              <b>{{ currentQualityLabel }}</b>
+              <b>{{ qualityBadgeLabel }}</b>
             </button>
             <div v-if="qualities.length && qualityOpen" class="desktop-quality-menu" @click.stop>
               <button type="button" :class="{ on: selectedQuality === 0 }" @click="selectQuality(0)">
@@ -198,6 +200,7 @@ const skipIntroOutro = ref(false)
 const skipIntroDraft = ref(0)
 const skipOutroDraft = ref(0)
 const selectedSubtitle = ref('off')
+const nativeQualityLabel = ref('')
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 let hls = null
 let controlsTimer = 0
@@ -230,6 +233,13 @@ const currentQualityLabel = computed(() => {
   if (!props.selectedQuality) return '自动'
   const hit = props.qualities.find(q => Number(q.resolution) === Number(props.selectedQuality))
   return hit ? (hit.name || `${hit.resolution}P`) : '自动'
+})
+const qualityBadgeLabel = computed(() => {
+  if (props.qualities.length) {
+    const picked = currentQualityLabel.value
+    return picked === '自动' && nativeQualityLabel.value ? `自动 · ${nativeQualityLabel.value}` : picked
+  }
+  return nativeQualityLabel.value
 })
 
 function destroyHls() {
@@ -266,6 +276,7 @@ function loadSource() {
   closePops()
   currentTime.value = 0
   duration.value = 0
+  nativeQualityLabel.value = ''
   playing.value = false
   introSkippedSrc = ''
   outroSkippedSrc = ''
@@ -303,10 +314,16 @@ function seekPending() {
   } catch {}
 }
 function onLoadedMetadata() {
+  updateNativeQualityLabel()
   seekPending()
   applySkipIntro()
   applySubtitleMode()
   syncState()
+}
+function updateNativeQualityLabel() {
+  const video = videoEl.value
+  const height = Math.floor(Number(video?.videoHeight) || 0)
+  nativeQualityLabel.value = height > 0 ? `${height}P` : ''
 }
 function syncState() {
   const video = videoEl.value
@@ -645,6 +662,7 @@ defineExpose({
 .desktop-time { color: rgba(255,255,255,.82); font-size: 13px; line-height: 1; white-space: nowrap; }
 .desktop-pop { position: relative; display: inline-flex; }
 .desktop-quality-trigger { width: auto !important; min-width: 86px; padding: 0 10px !important; border-radius: 18px !important; gap: 6px; }
+.desktop-quality-trigger:disabled { opacity: 1; cursor: default; transform: none !important; }
 .desktop-quality-trigger span { font-size: 12px; color: rgba(255,255,255,.62); }
 .desktop-quality-trigger b { font-size: 12px; color: #fff; }
 .desktop-quality-menu,

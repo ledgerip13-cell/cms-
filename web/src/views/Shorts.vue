@@ -84,7 +84,6 @@
               @error="onVideoError"
             ></video>
             <div class="short-dim"></div>
-
             <div v-if="i === activeIndex && resolving" class="center-state">
               <div class="shorts-spinner small"></div>
               <span>解析中</span>
@@ -212,9 +211,10 @@
                 @click.stop="enterLandscapeTheater"
               >横屏观看</button>
             </div>
-            <div class="short-meta-main">
-              <div class="episode-pill">{{ unit.epName }} / 共{{ unit.total }}集</div>
-              <h1 class="short-title" tabindex="0" @click.stop="openDetailSheet" @keydown.enter.prevent="openDetailSheet" @keydown.space.prevent="openDetailSheet">{{ unit.vod.name }}</h1>
+              <div class="short-meta-main">
+                <div class="episode-pill">{{ unit.epName }} / 共{{ unit.total }}集</div>
+                <div v-if="qualityLabel && playingKey === unit.key" class="short-quality-pill">{{ qualityLabel }}</div>
+                <h1 class="short-title" tabindex="0" @click.stop="openDetailSheet" @keydown.enter.prevent="openDetailSheet" @keydown.space.prevent="openDetailSheet">{{ unit.vod.name }}</h1>
               <div class="meta-tags">
                 <span>{{ unit.vod.typeName || '短剧' }}</span>
                 <span v-if="unit.vod.year">{{ unit.vod.year }}</span>
@@ -513,6 +513,7 @@ const libraryHistories = ref([])
 const libraryFollows = ref([])
 const currentSec = ref(0)
 const durationSec = ref(0)
+const qualityLabel = ref('')
 const seekValue = ref(0)
 const seeking = ref(false)
 const progressActive = ref(false)
@@ -1568,6 +1569,7 @@ async function attachVideo(url, kind) {
   const attachedUnit = activeUnit.value
   playingKey.value = activeUnit.value?.key || ''
   videoReady.value = false
+  qualityLabel.value = ''
   playUrl.value = url
   await nextTick()
   const video = getVideo()
@@ -1594,6 +1596,7 @@ async function attachVideo(url, kind) {
       hls.loadSource(url)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        updateHlsQualityLabel()
         clearLineFailures(attachedUnit)
         playNow({ mutedFallback: true })
       })
@@ -1723,9 +1726,18 @@ function updateVideoFit(video) {
   videoLandscape.value = landscape
   videoContain.value = !knownSize || landscape
 }
+function updateNativeQualityLabel(video = getVideo()) {
+  const height = Math.floor(Number(video?.videoHeight) || 0)
+  if (height > 0) qualityLabel.value = `${height}P`
+}
+function updateHlsQualityLabel() {
+  const heights = (hls?.levels || []).map(level => Number(level?.height) || 0).filter(Boolean)
+  if (heights.length) qualityLabel.value = `${Math.max(...heights)}P`
+}
 
 function onVideoMeta(event) {
   const video = event.target
+  updateNativeQualityLabel(video)
   updateVideoFit(video)
   durationSec.value = Math.floor(Number(video.duration) || 0)
   applyPendingResumeSeek(video)
@@ -2749,6 +2761,8 @@ onBeforeUnmount(() => {
 .short-meta-main { min-width: 0; padding-right: 66px; }
 .episode-pill { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.13);
   color: rgba(255,255,255,.88); font-size: 12px; line-height: 1; font-weight: var(--small-text-max-weight); backdrop-filter: blur(10px); }
+.short-quality-pill { display: inline-flex; align-items: center; min-height: 23px; margin: 8px 0 0; padding: 0 8px; border-radius: 999px; background: rgba(0,0,0,.34);
+  color: rgba(255,255,255,.84); font-size: 11px; line-height: 1; font-weight: var(--small-text-max-weight); backdrop-filter: blur(8px); }
 .short-meta h1 { margin-top: 10px; font-size: 21px; line-height: 1.22; font-weight: 950; letter-spacing: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .short-title { cursor: pointer; outline: none; }
 .short-title:focus-visible { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }

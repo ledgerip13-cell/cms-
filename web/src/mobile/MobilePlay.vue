@@ -27,6 +27,8 @@
         @pause="isPlaying = false"
         @volumechange="syncVideoState"
         @loadedmetadata="onLoadedMetadata"
+        @loadeddata="updateNativeQualityLabel"
+        @canplay="updateNativeQualityLabel"
         @durationchange="syncVideoState"
         @timeupdate="onTimeUpdate"
         @error="handlePlaybackError"
@@ -90,6 +92,7 @@
           <button v-if="showQualityControl" class="mp-control-btn" type="button" aria-label="清晰度" @click.stop="cycleQuality">
             <svg viewBox="0 0 24 24" v-html="icon('quality')"></svg>
           </button>
+          <span v-if="currentQualityLabel" class="mp-quality-badge">{{ currentQualityLabel }}</span>
           <button class="mp-control-btn" type="button" aria-label="更多播放设置" @click.stop="togglePlayerMenu">
             <svg viewBox="0 0 24 24" v-html="icon('more')"></svg>
           </button>
@@ -347,7 +350,9 @@ const skipIntroOutro = ref(false)
 const skipIntroDraft = ref(0)
 const skipOutroDraft = ref(0)
 const qualityLevel = ref(-1)
+const currentQualityLevel = ref(-1)
 const qualityOptions = ref([])
+const nativeQualityLabel = ref('')
 const menuOpen = ref(false)
 const playerLandscape = ref(false)
 const fullscreenPortrait = ref(false)   // 全屏时的实际方向：true=竖屏全屏，false=横屏全屏
@@ -447,6 +452,11 @@ const showCenterControls = computed(() => controlsVisible.value && centerControl
 const qualityLabel = computed(() => {
   if (qualityLevel.value < 0) return '自动'
   return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || '清晰度'
+})
+const currentQualityLabel = computed(() => {
+  const current = qualityOptions.value.find(item => item.level === currentQualityLevel.value)?.label || nativeQualityLabel.value
+  if (qualityLevel.value < 0) return current ? `自动 · ${current}` : ''
+  return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || current || ''
 })
 const currentEpisodeName = computed(() => {
   const ep = episodes.value[epIdx.value]
@@ -641,7 +651,9 @@ function clearPlaybackMedia() {
   controlsVisible.value = false
   menuOpen.value = false
   qualityLevel.value = -1
+  currentQualityLevel.value = -1
   qualityOptions.value = []
+  nativeQualityLabel.value = ''
   introSkippedUrl = ''
   outroSkippedUrl = ''
   retryingLine = false
@@ -799,10 +811,17 @@ function syncVideoState() {
 }
 
 function onLoadedMetadata() {
+  updateNativeQualityLabel()
   syncVideoState()
   applySubtitleMode()
   applySkipIntro()
 }
+function updateNativeQualityLabel() {
+  const video = videoEl.value
+  const height = Math.floor(Number(video?.videoHeight) || 0)
+  nativeQualityLabel.value = height > 0 ? `${height}P` : ''
+}
+
 function defaultSubtitleValue() {
   return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
 }
@@ -1365,6 +1384,7 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
       })
       hlsInstance.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
         if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
+        if (Number.isInteger(data?.level)) currentQualityLevel.value = data.level
         if (hlsInstance.autoLevelEnabled) qualityLevel.value = -1
         else if (Number.isInteger(data?.level)) qualityLevel.value = data.level
       })
@@ -2057,6 +2077,16 @@ onDeactivated(() => {
   font-weight: var(--small-text-max-weight);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+.mp-quality-badge {
+  flex: 0 0 auto;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255,255,255,.78);
+  font-size: 11px;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-menu {
   position: absolute;

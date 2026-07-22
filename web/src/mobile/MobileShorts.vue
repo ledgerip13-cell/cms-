@@ -44,6 +44,7 @@
                 <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
               </button>
               <span class="ms-episode-title">{{ unit.epName || `第${unit.epIndex + 1}集` }}</span>
+              <span v-if="qualityLabel && playingKey === unit.key" class="ms-quality-pill">{{ qualityLabel }}</span>
             </div>
             <div class="ms-top-right">
               <button type="button" aria-label="搜索" @click="goSearch">
@@ -421,6 +422,7 @@ const videoReady = ref(false)
 const accessBlock = ref(null)
 const currentSec = ref(0)
 const durationSec = ref(0)
+const qualityLabel = ref('')
 const seekValue = ref(0)
 const seeking = ref(false)
 const followed = ref(false)
@@ -1070,6 +1072,7 @@ function stopVideo() {
   }
   playUrl.value = ''
   playingKey.value = ''
+  qualityLabel.value = ''
   needsTap.value = false
   paused.value = false
   soundPrompt.value = false
@@ -1380,6 +1383,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
   playingKey.value = attachedUnit.key
   playUrl.value = url
   videoReady.value = false
+  qualityLabel.value = ''
   await nextTick()
   if (seq !== playSeq || activeUnit.value?.key !== attachedUnit.key) return
   const video = getVideo()
@@ -1397,6 +1401,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (seq !== playSeq || hls !== currentHls || activeUnit.value?.key !== attachedUnit.key) return
+      updateHlsQualityLabel()
       clearLineFailures(attachedUnit)
       playNow()
     })
@@ -1495,6 +1500,14 @@ function updateVideoFit(video) {
   videoContain.value = !knownSize || landscape
   updateLandscapeMetrics(video)
 }
+function updateNativeQualityLabel(video = getVideo()) {
+  const height = Math.floor(Number(video?.videoHeight) || 0)
+  if (height > 0) qualityLabel.value = `${height}P`
+}
+function updateHlsQualityLabel() {
+  const heights = (hls?.levels || []).map(level => Number(level?.height) || 0).filter(Boolean)
+  if (heights.length) qualityLabel.value = `${Math.max(...heights)}P`
+}
 
 function updateLandscapeMetrics(video = getVideo()) {
   const width = Number(video?.videoWidth || 0)
@@ -1527,6 +1540,7 @@ function scheduleLandscapeMetrics() {
 }
 
 function onVideoMeta(event) {
+  updateNativeQualityLabel(event?.target)
   updateVideoFit(event?.target)
   durationSec.value = Math.floor(Number(event?.target?.duration) || 0)
 }
@@ -2343,6 +2357,16 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ms-quality-pill {
+  flex: 0 0 auto;
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255,255,255,.78);
+  font-size: 11px;
+  font-weight: var(--small-text-max-weight);
 }
 .ms-top button,
 .ms-play,
