@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（移动搜索意图引导与搜索接口提速）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（影片级/用户级片头片尾跳过设置）
 
 ---
 
@@ -74,6 +74,7 @@ video-cms/
 │       ├── vipLevels.ts        # VIP 等级 + seedVipLevels
 │       ├── loginRateLimit.ts   # 登录限流
 │       ├── hotConfig.ts        # 热榜配置
+│       ├── skipConfig.ts       # 片头片尾跳过配置合并：全局默认/单片覆盖/用户偏好
 │       ├── categoryIcons.ts    # 分类图标
 │       ├── sourceAutoTypes.ts  # 源类型自动映射
 │       ├── textClean.ts        # 文本清洗
@@ -139,11 +140,12 @@ video-cms/
         ├── views/             # Home/Play/Shorts/Auth/Profile (PC)
         ├── mobile/            # MobileShell/Home/Search/Detail/Person/Shorts/Theater/Me/Play (独立移动模板)
         ├── x8/                # X8 深色影院自适应模板（首页/分类/排行/详情/播放/登录壳）
+        ├── skipConfig.js      # 前台片头片尾配置合并 + 游客 localStorage 偏好
         └── components/        # AuthModal/ToastStack
 ```
 
-### Prisma 数据模型（35 个）
-`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `SearchLog` `Vod` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
+### Prisma 数据模型（37 个）
+`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `SearchLog` `Vod` `VodSkipConfig` `UserVodSkipPreference` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
 
 ---
 
@@ -189,6 +191,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 影片级/用户级片头片尾跳过设置断点**：在全局播放策略基础上新增三层优先级：`用户本片偏好 > 后台单片配置 > 全局默认`。数据库新增 `VodSkipConfig`（后台单片覆盖）与 `UserVodSkipPreference`（登录用户本片偏好），`server/src/skipConfig.ts` 统一做秒数裁剪、空配置删除与有效配置合并；公开影片详情返回 `skipConfig/effectiveSkipConfig`，用户状态接口返回 `skipPreference`，并新增 `PUT/DELETE /api/user/vods/:id/skip`。后台 `admin/src/views/Vods.vue` 影片编辑弹窗新增“片头片尾”配置区，可对单片选择继承/开启/关闭并分别设置片头/片尾秒数继承。前台新增 `web/src/skipConfig.js`，游客偏好写 `localStorage`，登录用户同步数据库；PC `DesktopVideoPlayer`、移动播放页与 X8 播放页均可在播放器设置中保存/恢复本片跳过设置，并继续按片头阈值自动跳转、片尾阈值自动下一集/停在结尾。已执行 `pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir web build`、`pnpm --dir admin build`、`pnpm --dir server db:push`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `5150/health`、`5151`、`5152` 均 HTTP 200，新表 `VodSkipConfig/UserVodSkipPreference` 可查询。
 - **2026-07-22 移动搜索意图引导与接口提速断点**：按反馈优化 `/m/search` 空搜索页与输入联想。移动搜索页现在接入 `/api/search-corrections`，输入时同时展示片名联想与纠错推荐；当输入弹层已有联想/纠错，或后台配置了 `HotConfig.searchTerms` 运营热搜词时，不再渲染下方综合热搜榜，避免同屏重复热门搜索。初始化阶段把原本 `api.hot(16)` + `api.hot(12)` 两次热榜请求合并为一次复用给“猜你想搜”和热榜缓存。后端搜索辅助接口新增 60 秒聚合缓存，`/api/search-corrections` 候选扫描从最多 300+180 条降到 90+45 条并跳过明显长度不匹配的 Levenshtein 计算；同时修正 `ensureHotConfig()` 每次读取热门配置都会清空全局聚合缓存的问题，改为仅后台保存热门配置时清缓存。已执行 `pnpm --dir server build`、`pnpm --dir web build`、`git diff --check`、`docker compose up -d --build server web` 通过；运行态 `5150 /health` 与 `5152` 均 200，接口抽样：纠错冷请求约 0.223s、缓存命中约 0.003s，联想缓存命中约 0.005s，运营热词缓存命中约 0.015s。
 - **2026-07-22 前台 HLS 缓冲上限调整断点**：按播放卡顿反馈，将 hls.js 播放缓冲上限从原普通播放约 30 秒提升到 180 秒（3 分钟），涉及 `web/src/components/DesktopVideoPlayer.vue`、`web/src/mobile/MobilePlay.vue`、`web/src/x8/X8Home.vue` 主播放链路；短剧链路从 12/20 秒级提升到 60 秒（1 分钟），涉及 `web/src/views/Shorts.vue` 与 `web/src/mobile/MobileShorts.vue`。X8 首页预告片仍保持 30 秒缓冲，避免预告墙消耗过多带宽；iOS/Safari 原生 HLS 分支不走 hls.js，实际缓冲仍由浏览器控制。已执行 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；运行态 `5152` 返回 HTTP 200，`vcms-web/vcms-server` 均 Up。
 - **2026-07-22 播放治理配置接入 + 搜索运营热词收口断点**：承接上一轮遗留“播放器跳片头片尾/字幕样式未接后台配置”。`admin/src/views/Playback.vue` 与前后端 `normalizePlayConfig()` 已补齐 `skipIntroEnabled/skipIntroSeconds/skipOutroSeconds/subtitleDefault/subtitleFontSize/subtitleColor/subtitleBackground`，后台播放治理可配置片头片尾秒数与字幕默认开关/字号/颜色/背景；`web/src/components/DesktopVideoPlayer.vue`、`web/src/views/Play.vue`、`web/src/x8/X8Home.vue`、`web/src/mobile/MobilePlay.vue` 已接入 `site.playConfig`，PC/X8/移动播放器统一按配置默认开启/关闭字幕、应用字幕样式，设置面板可切字幕与跳过片头片尾。片头在加载元数据后自动跳到配置秒数，片尾进入阈值后触发下一集。搜索侧补 `HotConfig.searchTerms` 与 `/api/search-hot-terms` 手动热词优先级，并新增 `/api/search-corrections` 做相近片名纠错候选；`server db:push` 已同步 `HotConfig.searchTerms` 字段。

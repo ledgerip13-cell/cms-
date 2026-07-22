@@ -99,9 +99,23 @@
                 </label>
                 <label class="desktop-switch-row">
                   <span>跳过片头片尾</span>
-                  <input v-model="skipIntroOutro" type="checkbox" />
+                  <input v-model="skipIntroOutro" type="checkbox" @change="emitSkipChange" />
                   <i></i>
                 </label>
+                <div class="desktop-skip-grid">
+                  <label>
+                    <span>片头</span>
+                    <input v-model.number="skipIntroDraft" type="number" min="0" max="600" step="5" @change="emitSkipChange" />
+                  </label>
+                  <label>
+                    <span>片尾</span>
+                    <input v-model.number="skipOutroDraft" type="number" min="0" max="600" step="5" @change="emitSkipChange" />
+                  </label>
+                </div>
+                <button class="desktop-setting-row desktop-reset-row" type="button" @click="emitSkipReset">
+                  <span>恢复默认</span>
+                  <b>本片设置</b>
+                </button>
                 <button class="desktop-setting-row" type="button" @click="rateOpen = true">
                   <span>倍数</span>
                   <b>{{ playbackRateLabel }}</b>
@@ -163,7 +177,7 @@ const props = defineProps({
   seekTo: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['state', 'play', 'next', 'ended', 'error', 'quality-change'])
+const emit = defineEmits(['state', 'play', 'next', 'ended', 'error', 'quality-change', 'skip-change', 'skip-reset'])
 
 const boxEl = ref(null)
 const videoEl = ref(null)
@@ -181,6 +195,8 @@ const duration = ref(0)
 const playbackRate = ref(1)
 const autoNextLocal = ref(true)
 const skipIntroOutro = ref(false)
+const skipIntroDraft = ref(0)
+const skipOutroDraft = ref(0)
 const selectedSubtitle = ref('off')
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 let hls = null
@@ -311,13 +327,36 @@ function onEnded() {
   emit('ended', { autoNext: autoNextLocal.value })
 }
 function skipIntroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipIntroDraft.value) || 0))
 }
 function skipOutroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipOutroDraft.value) || 0))
 }
 function skipEnabled() {
-  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+  return Boolean(skipIntroOutro.value)
+}
+function syncSkipDrafts() {
+  skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  skipIntroDraft.value = skipIntroSecondsFromConfig()
+  skipOutroDraft.value = skipOutroSecondsFromConfig()
+}
+function skipIntroSecondsFromConfig() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+}
+function skipOutroSecondsFromConfig() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+}
+function emitSkipChange() {
+  skipIntroDraft.value = skipIntroSeconds()
+  skipOutroDraft.value = skipOutroSeconds()
+  emit('skip-change', {
+    enabled: Boolean(skipIntroOutro.value),
+    introSeconds: skipIntroDraft.value,
+    outroSeconds: skipOutroDraft.value,
+  })
+}
+function emitSkipReset() {
+  emit('skip-reset')
 }
 function applySkipIntro() {
   const video = videoEl.value
@@ -542,7 +581,7 @@ watch(() => props.kind, loadSource)
 watch(() => props.seekTo, seekPending)
 watch(() => props.subtitles, resetSubtitleSelection, { deep: true })
 watch(() => props.playConfig, () => {
-  skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  syncSkipDrafts()
   resetSubtitleSelection()
 }, { deep: true, immediate: true })
 
@@ -617,7 +656,7 @@ defineExpose({
 .desktop-quality-menu strong { font-size: 13px; }
 .desktop-quality-menu span { font-size: 12px; color: rgba(255,255,255,.62); }
 .desktop-settings-menu { width: 218px; min-height: 118px; padding: 8px; border-radius: 14px; }
-.desktop-settings-menu:not(.rate-mode) { min-height: 154px; }
+.desktop-settings-menu:not(.rate-mode) { min-height: 248px; }
 .desktop-settings-menu.rate-mode { width: 154px; }
 .desktop-switch-row,
 .desktop-setting-row,
@@ -628,6 +667,11 @@ defineExpose({
 .desktop-switch-row i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: .16s; }
 .desktop-switch-row input:checked + i { background: #e50914; }
 .desktop-switch-row input:checked + i::after { transform: translateX(16px); }
+.desktop-skip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 6px; }
+.desktop-skip-grid label { min-width: 0; height: 38px; display: flex; align-items: center; gap: 6px; padding: 0 7px; border-radius: 8px; background: rgba(255,255,255,.07); color: rgba(255,255,255,.78); font-size: 12px; }
+.desktop-skip-grid input { min-width: 0; width: 48px; height: 24px; border: 1px solid rgba(255,255,255,.12); border-radius: 6px; background: rgba(0,0,0,.22); color: #fff; text-align: center; outline: none; }
+.desktop-skip-grid input::-webkit-outer-spin-button,
+.desktop-skip-grid input::-webkit-inner-spin-button { margin: 0; }
 .desktop-setting-row,
 .desktop-setting-back,
 .desktop-rate-panel button { width: 100% !important; border-radius: 8px !important; justify-content: space-between !important; padding: 0 8px !important; background: transparent !important; transform: none !important; }
@@ -637,6 +681,7 @@ defineExpose({
 .desktop-rate-panel button.on { background: rgba(255,255,255,.12) !important; }
 .desktop-setting-row svg,
 .desktop-setting-back svg { width: 16px; height: 16px; }
+.desktop-reset-row b { color: rgba(255,255,255,.5); font-size: 12px; font-weight: 500; }
 .desktop-rate-panel { display: grid; gap: 4px; }
 .desktop-rate-panel button { height: 26px !important; font-size: 13px; color: rgba(255,255,255,.86); }
 .desktop-subtitle-panel { margin: 3px 0 0; padding-top: 5px; border-top: 1px solid rgba(255,255,255,.08); display: grid; gap: 3px; }

@@ -520,9 +520,23 @@
                                 </label>
                                 <label class="x8-switch-row">
                                   <span>跳过片头片尾</span>
-                                  <input v-model="skipIntroOutro" type="checkbox" />
+                                  <input v-model="skipIntroOutro" type="checkbox" @change="saveSkipPreference" />
                                   <i></i>
                                 </label>
+                                <div class="x8-skip-grid">
+                                  <label>
+                                    <span>片头</span>
+                                    <input v-model.number="skipIntroDraft" type="number" min="0" max="600" step="5" @change="saveSkipPreference" />
+                                  </label>
+                                  <label>
+                                    <span>片尾</span>
+                                    <input v-model.number="skipOutroDraft" type="number" min="0" max="600" step="5" @change="saveSkipPreference" />
+                                  </label>
+                                </div>
+                                <button class="x8-setting-row x8-reset-row" type="button" @click="resetSkipPreference">
+                                  <span>恢复默认</span>
+                                  <b>本片设置</b>
+                                </button>
                                 <button class="x8-setting-row" type="button" @click="rateOpen = true">
                                   <span>倍数</span>
                                   <b>{{ playbackRateLabel }}</b>
@@ -1001,6 +1015,7 @@ import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
 import { normalizePlayConfig, readCachedCategories, readCachedSite, writeCachedCategories, writeCachedSite } from '../siteConfig'
+import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { clearSession, currentUser, refreshUser, setSession } from '../userStore'
 
 defineOptions({ name: 'X8Home' })
@@ -1009,6 +1024,7 @@ const route = useRoute()
 const router = useRouter()
 const site = ref(readCachedSite())
 const playConfig = ref(normalizePlayConfig(site.value?.playConfig))
+const userSkipPreference = ref(null)
 const types = ref(readCachedCategories())
 const heroItems = ref([])
 const hotItems = ref([])
@@ -1115,6 +1131,8 @@ const videoFullscreen = ref(false)
 const nativeFullscreen = ref(false)
 const autoNext = ref(true)
 const skipIntroOutro = ref(false)
+const skipIntroDraft = ref(0)
+const skipOutroDraft = ref(0)
 const playbackRate = ref(1)
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const X8_LOCAL_HISTORY_KEY = 'vcms.x8.local.history'
@@ -1148,6 +1166,11 @@ const sortItems = [
   { value: 'year', label: '年份' },
 ]
 const X8_BROWSE_PAGE_SIZE = 30
+const effectivePlayConfig = computed(() => mergeSkipConfig(
+  playConfig.value,
+  vod.value?.skipConfig,
+  userSkipPreference.value || readLocalSkipPreference(vod.value?.id),
+))
 const rankSkeletonGroups = [
   { key: 'all', title: '综合榜' },
   { key: 'movie', title: '电影榜' },
@@ -2301,11 +2324,11 @@ async function refreshSiteConfig() {
     const data = await api.site()
     site.value = writeCachedSite(data)
     playConfig.value = normalizePlayConfig(site.value?.playConfig)
-    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    syncSkipDrafts()
     resetSubtitleSelection()
   } catch {
     playConfig.value = normalizePlayConfig(site.value?.playConfig)
-    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    syncSkipDrafts()
   }
 }
 function destroyHls() {
@@ -2426,13 +2449,55 @@ function selectSubtitle(value) {
   showPlayerControls()
 }
 function skipIntroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipIntroDraft.value) || 0))
 }
 function skipOutroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipOutroDraft.value) || 0))
 }
 function skipEnabled() {
-  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+  return Boolean(skipIntroOutro.value)
+}
+function syncSkipDrafts() {
+  const cfg = effectivePlayConfig.value
+  skipIntroOutro.value = cfg.skipIntroEnabled === true
+  skipIntroDraft.value = Math.max(0, Math.min(600, Number(cfg.skipIntroSeconds) || 0))
+  skipOutroDraft.value = Math.max(0, Math.min(600, Number(cfg.skipOutroSeconds) || 0))
+}
+async function saveSkipPreference() {
+  if (!vod.value?.id) return
+  const pref = writeLocalSkipPreference(vod.value.id, {
+    enabled: Boolean(skipIntroOutro.value),
+    introSeconds: skipIntroSeconds(),
+    outroSeconds: skipOutroSeconds(),
+  })
+  userSkipPreference.value = pref
+  if (user.value) {
+    try {
+      const r = await api.saveVodSkipPreference(vod.value.id, pref)
+      userSkipPreference.value = r?.skipPreference || pref
+      notifySuccess('本片跳过设置已保存')
+    } catch {
+      notifyWarning('已保存到本机，登录同步失败')
+    }
+  } else {
+    notifySuccess('已保存本机本片跳过设置')
+  }
+}
+async function resetSkipPreference() {
+  if (!vod.value?.id) return
+  writeLocalSkipPreference(vod.value.id, null)
+  userSkipPreference.value = null
+  syncSkipDrafts()
+  if (user.value) {
+    try {
+      await api.resetVodSkipPreference(vod.value.id)
+      notifySuccess('已恢复后台默认跳过设置')
+    } catch {
+      notifyWarning('已恢复本机默认，登录同步失败')
+    }
+  } else {
+    notifySuccess('已恢复后台默认跳过设置')
+  }
 }
 function applySkipIntro() {
   const video = videoEl.value
@@ -3219,12 +3284,14 @@ async function loadVod(withPlay = false) {
   followed.value = false
   vodHistory.value = null
   vodLineHistories.value = []
+  userSkipPreference.value = null
   historySaveAt = 0
   try {
     await ensureTypes()
     const id = Number(route.params.id)
     const currentUser = await ensureUser()
     vod.value = await api.vod(id).catch(() => ({}))
+    userSkipPreference.value = readLocalSkipPreference(id)
     const requestedLineId = Number(route.query.line || 0)
     const routeLine = (vod.value?.lines || []).find(line => line.id === requestedLineId)
     currentLineId.value = routeLine?.id || vod.value?.lines?.[0]?.id || 0
@@ -3237,6 +3304,7 @@ async function loadVod(withPlay = false) {
     related.value = relatedRows || []
     followed.value = Boolean(state?.followed)
     if (currentUser) setFollowedId(id, Boolean(state?.followed))
+    userSkipPreference.value = state?.skipPreference || readLocalSkipPreference(id)
     vodLineHistories.value = Array.isArray(state?.lineHistories) && state.lineHistories.length ? state.lineHistories : localLineHistoriesForVod(id)
     vodHistory.value = state?.history || vodLineHistories.value[0] || localHistoryForVod(id)
     const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
@@ -3263,6 +3331,10 @@ watch(() => route.fullPath, (_next, prev) => {
   else if (mode === 'detail') loadVod(false)
   else if (mode === 'play') loadVod(true)
 }, { immediate: true })
+watch(effectivePlayConfig, () => {
+  syncSkipDrafts()
+  resetSubtitleSelection()
+}, { deep: true, immediate: true })
 watch(x8UserAccessSignature, () => {
   void refreshX8Types()
   void refreshFollowedIds()
@@ -6184,6 +6256,41 @@ onBeforeUnmount(() => {
   transform: translateX(16px);
   background: #111;
 }
+.x8-skip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 2px 0;
+}
+.x8-skip-grid label {
+  min-width: 0;
+  height: 34px;
+  border-radius: 8px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.07);
+  font-size: 12px;
+  font-weight: 600;
+}
+.x8-skip-grid input {
+  min-width: 0;
+  width: 48px;
+  height: 24px;
+  margin-left: auto;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px;
+  color: #fff;
+  background: rgba(0,0,0,.22);
+  text-align: center;
+  outline: none;
+}
+.x8-skip-grid input::-webkit-outer-spin-button,
+.x8-skip-grid input::-webkit-inner-spin-button {
+  margin: 0;
+}
 .x8-settings-menu .x8-setting-row {
   cursor: pointer;
 }
@@ -6192,6 +6299,11 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 14px;
   font-weight: 600;
+}
+.x8-settings-menu .x8-reset-row b {
+  color: rgba(255,255,255,.5);
+  font-size: 12px;
+  font-weight: 500;
 }
 .x8-settings-menu .x8-setting-row svg,
 .x8-settings-menu .x8-setting-back svg {

@@ -7,6 +7,7 @@ import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../l
 import { clientIpOf, recordLoginLog } from "../logging.js";
 import { withHeatFields } from "../heat.js";
 import { writeAudit } from "./access.js";
+import { emptySkipOverride, normalizeSkipOverride, publicSkipOverride } from "../skipConfig.js";
 
 const RECOMMENDATION_CACHE_TTL_MS = 60_000;
 const recommendationCache = new Map<string, { ts: number; data: any }>();
@@ -464,14 +465,41 @@ export default async function userRoutes(app: FastifyInstance) {
   app.get("/api/user/vods/:id/state", { preHandler: webUserGuard }, async (req) => {
     const mid = (req as any).webUser.mid;
     const vodId = Number((req.params as any).id);
-    const [follow, histories] = await Promise.all([
+    const [follow, histories, skipPreference] = await Promise.all([
       prisma.userFollow.findUnique({ where: { userId_vodId: { userId: mid, vodId } } }),
       prisma.watchHistory.findMany({
         where: { userId: mid, vodId },
         orderBy: { updatedAt: "desc" },
       }),
+      prisma.userVodSkipPreference.findUnique({ where: { userId_vodId: { userId: mid, vodId } } }),
     ]);
-    return { followed: Boolean(follow), history: histories[0] || null, lineHistories: histories };
+    return { followed: Boolean(follow), history: histories[0] || null, lineHistories: histories, skipPreference: publicSkipOverride(skipPreference) };
+  });
+
+  app.put("/api/user/vods/:id/skip", { preHandler: webUserGuard }, async (req, reply) => {
+    const mid = (req as any).webUser.mid;
+    const vodId = Number((req.params as any).id);
+    if (!Number.isInteger(vodId) || vodId <= 0) return reply.code(400).send({ error: "影片参数无效" });
+    const vod = await prisma.vod.findFirst({ where: { id: vodId, status: "online" }, select: { id: true } });
+    if (!vod) return reply.code(404).send({ error: "影片不存在或已下架" });
+    const cfg = normalizeSkipOverride(req.body || {});
+    if (emptySkipOverride(cfg)) {
+      await prisma.userVodSkipPreference.deleteMany({ where: { userId: mid, vodId } });
+      return { ok: true, skipPreference: null };
+    }
+    const row = await prisma.userVodSkipPreference.upsert({
+      where: { userId_vodId: { userId: mid, vodId } },
+      create: { userId: mid, vodId, ...cfg },
+      update: cfg,
+    });
+    return { ok: true, skipPreference: publicSkipOverride(row) };
+  });
+
+  app.delete("/api/user/vods/:id/skip", { preHandler: webUserGuard }, async (req) => {
+    const mid = (req as any).webUser.mid;
+    const vodId = Number((req.params as any).id);
+    await prisma.userVodSkipPreference.deleteMany({ where: { userId: mid, vodId } });
+    return { ok: true, skipPreference: null };
   });
 
   app.get("/api/user/follows", { preHandler: webUserGuard }, async (req) => {

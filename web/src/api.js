@@ -34,6 +34,8 @@ export const api = {
   updateUserProfile: (d) => http.put('/user/profile', d),
   changeUserPassword: (d) => http.post('/user/password', d),
   userVodState: (id) => http.get(`/user/vods/${id}/state`),
+  saveVodSkipPreference: (id, d) => http.put(`/user/vods/${id}/skip`, d),
+  resetVodSkipPreference: (id) => http.delete(`/user/vods/${id}/skip`),
   followVod: (id) => http.post(`/user/follows/${id}`),
   unfollowVod: (id) => http.delete(`/user/follows/${id}`),
   follows: (limit = 50) => http.get('/user/follows', { params: { limit } }),

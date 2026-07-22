@@ -228,6 +228,7 @@ model WebUser {
   updatedAt     DateTime             @updatedAt
   follows       UserFollow[]
   histories     WatchHistory[]
+  skipPreferences UserVodSkipPreference[]
   searchLogs    SearchLog[]
   legacyGroups  LegacyWebUserGroup[] // 旧用户分组，仅用于迁移兼容
   usedInvites   InviteCode[]
@@ -529,6 +530,8 @@ model Vod {
   images                   VodImage[]
   follows                  UserFollow[]
   histories                WatchHistory[]
+  skipConfig               VodSkipConfig?
+  skipPreferences          UserVodSkipPreference[]
   subTypes                 VodSubType[]   // 多分类标签(源站 vodClass 拆分)；subType 仅存主类型(首个)
   contentUpdatedAt         DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
   updatedAt                DateTime       @updatedAt
@@ -550,6 +553,17 @@ model Vod {
   @@index([status, typeName, year, updatedAt, id])
   @@index([autoCollectEnabled, autoCollectNextAt])
   @@index([archiveStatus])
+}
+
+// 后台单片片头片尾配置：null 表示继承全局播放策略
+model VodSkipConfig {
+  vod          Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId        Int      @id
+  enabled      Boolean?
+  introSeconds Int?
+  outroSeconds Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // 手动合并后的去重别名：采集遇到旧指纹时继续归并到主影片
@@ -658,6 +672,23 @@ model WatchHistory {
   @@unique([userId, vodId, lineId])
   @@index([userId, updatedAt])
   @@index([userId, vodId, updatedAt])
+  @@index([vodId])
+}
+
+// 用户本片片头片尾偏好：null 表示继承后台单片/全局配置
+model UserVodSkipPreference {
+  id           Int      @id @default(autoincrement())
+  user         WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  vod          Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId        Int
+  enabled      Boolean?
+  introSeconds Int?
+  outroSeconds Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, vodId])
   @@index([vodId])
 }
 

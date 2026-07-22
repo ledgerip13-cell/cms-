@@ -388,6 +388,25 @@
           <el-checkbox v-model="editForm.autoCollectClean">提交HLS清洗</el-checkbox>
         </div>
       </el-form-item>
+      <el-divider content-position="left">片头片尾</el-divider>
+      <el-form-item label="跳过策略">
+        <el-select v-model="editForm.skipMode" style="width:180px">
+          <el-option label="继承全局" value="inherit" />
+          <el-option label="本片开启" value="enabled" />
+          <el-option label="本片关闭" value="disabled" />
+        </el-select>
+        <span class="muted">只影响这部影片，用户自己的设置仍优先。</span>
+      </el-form-item>
+      <div class="skip-config-row">
+        <el-form-item label="片头秒数">
+          <el-input-number v-model="editForm.skipIntroSeconds" :min="0" :max="600" :step="5" controls-position="right" />
+          <el-checkbox v-model="editForm.skipIntroInherit">继承</el-checkbox>
+        </el-form-item>
+        <el-form-item label="片尾秒数">
+          <el-input-number v-model="editForm.skipOutroSeconds" :min="0" :max="600" :step="5" controls-position="right" />
+          <el-checkbox v-model="editForm.skipOutroInherit">继承</el-checkbox>
+        </el-form-item>
+      </div>
       <el-form-item label="简介"><el-input v-model="editForm.blurb" type="textarea" :rows="3" /></el-form-item>
     </el-form>
     <template #footer>
@@ -921,6 +940,11 @@ async function openEdit(row) {
     autoCollectWeekdays: parseWeekdays(row.autoCollectWeekdays),
     autoCollectMeta: row.autoCollectMeta !== false,
     autoCollectClean: Boolean(row.autoCollectClean),
+    skipMode: row.skipConfig?.enabled === true ? 'enabled' : row.skipConfig?.enabled === false ? 'disabled' : 'inherit',
+    skipIntroSeconds: Number(row.skipConfig?.introSeconds ?? 0) || 0,
+    skipOutroSeconds: Number(row.skipConfig?.outroSeconds ?? 0) || 0,
+    skipIntroInherit: row.skipConfig?.introSeconds == null,
+    skipOutroInherit: row.skipConfig?.outroSeconds == null,
   }
   editDlg.value = true
 }
@@ -928,9 +952,22 @@ async function saveEdit() {
   if (!editForm.value.name?.trim()) return ElMessage.warning('片名不能为空')
   saving.value = true
   try {
-    const payload = { ...editForm.value, aliases: editForm.value.aliasesText || '' }
+    const payload = {
+      ...editForm.value,
+      aliases: editForm.value.aliasesText || '',
+      skipConfig: {
+        enabled: editForm.value.skipMode === 'inherit' ? null : editForm.value.skipMode === 'enabled',
+        introSeconds: editForm.value.skipIntroInherit ? null : editForm.value.skipIntroSeconds,
+        outroSeconds: editForm.value.skipOutroInherit ? null : editForm.value.skipOutroSeconds,
+      },
+    }
     delete payload.aliasesText
     delete payload.images
+    delete payload.skipMode
+    delete payload.skipIntroSeconds
+    delete payload.skipOutroSeconds
+    delete payload.skipIntroInherit
+    delete payload.skipOutroInherit
     const r = await api.editVod(editForm.value.id, payload)
     if (r.error) return ElMessage.error(r.error)
     ElMessage.success('已保存')
@@ -1246,6 +1283,8 @@ watch(() => route.query.kw, (kw) => {
 .auto-collect-row :deep(.el-checkbox) { margin-right: 0; }
 .weekday-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .weekday-group :deep(.el-checkbox-button__inner) { border-left: 1px solid var(--el-border-color); border-radius: 6px; }
+.skip-config-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.skip-config-row :deep(.el-form-item__content) { gap: 10px; }
 .muted { color: var(--text-3); font-size: 12px; }
 .meta-candidates { margin: 14px 0; border: 1px solid #f5dab1; background: #fdf6ec; border-radius: 10px; padding: 12px; }
 .cand-title { font-weight: 700; color: #b88230; margin-bottom: 10px; }

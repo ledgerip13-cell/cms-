@@ -15,6 +15,7 @@ import { withHeatFields } from "../heat.js";
 import { assertSafeUrl } from "../playProxy.js";
 import { clientIpOf } from "../logging.js";
 import { writeAudit } from "./access.js";
+import { emptySkipOverride, mergeSkipConfig, normalizeSkipOverride, publicSkipOverride } from "../skipConfig.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
@@ -126,6 +127,19 @@ function parseEpisodes(value: string | null | undefined): Array<{ name?: string;
   } catch {
     return [];
   }
+}
+
+async function saveVodSkipConfig(vodId: number, value: any) {
+  const cfg = normalizeSkipOverride(value);
+  if (emptySkipOverride(cfg)) {
+    await prisma.vodSkipConfig.deleteMany({ where: { vodId } });
+    return null;
+  }
+  return prisma.vodSkipConfig.upsert({
+    where: { vodId },
+    create: { vodId, ...cfg },
+    update: cfg,
+  });
 }
 
 function headerOf(headers: Record<string, any>, name: string) {
@@ -1541,6 +1555,7 @@ export default async function vodRoutes(app: FastifyInstance) {
         plays: { where: { source: { enabled: true }, sourceTypeMapped: true }, include: { source: true } },
         people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
         images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+        skipConfig: true,
       },
     });
     // 观众端不能看到已下架影片，同列表接口限制保持一致（admin详情页用另外的鲟权接口）
@@ -1593,7 +1608,13 @@ export default async function vodRoutes(app: FastifyInstance) {
         };
       })
       .sort(byHealth);
-    return { ...cleanVodTextFields(vod), plays: undefined, lines };
+    return {
+      ...cleanVodTextFields(vod),
+      plays: undefined,
+      lines,
+      skipConfig: publicSkipOverride((vod as any).skipConfig),
+      effectiveSkipConfig: mergeSkipConfig(playConfig, (vod as any).skipConfig),
+    };
   });
 
   app.get("/api/people/:id", async (req, reply) => {
@@ -1754,6 +1775,7 @@ export default async function vodRoutes(app: FastifyInstance) {
           aliases: { orderBy: { createdAt: "asc" } },
           people: { include: { person: true }, orderBy: [{ role: "asc" }, { sort: "asc" }] },
           images: { orderBy: [{ isHero: "desc" }, { score: "desc" }] },
+          skipConfig: true,
         },
       });
       if (!vod) return reply.code(404).send({ error: "not found" });
@@ -1768,7 +1790,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       const bySource = new Map<number, typeof channels>();
       for (const c of channels) { if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, []); bySource.get(c.sourceId)!.push(c); }
       const lines = [...bySource.values()].map((cs) => { const sorted = [...cs].sort(byHealth); return { ...sorted[0], channels: sorted }; }).sort(byHealth);
-      return { ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), plays: undefined, lines };
+      return { ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), plays: undefined, lines, skipConfig: publicSkipOverride((vod as any).skipConfig) };
     });
 
     // 后台管理列表：不限 status，支持多条件筛选(同 /api/vods 参数 + status)
@@ -1965,7 +1987,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     const id = Number((req.params as any).id);
     const b = (req.body as any) || {};
     const data: any = {};
-    const before = await prisma.vod.findUnique({ where: { id }, include: { aliases: true } });
+    const before = await prisma.vod.findUnique({ where: { id }, include: { aliases: true, skipConfig: true } });
     const currentForAliases = b.aliases !== undefined
       ? await prisma.vod.findUnique({ where: { id }, select: { name: true, year: true } })
       : null;
@@ -1991,6 +2013,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       delete data.name;
     }
     let vod: any;
+    let nextSkipConfig: any = undefined;
     if (b.aliases !== undefined) {
       const year = data.year ?? currentForAliases?.year ?? "";
       const primaryName = normalizeName(data.name ?? currentForAliases?.name ?? "");
@@ -2009,9 +2032,16 @@ export default async function vodRoutes(app: FastifyInstance) {
     } else {
       vod = await prisma.vod.update({ where: { id }, data });
     }
+    if (Object.prototype.hasOwnProperty.call(b, "skipConfig")) {
+      nextSkipConfig = await saveVodSkipConfig(id, b.skipConfig);
+    }
     if ("typeName" in data || "status" in data || "year" in data) invalidateAggregateCache();
-    await writeAudit(req, "vod.update", `Vod:${id}`, { before, after: vod, result: "ok" });
-    return { ok: true, vod };
+    await writeAudit(req, "vod.update", `Vod:${id}`, {
+      before,
+      after: { ...vod, ...(nextSkipConfig !== undefined ? { skipConfig: publicSkipOverride(nextSkipConfig) } : {}) },
+      result: "ok",
+    });
+    return { ok: true, vod: { ...vod, ...(nextSkipConfig !== undefined ? { skipConfig: publicSkipOverride(nextSkipConfig) } : {}) } };
   });
 
   // 单片采集更新（需登录）：按各源 sourceVodId 重拉详情刷新剧集

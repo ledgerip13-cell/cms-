@@ -105,9 +105,20 @@
           </div>
           <label class="mp-menu-toggle">
             <span>跳过片头片尾</span>
-            <input v-model="skipIntroOutro" type="checkbox" />
+            <input v-model="skipIntroOutro" type="checkbox" @change="saveSkipPreference" />
             <i></i>
           </label>
+          <div class="mp-skip-grid">
+            <label>
+              <span>片头</span>
+              <input v-model.number="skipIntroDraft" type="number" min="0" max="600" step="5" @change="saveSkipPreference" />
+            </label>
+            <label>
+              <span>片尾</span>
+              <input v-model.number="skipOutroDraft" type="number" min="0" max="600" step="5" @change="saveSkipPreference" />
+            </label>
+          </div>
+          <button class="mp-menu-reset" type="button" @click.stop="resetSkipPreference">恢复默认</button>
           <div v-if="subtitleOptions.length" class="mp-menu-subtitles">
             <button type="button" :class="{ on: selectedSubtitle === 'off' }" @click.stop="selectSubtitle('off')">字幕关</button>
             <button v-for="(sub, index) in subtitleOptions" :key="sub.url" type="button" :class="{ on: selectedSubtitle === String(index) }" @click.stop="selectSubtitle(String(index))">{{ sub.label }}</button>
@@ -222,6 +233,7 @@ import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { notifySuccess, notifyWarning } from '../feedback'
 import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
+import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { currentUser } from '../userStore'
 import { icon } from './icons'
 
@@ -244,6 +256,7 @@ const playFailure = ref({ open: false, title: '', message: '', switching: false 
 const curUrl = ref('')
 const currentResolve = ref(null)
 const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
+const userSkipPreference = ref(null)
 const subtitles = ref([])
 const selectedSubtitle = ref('off')
 const mode = ref('hls')
@@ -265,6 +278,8 @@ const currentTime = ref(0)
 const duration = ref(0)
 const playbackRate = ref(1)
 const skipIntroOutro = ref(false)
+const skipIntroDraft = ref(0)
+const skipOutroDraft = ref(0)
 const qualityLevel = ref(-1)
 const qualityOptions = ref([])
 const menuOpen = ref(false)
@@ -318,6 +333,11 @@ const visibleEpisodes = computed(() => episodes.value.slice(activeEpisodeRange.v
   index: activeEpisodeRange.value.start + offset,
 })))
 const gallery = computed(() => (vod.value.images || []).filter(img => img.type !== 'poster').slice(0, 10))
+const effectivePlayConfig = computed(() => mergeSkipConfig(
+  playConfig.value,
+  vod.value?.skipConfig,
+  userSkipPreference.value || readLocalSkipPreference(vod.value?.id),
+))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
 const historyMatchesCurrentLine = computed(() => {
   const h = activeLineHistory()
@@ -464,10 +484,10 @@ async function refreshPlayConfig() {
     const site = await api.site()
     writeCachedSite(site)
     playConfig.value = normalizePlayConfig(site?.playConfig)
-    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    syncSkipDrafts()
     resetSubtitleSelection()
   } catch {
-    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    syncSkipDrafts()
   }
 }
 
@@ -740,15 +760,59 @@ function selectSubtitle(value) {
 }
 
 function skipIntroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipIntroDraft.value) || 0))
 }
 
 function skipOutroSeconds() {
-  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+  return Math.max(0, Math.min(600, Number(skipOutroDraft.value) || 0))
 }
 
 function skipEnabled() {
-  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+  return Boolean(skipIntroOutro.value)
+}
+
+function syncSkipDrafts() {
+  const cfg = effectivePlayConfig.value
+  skipIntroOutro.value = cfg.skipIntroEnabled === true
+  skipIntroDraft.value = Math.max(0, Math.min(600, Number(cfg.skipIntroSeconds) || 0))
+  skipOutroDraft.value = Math.max(0, Math.min(600, Number(cfg.skipOutroSeconds) || 0))
+}
+
+async function saveSkipPreference() {
+  if (!vod.value?.id) return
+  const pref = writeLocalSkipPreference(vod.value.id, {
+    enabled: Boolean(skipIntroOutro.value),
+    introSeconds: skipIntroSeconds(),
+    outroSeconds: skipOutroSeconds(),
+  })
+  userSkipPreference.value = pref
+  if (user.value) {
+    try {
+      const r = await api.saveVodSkipPreference(vod.value.id, pref)
+      userSkipPreference.value = r?.skipPreference || pref
+      showNotice('已保存本片跳过设置')
+    } catch {
+      showNotice('已保存到本机，登录同步失败')
+    }
+  } else {
+    showNotice('已保存本机本片跳过设置')
+  }
+}
+async function resetSkipPreference() {
+  if (!vod.value?.id) return
+  writeLocalSkipPreference(vod.value.id, null)
+  userSkipPreference.value = null
+  syncSkipDrafts()
+  if (user.value) {
+    try {
+      await api.resetVodSkipPreference(vod.value.id)
+      showNotice('已恢复后台默认跳过设置')
+    } catch {
+      showNotice('已恢复本机默认，登录同步失败')
+    }
+  } else {
+    showNotice('已恢复后台默认跳过设置')
+  }
 }
 
 function applySkipIntro() {
@@ -1444,6 +1508,7 @@ async function loadVod(id) {
   activeEpisodeRangeStart.value = 0
   historyState.value = null
   historyLineStates.value = []
+  userSkipPreference.value = null
   pendingSeekSec.value = 0
   playingChannel.value = null
   playingEpIndex.value = 0
@@ -1455,6 +1520,7 @@ async function loadVod(id) {
     const data = await api.vod(id)
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     vod.value = data || {}
+    userSkipPreference.value = readLocalSkipPreference(id)
     applyHistorySelection(readLocalHistory(id), readLocalLineHistories(id))
     await nextTick()
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
@@ -1463,6 +1529,7 @@ async function loadVod(id) {
         const state = await api.userVodState(id)
         if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
         followed.value = Boolean(state?.followed)
+        userSkipPreference.value = state?.skipPreference || readLocalSkipPreference(id)
         const h = state?.history
         if (h) applyHistorySelection(h, state?.lineHistories)
       } catch {}
@@ -1484,8 +1551,8 @@ async function loadVod(id) {
 watch(() => route.params.id, (id) => {
   if (isPlayRoute() && id) loadVod(id)
 })
-watch(() => playConfig.value, () => {
-  skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+watch(effectivePlayConfig, () => {
+  syncSkipDrafts()
   resetSubtitleSelection()
 }, { deep: true, immediate: true })
 watch(() => route.path, (path) => {
@@ -1879,6 +1946,50 @@ onDeactivated(() => {
 }
 .mp-menu-toggle input:checked + i::after {
   transform: translateX(16px);
+}
+.mp-skip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.mp-skip-grid label {
+  min-width: 0;
+  height: 34px;
+  border-radius: 9px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255,255,255,.82);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-skip-grid input {
+  min-width: 0;
+  width: 48px;
+  height: 24px;
+  margin-left: auto;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 7px;
+  color: #fff;
+  background: rgba(0,0,0,.24);
+  text-align: center;
+  outline: none;
+}
+.mp-skip-grid input::-webkit-outer-spin-button,
+.mp-skip-grid input::-webkit-inner-spin-button {
+  margin: 0;
+}
+.mp-menu-reset {
+  width: 100%;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
 }
 .mp-menu-subtitles {
   display: flex;

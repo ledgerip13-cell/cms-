@@ -22,7 +22,7 @@
           :qualities="qualities"
           :selected-quality="preferredRes"
           :subtitles="subtitles"
-          :play-config="playConfig"
+          :play-config="effectivePlayConfig"
           :resolving="resolving"
           :notice="playNotice"
           :can-next="canPlayNextEp"
@@ -33,6 +33,8 @@
           @ended="onPlayerEnded"
           @error="onPlayerError"
           @quality-change="switchQuality"
+          @skip-change="saveSkipPreference"
+          @skip-reset="resetSkipPreference"
         />
         <div v-if="playFailure.open && !accessBlock" class="play-failure-dialog">
           <strong>{{ playFailure.title }}</strong>
@@ -232,6 +234,7 @@ import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
 import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
+import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { currentUser } from '../userStore'
 import DesktopVideoPlayer from '../components/DesktopVideoPlayer.vue'
 defineOptions({ name: 'Play' })
@@ -250,6 +253,7 @@ const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const subtitles = ref([])
 const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
+const userSkipPreference = ref(null)
 const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
 const playNotice = ref('')
 const playFailure = ref({ open: false, title: '', message: '', switching: false })
@@ -266,6 +270,11 @@ let playNoticeTimer = 0
 let playWatchdogTimer = 0
 let autoSwitchingPlayback = false
 const PLAY_LOCAL_HISTORY_KEY = 'vcms.play.local.history'
+const effectivePlayConfig = computed(() => mergeSkipConfig(
+  playConfig.value,
+  vod.value?.skipConfig,
+  userSkipPreference.value || readLocalSkipPreference(vod.value?.id),
+))
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
 function onErr(e, fallback = '') {
@@ -298,6 +307,37 @@ async function loadPlayConfig() {
     writeCachedSite(site)
     playConfig.value = normalizePlayConfig(site?.playConfig)
   } catch {}
+}
+async function saveSkipPreference(value) {
+  if (!vod.value?.id) return
+  const pref = writeLocalSkipPreference(vod.value.id, value)
+  userSkipPreference.value = pref
+  if (user.value) {
+    try {
+      const r = await api.saveVodSkipPreference(vod.value.id, pref)
+      userSkipPreference.value = r?.skipPreference || pref
+      showPlayNotice('已保存本片跳过设置')
+    } catch {
+      showPlayNotice('已保存到本机，登录同步失败')
+    }
+  } else {
+    showPlayNotice('已保存本机本片跳过设置')
+  }
+}
+async function resetSkipPreference() {
+  if (!vod.value?.id) return
+  writeLocalSkipPreference(vod.value.id, null)
+  userSkipPreference.value = null
+  if (user.value) {
+    try {
+      await api.resetVodSkipPreference(vod.value.id)
+      showPlayNotice('已恢复后台默认跳过设置')
+    } catch {
+      showPlayNotice('已恢复本机默认，登录同步失败')
+    }
+  } else {
+    showPlayNotice('已恢复后台默认跳过设置')
+  }
 }
 function reportPlayError(message, failures = [], override = {}) {
   void api.reportPlaybackError({
@@ -825,7 +865,7 @@ async function loadVod(id) {
   introOpen.value = false; lineIdx.value = 0; chanIdx.value = 0; epIdx.value = 0; curUrl.value = ''
   galleryOpen.value = false; galleryIdx.value = 0
   notFound.value = false; vod.value = {}; followed.value = false; accessBlock.value = null
-  historyState.value = null; historyLineStates.value = []
+  historyState.value = null; historyLineStates.value = []; userSkipPreference.value = null
   try {
     vod.value = await api.vod(id)
   } catch (e) {
@@ -835,11 +875,13 @@ async function loadVod(id) {
   if (!vod.value?.id) { notFound.value = true; return }
   await nextTick()
   applyHistorySelection(readLocalHistory(id), readLocalLineHistories(id))
+  userSkipPreference.value = readLocalSkipPreference(id)
   if (user.value) {
     try {
       const state = await api.userVodState(id)
       followed.value = state.followed
       if (state?.history) applyHistorySelection(state.history, state.lineHistories)
+      userSkipPreference.value = state?.skipPreference || readLocalSkipPreference(id)
     } catch {}
   }
   if (vod.value.lines?.length) playEp(Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1), { keepResume: true })
