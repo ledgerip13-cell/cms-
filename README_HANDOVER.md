@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（前台 HLS 缓冲上限调整）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（移动搜索意图引导与搜索接口提速）
 
 ---
 
@@ -189,6 +189,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 移动搜索意图引导与接口提速断点**：按反馈优化 `/m/search` 空搜索页与输入联想。移动搜索页现在接入 `/api/search-corrections`，输入时同时展示片名联想与纠错推荐；当输入弹层已有联想/纠错，或后台配置了 `HotConfig.searchTerms` 运营热搜词时，不再渲染下方综合热搜榜，避免同屏重复热门搜索。初始化阶段把原本 `api.hot(16)` + `api.hot(12)` 两次热榜请求合并为一次复用给“猜你想搜”和热榜缓存。后端搜索辅助接口新增 60 秒聚合缓存，`/api/search-corrections` 候选扫描从最多 300+180 条降到 90+45 条并跳过明显长度不匹配的 Levenshtein 计算；同时修正 `ensureHotConfig()` 每次读取热门配置都会清空全局聚合缓存的问题，改为仅后台保存热门配置时清缓存。已执行 `pnpm --dir server build`、`pnpm --dir web build`、`git diff --check`、`docker compose up -d --build server web` 通过；运行态 `5150 /health` 与 `5152` 均 200，接口抽样：纠错冷请求约 0.223s、缓存命中约 0.003s，联想缓存命中约 0.005s，运营热词缓存命中约 0.015s。
 - **2026-07-22 前台 HLS 缓冲上限调整断点**：按播放卡顿反馈，将 hls.js 播放缓冲上限从原普通播放约 30 秒提升到 180 秒（3 分钟），涉及 `web/src/components/DesktopVideoPlayer.vue`、`web/src/mobile/MobilePlay.vue`、`web/src/x8/X8Home.vue` 主播放链路；短剧链路从 12/20 秒级提升到 60 秒（1 分钟），涉及 `web/src/views/Shorts.vue` 与 `web/src/mobile/MobileShorts.vue`。X8 首页预告片仍保持 30 秒缓冲，避免预告墙消耗过多带宽；iOS/Safari 原生 HLS 分支不走 hls.js，实际缓冲仍由浏览器控制。已执行 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；运行态 `5152` 返回 HTTP 200，`vcms-web/vcms-server` 均 Up。
 - **2026-07-22 播放治理配置接入 + 搜索运营热词收口断点**：承接上一轮遗留“播放器跳片头片尾/字幕样式未接后台配置”。`admin/src/views/Playback.vue` 与前后端 `normalizePlayConfig()` 已补齐 `skipIntroEnabled/skipIntroSeconds/skipOutroSeconds/subtitleDefault/subtitleFontSize/subtitleColor/subtitleBackground`，后台播放治理可配置片头片尾秒数与字幕默认开关/字号/颜色/背景；`web/src/components/DesktopVideoPlayer.vue`、`web/src/views/Play.vue`、`web/src/x8/X8Home.vue`、`web/src/mobile/MobilePlay.vue` 已接入 `site.playConfig`，PC/X8/移动播放器统一按配置默认开启/关闭字幕、应用字幕样式，设置面板可切字幕与跳过片头片尾。片头在加载元数据后自动跳到配置秒数，片尾进入阈值后触发下一集。搜索侧补 `HotConfig.searchTerms` 与 `/api/search-hot-terms` 手动热词优先级，并新增 `/api/search-corrections` 做相近片名纠错候选；`server db:push` 已同步 `HotConfig.searchTerms` 字段。
 - **2026-07-22 键盘控制与元数据概览布局回修断点**：定位键盘控制偶发失效不是数据/播放器状态丢失，而是 PC/X8 播放器快捷键此前要求 `document.activeElement` 位于播放器区域内；点击选集/页面空白/其它按钮后焦点离开播放器，空格与左右方向键不再接管，切换浏览器标签回来时焦点偶然恢复才表现为“恢复可用”。`web/src/components/DesktopVideoPlayer.vue` 与 `web/src/x8/X8Home.vue` 已改为播放页激活且非输入控件场景下全局接管快捷键，仍避开 `input/textarea/select/contenteditable`。`admin/src/views/Meta.vue` 概览页从单张窄卡 `minmax(360px,560px)` 改为大屏双列：左侧保留匹配操作与手动范围，右侧补处理概况、当前策略、匹配源卡片，`<1200px` 自动降为单列，解决大屏只在左侧显示一个小卡片的问题。已执行 `pnpm --dir admin build`、`pnpm --dir web build`、`pnpm --dir server build`、`git diff --check` 通过。

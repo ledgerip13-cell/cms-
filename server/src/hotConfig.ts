@@ -60,7 +60,6 @@ export async function ensureHotConfig() {
     create: { id: 1 },
     update: {},
   });
-  invalidateAggregateCache();
   return toDto(row);
 }
 
@@ -97,6 +96,7 @@ export async function updateHotConfig(input: any) {
       limit: clamp(Number(input?.limit) || 12, 1, 20),
     },
   });
+  invalidateAggregateCache();
   return toDto(row);
 }
 

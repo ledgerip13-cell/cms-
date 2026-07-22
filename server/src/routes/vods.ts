@@ -19,6 +19,7 @@ import { writeAudit } from "./access.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TRAILER_TYPE_NAME = "预告片";
 const TRAILER_CACHE_TTL_MS = 3 * 60 * 1000;
+const SEARCH_ASSIST_CACHE_TTL_MS = 60 * 1000;
 function recentShanghaiDates(days: number) {
   const now = new Date();
   const shanghaiNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
@@ -76,6 +77,22 @@ function withHeroImage(vod: any) {
   const heroImages = heroImageCandidates(vod);
   const heroImage = heroImages[0] || { url: "", wide: false };
   return withHeatFields({ ...cleanVodTextFields(rest), rating: formatPublicRating(rest.rating), heroImage: heroImage.url, heroImageWide: heroImage.wide, heroImages });
+}
+
+function publicSearchAssistVod(row: any) {
+  return {
+    id: row.id,
+    kw: row.name,
+    name: row.name,
+    typeName: row.typeName,
+    year: row.year,
+    remarks: row.remarks,
+    officialPic: row.officialPic,
+    pic: row.pic,
+    localPic: row.localPic,
+    heroPic: row.heroPic,
+    ...(row.score != null ? { score: Number(Number(row.score).toFixed(3)) } : {}),
+  };
 }
 
 function hasWideVodImageAsset(vod: any) {
@@ -150,8 +167,10 @@ function correctionScore(input: string, vod: any) {
     if (name === kw) best = Math.max(best, 1);
     else if (name.includes(kw) || kw.includes(name)) best = Math.max(best, Math.min(name.length, kw.length) / Math.max(name.length, kw.length));
     else {
+      const maxLen = Math.max(kw.length, name.length);
+      if (Math.abs(name.length - kw.length) > Math.max(4, Math.floor(maxLen * 0.55))) continue;
       const dist = levenshtein(kw, name);
-      best = Math.max(best, 1 - dist / Math.max(kw.length, name.length));
+      best = Math.max(best, 1 - dist / maxLen);
     }
   }
   return best;
@@ -1004,6 +1023,9 @@ export default async function vodRoutes(app: FastifyInstance) {
 
   app.get("/api/search-hot-terms", async (req) => {
     const limit = Math.max(1, Math.min(20, Number((req.query as any)?.limit) || 10));
+    const cacheKey = JSON.stringify({ scope: "searchHotTerms", limit });
+    const cached = aggregateCacheGet<any[]>(cacheKey);
+    if (cached) return cached;
     const manualTerms = await hotSearchTerms().catch(() => []);
     const manual = manualTerms.slice(0, limit).map((kw, index) => ({
       kw,
@@ -1013,7 +1035,10 @@ export default async function vodRoutes(app: FastifyInstance) {
     }));
     const blocked = new Set(manual.map((row) => normalizeName(row.kw)).filter(Boolean));
     const remaining = Math.max(0, limit - manual.length);
-    if (remaining <= 0) return manual;
+    if (remaining <= 0) {
+      aggregateCacheSet(cacheKey, manual, SEARCH_ASSIST_CACHE_TTL_MS);
+      return manual;
+    }
     const since = new Date(Date.now() - 30 * DAY_MS);
     const rows = await prisma.searchLog.groupBy({
       by: ["normalizedKw"],
@@ -1042,7 +1067,9 @@ export default async function vodRoutes(app: FastifyInstance) {
       source: "log",
       rank: manual.length + index + 1,
     }));
-    return [...manual, ...dynamic].slice(0, limit);
+    const data = [...manual, ...dynamic].slice(0, limit);
+    aggregateCacheSet(cacheKey, data, SEARCH_ASSIST_CACHE_TTL_MS);
+    return data;
   });
 
   app.get("/api/search-corrections", async (req) => {
@@ -1053,6 +1080,9 @@ export default async function vodRoutes(app: FastifyInstance) {
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
     const normalized = normalizeName(kw);
+    const cacheKey = JSON.stringify({ scope: "searchCorrections", kw: normalized, limit, publicTypes, sourceIds, cleanOnlySourceIds });
+    const cached = aggregateCacheGet<any[]>(cacheKey);
+    if (cached) return cached;
     const probes = [...new Set([
       kw,
       normalized,
@@ -1086,10 +1116,10 @@ export default async function vodRoutes(app: FastifyInstance) {
         aliases: { select: { note: true }, take: 8 },
       },
       orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
-      take: 300,
+      take: 90,
     });
     let candidates = rows;
-    if (candidates.length < 20) {
+    if (candidates.length < limit * 3) {
       const fill = await prisma.vod.findMany({
         where: { ...baseWhere, id: { notIn: rows.map((row) => row.id) } },
         select: {
@@ -1106,28 +1136,18 @@ export default async function vodRoutes(app: FastifyInstance) {
           aliases: { select: { note: true }, take: 8 },
         },
         orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
-        take: 180,
+        take: 45,
       });
       candidates = [...rows, ...fill];
     }
-    return candidates
+    const data = candidates
       .map((row) => ({ ...row, score: correctionScore(kw, row) }))
       .filter((row) => row.score >= 0.45 && normalizeName(row.name) !== normalized)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map((row) => ({
-        id: row.id,
-        kw: row.name,
-        name: row.name,
-        typeName: row.typeName,
-        year: row.year,
-        remarks: row.remarks,
-        officialPic: row.officialPic,
-        pic: row.pic,
-        localPic: row.localPic,
-        heroPic: row.heroPic,
-        score: Number(row.score.toFixed(3)),
-      }));
+      .map(publicSearchAssistVod);
+    aggregateCacheSet(cacheKey, data, SEARCH_ASSIST_CACHE_TTL_MS);
+    return data;
   });
 
   app.get("/api/trailers", async (req, reply) => {
@@ -1489,6 +1509,9 @@ export default async function vodRoutes(app: FastifyInstance) {
     const limit = Math.max(1, Math.min(10, Number(q.limit) || 10));
     const viewer = await viewerFromRequest(req);
     const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const cacheKey = JSON.stringify({ scope: "vodSuggest", kw: normalizeName(kw), limit, publicTypes, sourceIds, cleanOnlySourceIds });
+    const cached = aggregateCacheGet<any[]>(cacheKey);
+    if (cached) return cached;
     const rows = await prisma.vod.findMany({
       where: {
         status: "online",
@@ -1504,17 +1527,9 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
       take: limit,
     });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      typeName: row.typeName,
-      year: row.year,
-      remarks: row.remarks,
-      officialPic: row.officialPic,
-      pic: row.pic,
-      localPic: row.localPic,
-      heroPic: row.heroPic,
-    }));
+    const data = rows.map(publicSearchAssistVod);
+    aggregateCacheSet(cacheKey, data, SEARCH_ASSIST_CACHE_TTL_MS);
+    return data;
   });
 
   // 影片详情 + 所有线路（按源优先级排序）

@@ -8,10 +8,14 @@
         <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
         <input ref="inputEl" v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" @focus="suggestOpen = true" @blur="closeSuggestSoon" />
         <button v-if="draftKw" class="msr-clear" type="button" aria-label="清空" @click="clearDraft">×</button>
-        <div v-if="suggestOpen && searchSuggests.length" class="msr-suggest-pop">
+        <div v-if="suggestOpen && hasSearchAssist" class="msr-suggest-pop">
           <button v-for="vod in searchSuggests" :key="vod.id" type="button" @mousedown.prevent @click="pickSuggest(vod)">
             <strong>{{ vod.name }}</strong>
             <span>{{ [vod.typeName, vod.year, vod.remarks].filter(Boolean).join(' · ') }}</span>
+          </button>
+          <button v-for="item in correctionSuggests" :key="`fix-${item.id}`" class="msr-correction" type="button" @mousedown.prevent @click="pickCorrection(item)">
+            <strong>{{ item.kw || item.name }}</strong>
+            <span>纠错推荐</span>
           </button>
         </div>
       </form>
@@ -64,7 +68,7 @@
         </div>
       </section>
 
-      <section class="msr-rank-panel">
+      <section v-if="showRankPanel" class="msr-rank-panel">
         <nav ref="rankTabsEl" class="msr-rank-tabs" aria-label="热搜榜">
           <button v-for="tab in rankTabs" :key="tab.key" type="button" :class="{ on: rankTab === tab.key }" @click="rankTab = tab.key">
             {{ tab.label }}
@@ -190,12 +194,15 @@ const resultTabs = [
   { key: 'tv', label: '电视剧', type: '电视剧' },
 ]
 const searchSuggests = ref([])
+const correctionSuggests = ref([])
 const suggestOpen = ref(false)
 
 const activeKw = computed(() => String(route.query.kw || '').trim())
 const fromShorts = computed(() => String(route.query.from || '') === 'shorts')
 const filterSignature = computed(() => FILTER_KEYS.map(key => `${key}:${String(route.query[key] || '')}`).join('|'))
 const hasActiveFilters = computed(() => FILTER_KEYS.some(key => Boolean(route.query[key])))
+const hasSearchAssist = computed(() => searchSuggests.value.length > 0 || correctionSuggests.value.length > 0)
+const showRankPanel = computed(() => !hotWords.value.length && !(suggestOpen.value && hasSearchAssist.value))
 const filterGroups = computed(() => [
   { key: 'area', label: '地区', items: optionItems(['大陆', '香港', '台湾', '日本', '韩国', '美国', '泰国', '英国']) },
   { key: 'lang', label: '语言', items: optionItems(['国语', '粤语', '英语', '日语', '韩语', '泰语']) },
@@ -282,6 +289,7 @@ function refreshSuggest() {
 function clearDraft() {
   draftKw.value = ''
   searchSuggests.value = []
+  correctionSuggests.value = []
   inputEl.value?.focus?.()
 }
 
@@ -304,6 +312,15 @@ function pickWord(word) {
 function pickSuggest(vod) {
   draftKw.value = String(vod?.name || '').trim()
   searchSuggests.value = []
+  correctionSuggests.value = []
+  suggestOpen.value = false
+  submitSearch()
+}
+
+function pickCorrection(item) {
+  draftKw.value = String(item?.kw || item?.name || '').trim()
+  searchSuggests.value = []
+  correctionSuggests.value = []
   suggestOpen.value = false
   submitSearch()
 }
@@ -316,16 +333,27 @@ async function loadSearchSuggests() {
   const kw = String(draftKw.value || '').trim()
   if (!kw || kw === activeKw.value) {
     searchSuggests.value = []
+    correctionSuggests.value = []
     return
   }
   const seq = ++suggestSeq
   try {
-    const rows = await api.vodSuggest(kw, 10)
+    const [suggestResult, correctionResult] = await Promise.allSettled([
+      api.vodSuggest(kw, 8),
+      kw.length >= 2 ? api.searchCorrections(kw, 3) : Promise.resolve([]),
+    ])
     if (seq !== suggestSeq) return
-    searchSuggests.value = Array.isArray(rows) ? rows.filter(vod => vod?.id && vod?.name).slice(0, 10) : []
-    suggestOpen.value = true
+    const rows = suggestResult.status === 'fulfilled' && Array.isArray(suggestResult.value) ? suggestResult.value : []
+    const fixes = correctionResult.status === 'fulfilled' && Array.isArray(correctionResult.value) ? correctionResult.value : []
+    const seen = new Set(rows.map(vod => Number(vod?.id)).filter(Boolean))
+    searchSuggests.value = rows.filter(vod => vod?.id && vod?.name).slice(0, 8)
+    correctionSuggests.value = fixes.filter(item => item?.id && !seen.has(Number(item.id)) && (item?.kw || item?.name)).slice(0, 3)
+    suggestOpen.value = hasSearchAssist.value
   } catch {
-    if (seq === suggestSeq) searchSuggests.value = []
+    if (seq === suggestSeq) {
+      searchSuggests.value = []
+      correctionSuggests.value = []
+    }
   }
 }
 
@@ -444,10 +472,13 @@ function rankTag(vod) {
   return { label: '热门', type: 'hot' }
 }
 
-async function loadSuggest() {
+async function loadDiscovery() {
   try {
     const hot = await api.hot(16)
-    baseSuggestItems.value = Array.isArray(hot) ? hot.filter(vod => vod?.id && vod?.name) : []
+    const rows = Array.isArray(hot) ? hot.filter(vod => vod?.id && vod?.name) : []
+    baseSuggestItems.value = rows
+    rankCache.value = { ...rankCache.value, hot: rows.slice(0, 12) }
+    if (rankTab.value === 'hot') rankItems.value = rows.slice(0, 12)
   } catch {
     baseSuggestItems.value = []
   }
@@ -549,7 +580,8 @@ onMounted(async () => {
   syncHeadBg()
   window.addEventListener('scroll', onPageScroll, { passive: true })
   readHistory()
-  await Promise.allSettled([loadSuggest(), loadRank(), loadHotWords()])
+  await Promise.allSettled([loadDiscovery(), loadHotWords()])
+  if (!rankItems.value.length) await loadRank()
   await nextTick()
   syncHorizontalTabs()
   inputEl.value?.focus?.()
@@ -688,6 +720,15 @@ onBeforeUnmount(() => {
 }
 .msr-suggest-pop button:active {
   background: #f4f5f7;
+}
+.msr-suggest-pop .msr-correction {
+  background: #fff8ed;
+}
+.msr-suggest-pop .msr-correction:active {
+  background: #ffefd8;
+}
+.msr-suggest-pop .msr-correction span {
+  color: #d17b18;
 }
 .msr-suggest-pop strong {
   min-width: 0;
