@@ -404,32 +404,6 @@
         <div class="x8-detail-intro">
           <p>简介：{{ vod.blurb || vod.officialIntro || vod.content || '暂无简介' }}</p>
         </div>
-        <section class="x8-interaction-panel">
-          <div class="x8-interaction-head">
-            <div>
-              <strong>用户互动</strong>
-              <span>{{ ratingSummary }}</span>
-            </div>
-            <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport('vod', vod.id)">举报</button>
-          </div>
-          <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
-            <button v-for="score in 5" :key="`detail-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
-          </div>
-          <div v-if="interactionConfig.commentsEnabled" class="x8-comment-box">
-            <div class="x8-comment-input">
-              <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
-              <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
-            </div>
-            <div class="x8-comment-list">
-              <article v-for="item in comments.slice(0, 8)" :key="`detail-comment-${item.id}`">
-                <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
-                <p>{{ item.content }}</p>
-                <time>{{ formatX8Time(item.createdAt) }}</time>
-              </article>
-              <div v-if="!comments.length" class="x8-comment-empty">暂无评论</div>
-            </div>
-          </div>
-        </section>
         <section v-if="vod.lines?.length" class="x8-detail-play-list">
           <div class="x8-detail-list-head">
             <span>{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</span>
@@ -624,6 +598,43 @@
                     </div>
                   </div>
                 </div>
+                <div class="x8-under-player-toolbar">
+                  <div class="x8-toolbar-left">
+                    <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" title="点赞" @click="submitRating(10)">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
+                      <span>点赞</span>
+                    </button>
+                    <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating > 0 && myRating <= 2 }" title="点踩" @click="submitRating(2)">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
+                      <span>点踩</span>
+                    </button>
+                    <button v-if="interactionConfig.commentsEnabled" type="button" title="评论" @click="scrollToComments">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
+                      <span>评论</span>
+                    </button>
+                    <button type="button" :class="{ on: followed }" title="收藏" @click="toggleFollow">
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
+                      <span>收藏</span>
+                    </button>
+                    <button v-if="interactionConfig.reportsEnabled" type="button" title="报错" @click="openReport('play', currentLineId)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
+                      <span>报错</span>
+                    </button>
+                    <button type="button" title="分享" @click="shareCurrentVod">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.6 6.8-4.2" /><path d="m8.6 13.4 6.8 4.2" /></svg>
+                      <span>分享</span>
+                    </button>
+                    <button type="button" title="添加" @click="openMyList">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+                      <span>添加</span>
+                    </button>
+                  </div>
+                  <div v-if="interactionConfig.danmakuEnabled" class="x8-toolbar-danmaku">
+                    <button type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
+                    <input v-model.trim="danmakuText" maxlength="80" placeholder="发个弹幕..." @keyup.enter="submitDanmaku" />
+                    <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
+                  </div>
+                </div>
               </div>
               <aside class="x8-player-video-right">
                 <div class="x8-side-playlist">
@@ -682,41 +693,6 @@
                 </div>
               </div>
               <p v-if="playIntro" class="x8-player-desc">简介：{{ playIntro }}</p>
-              <div class="x8-play-actions">
-                <button v-if="interactionConfig.commentsEnabled" type="button" @click="interactionOpen = !interactionOpen">评论 {{ comments.length || '' }}</button>
-                <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport('play', currentLineId)">举报</button>
-                <button v-if="interactionConfig.danmakuEnabled" type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">弹幕</button>
-              </div>
-              <div v-if="interactionConfig.danmakuEnabled" class="x8-danmaku-input">
-                <input v-model.trim="danmakuText" maxlength="80" placeholder="发送弹幕" @keyup.enter="submitDanmaku" />
-                <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
-              </div>
-            </section>
-
-            <section v-if="interactionOpen" class="x8-interaction-panel compact">
-              <div class="x8-interaction-head">
-                <div>
-                  <strong>评论与评分</strong>
-                  <span>{{ ratingSummary }}</span>
-                </div>
-              </div>
-              <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
-                <button v-for="score in 5" :key="`play-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
-              </div>
-              <div v-if="interactionConfig.commentsEnabled" class="x8-comment-box">
-                <div class="x8-comment-input">
-                  <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
-                  <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
-                </div>
-                <div class="x8-comment-list">
-                  <article v-for="item in comments.slice(0, 10)" :key="`play-comment-${item.id}`">
-                    <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
-                    <p>{{ item.content }}</p>
-                    <time>{{ formatX8Time(item.createdAt) }}</time>
-                  </article>
-                  <div v-if="!comments.length" class="x8-comment-empty">暂无评论</div>
-                </div>
-              </div>
             </section>
 
             <section v-if="vod.lines?.length" class="x8-mini-play-list">
@@ -752,6 +728,39 @@
                 <x8-card v-for="item in visibleRelated" :key="`play-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
               </div>
             </x8-panel>
+            <section v-if="interactionConfig.commentsEnabled" ref="commentSectionEl" class="x8-comment-section">
+              <div class="x8-comment-title">
+                <span></span>
+                <strong>评论区</strong>
+                <em>({{ comments.length }})</em>
+              </div>
+              <div v-if="!user" class="x8-comment-login">
+                <button type="button" @click="goLogin">您还未 <b>登录</b> 请登录后发表评论</button>
+                <button type="button" @click="goLogin"><i></i><span>写长文</span></button>
+              </div>
+              <div v-else class="x8-comment-compose">
+                <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
+                  <button v-for="score in 5" :key="`play-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+                  <span>{{ ratingSummary }}</span>
+                </div>
+                <div class="x8-comment-input">
+                  <input ref="commentInputEl" v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
+                  <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
+                </div>
+              </div>
+              <div class="x8-comment-tabs">
+                <button type="button" class="active">全部评论</button>
+                <button type="button">热门评论</button>
+              </div>
+              <div v-if="comments.length" class="x8-comment-list">
+                <article v-for="item in comments.slice(0, 20)" :key="`play-comment-${item.id}`">
+                  <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+                  <p>{{ item.content }}</p>
+                  <time>{{ formatX8Time(item.createdAt) }}</time>
+                </article>
+              </div>
+              <div v-else class="x8-comment-empty x8-comment-empty-large">暂无评论信息~</div>
+            </section>
           </section>
         </div>
       </section>
@@ -1205,7 +1214,6 @@ const comments = ref([])
 const commentText = ref('')
 const commentSubmitting = ref(false)
 const ratingState = ref({ avg: 0, count: 0, myScore: 0 })
-const interactionOpen = ref(false)
 const vodRequesting = ref(false)
 const reportOpen = ref(false)
 const reportSubmitting = ref(false)
@@ -1220,6 +1228,8 @@ const vodHistory = ref(null)
 const vodLineHistories = ref([])
 const videoEl = ref(null)
 const videoBox = ref(null)
+const commentSectionEl = ref(null)
+const commentInputEl = ref(null)
 const navEl = ref(null)
 const historyMenuEl = ref(null)
 const userEntryEl = ref(null)
@@ -2573,6 +2583,36 @@ async function submitRating(score) {
   } catch (error) {
     notifyError(apiErrorMessage(error, '评分失败'))
   }
+}
+
+function scrollToComments() {
+  nextTick(() => {
+    commentSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    window.setTimeout(() => commentInputEl.value?.focus?.(), 260)
+  })
+}
+
+async function shareCurrentVod() {
+  const title = vod.value?.name || currentPlayTitle.value || '正在观看'
+  const url = window.location.href
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url })
+      return
+    }
+    await navigator.clipboard?.writeText(url)
+    notifySuccess('分享链接已复制')
+  } catch {
+    notifyWarning('分享已取消')
+  }
+}
+
+function openMyList() {
+  if (!user.value) {
+    goLogin()
+    return
+  }
+  goUser('follows')
 }
 
 function openReport(type, targetId) {
@@ -6171,8 +6211,10 @@ onBeforeUnmount(() => {
 }
 .x8-player-area {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: 100%;
+  height: auto;
   overflow: hidden;
   background: #000;
 }
@@ -8037,10 +8079,8 @@ onBeforeUnmount(() => {
 .x8-request-empty strong { font-size: 20px; color: #fff; }
 .x8-request-empty span { color: rgba(255,255,255,.58); }
 .x8-request-empty button,
-.x8-interaction-head button,
 .x8-comment-input button,
-.x8-play-actions button,
-.x8-danmaku-input button,
+.x8-toolbar-danmaku button,
 .x8-report-modal button {
   border: 0;
   border-radius: 8px;
@@ -8052,39 +8092,175 @@ onBeforeUnmount(() => {
 .x8-request-empty button { height: 38px; padding: 0 18px; }
 .x8-request-empty button:disabled,
 .x8-comment-input button:disabled,
-.x8-danmaku-input button:disabled,
+.x8-toolbar-danmaku button:disabled,
 .x8-report-modal button:disabled {
   opacity: .55;
   cursor: not-allowed;
 }
-.x8-interaction-panel {
-  margin: 26px auto 0;
-  padding: 18px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.055);
-  border: 1px solid rgba(255,255,255,.08);
-}
-.x8-interaction-panel.compact { margin-top: 18px; }
-.x8-interaction-head {
+.x8-under-player-toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 16px;
+  min-height: 58px;
+  padding: 0 18px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  background: rgba(10,10,10,.92);
 }
-.x8-interaction-head div { display: grid; gap: 4px; }
-.x8-interaction-head strong { font-size: 18px; }
-.x8-interaction-head span { color: rgba(255,255,255,.58); font-size: 13px; }
-.x8-interaction-head button {
-  height: 32px;
-  padding: 0 14px;
+.x8-toolbar-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.x8-toolbar-left::-webkit-scrollbar { display: none; }
+.x8-toolbar-left button {
+  flex: 0 0 auto;
+  min-width: 66px;
+  height: 44px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  cursor: pointer;
+}
+.x8-toolbar-left button:hover,
+.x8-toolbar-left button.on {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  border-radius: 8px;
+}
+.x8-toolbar-left svg {
+  width: 19px;
+  height: 19px;
+}
+.x8-toolbar-left span {
+  font-size: 12px;
+  line-height: 1;
+}
+.x8-toolbar-danmaku {
+  flex: 0 1 430px;
+  min-width: 280px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 66px;
+  gap: 8px;
+}
+.x8-toolbar-danmaku button {
+  height: 36px;
+  padding: 0 12px;
   background: rgba(255,255,255,.12);
   color: #fff;
 }
+.x8-toolbar-danmaku button.on {
+  background: #fff;
+  color: #111;
+}
+.x8-toolbar-danmaku input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  outline: 0;
+}
+.x8-comment-section {
+  margin-top: 24px;
+  padding: 4px 0 0;
+}
+.x8-comment-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  color: #fff;
+}
+.x8-comment-title > span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.14);
+  position: relative;
+}
+.x8-comment-title > span::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 2px solid currentColor;
+  border-top: 0;
+  border-radius: 3px 3px 8px 8px;
+  transform: skewX(-8deg);
+}
+.x8-comment-title strong {
+  font-size: 24px;
+  font-weight: 700;
+}
+.x8-comment-title em {
+  color: rgba(255,255,255,.66);
+  font-style: normal;
+  font-size: 16px;
+}
+.x8-comment-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.x8-comment-login button {
+  min-width: 0;
+  height: 70px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255,255,255,.045);
+  color: rgba(255,255,255,.72);
+  cursor: pointer;
+}
+.x8-comment-login button:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 14px;
+}
+.x8-comment-login b {
+  display: inline-grid;
+  place-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.84);
+  border-radius: 4px;
+  color: #fff;
+}
+.x8-comment-login button:last-child {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.x8-comment-login i {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.18);
+}
+.x8-comment-compose {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
 .x8-rating-row {
   display: flex;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 14px;
 }
 .x8-rating-row button {
   width: 30px;
@@ -8098,16 +8274,19 @@ onBeforeUnmount(() => {
 }
 .x8-rating-row button.on,
 .x8-rating-row button:hover { color: #ffc233; }
+.x8-rating-row span {
+  margin-left: 8px;
+  color: rgba(255,255,255,.5);
+  font-size: 13px;
+}
 .x8-comment-box,
 .x8-comment-list { display: grid; gap: 10px; }
-.x8-comment-input,
-.x8-danmaku-input {
+.x8-comment-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 74px;
   gap: 8px;
 }
 .x8-comment-input input,
-.x8-danmaku-input input,
 .x8-report-modal select,
 .x8-report-modal textarea {
   min-width: 0;
@@ -8117,13 +8296,27 @@ onBeforeUnmount(() => {
   color: #fff;
   outline: 0;
 }
-.x8-comment-input input,
-.x8-danmaku-input input {
+.x8-comment-input input {
   height: 38px;
   padding: 0 12px;
 }
-.x8-comment-input button,
-.x8-danmaku-input button { height: 38px; }
+.x8-comment-input button { height: 38px; }
+.x8-comment-tabs {
+  display: flex;
+  gap: 28px;
+  margin: 4px 0 18px;
+}
+.x8-comment-tabs button {
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.48);
+  font-size: 15px;
+  cursor: pointer;
+}
+.x8-comment-tabs button.active {
+  color: #fff;
+  font-weight: 800;
+}
 .x8-comment-list article {
   display: grid;
   gap: 5px;
@@ -8143,22 +8336,12 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,.42);
   font-size: 12px;
 }
-.x8-play-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-.x8-play-actions button {
-  height: 34px;
-  padding: 0 14px;
-  background: rgba(255,255,255,.1);
-  color: #fff;
-}
-.x8-play-actions button.on { background: #fff; color: #111; }
-.x8-danmaku-input {
-  max-width: 520px;
-  margin-top: 12px;
+.x8-comment-empty-large {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
 }
 .x8-danmaku-layer {
   position: absolute;
@@ -8385,6 +8568,7 @@ onBeforeUnmount(() => {
     height: auto;
   }
   .x8-player-area {
+    flex: none;
     aspect-ratio: 16 / 9;
     height: auto;
   }
@@ -8522,6 +8706,20 @@ onBeforeUnmount(() => {
   }
   .x8-panel {
     margin-bottom: 38px;
+  }
+  .x8-under-player-toolbar {
+    min-height: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 10px 10px;
+  }
+  .x8-toolbar-left button { min-width: 58px; }
+  .x8-toolbar-danmaku {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    grid-template-columns: 68px minmax(0, 1fr) 58px;
   }
   .x8-page .x8-panel-title,
   .x8-rank-head h3 {

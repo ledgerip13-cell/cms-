@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P2 用户风控 + 用户互动）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次工作（前台互动布局重排）
 
 ---
 
@@ -195,6 +195,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 前台互动布局重排断点**：按金牌影院 `sdzhgt.com` 当前详情页/播放页信息结构回收前台评论与弹幕布局：详情页不再硬塞评论/评分/弹幕大面板；PC/X8/移动播放页改为播放器下方操作栏承载 `点赞/点踩/评论/收藏/报错/分享/添加`，弹幕开关与输入紧贴播放区；评论区下沉为独立区块，保留登录提示、全部/热门 tab、空状态与登录后评分/评论输入。X8 播放器左侧高度改为播放器区弹性占满、工具栏固定高度，避免工具栏挤压/溢出；PC/X8 窄屏工具栏改为动作横滑 + 弹幕输入换行，移动端登录评论提示补换行约束。已执行 `pnpm --dir web build`、`git diff --check` 通过；本地 Vite `5173` 抽查 hash 路由 `/#/play/987`、`/#/x8/play/987`、`/#/m/play/987`，三端工具栏与评论区选择器均可见，截图无明显重叠。
 - **2026-07-22 P2 用户风控 + 用户互动断点**：按“全局自适应，先 X8、再 PC 默认、最后移动端”落地。后端新增 `server/src/routes/risk.ts` 与 `server/src/routes/interactions.ts`，Prisma 增加 `LoginDevice/UserRiskEvent/UserBanLog/Comment/UserRating/VodRequest/UserReport/SiteMessage/SiteMessageRead/Danmaku` 10 个模型，`WebUser/Vod/SiteConfig` 补封禁字段、评分聚合与互动配置。风控支持异常 IP、多账号设备/IP、登录设备记录、封禁/解封原因；后台新增 `admin/src/views/Risk.vue` 与 `admin/src/views/Interactions.vue`，可管理风险事件、互动开关、评论、评分、求片、举报、站内消息、弹幕。前台 `web/src/x8/X8Home.vue`、PC `Home.vue/Play.vue`、移动 `MobileSearch.vue/MobilePlay.vue` 接入一键求片、评论、评分、举报、站内消息入口与按播放时间飘过的弹幕。已执行 `pnpm --dir server exec prisma validate`、`pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir admin build`、`pnpm --dir web build`、`pnpm --dir server db:push`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `5150/health`、`5151`、`5152` 均 HTTP 200，`/api/interactions/config` 正常返回，评论/评分/弹幕只读接口正常，匿名举报可写入。当前站点配置为 `requestRequireLogin=true`，匿名求片按配置返回 401；PC/移动搜索页会读取互动开关，关闭求片时不显示入口。
 - **2026-07-22 前台当前清晰度显示断点**：播放页补齐当前清晰度显示，覆盖 PC 播放器、移动播放页、X8 播放页、PC 短剧与移动短剧模板；按老大反馈去掉播放器右上角常驻 badge，避免遮挡画面。PC/X8 保留控制条清晰度入口，优先使用 resolve 返回的多清晰度档位，自动档/单清晰度 m3u8 通过 `loadedmetadata/loadeddata/canplay` 的 `video.videoHeight` 兜底；移动播放页在底部控制条显示当前档位；短剧模板在信息区显示当前播放高度/可识别 HLS 最高档。已执行 `pnpm --dir web build`、`git diff --check` 通过，并 `docker compose up -d --build --pull never web` 部署；5152 首页返回 200。
 - **2026-07-22 X8 播放页猜你喜欢换一换修复断点**：定位播放页/详情页 `猜你喜欢` 的 `换一换` 点击无视觉变化，是因为 `refreshRelated()` 每次请求固定 `/api/related` 前 12 条，服务端排序确定导致返回同一批数据。`web/src/x8/X8Home.vue` 已改为初始/刷新拉取最多 24 条相关推荐，新增 `relatedPage/visibleRelated` 本地窗口切换；点击“换一换”时如果已有多页数据，直接切下一组，不再重复展示同一组。已执行 `pnpm --dir web build`、`git diff --check` 通过；当前工作区存在其它未提交改动，部署前需确认是否允许一并进入镜像。
@@ -454,6 +455,7 @@ docker compose up -d --build
 - **2026-07-20 全站热度值统一断点**：定位“热度值低/假热度”的根因是后端热门配置仍为 `pinned + 近30天 + 动漫/电视剧`，且 X8/移动端展示会 fallback 到本地 `_count.plays/playCount/viewCount/hits`。现新增 `server/src/heat.ts`，统一用第三方字段计算 `heatScore/heatValue/heatSource`：`heatScore = max(ratingCount, round(TMDB popularity * 1000))`，来源标记 `rating_count/tmdb_popularity`；`Vod` 表新增 `heatScore/heatSource` 并已全库回填。`/api/vods?sort=hot`、`/api/hot`、短剧智能排序、用户推荐和后台热门预览均改用统一热度；X8、移动搜索、移动剧场不再用本地播放数/线路数伪装热度。当前热门推荐配置已切回全局口径：全部分类、不限时间、热度优先；后台保存热门配置会清聚合缓存。已 `db:gen/db:push`、server/web/admin build、`git diff --check`、`docker compose up -d --build server web admin` 通过；运行态验证 `/api/hot?limit=6` 与 `/api/vods?sort=hot&size=6` 前 6 一致，返回 `给阿嬷的情书 90万`、`扎克·施奈德版正义联盟 36万`、`X战警 30万`、`无职转生 part2 29万(TMDB热度)`。
 - **2026-07-20 X8 个人资料样式回修断点**：`web/src/x8/X8Home.vue` 的 X8 个人中心个人资料 tab 原先存在结构/样式不一致：内层 `x8-user-inner-tabs` 没有样式、个人资料容器沿用 `x8-user-email` 命名和单列 420px 邮箱表单布局、性别 `select` 使用浏览器默认样式。现改为 `x8-user-profile-form`，补 X8 暗色 segmented tabs，资料表单改为桌面双列/窄屏单列，readonly 输入、邮箱输入、性别 select 统一暗色输入框样式。已 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；compose 顺带重建/重启 server，需以 `/health` 复核。
 - **2026-07-20 后台模板选择语义回修断点**：`admin/src/views/Site.vue` 首页设置模板选择拆清为两层：`自适应首页模板` 仅表示 PC/平板自适应模板（默认影视站 / X8 影院模板）；`独立移动端` 改为“默认（跟随PC自适应）/ 短剧 App 模板”。`server/src/routes/site.ts`、`web/src/siteConfig.js`、`admin/src/api/index.js` 将 `homeConfig.mobileTemplate` 默认值改为 `default`，并兼容旧值 `responsive -> default`；运行逻辑保持只有选择具体移动模板 `shortDrama` 时手机才进入 `/m`，默认则跟随 PC 自适应模板。已 `pnpm --dir server build`、`pnpm --dir admin build`、`pnpm --dir web build`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `/api/site` 当前仍为线上配置 `mobileTemplate=shortDrama/adaptiveTemplate=default`，未擅自切换现有移动模板。
+- **2026-07-22 播放页互动布局回修断点**：参考金牌影院当前详情页/播放页结构，前台互动入口从“详情页/信息区硬塞面板”改为“播放页播放器下操作栏 + 独立评论区”。`web/src/x8/X8Home.vue` 移除详情页常驻评论/评分/举报面板，恢复播放器左列下方 `点赞/点踩/评论/收藏/报错/分享/添加` 操作栏，弹幕开关与发送框收进工具栏右侧，评论区下沉到猜你喜欢后面并提供登录提示、全部/热门 tab、空状态；`web/src/views/Play.vue` 普通 PC 播放页同步同一结构；`web/src/mobile/MobilePlay.vue` 移动端改为播放器下横向操作栏 + 紧凑弹幕输入，评论区放到相关推荐后面。后端互动接口、后台审核/开关不变。已 `pnpm --dir web build`、`git diff --check` 通过。
 
 ### 🔴 下一步（接班切入点，基于 2026-07-22 实际代码复核）
 - **HLS clean freshness 后台刷新**：`HlsCleanResult` 已有 `m3u8Hash/checkedAt`，播放链路也已有 `HLS_CLEAN_MAX_AGE_HOURS` 新鲜度限制；但还缺后台刷新任务：定期抓源 m3u8，比对 `m3u8Hash`，内容未变只续 `checkedAt`，内容变化才重新清洗。不要放到 `/api/resolve` 播放请求链路里，避免用户播放时增加源站延迟和压力。

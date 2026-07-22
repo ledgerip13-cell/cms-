@@ -49,6 +49,43 @@
           </div>
         </div>
       </div>
+      <div class="pc-under-player-toolbar">
+        <div class="pc-toolbar-left">
+          <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" title="点赞" @click="submitRating(10)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
+            <span>点赞</span>
+          </button>
+          <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating > 0 && myRating <= 2 }" title="点踩" @click="submitRating(2)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
+            <span>点踩</span>
+          </button>
+          <button v-if="interactionConfig.commentsEnabled" type="button" title="评论" @click="scrollToComments">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
+            <span>评论</span>
+          </button>
+          <button type="button" :class="{ on: followed }" title="收藏" @click="toggleFollow">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
+            <span>收藏</span>
+          </button>
+          <button v-if="interactionConfig.reportsEnabled" type="button" title="报错" @click="openReport('play', curChannel?.id || vod.id)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
+            <span>报错</span>
+          </button>
+          <button type="button" title="分享" @click="shareCurrentVod">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.6 6.8-4.2" /><path d="m8.6 13.4 6.8 4.2" /></svg>
+            <span>分享</span>
+          </button>
+          <button type="button" title="添加" @click="openMyList">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+            <span>添加</span>
+          </button>
+        </div>
+        <div v-if="interactionConfig.danmakuEnabled" class="pc-toolbar-danmaku">
+          <button type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
+          <input v-model.trim="danmakuText" maxlength="80" placeholder="发个弹幕..." @keyup.enter="submitDanmaku" />
+          <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
+        </div>
+      </div>
 
       <div class="now-playing" v-if="curEp">
         <div class="now-playing-text">
@@ -115,30 +152,6 @@
             <button class="mini-btn" v-if="user" @click="router.push('/me')">我的片单</button>
             <button class="mini-btn" v-if="interactionConfig.reportsEnabled" @click="openReport('vod', vod.id)">举报</button>
           </div>
-          <div class="pc-interaction">
-            <div class="pc-interaction-head">
-              <strong>用户互动</strong>
-              <span>{{ ratingSummary }}</span>
-            </div>
-            <div v-if="interactionConfig.ratingsEnabled" class="pc-rating">
-              <button v-for="score in 5" :key="`pc-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
-            </div>
-            <div v-if="interactionConfig.danmakuEnabled" class="pc-danmaku-input">
-              <input v-model.trim="danmakuText" maxlength="80" placeholder="发送弹幕" @keyup.enter="submitDanmaku" />
-              <button type="button" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
-              <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
-            </div>
-            <div v-if="interactionConfig.commentsEnabled" class="pc-comments">
-              <div class="pc-comment-input">
-                <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
-                <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
-              </div>
-              <article v-for="item in comments.slice(0, 8)" :key="`pc-comment-${item.id}`">
-                <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
-                <p>{{ item.content }}</p>
-              </article>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -181,6 +194,38 @@
           </span>
         </div>
       </div>
+      <section v-if="interactionConfig.commentsEnabled" ref="commentSectionEl" class="pc-comment-section">
+        <div class="pc-comment-title">
+          <span></span>
+          <strong>评论区</strong>
+          <em>({{ comments.length }})</em>
+        </div>
+        <div v-if="!user" class="pc-comment-login">
+          <button type="button" @click="openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评论' })">您还未 <b>登录</b> 请登录后发表评论</button>
+          <button type="button" @click="openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评论' })"><i></i><span>写长文</span></button>
+        </div>
+        <div v-else class="pc-comment-compose">
+          <div v-if="interactionConfig.ratingsEnabled" class="pc-rating">
+            <button v-for="score in 5" :key="`pc-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+            <span>{{ ratingSummary }}</span>
+          </div>
+          <div class="pc-comment-input">
+            <input ref="commentInputEl" v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
+            <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
+          </div>
+        </div>
+        <div class="pc-comment-tabs">
+          <button type="button" class="active">全部评论</button>
+          <button type="button">热门评论</button>
+        </div>
+        <div v-if="comments.length" class="pc-comments">
+          <article v-for="item in comments.slice(0, 20)" :key="`pc-comment-${item.id}`">
+            <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+            <p>{{ item.content }}</p>
+          </article>
+        </div>
+        <div v-else class="pc-comment-empty">暂无评论信息~</div>
+      </section>
     </div>
 
     <!-- 右：相关推荐 -->
@@ -292,6 +337,8 @@ const introOpen = ref(false)
 const galleryOpen = ref(false)
 const galleryIdx = ref(0)
 const playerRef = ref(null)
+const commentSectionEl = ref(null)
+const commentInputEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
@@ -933,6 +980,36 @@ async function submitRating(score) {
   } catch (error) { notifyError(apiErrorMessage(error, '评分失败')) }
 }
 
+function scrollToComments() {
+  nextTick(() => {
+    commentSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    window.setTimeout(() => commentInputEl.value?.focus?.(), 260)
+  })
+}
+
+async function shareCurrentVod() {
+  const title = vod.value?.name || currentPlayTitle.value || '正在观看'
+  const url = window.location.href
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, url })
+      return
+    }
+    await navigator.clipboard?.writeText(url)
+    notifySuccess('分享链接已复制')
+  } catch {
+    notifyWarning('分享已取消')
+  }
+}
+
+function openMyList() {
+  if (!user.value) {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可同步片单' })
+    return
+  }
+  router.push('/me')
+}
+
 async function loadDanmakuWindow(force = false) {
   if (!interactionConfig.value.danmakuEnabled || !vod.value?.id) return
   const now = Math.floor(Number(playerState.value.currentTime) || 0)
@@ -1115,7 +1192,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .play-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; }
 .player-col { min-width: 0; }
-.player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
+.player-box { position: relative; background: #000; border-radius: 14px 14px 0 0; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
 .play-failure-dialog { position: absolute; z-index: 9; left: 50%; top: 50%; width: min(360px, calc(100% - 36px)); transform: translate(-50%, -50%); padding: 18px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(14,16,22,.88); color: #fff; text-align: center; box-shadow: 0 18px 52px rgba(0,0,0,.42); backdrop-filter: blur(16px); }
 .play-failure-dialog strong { display: block; font-size: 18px; line-height: 1.25; }
@@ -1126,22 +1203,48 @@ onBeforeUnmount(() => {
 .pc-danmaku-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; }
 .pc-danmaku-layer span { position: absolute; left: 100%; min-width: max-content; padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.28); color: #fff; font-size: 20px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,.85); animation: pcDanmakuMove 7.6s linear forwards; }
 @keyframes pcDanmakuMove { from { transform: translateX(0); } to { transform: translateX(calc(-100vw - 100%)); } }
-.pc-interaction { display: grid; gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.04); }
-.pc-interaction-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.pc-interaction-head strong { color: var(--text); font-size: 16px; }
-.pc-interaction-head span { color: var(--muted2); font-size: 13px; }
-.pc-rating { display: flex; gap: 5px; }
+.pc-under-player-toolbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 16px; border: 1px solid rgba(255,255,255,.08); border-top: 0; border-radius: 0 0 14px 14px; background: rgba(10,10,10,.92); }
+.pc-toolbar-left { min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.pc-toolbar-left::-webkit-scrollbar { display: none; }
+.pc-toolbar-left button { flex: 0 0 auto; min-width: 66px; height: 44px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: rgba(255,255,255,.78); cursor: pointer; }
+.pc-toolbar-left button:hover, .pc-toolbar-left button.on { color: #fff; background: rgba(255,255,255,.08); border-radius: 8px; }
+.pc-toolbar-left svg { width: 19px; height: 19px; }
+.pc-toolbar-left span { font-size: 12px; line-height: 1; }
+.pc-toolbar-danmaku { flex: 0 1 430px; min-width: 280px; display: grid; grid-template-columns: 72px minmax(0, 1fr) 66px; gap: 8px; }
+.pc-toolbar-danmaku button { height: 36px; border: 0; border-radius: 9px; padding: 0 12px; background: rgba(255,255,255,.12); color: #fff; font-weight: 900; cursor: pointer; }
+.pc-toolbar-danmaku button.on { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
+.pc-toolbar-danmaku button:disabled { opacity: .55; cursor: not-allowed; }
+.pc-toolbar-danmaku input { min-width: 0; height: 36px; padding: 0 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.06); color: var(--text); outline: 0; }
+.pc-comment-section { margin-top: 20px; }
+.pc-comment-title { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; color: var(--text); }
+.pc-comment-title > span { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,.14); position: relative; }
+.pc-comment-title > span::before { content: ""; position: absolute; inset: 7px; border: 2px solid currentColor; border-top: 0; border-radius: 3px 3px 8px 8px; transform: skewX(-8deg); }
+.pc-comment-title strong { font-size: 24px; font-weight: 800; }
+.pc-comment-title em { color: var(--muted); font-style: normal; font-size: 16px; }
+.pc-comment-login { display: grid; grid-template-columns: minmax(0, 1fr) 116px; gap: 12px; margin-bottom: 18px; }
+.pc-comment-login button { min-width: 0; height: 70px; border: 0; border-radius: 8px; background: rgba(255,255,255,.045); color: var(--muted); cursor: pointer; }
+.pc-comment-login button:first-child { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 14px; }
+.pc-comment-login b { display: inline-grid; place-items: center; height: 32px; padding: 0 12px; border: 1px solid rgba(255,255,255,.84); border-radius: 4px; color: var(--text); }
+.pc-comment-login button:last-child { display: grid; place-items: center; align-content: center; gap: 4px; font-size: 13px; }
+.pc-comment-login i { width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.18); }
+.pc-comment-compose { display: grid; gap: 12px; margin-bottom: 18px; }
+.pc-rating { display: flex; align-items: center; gap: 5px; }
 .pc-rating button { border: 0; background: transparent; color: rgba(255,255,255,.28); font-size: 22px; cursor: pointer; }
 .pc-rating button.on, .pc-rating button:hover { color: #ffc233; }
-.pc-danmaku-input, .pc-comment-input { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
-.pc-comment-input { grid-template-columns: minmax(0, 1fr) 72px; }
-.pc-danmaku-input input, .pc-comment-input input, .pc-report select, .pc-report textarea { min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.06); color: var(--text); outline: 0; }
-.pc-danmaku-input input, .pc-comment-input input { height: 38px; padding: 0 12px; }
-.pc-danmaku-input button, .pc-comment-input button, .pc-report button { height: 38px; border: 0; border-radius: 9px; padding: 0 14px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
+.pc-rating span { margin-left: 8px; color: var(--muted2); font-size: 13px; }
+.pc-comment-input { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 8px; }
+.pc-comment-input input, .pc-report select, .pc-report textarea { min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.06); color: var(--text); outline: 0; }
+.pc-comment-input input { height: 38px; padding: 0 12px; }
+.pc-comment-input button, .pc-report button { height: 38px; border: 0; border-radius: 9px; padding: 0 14px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
+.pc-comment-input button:disabled { opacity: .55; cursor: not-allowed; }
+.pc-comment-tabs { display: flex; gap: 28px; margin: 4px 0 18px; }
+.pc-comment-tabs button { border: 0; background: transparent; color: var(--muted2); font-size: 15px; cursor: pointer; }
+.pc-comment-tabs button.active { color: var(--text); font-weight: 900; }
 .pc-comments { display: grid; gap: 10px; }
 .pc-comments article { display: grid; gap: 4px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
 .pc-comments b { color: var(--text); font-size: 13px; }
 .pc-comments p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.pc-comment-empty { min-height: 120px; display: grid; place-items: center; border-radius: 8px; background: rgba(255,255,255,.035); color: var(--muted2); font-size: 13px; }
 .pc-report-mask { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.62); }
 .pc-report { width: min(420px, 100%); display: grid; gap: 12px; padding: 18px; border-radius: 14px; background: var(--card); border: 1px solid rgba(255,255,255,.12); }
 .pc-report strong { color: var(--text); font-size: 18px; }
@@ -1323,9 +1426,27 @@ onBeforeUnmount(() => {
   .rec-col { margin-top: 8px; }
   .rec-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
+@media (max-width: 720px) {
+  .pc-under-player-toolbar {
+    min-height: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 10px 10px;
+  }
+  .pc-toolbar-left { padding-bottom: 2px; }
+  .pc-toolbar-left button { min-width: 58px; }
+  .pc-toolbar-danmaku {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    grid-template-columns: 68px minmax(0, 1fr) 58px;
+  }
+}
 @media (max-width: 480px) {
   .play-wrap { gap: 14px; }
-  .player-box { border-radius: 12px; margin: 0 -12px; }
+  .player-box { border-radius: 12px 12px 0 0; margin: 0 -12px; }
+  .pc-under-player-toolbar { margin: 0 -12px; border-radius: 0 0 12px 12px; }
   .play-lock { gap: 10px; padding: 18px; }
   .play-lock-icon { width: 44px; height: 44px; }
   .play-lock-icon svg { width: 23px; height: 23px; }
