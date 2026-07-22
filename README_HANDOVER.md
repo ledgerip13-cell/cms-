@@ -54,7 +54,7 @@ video-cms/
 ├── restart-server.sh           # 服务重启脚本
 ├── .env                        # POSTGRES_* 等（占位，见 §3）
 ├── docs/
-│   ├── backlog.md              # 待办积压（当前 2 项，见 §4 下一步）
+│   ├── backlog.md              # 待办积压（当前实况剩 1 项，见 §4 下一步）
 │   └── frontend-test-report-2026-07-02.md
 │
 ├── server/                     # 后端（Fastify + Prisma）
@@ -447,8 +447,6 @@ docker compose up -d --build
 ### 🔴 下一步（接班切入点，基于 2026-07-22 实际代码复核）
 - **HLS clean freshness 后台刷新**：`HlsCleanResult` 已有 `m3u8Hash/checkedAt`，播放链路也已有 `HLS_CLEAN_MAX_AGE_HOURS` 新鲜度限制；但还缺后台刷新任务：定期抓源 m3u8，比对 `m3u8Hash`，内容未变只续 `checkedAt`，内容变化才重新清洗。不要放到 `/api/resolve` 播放请求链路里，避免用户播放时增加源站延迟和压力。
 - **已复核完成项，不再作为下一步**：播放访问模型已落地在 `publicVod.ts`/`categories.ts`/`resolve.ts`/`users.ts`，展示权限与观看权限分层，隐藏/禁用分类不可观看，`/api/resolve` 直链会走 watch 权限；观看历史、推荐等使用 `watchableTypeNames()`。移动 PWA 顶部黑底、普通 PC 桌面播放器、线路级观看历史、X8 资料页也已在实际代码中存在。
-1. **HLS 清洗新鲜度（后台刷新）**：为过期清洗结果加后台刷新——拉取源 m3u8 比对 `m3u8Hash`，内容不变则仅续期 `checkedAt`，仅当源播放列表变化才重跑清洗。**必须放在播放请求路径之外**，避免增加播放延迟/压力。
-2. **播放访问模型重构**：把分类访问从「两个独立开关」改为**层级模型**；隐藏/禁用展示必须一律等于不可观看（含直连 `/api/resolve`）；观看权限统一按 `展示允许 AND 观看允许` 评估，后台 UI 禁止出现「隐藏展示 + 公开观看」等矛盾配置；抽公共的**服务端展示过滤 / 可观看过滤** helper（勿在历史/关注/推荐里复用基于展示的 `enabledTypeNames()`）；观看历史写入**延迟到 resolve 成功后**，避免被拒播放产生历史记录。
 
 ---
 
