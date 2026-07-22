@@ -29,6 +29,34 @@
         </el-select>
         <div class="hint inline">金牌等源本地转存时下载的清晰度上限。降清晰度可成倍提速并省磁盘。</div>
       </el-form-item>
+      <el-divider content-position="left">片头片尾</el-divider>
+      <el-form-item label="跳过片头片尾">
+        <el-switch v-model="form.skipIntroEnabled" inline-prompt active-text="开启" inactive-text="关闭" />
+        <div class="hint inline">开启后前台播放器会按下方秒数自动跳过片头，片尾进入下一集。</div>
+      </el-form-item>
+      <el-form-item label="片头秒数">
+        <el-input-number v-model="form.skipIntroSeconds" :min="0" :max="600" :step="5" controls-position="right" />
+        <div class="hint inline">0 表示不跳片头。</div>
+      </el-form-item>
+      <el-form-item label="片尾秒数">
+        <el-input-number v-model="form.skipOutroSeconds" :min="0" :max="600" :step="5" controls-position="right" />
+        <div class="hint inline">距离结尾小于该秒数时触发片尾跳过；0 表示不跳片尾。</div>
+      </el-form-item>
+      <el-divider content-position="left">字幕</el-divider>
+      <el-form-item label="默认字幕">
+        <el-select v-model="form.subtitleDefault" style="width:220px">
+          <el-option label="有字幕时自动开启" value="auto" />
+          <el-option label="默认关闭" value="off" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="字幕字号">
+        <el-input-number v-model="form.subtitleFontSize" :min="14" :max="40" :step="1" controls-position="right" />
+      </el-form-item>
+      <el-form-item label="字幕颜色">
+        <el-color-picker v-model="form.subtitleColor" />
+        <el-color-picker v-model="form.subtitleBackground" show-alpha />
+        <div class="hint inline">第一个为文字颜色，第二个为字幕背景色。</div>
+      </el-form-item>
     </el-form>
   </div>
 </template>
@@ -37,22 +65,17 @@
 import { onMounted, ref } from 'vue'
 import { Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { api } from '../api'
+import { api, normalizePlayConfig } from '../api'
 
 const loading = ref(false)
 const saving = ref(false)
-const form = ref({ hideDuplicateSourceChannels: false, proxyMode: 'direct', archiveResolution: 720 })
+const form = ref(normalizePlayConfig({}))
 
 async function load() {
   loading.value = true
   try {
     const site = await api.adminSite()
-    const pc = site.playConfig || {}
-    form.value = {
-      hideDuplicateSourceChannels: pc.hideDuplicateSourceChannels ?? false,
-      proxyMode: pc.proxyMode || 'direct',
-      archiveResolution: pc.archiveResolution ?? 720,
-    }
+    form.value = normalizePlayConfig(site.playConfig || {})
   } finally { loading.value = false }
 }
 

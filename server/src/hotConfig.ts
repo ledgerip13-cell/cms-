@@ -8,6 +8,7 @@ type HotSortMode = (typeof HOT_SORT_MODES)[number];
 export interface HotConfigDto {
   id: number;
   typeNames: string[];
+  searchTerms: string[];
   sortMode: HotSortMode;
   timeWindowDays: number;
   minRating: number;
@@ -20,13 +21,18 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function parseTypeNames(value: string | null | undefined): string[] {
+function parseStringList(value: string | null | undefined, limit = 40): string[] {
   try {
     const arr = JSON.parse(value || "[]");
-    return Array.isArray(arr) ? [...new Set(arr.map((x) => String(x || "").trim()).filter(Boolean))] : [];
+    return Array.isArray(arr) ? [...new Set(arr.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, limit) : [];
   } catch {
     return [];
   }
+}
+
+function inputStringList(value: any, limit = 40): string[] {
+  const rows = Array.isArray(value) ? value : String(value || "").split(/[,\n]/);
+  return [...new Set(rows.map((x: any) => String(x || "").trim()).filter(Boolean))].slice(0, limit);
 }
 
 function normalizeSortMode(value: unknown): HotSortMode {
@@ -37,7 +43,8 @@ function normalizeSortMode(value: unknown): HotSortMode {
 function toDto(row: any): HotConfigDto {
   return {
     id: row.id,
-    typeNames: parseTypeNames(row.typeNames),
+    typeNames: parseStringList(row.typeNames),
+    searchTerms: parseStringList(row.searchTerms, 30),
     sortMode: normalizeSortMode(row.sortMode),
     timeWindowDays: Number(row.timeWindowDays) || 0,
     minRating: Number(row.minRating) || 0,
@@ -57,16 +64,23 @@ export async function ensureHotConfig() {
   return toDto(row);
 }
 
+export async function hotSearchTerms() {
+  const row = await prisma.hotConfig.findUnique({ where: { id: 1 }, select: { searchTerms: true } });
+  return parseStringList((row as any)?.searchTerms, 30);
+}
+
 export async function updateHotConfig(input: any) {
   const publicTypes = await enabledTypeNames();
   const typeNames = Array.isArray(input?.typeNames)
     ? [...new Set(input.typeNames.map((x: any) => String(x || "").trim()).filter((x: string) => publicTypes.includes(x)))]
     : [];
+  const searchTerms = inputStringList(input?.searchTerms, 30);
   const row = await prisma.hotConfig.upsert({
     where: { id: 1 },
     create: {
       id: 1,
       typeNames: JSON.stringify(typeNames),
+      searchTerms: JSON.stringify(searchTerms),
       sortMode: normalizeSortMode(input?.sortMode),
       timeWindowDays: clamp(Number(input?.timeWindowDays) || 0, 0, 3650),
       minRating: clamp(Number(input?.minRating) || 0, 0, 10),
@@ -75,6 +89,7 @@ export async function updateHotConfig(input: any) {
     },
     update: {
       typeNames: JSON.stringify(typeNames),
+      searchTerms: JSON.stringify(searchTerms),
       sortMode: normalizeSortMode(input?.sortMode),
       timeWindowDays: clamp(Number(input?.timeWindowDays) || 0, 0, 3650),
       minRating: clamp(Number(input?.minRating) || 0, 0, 10),

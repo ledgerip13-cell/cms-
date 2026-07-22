@@ -216,6 +216,13 @@ export const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
   proxyMode: 'direct',
   archiveResolution: 720,
+  skipIntroEnabled: false,
+  skipIntroSeconds: 0,
+  skipOutroSeconds: 0,
+  subtitleDefault: 'auto',
+  subtitleFontSize: 22,
+  subtitleColor: '#ffffff',
+  subtitleBackground: 'rgba(0,0,0,.55)',
 }
 
 export const DEFAULT_HOME_CONFIG = {
@@ -331,12 +338,23 @@ export function normalizePlayConfig(config) {
   if (typeof raw === 'string') {
     try { raw = JSON.parse(raw || '{}') } catch { raw = {} }
   }
+  const clamp = (value, fallback, min, max) => {
+    const n = Math.floor(Number(value))
+    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback
+  }
   return {
     ...DEFAULT_PLAY_CONFIG,
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
     proxyMode: ['direct', 'key', 'proxy'].includes(raw?.proxyMode) ? raw.proxyMode : 'direct',
     archiveResolution: [0, 480, 720, 1080].includes(Number(raw?.archiveResolution)) ? Number(raw.archiveResolution) : 720,
+    skipIntroEnabled: raw?.skipIntroEnabled === true,
+    skipIntroSeconds: clamp(raw?.skipIntroSeconds, DEFAULT_PLAY_CONFIG.skipIntroSeconds, 0, 600),
+    skipOutroSeconds: clamp(raw?.skipOutroSeconds, DEFAULT_PLAY_CONFIG.skipOutroSeconds, 0, 600),
+    subtitleDefault: ['auto', 'off'].includes(raw?.subtitleDefault) ? raw.subtitleDefault : DEFAULT_PLAY_CONFIG.subtitleDefault,
+    subtitleFontSize: clamp(raw?.subtitleFontSize, DEFAULT_PLAY_CONFIG.subtitleFontSize, 14, 40),
+    subtitleColor: String(raw?.subtitleColor || DEFAULT_PLAY_CONFIG.subtitleColor).trim() || DEFAULT_PLAY_CONFIG.subtitleColor,
+    subtitleBackground: String(raw?.subtitleBackground || DEFAULT_PLAY_CONFIG.subtitleBackground).trim() || DEFAULT_PLAY_CONFIG.subtitleBackground,
   }
 }
 

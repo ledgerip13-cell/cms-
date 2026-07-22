@@ -15,6 +15,7 @@
         v-if="mode === 'hls' && !accessBlock"
         ref="videoEl"
         class="mp-video"
+        :style="subtitleStyleVars"
         autoplay
         preload="auto"
         :poster="poster(vod)"
@@ -25,11 +26,13 @@
         @play="isPlaying = true"
         @pause="isPlaying = false"
         @volumechange="syncVideoState"
-        @loadedmetadata="syncVideoState"
+        @loadedmetadata="onLoadedMetadata"
         @durationchange="syncVideoState"
         @timeupdate="onTimeUpdate"
         @error="handlePlaybackError"
-      ></video>
+      >
+        <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
+      </video>
       <iframe v-else-if="mode === 'iframe' && !accessBlock" class="mp-video" :src="curUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
       <div v-if="loading || resolving" class="mp-state">
         <div></div>
@@ -100,6 +103,15 @@
               {{ rate === 1 ? '1x' : `${rate}x` }}
             </button>
           </div>
+          <label class="mp-menu-toggle">
+            <span>跳过片头片尾</span>
+            <input v-model="skipIntroOutro" type="checkbox" />
+            <i></i>
+          </label>
+          <div v-if="subtitleOptions.length" class="mp-menu-subtitles">
+            <button type="button" :class="{ on: selectedSubtitle === 'off' }" @click.stop="selectSubtitle('off')">字幕关</button>
+            <button v-for="(sub, index) in subtitleOptions" :key="sub.url" type="button" :class="{ on: selectedSubtitle === String(index) }" @click.stop="selectSubtitle(String(index))">{{ sub.label }}</button>
+          </div>
           <button class="mp-menu-cast" type="button" @click.stop="openCast">
             <svg viewBox="0 0 24 24" v-html="icon('cast')"></svg>
             投屏
@@ -107,6 +119,15 @@
         </div>
       </div>
       <div v-if="playNotice" class="mp-notice">{{ playNotice }}</div>
+      <div v-if="playFailure.open" class="mp-failure" @click.stop>
+        <strong>{{ playFailure.title }}</strong>
+        <p>{{ playFailure.message }}</p>
+        <div>
+          <button type="button" @click.stop="retryCurrentPlayback">重试</button>
+          <button v-if="hasNextEp" type="button" @click.stop="playFailureNext">下一集</button>
+          <button type="button" @click.stop="manualSwitchLine">换线</button>
+        </div>
+      </div>
       <div v-if="seeking" class="mp-seek-preview">{{ formatTime(seekPreviewTime) }} / {{ formatTime(duration) }}</div>
     </section>
 
@@ -200,6 +221,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { notifySuccess, notifyWarning } from '../feedback'
+import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { currentUser } from '../userStore'
 import { icon } from './icons'
 
@@ -218,8 +240,12 @@ const introOpen = ref(false)
 const followed = ref(false)
 const accessBlock = ref(null)
 const playNotice = ref('')
+const playFailure = ref({ open: false, title: '', message: '', switching: false })
 const curUrl = ref('')
 const currentResolve = ref(null)
+const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
+const subtitles = ref([])
+const selectedSubtitle = ref('off')
 const mode = ref('hls')
 const lineIdx = ref(0)
 const chanIdx = ref(0)
@@ -238,6 +264,7 @@ const centerControlsVisible = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const playbackRate = ref(1)
+const skipIntroOutro = ref(false)
 const qualityLevel = ref(-1)
 const qualityOptions = ref([])
 const menuOpen = ref(false)
@@ -267,6 +294,8 @@ let bodyOverflowBeforeLandscape = ''
 let pageActive = false
 let loadSeq = 0
 let playbackSeq = 0
+let introSkippedUrl = ''
+let outroSkippedUrl = ''
 
 const curLine = computed(() => vod.value.lines?.[lineIdx.value] || null)
 const curChannel = computed(() => curLine.value?.channels?.[chanIdx.value] || curLine.value)
@@ -311,6 +340,19 @@ const historyProgressPercent = computed(() => {
   return total > 0 ? `${Math.max(2, Math.min(100, (progress / total) * 100))}%` : '2px'
 })
 const showQualityControl = computed(() => qualityOptions.value.length > 1)
+const subtitleOptions = computed(() => (Array.isArray(subtitles.value) ? subtitles.value : [])
+  .map((item, index) => ({
+    url: String(item?.url || '').trim(),
+    lang: String(item?.lang || 'zh').trim() || 'zh',
+    label: String(item?.label || item?.lang || `字幕${index + 1}`).trim() || `字幕${index + 1}`,
+  }))
+  .filter(item => item.url))
+const subtitleDefaultEnabled = computed(() => playConfig.value.subtitleDefault !== 'off')
+const subtitleStyleVars = computed(() => ({
+  '--mp-subtitle-color': String(playConfig.value.subtitleColor || '#fff'),
+  '--mp-subtitle-bg': String(playConfig.value.subtitleBackground || 'rgba(0,0,0,.55)'),
+  '--mp-subtitle-size': `${Math.max(14, Math.min(40, Number(playConfig.value.subtitleFontSize) || 22))}px`,
+}))
 const showCenterControls = computed(() => controlsVisible.value && centerControlsVisible.value && !seeking.value)
 const qualityLabel = computed(() => {
   if (qualityLevel.value < 0) return '自动'
@@ -409,6 +451,26 @@ function showNotice(message) {
   noticeTimer = window.setTimeout(() => { playNotice.value = '' }, 3600)
 }
 
+function showPlayFailure(title, message, switching = false) {
+  playFailure.value = { open: true, title, message, switching }
+}
+
+function closePlayFailure() {
+  playFailure.value.open = false
+}
+
+async function refreshPlayConfig() {
+  try {
+    const site = await api.site()
+    writeCachedSite(site)
+    playConfig.value = normalizePlayConfig(site?.playConfig)
+    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    resetSubtitleSelection()
+  } catch {
+    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  }
+}
+
 function playbackLineLabel(line = curLine.value, li = lineIdx.value) {
   return lineLabel(line, li)
 }
@@ -489,6 +551,8 @@ function clearPlaybackMedia() {
   menuOpen.value = false
   qualityLevel.value = -1
   qualityOptions.value = []
+  introSkippedUrl = ''
+  outroSkippedUrl = ''
   retryingLine = false
   if (controlsTimer) clearTimeout(controlsTimer)
 }
@@ -635,11 +699,89 @@ async function openCast() {
 function syncVideoState() {
   const video = videoEl.value
   if (!video) return
+  applySkipRanges()
   currentTime.value = Number(video.currentTime) || 0
   duration.value = Number.isFinite(video.duration) ? Number(video.duration) || 0 : 0
   isPlaying.value = !video.paused
   isMuted.value = video.muted || Number(video.volume) === 0
   video.playbackRate = playbackRate.value
+}
+
+function onLoadedMetadata() {
+  syncVideoState()
+  applySubtitleMode()
+  applySkipIntro()
+}
+
+function defaultSubtitleValue() {
+  return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
+}
+
+function resetSubtitleSelection() {
+  selectedSubtitle.value = defaultSubtitleValue()
+  nextTick(() => {
+    applySubtitleMode()
+    window.setTimeout(applySubtitleMode, 180)
+  })
+}
+
+function applySubtitleMode() {
+  const tracks = videoEl.value?.textTracks
+  if (!tracks) return
+  for (let i = 0; i < tracks.length; i++) {
+    tracks[i].mode = selectedSubtitle.value === String(i) ? 'showing' : 'disabled'
+  }
+}
+
+function selectSubtitle(value) {
+  selectedSubtitle.value = String(value)
+  applySubtitleMode()
+  showControls(2600, { center: false })
+}
+
+function skipIntroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+}
+
+function skipOutroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+}
+
+function skipEnabled() {
+  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+}
+
+function applySkipIntro() {
+  const video = videoEl.value
+  const intro = skipIntroSeconds()
+  const total = Number(video?.duration) || 0
+  if (!video || !skipEnabled() || !intro || introSkippedUrl === curUrl.value) return
+  if (total && intro >= total - 8) return
+  if ((Number(video.currentTime) || 0) < Math.max(1, intro - 0.5)) {
+    introSkippedUrl = curUrl.value
+    try {
+      video.currentTime = intro
+      currentTime.value = intro
+    } catch {}
+  }
+}
+
+function applySkipRanges() {
+  const video = videoEl.value
+  if (!video || !skipEnabled()) return
+  applySkipIntro()
+  const outro = skipOutroSeconds()
+  const total = Number(video.duration) || 0
+  const now = Number(video.currentTime) || 0
+  if (!outro || !total || total < 30 || now < total - outro || outroSkippedUrl === curUrl.value) return
+  outroSkippedUrl = curUrl.value
+  if (hasNextEp.value) playNextEp()
+  else {
+    try {
+      video.currentTime = Math.max(0, total - 0.3)
+      video.pause()
+    } catch {}
+  }
 }
 
 function onTimeUpdate() {
@@ -964,6 +1106,7 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
   nextTick(() => {
     const video = videoEl.value
     if (!video || !isPlaybackCurrent(seq)) return
+    resetSubtitleSelection()
     const isM3u8 = kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)
     const nativeHls = isM3u8 && video.canPlayType('application/vnd.apple.mpegurl')
     video.addEventListener('loadedmetadata', () => applyHistorySeek(video), { once: true })
@@ -973,7 +1116,7 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
       video.playbackRate = playbackRate.value
       startVideo(video, seq)
     } else if (isM3u8 && Hls.isSupported()) {
-      const hlsInstance = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
+      const hlsInstance = new Hls({ maxBufferLength: 180, maxMaxBufferLength: 180, capLevelToPlayerSize: true })
       hls = hlsInstance
       hlsInstance.attachMedia(video)
       hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
@@ -1043,11 +1186,16 @@ async function playCurrent() {
   const seq = nextPlaybackSeq()
   resolving.value = true
   accessBlock.value = null
+  closePlayFailure()
+  subtitles.value = []
+  resetSubtitleSelection()
   try {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex })
     if (!isPlaybackCurrent(seq)) return
     if (result?.ok && result.url) {
       currentResolve.value = result
+      subtitles.value = Array.isArray(result.subtitles) ? result.subtitles : []
+      resetSubtitleSelection()
       playingChannel.value = channel
       playingEpIndex.value = playEpIndex
       playingEpName.value = playEp?.name || ''
@@ -1144,6 +1292,7 @@ function shouldProbeResolvedPlayback(result) {
 async function tryNextLine(reason = '当前线路播放失败') {
   if (retryingLine || autoSwitchingLine) return false
   reportPlaybackError(reason, [{ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason }], { event: 'current_line_failed' })
+  showPlayFailure('线路异常', '当前线路播放失败，正在尝试备用线路。', true)
   const slots = playbackSlots()
   const failures = []
   const failMessage = '当前无可播放线路，请稍后重试'
@@ -1151,6 +1300,7 @@ async function tryNextLine(reason = '当前线路播放失败') {
     failures.push({ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason })
     reportPlaybackError(failMessage, failures)
     showNotice(failMessage)
+    showPlayFailure('播放失败', '当前影片没有可切换的备用线路，请稍后重试。')
     return false
   }
   retryingLine = true
@@ -1172,6 +1322,8 @@ async function tryNextLine(reason = '当前线路播放失败') {
         if (!isPlaybackCurrent(seq)) return false
         if (!result?.ok || !result.url) throw new Error(result?.error || '解析失败')
         currentResolve.value = result
+        subtitles.value = Array.isArray(result.subtitles) ? result.subtitles : []
+        resetSubtitleSelection()
         if (shouldProbeResolvedPlayback(result)) await probePlaybackUrl(result.url, result.kind || '')
         if (!isPlaybackCurrent(seq)) return false
         lineIdx.value = next.li
@@ -1185,6 +1337,7 @@ async function tryNextLine(reason = '当前线路播放失败') {
         playDirect(result.url, result.kind || '', nextPlaybackSeq())
         focusPlaybackContext('line')
         showNotice(`已切换到可播放线路：${label}`)
+        closePlayFailure()
         return true
       } catch (error) {
         const failure = {
@@ -1206,12 +1359,28 @@ async function tryNextLine(reason = '当前线路播放失败') {
     }
     reportPlaybackError(failMessage, failures)
     showNotice(failMessage)
+    showPlayFailure('播放失败', failures.length ? `已尝试 ${failures.length} 条备用线路，仍无法播放。` : '当前无可播放线路，请稍后重试。')
     clearPlaybackMedia()
     return false
   } finally {
     retryingLine = false
     autoSwitchingLine = false
   }
+}
+
+function retryCurrentPlayback() {
+  closePlayFailure()
+  playCurrent()
+}
+
+function playFailureNext() {
+  closePlayFailure()
+  playNextEp()
+}
+
+function manualSwitchLine() {
+  closePlayFailure()
+  void tryNextLine('手动切换线路')
 }
 
 function saveHistory(progressOverride = null) {
@@ -1279,6 +1448,9 @@ async function loadVod(id) {
   playingChannel.value = null
   playingEpIndex.value = 0
   playingEpName.value = ''
+  closePlayFailure()
+  subtitles.value = []
+  resetSubtitleSelection()
   try {
     const data = await api.vod(id)
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
@@ -1312,6 +1484,10 @@ async function loadVod(id) {
 watch(() => route.params.id, (id) => {
   if (isPlayRoute() && id) loadVod(id)
 })
+watch(() => playConfig.value, () => {
+  skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  resetSubtitleSelection()
+}, { deep: true, immediate: true })
 watch(() => route.path, (path) => {
   if (String(path || '').startsWith('/m/play')) return
   pageActive = false
@@ -1321,6 +1497,7 @@ watch(() => route.path, (path) => {
 })
 onMounted(() => {
   pageActive = true
+  void refreshPlayConfig()
   if (isPlayRoute() && route.params.id) loadVod(route.params.id)
 })
 onActivated(() => {
@@ -1400,6 +1577,13 @@ onDeactivated(() => {
   height: 100%;
   object-fit: contain;
   background: #000;
+}
+.mp-video::cue {
+  color: var(--mp-subtitle-color, #fff);
+  background: var(--mp-subtitle-bg, rgba(0,0,0,.55));
+  font-size: var(--mp-subtitle-size, 22px);
+  line-height: 1.38;
+  text-shadow: 0 2px 5px rgba(0,0,0,.9);
 }
 .mp-topbar {
   position: absolute;
@@ -1655,6 +1839,75 @@ onDeactivated(() => {
   color: #fff;
   background: #f04438;
 }
+.mp-menu-toggle {
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255,255,255,.86);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-menu-toggle input {
+  display: none;
+}
+.mp-menu-toggle i {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.2);
+  flex: 0 0 auto;
+}
+.mp-menu-toggle i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .16s ease;
+}
+.mp-menu-toggle input:checked + i {
+  background: #f04438;
+}
+.mp-menu-toggle input:checked + i::after {
+  transform: translateX(16px);
+}
+.mp-menu-subtitles {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mp-menu-subtitles::-webkit-scrollbar {
+  display: none;
+}
+.mp-menu-subtitles button {
+  flex: 0 0 auto;
+  max-width: 116px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 9px;
+  color: rgba(255,255,255,.8);
+  background: rgba(255,255,255,.1);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-menu-subtitles button.on {
+  color: #fff;
+  background: #f04438;
+}
 .mp-menu-cast {
   display: inline-flex;
   align-items: center;
@@ -1712,6 +1965,51 @@ onDeactivated(() => {
   font-size: 12px;
   font-weight: var(--small-text-max-weight);
   white-space: nowrap;
+}
+.mp-failure {
+  position: absolute;
+  z-index: 11;
+  left: 50%;
+  top: 50%;
+  width: min(318px, calc(100vw - 42px));
+  transform: translate(-50%, -50%);
+  padding: 18px;
+  border-radius: 18px;
+  color: #fff;
+  text-align: center;
+  background: rgba(10,10,12,.86);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 48px rgba(0,0,0,.36);
+}
+.mp-failure strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.3;
+}
+.mp-failure p {
+  margin: 8px 0 14px;
+  color: rgba(255,255,255,.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mp-failure div {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mp-failure button {
+  min-width: 68px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255,255,255,.12);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-failure button:first-child {
+  background: #f04438;
 }
 .mp-seek-preview {
   position: absolute;

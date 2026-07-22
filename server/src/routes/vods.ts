@@ -7,7 +7,7 @@ import { createArchiveTask, removeArchive } from "../collector/taskRunner.js";
 import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { normalizeName } from "../collector/dedupe.js";
 import { enabledCleanOnlySourceIds, enabledPlayableSourceIds, enabledTypeNames, formatPublicRating, isPublicType, normalizeDisplayAccessMode, normalizeWatchAccessMode, publicPlayableFilter, publicPlayCountSelect, publicTypeFilter, requestedPublicType, viewerFromRequest, visibleTypeNames, watchableTypeNames } from "../publicVod.js";
-import { hotVodQuery } from "../hotConfig.js";
+import { hotSearchTerms, hotVodQuery } from "../hotConfig.js";
 import { normalizeHomeConfig, normalizePlayConfig, normalizeShortsConfig } from "./site.js";
 import { cleanText, cleanVodTextFields } from "../textClean.js";
 import { aggregateCacheGet, aggregateCacheSet, invalidateAggregateCache } from "../aggregateCache.js";
@@ -118,6 +118,43 @@ function headerOf(headers: Record<string, any>, name: string) {
 
 function normalizeSearchKw(value: unknown) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+}
+
+function levenshtein(a: string, b: string) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = Array.from({ length: b.length + 1 }, () => 0);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+function correctionScore(input: string, vod: any) {
+  const kw = normalizeName(input);
+  if (!kw || kw.length < 2) return 0;
+  const names = [
+    vod?.name,
+    vod?.matchedTitle,
+    ...(Array.isArray(vod?.aliases) ? vod.aliases.map((a: any) => a?.note) : []),
+  ].map((x) => normalizeName(x)).filter(Boolean);
+  let best = 0;
+  for (const name of names) {
+    if (name === kw) best = Math.max(best, 1);
+    else if (name.includes(kw) || kw.includes(name)) best = Math.max(best, Math.min(name.length, kw.length) / Math.max(name.length, kw.length));
+    else {
+      const dist = levenshtein(kw, name);
+      best = Math.max(best, 1 - dist / Math.max(kw.length, name.length));
+    }
+  }
+  return best;
 }
 
 function doneRemarksWhere() {
@@ -967,29 +1004,130 @@ export default async function vodRoutes(app: FastifyInstance) {
 
   app.get("/api/search-hot-terms", async (req) => {
     const limit = Math.max(1, Math.min(20, Number((req.query as any)?.limit) || 10));
+    const manualTerms = await hotSearchTerms().catch(() => []);
+    const manual = manualTerms.slice(0, limit).map((kw, index) => ({
+      kw,
+      count: 0,
+      source: "manual",
+      rank: index + 1,
+    }));
+    const blocked = new Set(manual.map((row) => normalizeName(row.kw)).filter(Boolean));
+    const remaining = Math.max(0, limit - manual.length);
+    if (remaining <= 0) return manual;
     const since = new Date(Date.now() - 30 * DAY_MS);
     const rows = await prisma.searchLog.groupBy({
       by: ["normalizedKw"],
-      where: { createdAt: { gte: since }, normalizedKw: { not: "" } },
+      where: {
+        createdAt: { gte: since },
+        normalizedKw: blocked.size ? { not: "", notIn: [...blocked] } : { not: "" },
+      },
       _count: { _all: true },
       orderBy: { _count: { normalizedKw: "desc" } },
-      take: limit * 2,
+      take: remaining * 2,
     });
-    if (!rows.length) return [];
+    if (!rows.length) return manual;
     const logs = await prisma.searchLog.findMany({
       where: { normalizedKw: { in: rows.map((row) => row.normalizedKw) } },
       orderBy: { createdAt: "desc" },
       select: { normalizedKw: true, kw: true },
-      take: limit * 20,
+      take: remaining * 20,
     });
     const latest = new Map<string, string>();
     for (const row of logs) {
       if (!latest.has(row.normalizedKw)) latest.set(row.normalizedKw, row.kw);
     }
-    return rows.slice(0, limit).map((row) => ({
+    const dynamic = rows.slice(0, remaining).map((row, index) => ({
       kw: latest.get(row.normalizedKw) || row.normalizedKw,
       count: row._count._all,
+      source: "log",
+      rank: manual.length + index + 1,
     }));
+    return [...manual, ...dynamic].slice(0, limit);
+  });
+
+  app.get("/api/search-corrections", async (req) => {
+    const q = (req.query as any) || {};
+    const kw = normalizeSearchKw(q.kw);
+    if (kw.length < 2) return [];
+    const limit = Math.max(1, Math.min(5, Number(q.limit) || 3));
+    const viewer = await viewerFromRequest(req);
+    const [publicTypes, sourceIds, cleanOnlySourceIds] = await Promise.all([enabledTypeNames(viewer), enabledPlayableSourceIds(), enabledCleanOnlySourceIds()]);
+    const normalized = normalizeName(kw);
+    const probes = [...new Set([
+      kw,
+      normalized,
+      normalized.slice(0, 2),
+      normalized.slice(0, 1),
+      kw.slice(0, 1),
+    ].map((x) => String(x || "").trim()).filter(Boolean))];
+    const baseWhere = {
+      status: "online",
+      typeName: publicTypeFilter(publicTypes),
+      ...publicPlayableFilter(sourceIds, cleanOnlySourceIds),
+    };
+    const or = probes.flatMap((probe) => [
+      { name: { contains: probe, mode: Prisma.QueryMode.insensitive } },
+      { matchedTitle: { contains: probe, mode: Prisma.QueryMode.insensitive } },
+      { aliases: { some: { note: { contains: probe, mode: Prisma.QueryMode.insensitive } } } },
+    ]);
+    const rows = await prisma.vod.findMany({
+      where: { ...baseWhere, OR: or },
+      select: {
+        id: true,
+        name: true,
+        matchedTitle: true,
+        typeName: true,
+        year: true,
+        remarks: true,
+        officialPic: true,
+        pic: true,
+        localPic: true,
+        heroPic: true,
+        aliases: { select: { note: true }, take: 8 },
+      },
+      orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
+      take: 300,
+    });
+    let candidates = rows;
+    if (candidates.length < 20) {
+      const fill = await prisma.vod.findMany({
+        where: { ...baseWhere, id: { notIn: rows.map((row) => row.id) } },
+        select: {
+          id: true,
+          name: true,
+          matchedTitle: true,
+          typeName: true,
+          year: true,
+          remarks: true,
+          officialPic: true,
+          pic: true,
+          localPic: true,
+          heroPic: true,
+          aliases: { select: { note: true }, take: 8 },
+        },
+        orderBy: [{ heatScore: "desc" }, { ratingCount: "desc" }, { updatedAt: "desc" }],
+        take: 180,
+      });
+      candidates = [...rows, ...fill];
+    }
+    return candidates
+      .map((row) => ({ ...row, score: correctionScore(kw, row) }))
+      .filter((row) => row.score >= 0.45 && normalizeName(row.name) !== normalized)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((row) => ({
+        id: row.id,
+        kw: row.name,
+        name: row.name,
+        typeName: row.typeName,
+        year: row.year,
+        remarks: row.remarks,
+        officialPic: row.officialPic,
+        pic: row.pic,
+        localPic: row.localPic,
+        heroPic: row.heroPic,
+        score: Number(row.score.toFixed(3)),
+      }));
   });
 
   app.get("/api/trailers", async (req, reply) => {

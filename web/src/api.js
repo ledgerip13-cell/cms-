@@ -9,6 +9,7 @@ http.interceptors.response.use(r => r.data)
 export const api = {
   vods: (params) => http.get('/vods', { params }),
   vodSuggest: (kw, limit = 10) => http.get('/vods/suggest', { params: { kw, limit } }),
+  searchCorrections: (kw, limit = 3) => http.get('/search-corrections', { params: { kw, limit } }),
   vod: (id) => http.get(`/vods/${id}`),
   person: (id) => http.get(`/people/${id}`),
   types: () => http.get('/types'),

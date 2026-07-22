@@ -450,6 +450,7 @@
                     <video
                       v-if="playKind !== 'iframe'"
                       ref="videoEl"
+                      :style="subtitleStyleVars"
                       playsinline
                       webkit-playsinline
                       x-webkit-airplay="allow"
@@ -457,7 +458,7 @@
                       :poster="heroImage(vod)"
                       @click="onVideoClick"
                       @timeupdate="syncVideoState"
-                      @loadedmetadata="syncVideoState"
+                      @loadedmetadata="onVideoLoadedMetadata"
                       @play="playing = true"
                       @pause="onVideoPause"
                       @volumechange="syncVideoState"
@@ -465,7 +466,9 @@
                       @error="handlePlaybackError"
                       @webkitbeginfullscreen="onNativeVideoFullscreen(true)"
                       @webkitendfullscreen="onNativeVideoFullscreen(false)"
-                    ></video>
+                    >
+                      <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
+                    </video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
                       <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" /><path d="m12 15 5 6H7Z" /></svg>
@@ -525,6 +528,15 @@
                                   <b>{{ playbackRateLabel }}</b>
                                   <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
                                 </button>
+                                <button v-if="subtitleOptions.length" class="x8-setting-row" type="button" @click="subtitleOpen = !subtitleOpen">
+                                  <span>字幕</span>
+                                  <b>{{ subtitleLabel }}</b>
+                                  <svg class="x8-lucide" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
+                                </button>
+                                <div v-if="subtitleOptions.length && subtitleOpen" class="x8-subtitle-panel">
+                                  <button type="button" :class="{ on: selectedSubtitle === 'off' }" @click="selectSubtitle('off')">关闭</button>
+                                  <button v-for="(sub, index) in subtitleOptions" :key="sub.url" type="button" :class="{ on: selectedSubtitle === String(index) }" @click="selectSubtitle(String(index))">{{ sub.label }}</button>
+                                </div>
                               </template>
                               <div v-else class="x8-rate-panel">
                                 <button class="x8-setting-back" type="button" @click="rateOpen = false">
@@ -548,6 +560,15 @@
                             <svg class="x8-lucide x8-icon-fullscreen" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" /><rect width="10" height="8" x="7" y="8" rx="1" /></svg>
                           </button>
                         </div>
+                      </div>
+                    </div>
+                    <div v-if="playFailure.open" class="x8-playback-dialog" @click.stop>
+                      <strong>{{ playFailure.title }}</strong>
+                      <p>{{ playFailure.message }}</p>
+                      <div>
+                        <button type="button" @click="retryCurrentPlayback">重试</button>
+                        <button type="button" @click="manualSwitchLine">换线</button>
+                        <button type="button" @click="playFailure.open = false">关闭</button>
                       </div>
                     </div>
                   </div>
@@ -979,7 +1000,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
-import { readCachedCategories, readCachedSite, writeCachedCategories } from '../siteConfig'
+import { normalizePlayConfig, readCachedCategories, readCachedSite, writeCachedCategories, writeCachedSite } from '../siteConfig'
 import { clearSession, currentUser, refreshUser, setSession } from '../userStore'
 
 defineOptions({ name: 'X8Home' })
@@ -987,6 +1008,7 @@ defineOptions({ name: 'X8Home' })
 const route = useRoute()
 const router = useRouter()
 const site = ref(readCachedSite())
+const playConfig = ref(normalizePlayConfig(site.value?.playConfig))
 const types = ref(readCachedCategories())
 const heroItems = ref([])
 const hotItems = ref([])
@@ -1038,6 +1060,9 @@ const currentEpIndex = ref(0)
 const playUrl = ref('')
 const playKind = ref('')
 const currentResolve = ref(null)
+const subtitles = ref([])
+const selectedSubtitle = ref('off')
+const playFailure = ref({ open: false, title: '', message: '', switching: false })
 const resolving = ref(false)
 const vodHistory = ref(null)
 const vodLineHistories = ref([])
@@ -1075,6 +1100,7 @@ const preferredRes = ref(0)
 const qualityOpen = ref(false)
 const settingsOpen = ref(false)
 const rateOpen = ref(false)
+const subtitleOpen = ref(false)
 const defaultQualityUrl = ref('')
 const detailEpDesc = ref(false)
 const playEpDesc = ref(false)
@@ -1112,6 +1138,8 @@ let historySaveAt = 0
 let hls = null
 let trailerHls = null
 let autoSwitchingPlayback = false
+let introSkippedUrl = ''
+let outroSkippedUrl = ''
 
 const sortItems = [
   { value: 'hot', label: '热门' },
@@ -1303,6 +1331,23 @@ const activeQuality = computed(() => {
   }
   return [...qualities.value].sort((a, b) => Number(b.resolution || 0) - Number(a.resolution || 0))[0]
 })
+const subtitleOptions = computed(() => (Array.isArray(subtitles.value) ? subtitles.value : [])
+  .map((item, index) => ({
+    url: String(item?.url || '').trim(),
+    lang: String(item?.lang || 'zh').trim() || 'zh',
+    label: String(item?.label || item?.lang || `字幕${index + 1}`).trim() || `字幕${index + 1}`,
+  }))
+  .filter(item => item.url))
+const subtitleDefaultEnabled = computed(() => playConfig.value.subtitleDefault !== 'off')
+const subtitleLabel = computed(() => {
+  if (selectedSubtitle.value === 'off') return '关闭'
+  return subtitleOptions.value[Number(selectedSubtitle.value)]?.label || '自动'
+})
+const subtitleStyleVars = computed(() => ({
+  '--x8-subtitle-color': String(playConfig.value.subtitleColor || '#fff'),
+  '--x8-subtitle-bg': String(playConfig.value.subtitleBackground || 'rgba(0,0,0,.55)'),
+  '--x8-subtitle-size': `${Math.max(14, Math.min(40, Number(playConfig.value.subtitleFontSize) || 22))}px`,
+}))
 const activeQualityResolution = computed(() => activeQuality.value?.resolution || 0)
 const currentQualityResLabel = computed(() => {
   const res = activeQualityResolution.value
@@ -2237,6 +2282,12 @@ function startSearchHintTimer() {
   }, 3200)
 }
 async function loadSearchHints() {
+  const manual = await api.searchHotTerms(12).catch(() => [])
+  const manualNames = Array.isArray(manual) ? manual.map(row => String(row?.kw || '').trim()).filter(Boolean) : []
+  if (manualNames.length) {
+    searchHints.value = [...new Set(manualNames)].slice(0, 12)
+    return
+  }
   const rows = await api.vods({ page: 1, size: 24, sort: 'hot' }).catch(() => ({ list: [] }))
   const names = (rows?.list || [])
     .filter(item => heatScore(item) > 0)
@@ -2244,6 +2295,18 @@ async function loadSearchHints() {
     .map(item => String(item?.name || '').trim())
     .filter(Boolean)
   searchHints.value = [...new Set(names)].slice(0, 12)
+}
+async function refreshSiteConfig() {
+  try {
+    const data = await api.site()
+    site.value = writeCachedSite(data)
+    playConfig.value = normalizePlayConfig(site.value?.playConfig)
+    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+    resetSubtitleSelection()
+  } catch {
+    playConfig.value = normalizePlayConfig(site.value?.playConfig)
+    skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  }
 }
 function destroyHls() {
   if (hls) {
@@ -2327,11 +2390,80 @@ async function toggleTrailerPlayback() {
 function syncVideoState() {
   const video = videoEl.value
   if (!video) return
+  applySkipRanges()
   currentTime.value = Number(video.currentTime) || 0
   duration.value = Number.isFinite(video.duration) ? Number(video.duration) : 0
   muted.value = Boolean(video.muted || video.volume === 0)
   playing.value = !video.paused && !video.ended
   saveHistoryTick()
+}
+function onVideoLoadedMetadata() {
+  syncVideoState()
+  applySubtitleMode()
+  applySkipIntro()
+}
+function defaultSubtitleValue() {
+  return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
+}
+function resetSubtitleSelection() {
+  selectedSubtitle.value = defaultSubtitleValue()
+  nextTick(() => {
+    applySubtitleMode()
+    window.setTimeout(applySubtitleMode, 180)
+  })
+}
+function applySubtitleMode() {
+  const tracks = videoEl.value?.textTracks
+  if (!tracks) return
+  for (let i = 0; i < tracks.length; i++) {
+    tracks[i].mode = selectedSubtitle.value === String(i) ? 'showing' : 'disabled'
+  }
+}
+function selectSubtitle(value) {
+  selectedSubtitle.value = String(value)
+  subtitleOpen.value = false
+  applySubtitleMode()
+  showPlayerControls()
+}
+function skipIntroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+}
+function skipOutroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+}
+function skipEnabled() {
+  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+}
+function applySkipIntro() {
+  const video = videoEl.value
+  const intro = skipIntroSeconds()
+  const total = Number(video?.duration) || 0
+  if (!video || !skipEnabled() || !intro || introSkippedUrl === playUrl.value) return
+  if (total && intro >= total - 8) return
+  if ((Number(video.currentTime) || 0) < Math.max(1, intro - 0.5)) {
+    introSkippedUrl = playUrl.value
+    try {
+      video.currentTime = intro
+      currentTime.value = intro
+    } catch {}
+  }
+}
+function applySkipRanges() {
+  const video = videoEl.value
+  if (!video || !skipEnabled()) return
+  applySkipIntro()
+  const outro = skipOutroSeconds()
+  const total = Number(video.duration) || 0
+  const now = Number(video.currentTime) || 0
+  if (!outro || !total || total < 30 || now < total - outro || outroSkippedUrl === playUrl.value) return
+  outroSkippedUrl = playUrl.value
+  if (autoNext.value && currentEpIndex.value < episodes.value.length - 1) playNextEpisode()
+  else {
+    try {
+      video.currentTime = Math.max(0, total - 0.3)
+      video.pause()
+    } catch {}
+  }
 }
 function onVideoPause() {
   playing.value = false
@@ -2384,6 +2516,20 @@ function reportPlaybackError(message, failures = [], override = {}) {
     message,
     detail: { context: 'x8', failures, event: override.event || '', current: currentResolve.value || {} },
   })
+}
+function showPlayFailure(title, message, switching = false) {
+  playFailure.value = { open: true, title, message, switching }
+}
+function closePlayFailure() {
+  playFailure.value.open = false
+}
+function retryCurrentPlayback() {
+  closePlayFailure()
+  playCurrent()
+}
+function manualSwitchLine() {
+  closePlayFailure()
+  void tryNextPlayback('手动切换线路')
 }
 function readLocalHistory() {
   try {
@@ -2496,17 +2642,20 @@ function attachVideo(url, kind = '') {
   playUrl.value = url
   playKind.value = kind === 'iframe' ? 'iframe' : ''
   destroyHls()
+  introSkippedUrl = ''
+  outroSkippedUrl = ''
   if (playKind.value === 'iframe') return
   nextTick(() => {
     const video = videoEl.value
     if (!video) return
+    resetSubtitleSelection()
     video.pause()
     video.removeAttribute('src')
     video.controls = false
     video.playbackRate = playbackRate.value
     video.load()
     if (/\.m3u8(\?|$)/i.test(url) && Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
+      hls = new Hls({ maxBufferLength: 180, maxMaxBufferLength: 180, capLevelToPlayerSize: true })
       hls.loadSource(url)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncVideoState).catch(syncVideoState))

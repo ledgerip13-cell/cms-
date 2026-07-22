@@ -22,6 +22,7 @@
           :qualities="qualities"
           :selected-quality="preferredRes"
           :subtitles="subtitles"
+          :play-config="playConfig"
           :resolving="resolving"
           :notice="playNotice"
           :can-next="canPlayNextEp"
@@ -33,6 +34,15 @@
           @error="onPlayerError"
           @quality-change="switchQuality"
         />
+        <div v-if="playFailure.open && !accessBlock" class="play-failure-dialog">
+          <strong>{{ playFailure.title }}</strong>
+          <p>{{ playFailure.message }}</p>
+          <div>
+            <button type="button" @click="retryCurrentPlayback">重试</button>
+            <button v-if="canPlayNextEp" type="button" @click="playFailureNext">下一集</button>
+            <button type="button" @click="playFailure.open = false">关闭</button>
+          </div>
+        </div>
       </div>
 
       <div class="now-playing" v-if="curEp">
@@ -221,6 +231,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
+import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { currentUser } from '../userStore'
 import DesktopVideoPlayer from '../components/DesktopVideoPlayer.vue'
 defineOptions({ name: 'Play' })
@@ -238,8 +249,10 @@ const user = currentUser
 const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const subtitles = ref([])
+const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
 const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
 const playNotice = ref('')
+const playFailure = ref({ open: false, title: '', message: '', switching: false })
 const accessBlock = ref(null)
 const cleanFallbackUrl = ref('')
 const currentResolve = ref(null)
@@ -272,6 +285,19 @@ function showPlayNotice(message) {
   playNotice.value = message
   if (playNoticeTimer) clearTimeout(playNoticeTimer)
   playNoticeTimer = window.setTimeout(() => { playNotice.value = '' }, 5200)
+}
+function showPlayFailure(title, message, switching = false) {
+  playFailure.value = { open: true, title, message, switching }
+}
+function closePlayFailure() {
+  playFailure.value.open = false
+}
+async function loadPlayConfig() {
+  try {
+    const site = await api.site()
+    writeCachedSite(site)
+    playConfig.value = normalizePlayConfig(site?.playConfig)
+  } catch {}
 }
 function reportPlayError(message, failures = [], override = {}) {
   void api.reportPlaybackError({
@@ -571,6 +597,7 @@ async function playResolvedEp(i, opts = {}) {
   if (!channel?.id || !vod.value?.id) return
   if (!opts.fresh) selfHealTried = false // 正常起播重置自愈标记
   accessBlock.value = null
+  closePlayFailure()
   subtitles.value = []
   resolving.value = true
   try {
@@ -630,6 +657,7 @@ function switchQuality(payload) {
 async function tryNextPlayback(reason = '当前线路播放失败') {
   if (autoSwitchingPlayback) return
   reportPlayError(reason, [{ playId: curChannel.value?.id, lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '', epName: curEp.value?.name || '', message: reason }], { event: 'current_line_failed' })
+  showPlayFailure('线路异常', '当前线路播放失败，正在尝试备用线路。', true)
   const lines = vod.value.lines || []
   const slots = []
   lines.forEach((line, li) => {
@@ -641,6 +669,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
   if (slots.length <= 1) {
     reportPlayError(reason)
     showPlayNotice('当前无可播放线路，请稍后重试')
+    showPlayFailure('播放失败', '当前影片没有可切换的备用线路，请稍后重试。')
     return
   }
   autoSwitchingPlayback = true
@@ -673,6 +702,7 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
           }
           saveWatchHistory(nextEp, pendingSeekSec.value || 0)
           showPlayNotice(`已切换到 ${next.channel.sourceName || '备用线路'}`)
+          closePlayFailure()
           return
         }
         const failure = { lineName: next.channel.sourceName || next.channel.name || '', epName: next.channel.episodes?.[nextEp]?.name || '', message: r?.error || '解析失败' }
@@ -700,9 +730,18 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
     }
     reportPlayError('当前无可播放线路，请稍后重试', failures)
     showPlayNotice('当前无可播放线路，请稍后重试')
+    showPlayFailure('播放失败', failures.length ? `已尝试 ${failures.length} 条备用线路，仍无法播放。` : '当前无可播放线路，请稍后重试。')
   } finally {
     autoSwitchingPlayback = false
   }
+}
+function retryCurrentPlayback() {
+  closePlayFailure()
+  playResolvedEp(epIdx.value, { fresh: true })
+}
+function playFailureNext() {
+  closePlayFailure()
+  playNextEp()
 }
 
 function saveWatchHistory(i, progressOverride = null) {
@@ -840,7 +879,7 @@ async function toggleFollow() {
   }
 }
 
-onMounted(() => { loadVod(route.params.id) })
+onMounted(() => { loadPlayConfig(); loadVod(route.params.id) })
 watch(() => route.params.id, (id) => { if (id) loadVod(id) })
 watch(user, (next) => {
   if (next && accessBlock.value?.retryAfterLogin) playEp(epIdx.value, { keepResume: true })
@@ -859,6 +898,12 @@ onBeforeUnmount(() => {
 .player-col { min-width: 0; }
 .player-box { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 16/9; }
 .player-box.locked { background: #11131b; }
+.play-failure-dialog { position: absolute; z-index: 9; left: 50%; top: 50%; width: min(360px, calc(100% - 36px)); transform: translate(-50%, -50%); padding: 18px; border: 1px solid rgba(255,255,255,.16); border-radius: 14px; background: rgba(14,16,22,.88); color: #fff; text-align: center; box-shadow: 0 18px 52px rgba(0,0,0,.42); backdrop-filter: blur(16px); }
+.play-failure-dialog strong { display: block; font-size: 18px; line-height: 1.25; }
+.play-failure-dialog p { margin: 8px 0 14px; color: rgba(255,255,255,.76); font-size: 13px; line-height: 1.55; }
+.play-failure-dialog div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.play-failure-dialog button { min-width: 78px; height: 34px; border: 0; border-radius: 9px; color: #fff; background: rgba(255,255,255,.12); cursor: pointer; font-weight: 800; }
+.play-failure-dialog button:first-child { background: #e50914; }
 .video { width: 100%; height: 100%; background: #000; object-fit: contain; }
 .sub-toggle { position: absolute; left: 12px; top: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.28); background: rgba(0,0,0,.5); color: rgba(255,255,255,.85); border-radius: 8px; cursor: pointer; z-index: 6; }
 .sub-toggle:hover, .sub-toggle.on { background: rgba(0,0,0,.72); color: #fff; }

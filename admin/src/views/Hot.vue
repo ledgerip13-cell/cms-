@@ -21,6 +21,14 @@
           <span class="unit">留空=全部启用分类</span>
         </el-form-item>
 
+        <el-form-item label="运营热搜词">
+          <el-select v-model="cfg.searchTerms" multiple filterable allow-create default-first-option clearable
+            collapse-tags collapse-tags-tooltip placeholder="输入后回车添加" style="width:520px">
+            <el-option v-for="word in cfg.searchTerms" :key="word" :label="word" :value="word" />
+          </el-select>
+          <span class="unit">最多 30 个，前台搜索页优先展示。</span>
+        </el-form-item>
+
         <el-form-item label="排序算法">
           <el-radio-group v-model="cfg.sortMode">
             <el-radio-button v-for="s in sortModes" :key="s.value" :value="s.value">{{ s.label }}</el-radio-button>
@@ -93,7 +101,7 @@ const loading = ref(false)
 const saving = ref(false)
 const types = ref([])
 const preview = ref([])
-const cfg = ref({ typeNames: [], sortMode: 'hot', timeWindowDays: 0, minRating: 0, minRatingCount: 0, limit: 12 })
+const cfg = ref({ typeNames: [], searchTerms: [], sortMode: 'hot', timeWindowDays: 0, minRating: 0, minRatingCount: 0, limit: 12 })
 
 const sortModes = [
   { value: 'hot', label: '热度优先' },
@@ -116,7 +124,7 @@ async function load() {
   try {
     const [ts, c, p] = await Promise.all([api.categories(), api.hotConfig(), api.hotPreview()])
     types.value = ts
-    cfg.value = { ...cfg.value, ...c, typeNames: c.typeNames || [] }
+    cfg.value = { ...cfg.value, ...c, typeNames: c.typeNames || [], searchTerms: c.searchTerms || [] }
     preview.value = p.list || []
   } catch (e) { ElMessage.error(e.message || '加载失败') }
   finally { loading.value = false }

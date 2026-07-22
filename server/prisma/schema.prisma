@@ -109,6 +109,7 @@ model MetaConfig {
 model HotConfig {
   id             Int      @id @default(1)
   typeNames      String   @default("[]") // JSON数组：限定大分类，空=全部启用分类
+  searchTerms    String   @default("[]") // JSON数组：运营热搜词，优先展示在前台搜索
   sortMode       String   @default("hot") // hot/rating/recent/created/pinned
   timeWindowDays Int      @default(0) // 0=不限；否则按 updatedAt 限定最近N天
   minRating      Float    @default(0)

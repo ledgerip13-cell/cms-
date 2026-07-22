@@ -1586,8 +1586,8 @@ async function attachVideo(url, kind) {
   if (kind === 'm3u8' || isDirectM3u8(url)) {
     if (Hls.isSupported()) {
       hls = new Hls({
-        maxBufferLength: 12,
-        maxMaxBufferLength: 20,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 60,
         backBufferLength: 8,
         lowLatencyMode: false,
       })

@@ -3,6 +3,7 @@
     ref="boxEl"
     class="desktop-video-player"
     :class="{ 'controls-visible': controlsVisible || settingsOpen || qualityOpen, theater: theaterMode }"
+    :style="subtitleStyleVars"
     tabindex="0"
     @mousemove="showControls"
     @mouseleave="hideControlsSoon"
@@ -31,7 +32,7 @@
       @webkitbeginfullscreen="onNativeFullscreen(true)"
       @webkitendfullscreen="onNativeFullscreen(false)"
     >
-      <track v-for="(s, i) in subtitles" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="i === 0" />
+      <track v-for="(s, i) in subtitleOptions" :key="s.url" kind="subtitles" :src="s.url" :srclang="s.lang" :label="s.label" :default="subtitleDefaultEnabled && i === 0" @load="applySubtitleMode" />
     </video>
 
     <iframe v-else-if="src" :src="src" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
@@ -106,6 +107,15 @@
                   <b>{{ playbackRateLabel }}</b>
                   <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
                 </button>
+                <button v-if="subtitleOptions.length" class="desktop-setting-row" type="button" @click="subtitleOpen = !subtitleOpen">
+                  <span>字幕</span>
+                  <b>{{ subtitleLabel }}</b>
+                  <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6" /></svg>
+                </button>
+                <div v-if="subtitleOptions.length && subtitleOpen" class="desktop-subtitle-panel">
+                  <button type="button" :class="{ on: selectedSubtitle === 'off' }" @click="selectSubtitle('off')">关闭</button>
+                  <button v-for="(sub, index) in subtitleOptions" :key="sub.url" type="button" :class="{ on: selectedSubtitle === String(index) }" @click="selectSubtitle(String(index))">{{ sub.label }}</button>
+                </div>
               </template>
               <div v-else class="desktop-rate-panel">
                 <button class="desktop-setting-back" type="button" @click="rateOpen = false">
@@ -146,6 +156,7 @@ const props = defineProps({
   qualities: { type: Array, default: () => [] },
   selectedQuality: { type: Number, default: 0 },
   subtitles: { type: Array, default: () => [] },
+  playConfig: { type: Object, default: () => ({}) },
   resolving: { type: Boolean, default: false },
   notice: { type: String, default: '' },
   canNext: { type: Boolean, default: false },
@@ -160,6 +171,7 @@ const controlsVisible = ref(false)
 const settingsOpen = ref(false)
 const qualityOpen = ref(false)
 const rateOpen = ref(false)
+const subtitleOpen = ref(false)
 const theaterMode = ref(false)
 const nativeFullscreen = ref(false)
 const playing = ref(false)
@@ -169,12 +181,34 @@ const duration = ref(0)
 const playbackRate = ref(1)
 const autoNextLocal = ref(true)
 const skipIntroOutro = ref(false)
+const selectedSubtitle = ref('off')
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
 let hls = null
 let controlsTimer = 0
+let introSkippedSrc = ''
+let outroSkippedSrc = ''
 
 const progressPercent = computed(() => duration.value ? Math.min(100, Math.max(0, currentTime.value / duration.value * 100)) : 0)
 const playbackRateLabel = computed(() => rateLabel(playbackRate.value))
+const playConfig = computed(() => props.playConfig || {})
+const subtitleOptions = computed(() => (Array.isArray(props.subtitles) ? props.subtitles : [])
+  .map((item, index) => ({
+    url: String(item?.url || '').trim(),
+    lang: String(item?.lang || 'zh').trim() || 'zh',
+    label: String(item?.label || item?.lang || `字幕${index + 1}`).trim() || `字幕${index + 1}`,
+  }))
+  .filter(item => item.url))
+const subtitleDefaultEnabled = computed(() => playConfig.value.subtitleDefault !== 'off')
+const subtitleLabel = computed(() => {
+  if (selectedSubtitle.value === 'off') return '关闭'
+  const item = subtitleOptions.value[Number(selectedSubtitle.value)]
+  return item?.label || '自动'
+})
+const subtitleStyleVars = computed(() => ({
+  '--desktop-subtitle-color': String(playConfig.value.subtitleColor || '#fff'),
+  '--desktop-subtitle-bg': String(playConfig.value.subtitleBackground || 'rgba(0,0,0,.55)'),
+  '--desktop-subtitle-size': `${Math.max(14, Math.min(40, Number(playConfig.value.subtitleFontSize) || 22))}px`,
+}))
 const currentQualityLabel = computed(() => {
   if (!props.qualities.length) return ''
   if (!props.selectedQuality) return '自动'
@@ -209,6 +243,7 @@ function closePops() {
   settingsOpen.value = false
   qualityOpen.value = false
   rateOpen.value = false
+  subtitleOpen.value = false
 }
 function loadSource() {
   destroyHls()
@@ -216,6 +251,9 @@ function loadSource() {
   currentTime.value = 0
   duration.value = 0
   playing.value = false
+  introSkippedSrc = ''
+  outroSkippedSrc = ''
+  resetSubtitleSelection()
   if (props.kind === 'iframe' || !props.src) return
   nextTick(() => {
     const video = videoEl.value
@@ -226,7 +264,7 @@ function loadSource() {
     video.playbackRate = playbackRate.value
     video.load()
     if (/\.m3u8(\?|$)/i.test(props.src) && Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30, capLevelToPlayerSize: true })
+      hls = new Hls({ maxBufferLength: 180, maxMaxBufferLength: 180, capLevelToPlayerSize: true })
       hls.attachMedia(video)
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(props.src))
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncState).catch(syncState))
@@ -250,11 +288,14 @@ function seekPending() {
 }
 function onLoadedMetadata() {
   seekPending()
+  applySkipIntro()
+  applySubtitleMode()
   syncState()
 }
 function syncState() {
   const video = videoEl.value
   if (!video) return
+  applySkipRanges()
   currentTime.value = Number(video.currentTime) || 0
   duration.value = Number(video.duration) || 0
   muted.value = Boolean(video.muted)
@@ -268,6 +309,47 @@ function onPause() {
 function onEnded() {
   syncState()
   emit('ended', { autoNext: autoNextLocal.value })
+}
+function skipIntroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipIntroSeconds) || 0))
+}
+function skipOutroSeconds() {
+  return Math.max(0, Math.min(600, Number(playConfig.value.skipOutroSeconds) || 0))
+}
+function skipEnabled() {
+  return Boolean(skipIntroOutro.value && playConfig.value.skipIntroEnabled)
+}
+function applySkipIntro() {
+  const video = videoEl.value
+  const intro = skipIntroSeconds()
+  const total = Number(video?.duration) || 0
+  if (!video || !skipEnabled() || !intro || introSkippedSrc === props.src) return
+  if (total && intro >= total - 8) return
+  if ((Number(video.currentTime) || 0) < Math.max(1, intro - 0.5)) {
+    introSkippedSrc = props.src
+    try {
+      video.currentTime = intro
+      currentTime.value = intro
+    } catch {}
+  }
+}
+function applySkipRanges() {
+  const video = videoEl.value
+  if (!video || !skipEnabled()) return
+  applySkipIntro()
+  const outro = skipOutroSeconds()
+  const total = Number(video.duration) || 0
+  const now = Number(video.currentTime) || 0
+  if (!outro || !total || total < 30 || now < total - outro || outroSkippedSrc === props.src) return
+  outroSkippedSrc = props.src
+  if (autoNextLocal.value) {
+    emit('ended', { autoNext: true, skippedOutro: true })
+  } else {
+    try {
+      video.currentTime = Math.max(0, total - 0.3)
+      video.pause()
+    } catch {}
+  }
 }
 function togglePlay() {
   const video = videoEl.value
@@ -323,7 +405,10 @@ function selectQuality(resolution) {
 function toggleSettings() {
   settingsOpen.value = !settingsOpen.value
   if (settingsOpen.value) qualityOpen.value = false
-  if (!settingsOpen.value) rateOpen.value = false
+  if (!settingsOpen.value) {
+    rateOpen.value = false
+    subtitleOpen.value = false
+  }
   showControls()
 }
 function setPlaybackRate(rate) {
@@ -387,6 +472,29 @@ function rateLabel(rate) {
   const value = Number(rate) || 1
   return Number.isInteger(value) ? `${value.toFixed(1)}x` : `${value}x`
 }
+function defaultSubtitleValue() {
+  return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
+}
+function resetSubtitleSelection() {
+  selectedSubtitle.value = defaultSubtitleValue()
+  nextTick(() => {
+    applySubtitleMode()
+    window.setTimeout(applySubtitleMode, 200)
+  })
+}
+function applySubtitleMode() {
+  const tracks = videoEl.value?.textTracks
+  if (!tracks) return
+  for (let i = 0; i < tracks.length; i++) {
+    tracks[i].mode = selectedSubtitle.value === String(i) ? 'showing' : 'disabled'
+  }
+}
+function selectSubtitle(value) {
+  selectedSubtitle.value = String(value)
+  subtitleOpen.value = false
+  applySubtitleMode()
+  showControls()
+}
 function shouldHandleHotkey(event) {
   if (props.kind === 'iframe' || !videoEl.value) return false
   const target = event.target
@@ -432,6 +540,11 @@ function onKeydown(event) {
 watch(() => props.src, loadSource)
 watch(() => props.kind, loadSource)
 watch(() => props.seekTo, seekPending)
+watch(() => props.subtitles, resetSubtitleSelection, { deep: true })
+watch(() => props.playConfig, () => {
+  skipIntroOutro.value = playConfig.value.skipIntroEnabled === true
+  resetSubtitleSelection()
+}, { deep: true, immediate: true })
 
 onMounted(() => {
   loadSource()
@@ -457,6 +570,7 @@ defineExpose({
 .desktop-video-player { position: relative; width: 100%; height: 100%; background: #000; overflow: hidden; color: #fff; outline: none; }
 .desktop-video-player video,
 .desktop-video-player iframe { width: 100%; height: 100%; display: block; background: #000; object-fit: contain; border: 0; }
+.desktop-video-player video::cue { color: var(--desktop-subtitle-color, #fff); background: var(--desktop-subtitle-bg, rgba(0,0,0,.55)); font-size: var(--desktop-subtitle-size, 22px); line-height: 1.38; text-shadow: 0 2px 5px rgba(0,0,0,.9); }
 .desktop-video-player video:not([controls])::-webkit-media-controls { display: none !important; }
 .desktop-video-player.theater { position: fixed; inset: 0; z-index: 1000; border-radius: 0; }
 .desktop-video-title { position: absolute; top: 18px; left: 20px; z-index: 5; max-width: calc(100% - 40px); color: rgba(255,255,255,.92); font-size: 15px; text-shadow: 0 2px 10px rgba(0,0,0,.55); }
@@ -503,6 +617,7 @@ defineExpose({
 .desktop-quality-menu strong { font-size: 13px; }
 .desktop-quality-menu span { font-size: 12px; color: rgba(255,255,255,.62); }
 .desktop-settings-menu { width: 218px; min-height: 118px; padding: 8px; border-radius: 14px; }
+.desktop-settings-menu:not(.rate-mode) { min-height: 154px; }
 .desktop-settings-menu.rate-mode { width: 154px; }
 .desktop-switch-row,
 .desktop-setting-row,
@@ -524,6 +639,10 @@ defineExpose({
 .desktop-setting-back svg { width: 16px; height: 16px; }
 .desktop-rate-panel { display: grid; gap: 4px; }
 .desktop-rate-panel button { height: 26px !important; font-size: 13px; color: rgba(255,255,255,.86); }
+.desktop-subtitle-panel { margin: 3px 0 0; padding-top: 5px; border-top: 1px solid rgba(255,255,255,.08); display: grid; gap: 3px; }
+.desktop-subtitle-panel button { width: 100% !important; height: 28px !important; border-radius: 8px !important; padding: 0 8px !important; justify-content: flex-start !important; color: rgba(255,255,255,.82); font-size: 13px; transform: none !important; background: transparent !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-subtitle-panel button:hover,
+.desktop-subtitle-panel button.on { background: rgba(255,255,255,.12) !important; color: #fff; }
 @media (max-width: 760px) {
   .desktop-video-toolbar { padding: 0 10px 10px; overflow-x: auto; }
   .desktop-control-row { min-width: 600px; }

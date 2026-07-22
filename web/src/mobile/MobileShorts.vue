@@ -1391,7 +1391,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
   if (hls) hls.destroy()
   hls = null
   if ((kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)) && Hls.isSupported()) {
-    hls = new Hls({ maxBufferLength: 12, maxMaxBufferLength: 20, backBufferLength: 8 })
+    hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 60, backBufferLength: 8 })
     const currentHls = hls
     hls.loadSource(url)
     hls.attachMedia(video)

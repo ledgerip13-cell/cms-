@@ -46,6 +46,13 @@ const DEFAULT_PLAY_CONFIG = {
   hideDuplicateSourceChannels: true,
   proxyMode: "direct", // 全局默认回源模式: direct/key/proxy（源级 inherit 回落此值）
   archiveResolution: 720, // 本地转存下载清晰度上限: 0=最高清 / 1080 / 720 / 480（IP限速下降清晰度提速省盘）
+  skipIntroEnabled: false,
+  skipIntroSeconds: 0,
+  skipOutroSeconds: 0,
+  subtitleDefault: "auto",
+  subtitleFontSize: 22,
+  subtitleColor: "#ffffff",
+  subtitleBackground: "rgba(0,0,0,.55)",
 };
 const ARCHIVE_RES_OPTIONS = [0, 480, 720, 1080];
 
@@ -76,6 +83,13 @@ function cleanStringList(value: any, limit = 40) {
   const rows = Array.isArray(value) ? value : String(value || "").split(",");
   return [...new Set(rows.map((x: any) => String(x || "").trim()).filter(Boolean))]
     .slice(0, limit);
+}
+
+function cleanCssColor(value: any, fallback: string) {
+  const raw = String(value || "").trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
+  if (/^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(raw)) return raw;
+  return fallback;
 }
 
 function cleanSubtypeRules(value: any, limit = 120) {
@@ -145,12 +159,20 @@ export function normalizePlayConfig(value: any) {
   }
   const proxyMode = ["direct", "key", "proxy"].includes(String(raw?.proxyMode)) ? raw.proxyMode : "direct";
   const archiveResolution = ARCHIVE_RES_OPTIONS.includes(Number(raw?.archiveResolution)) ? Number(raw.archiveResolution) : 720;
+  const subtitleDefault = ["auto", "off"].includes(String(raw?.subtitleDefault || "")) ? String(raw.subtitleDefault) : DEFAULT_PLAY_CONFIG.subtitleDefault;
   return {
     ...DEFAULT_PLAY_CONFIG,
     ...(raw || {}),
     hideDuplicateSourceChannels: raw?.hideDuplicateSourceChannels !== false,
     proxyMode,
     archiveResolution,
+    skipIntroEnabled: raw?.skipIntroEnabled === true,
+    skipIntroSeconds: clampInt(raw?.skipIntroSeconds, DEFAULT_PLAY_CONFIG.skipIntroSeconds, 0, 600),
+    skipOutroSeconds: clampInt(raw?.skipOutroSeconds, DEFAULT_PLAY_CONFIG.skipOutroSeconds, 0, 600),
+    subtitleDefault,
+    subtitleFontSize: clampInt(raw?.subtitleFontSize, DEFAULT_PLAY_CONFIG.subtitleFontSize, 14, 40),
+    subtitleColor: cleanCssColor(raw?.subtitleColor, DEFAULT_PLAY_CONFIG.subtitleColor),
+    subtitleBackground: cleanCssColor(raw?.subtitleBackground, DEFAULT_PLAY_CONFIG.subtitleBackground),
   };
 }
 
