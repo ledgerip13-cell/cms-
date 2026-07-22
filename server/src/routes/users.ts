@@ -7,6 +7,7 @@ import { clearLoginFailures, recordLoginFailure, rejectLimitedLogin } from "../l
 import { clientIpOf, recordLoginLog } from "../logging.js";
 import { withHeatFields } from "../heat.js";
 import { writeAudit } from "./access.js";
+import { recordWebUserDeviceAndRisk } from "./risk.js";
 import { emptySkipOverride, normalizeSkipOverride, publicSkipOverride } from "../skipConfig.js";
 
 const RECOMMENDATION_CACHE_TTL_MS = 60_000;
@@ -133,6 +134,11 @@ function adminUser(u: {
   favoriteTypes: string;
   lastLogin: Date | null;
   lastLoginIp?: string;
+  banReason?: string;
+  bannedAt?: Date | null;
+  bannedBy?: string;
+  unbanReason?: string;
+  unbannedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   _count?: { follows: number; histories: number };
@@ -150,6 +156,11 @@ function adminUser(u: {
     favoriteTypes: parseJsonArray(u.favoriteTypes),
     lastLogin: u.lastLogin,
     lastLoginIp: u.lastLoginIp || "",
+    banReason: u.banReason || "",
+    bannedAt: u.bannedAt || null,
+    bannedBy: u.bannedBy || "",
+    unbanReason: u.unbanReason || "",
+    unbannedAt: u.unbannedAt || null,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
     followCount: u._count?.follows ?? 0,
@@ -399,10 +410,16 @@ export default async function userRoutes(app: FastifyInstance) {
     if (!password) return reply.code(400).send({ error: "请输入密码" });
     if (rejectLimitedLogin(req, reply, "web", username)) return reply;
     const u = await findWebUserByLogin(username, { vipLevel: true });
-    if (!u || !u.enabled) {
+    if (!u) {
       recordLoginFailure(req, "web", username);
-      recordLoginLog(req, { userType: "web", username, success: false, message: "账号不存在或已禁用" });
+      recordLoginLog(req, { userType: "web", username, success: false, message: "账号不存在" });
       return reply.code(401).send({ error: "账号不存在或已禁用" });
+    }
+    if (!u.enabled) {
+      const message = u.bannedAt && u.banReason ? `账号已封禁：${u.banReason}` : "账号不存在或已禁用";
+      recordLoginFailure(req, "web", username);
+      recordLoginLog(req, { userType: "web", userId: u.id, username: u.username, success: false, message });
+      return reply.code(401).send({ error: message });
     }
     if (!(await checkPassword(password, u.password))) {
       recordLoginFailure(req, "web", username);
@@ -412,6 +429,7 @@ export default async function userRoutes(app: FastifyInstance) {
     clearLoginFailures(req, "web", username);
     await prisma.webUser.update({ where: { id: u.id }, data: { lastLogin: new Date(), lastLoginIp: clientIpOf(req) } });
     recordLoginLog(req, { userType: "web", userId: u.id, username: u.username, success: true, message: "登录成功" });
+    await recordWebUserDeviceAndRisk(req, { id: u.id, username: u.username }).catch(() => {});
     const token = signWebToken({ mid: u.id, username: u.username });
     return { token, user: publicUser(u) };
   });

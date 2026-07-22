@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db.js";
 import { authGuard } from "../auth.js";
 import { getIconPng, getStartupImagePng, iconVersionOf, type IconVariant } from "../pwaIcons.js";
+import { normalizeInteractionConfig } from "./interactions.js";
 
 async function ensureSite() {
   const s = await prisma.siteConfig.findUnique({ where: { id: 1 } });
@@ -239,6 +240,7 @@ function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = 
     shortsConfig: normalizeShortsConfig((s as any).shortsConfig),
     playConfig: normalizePlayConfig((s as any).playConfig),
     pwaConfig: normalizePwaConfig((s as any).pwaConfig),
+    interactionConfig: normalizeInteractionConfig((s as any).interactionConfig),
     inviteRequired,
   };
 }
@@ -283,6 +285,7 @@ export default async function siteRoutes(app: FastifyInstance) {
         shortsConfig: Object.prototype.hasOwnProperty.call(b, "shortsConfig") ? JSON.stringify(normalizeShortsConfig(b.shortsConfig)) : (current as any).shortsConfig,
         playConfig: Object.prototype.hasOwnProperty.call(b, "playConfig") ? JSON.stringify(normalizePlayConfig(b.playConfig)) : (current as any).playConfig,
         pwaConfig: Object.prototype.hasOwnProperty.call(b, "pwaConfig") ? JSON.stringify(normalizePwaConfig(b.pwaConfig)) : (current as any).pwaConfig,
+        interactionConfig: Object.prototype.hasOwnProperty.call(b, "interactionConfig") ? JSON.stringify(normalizeInteractionConfig(b.interactionConfig)) : (current as any).interactionConfig,
         allowRegister: Object.prototype.hasOwnProperty.call(b, "allowRegister") ? Boolean(b.allowRegister) : (current as any).allowRegister,
       },
     });

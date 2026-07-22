@@ -300,7 +300,13 @@
             <x8-card v-for="item in list" :key="`browse-${item.id}`" :item="item" :followed="isCardFollowed(item)" @open="goDetail" @follow="toggleCardFollow" />
           </template>
         </div>
-        <div v-if="!loading && !list.length" class="x8-empty">暂无影片</div>
+        <div v-if="!loading && !list.length" class="x8-empty x8-request-empty">
+          <strong>暂无影片</strong>
+          <span v-if="route.query.kw">没搜到「{{ route.query.kw }}」</span>
+          <button v-if="route.query.kw && interactionConfig.requestsEnabled" type="button" :disabled="vodRequesting" @click="submitVodRequest(route.query.kw)">
+            {{ vodRequesting ? '提交中...' : '一键求片' }}
+          </button>
+        </div>
         <div class="x8-pager" v-if="x8BrowsePageCount > 1 || page > 1 || hasMore">
           <button type="button" :disabled="page <= 1" @click="setBrowse({ page: page - 1 })">上一页</button>
           <button
@@ -398,6 +404,32 @@
         <div class="x8-detail-intro">
           <p>简介：{{ vod.blurb || vod.officialIntro || vod.content || '暂无简介' }}</p>
         </div>
+        <section class="x8-interaction-panel">
+          <div class="x8-interaction-head">
+            <div>
+              <strong>用户互动</strong>
+              <span>{{ ratingSummary }}</span>
+            </div>
+            <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport('vod', vod.id)">举报</button>
+          </div>
+          <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
+            <button v-for="score in 5" :key="`detail-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+          </div>
+          <div v-if="interactionConfig.commentsEnabled" class="x8-comment-box">
+            <div class="x8-comment-input">
+              <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
+              <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
+            </div>
+            <div class="x8-comment-list">
+              <article v-for="item in comments.slice(0, 8)" :key="`detail-comment-${item.id}`">
+                <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+                <p>{{ item.content }}</p>
+                <time>{{ formatX8Time(item.createdAt) }}</time>
+              </article>
+              <div v-if="!comments.length" class="x8-comment-empty">暂无评论</div>
+            </div>
+          </div>
+        </section>
         <section v-if="vod.lines?.length" class="x8-detail-play-list">
           <div class="x8-detail-list-head">
             <span>{{ currentLine?.sourceName || currentLine?.flag || '默认' }} 播放器</span>
@@ -427,7 +459,7 @@
         </section>
         <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
           <div class="x8-card-grid section">
-            <x8-card v-for="item in related.slice(0, 12)" :key="`detail-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
+            <x8-card v-for="item in visibleRelated" :key="`detail-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
           </div>
         </x8-panel>
       </section>
@@ -470,6 +502,9 @@
                       <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
                     </video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                    <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="x8-danmaku-layer" aria-hidden="true">
+                      <span v-for="item in activeDanmakus" :key="`dm-${item.id}-${item._nonce || 0}`" :style="{ top: item.top, color: item.color || '#fff' }">{{ item.content }}</span>
+                    </div>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
                       <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" /><path d="m12 15 5 6H7Z" /></svg>
                     </button>
@@ -645,6 +680,41 @@
                 </div>
               </div>
               <p v-if="playIntro" class="x8-player-desc">简介：{{ playIntro }}</p>
+              <div class="x8-play-actions">
+                <button v-if="interactionConfig.commentsEnabled" type="button" @click="interactionOpen = !interactionOpen">评论 {{ comments.length || '' }}</button>
+                <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport('play', currentLineId)">举报</button>
+                <button v-if="interactionConfig.danmakuEnabled" type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">弹幕</button>
+              </div>
+              <div v-if="interactionConfig.danmakuEnabled" class="x8-danmaku-input">
+                <input v-model.trim="danmakuText" maxlength="80" placeholder="发送弹幕" @keyup.enter="submitDanmaku" />
+                <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
+              </div>
+            </section>
+
+            <section v-if="interactionOpen" class="x8-interaction-panel compact">
+              <div class="x8-interaction-head">
+                <div>
+                  <strong>评论与评分</strong>
+                  <span>{{ ratingSummary }}</span>
+                </div>
+              </div>
+              <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
+                <button v-for="score in 5" :key="`play-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+              </div>
+              <div v-if="interactionConfig.commentsEnabled" class="x8-comment-box">
+                <div class="x8-comment-input">
+                  <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
+                  <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
+                </div>
+                <div class="x8-comment-list">
+                  <article v-for="item in comments.slice(0, 10)" :key="`play-comment-${item.id}`">
+                    <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+                    <p>{{ item.content }}</p>
+                    <time>{{ formatX8Time(item.createdAt) }}</time>
+                  </article>
+                  <div v-if="!comments.length" class="x8-comment-empty">暂无评论</div>
+                </div>
+              </div>
             </section>
 
             <section v-if="vod.lines?.length" class="x8-mini-play-list">
@@ -677,7 +747,7 @@
 
             <x8-panel v-if="related.length" title="猜你喜欢" :changeable="true" :moreable="false" @change="refreshRelated">
               <div class="x8-card-grid section">
-                <x8-card v-for="item in related.slice(0, playLikeCount)" :key="`play-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
+                <x8-card v-for="item in visibleRelated" :key="`play-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
               </div>
             </x8-panel>
           </section>
@@ -706,6 +776,10 @@
             <button type="button" :class="{ active: x8UserTab === 'follows' }" @click="selectX8UserTab('follows')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" /></svg>
               <span>我的追剧</span>
+            </button>
+            <button type="button" :class="{ active: x8UserTab === 'messages' }" @click="selectX8UserTab('messages')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
+              <span>站内消息</span>
             </button>
           </nav>
           <button class="x8-user-side-logout" type="button" @click="logoutX8">
@@ -850,6 +924,19 @@
               <span>{{ x8HistoryPageText }}</span>
               <button type="button" :disabled="x8HistoryPage >= x8HistoryPageCount" @click="x8HistoryPage++">下一页</button>
             </div>
+          </div>
+
+          <div v-else-if="x8UserTab === 'messages'" class="x8-user-history-panel">
+            <div v-if="x8Messages.length" class="x8-user-records">
+              <button v-for="item in x8Messages" :key="`x8-msg-${item.id}`" type="button" @click="readMessage(item)">
+                <span>
+                  <b>{{ item.title }}</b>
+                  <em>{{ item.content }}</em>
+                </span>
+                <i>{{ item.read ? '已读' : '未读' }}</i>
+              </button>
+            </div>
+            <div v-else class="x8-user-empty">暂无站内消息</div>
           </div>
 
           <div v-else class="x8-user-follow-panel">
@@ -1005,6 +1092,23 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6" /></svg>
       </button>
     </div>
+
+    <div v-if="reportOpen" class="x8-modal-mask" @click.self="reportOpen = false">
+      <div class="x8-report-modal">
+        <strong>提交举报</strong>
+        <select v-model="reportForm.reason">
+          <option value="无法播放">无法播放</option>
+          <option value="内容错误">内容错误</option>
+          <option value="违规内容">违规内容</option>
+          <option value="其他问题">其他问题</option>
+        </select>
+        <textarea v-model.trim="reportForm.content" maxlength="500" placeholder="补充说明"></textarea>
+        <div>
+          <button type="button" @click="reportOpen = false">取消</button>
+          <button type="button" :disabled="reportSubmitting" @click="submitReport">{{ reportSubmitting ? '提交中' : '提交' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1024,6 +1128,20 @@ const route = useRoute()
 const router = useRouter()
 const site = ref(readCachedSite())
 const playConfig = ref(normalizePlayConfig(site.value?.playConfig))
+const interactionConfig = ref({
+  commentsEnabled: true,
+  ratingsEnabled: true,
+  requestsEnabled: true,
+  reportsEnabled: true,
+  messagesEnabled: true,
+  danmakuEnabled: true,
+  commentRequireLogin: true,
+  ratingRequireLogin: true,
+  requestRequireLogin: false,
+  reportRequireLogin: false,
+  danmakuRequireLogin: true,
+  ...(site.value?.interactionConfig || {}),
+})
 const userSkipPreference = ref(null)
 const types = ref(readCachedCategories())
 const heroItems = ref([])
@@ -1035,11 +1153,13 @@ const subtypes = ref([])
 const years = ref([])
 const vod = ref({})
 const related = ref([])
+const relatedPage = ref(0)
 const rankGroups = ref([])
 const localHistoryRows = ref([])
 const loginWallItems = ref([])
 const x8UserHistory = ref([])
 const x8UserFollows = ref([])
+const x8Messages = ref([])
 const x8Prefs = ref([])
 const x8PrefSubtypes = reactive({})
 const x8PrefSubtypesLoading = reactive({})
@@ -1079,6 +1199,20 @@ const currentResolve = ref(null)
 const subtitles = ref([])
 const selectedSubtitle = ref('off')
 const playFailure = ref({ open: false, title: '', message: '', switching: false })
+const comments = ref([])
+const commentText = ref('')
+const commentSubmitting = ref(false)
+const ratingState = ref({ avg: 0, count: 0, myScore: 0 })
+const interactionOpen = ref(false)
+const vodRequesting = ref(false)
+const reportOpen = ref(false)
+const reportSubmitting = ref(false)
+const reportForm = reactive({ type: 'vod', targetId: 0, vodId: 0, reason: '无法播放', content: '' })
+const danmakuText = ref('')
+const danmakuVisible = ref(true)
+const danmakuRows = ref([])
+const activeDanmakus = ref([])
+const danmakuSubmitting = ref(false)
 const resolving = ref(false)
 const vodHistory = ref(null)
 const vodLineHistories = ref([])
@@ -1158,6 +1292,8 @@ let trailerHls = null
 let autoSwitchingPlayback = false
 let introSkippedUrl = ''
 let outroSkippedUrl = ''
+let danmakuLoadAt = 0
+let danmakuNonce = 0
 
 const sortItems = [
   { value: 'hot', label: '热门' },
@@ -1165,6 +1301,19 @@ const sortItems = [
   { value: 'rating', label: '评分' },
   { value: 'year', label: '年份' },
 ]
+const DEFAULT_INTERACTION_CONFIG = {
+  commentsEnabled: true,
+  ratingsEnabled: true,
+  requestsEnabled: true,
+  reportsEnabled: true,
+  messagesEnabled: true,
+  danmakuEnabled: true,
+  commentRequireLogin: true,
+  ratingRequireLogin: true,
+  requestRequireLogin: false,
+  reportRequireLogin: false,
+  danmakuRequireLogin: true,
+}
 const X8_BROWSE_PAGE_SIZE = 30
 const effectivePlayConfig = computed(() => mergeSkipConfig(
   playConfig.value,
@@ -1256,6 +1405,7 @@ const x8UserTab = computed(() => normalizeX8UserTab(route.query.tab))
 const x8UserTabTitle = computed(() => {
   if (x8UserTab.value === 'history') return '观看历史'
   if (x8UserTab.value === 'follows') return '我的追剧'
+  if (x8UserTab.value === 'messages') return '站内消息'
   return '个人资料'
 })
 const x8AllFollowsSelected = computed(() => {
@@ -1322,6 +1472,13 @@ const currentPlayTitle = computed(() => {
   return episode ? `${title} · ${episode}` : title
 })
 const playLikeCount = computed(() => viewportWidth.value >= 1024 ? 12 : 8)
+const visibleRelated = computed(() => {
+  const rows = Array.isArray(related.value) ? related.value : []
+  const count = Math.max(1, Number(playLikeCount.value) || 12)
+  if (rows.length <= count) return rows.slice(0, count)
+  const start = (relatedPage.value * count) % rows.length
+  return rows.slice(start).concat(rows.slice(0, start)).slice(0, count)
+})
 const detailTags = computed(() => {
   const rows = [vod.value?.subType, vod.value?.typeName]
     .flatMap(value => String(value || '').split(/[，,、/|]+/))
@@ -1392,6 +1549,12 @@ const historyEpisodeText = computed(() => {
   return percent ? `${percent}%` : '看过'
 })
 const playbackRateLabel = computed(() => rateLabel(playbackRate.value))
+const myRating = computed(() => Number(ratingState.value.myScore || 0))
+const ratingSummary = computed(() => {
+  const avg = Number(ratingState.value.avg || 0)
+  const count = Number(ratingState.value.count || 0)
+  return count ? `用户评分 ${avg.toFixed(1)} · ${count} 人` : '暂无用户评分'
+})
 
 const X8Panel = defineComponent({
   name: 'X8Panel',
@@ -1911,7 +2074,7 @@ function normalizeX8UserTab(tab) {
     x8ProfileTab.value = 'password'
     return 'userInfo'
   }
-  if (value === 'history' || value === 'follows') return value
+  if (value === 'history' || value === 'follows' || value === 'messages') return value
   return 'userInfo'
 }
 function selectX8UserTab(tab) {
@@ -2190,13 +2353,15 @@ async function loadX8UserCenter() {
   }
   x8UserLoading.value = true
   try {
-    const [historyRows, followRows] = await Promise.all([
+    const [historyRows, followRows, messageRows] = await Promise.all([
       api.history(50).catch(() => []),
       api.follows(50).catch(() => []),
+      api.userMessages().catch(() => ({ list: [] })),
     ])
     x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
     x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
     x8UserFollows.value = Array.isArray(followRows) ? followRows : []
+    x8Messages.value = Array.isArray(messageRows?.list) ? messageRows.list : []
     syncFollowedIds(x8UserFollows.value)
     x8FollowSelected.value = x8FollowSelected.value.filter(id => x8UserFollows.value.some(item => x8FollowVodId(item) === id))
     if (!x8UserFollows.value.length) x8FollowEditing.value = false
@@ -2206,6 +2371,13 @@ async function loadX8UserCenter() {
     syncX8EmailForm()
   } finally {
     x8UserLoading.value = false
+  }
+}
+async function readMessage(item) {
+  if (!item?.id) return
+  if (!item.read) {
+    await api.readUserMessage(item.id).catch(() => null)
+    item.read = true
   }
 }
 function goPlay(id, epIndex = 0) {
@@ -2324,11 +2496,154 @@ async function refreshSiteConfig() {
     const data = await api.site()
     site.value = writeCachedSite(data)
     playConfig.value = normalizePlayConfig(site.value?.playConfig)
+    interactionConfig.value = { ...DEFAULT_INTERACTION_CONFIG, ...(site.value?.interactionConfig || {}) }
     syncSkipDrafts()
     resetSubtitleSelection()
   } catch {
     playConfig.value = normalizePlayConfig(site.value?.playConfig)
+    interactionConfig.value = { ...DEFAULT_INTERACTION_CONFIG, ...(site.value?.interactionConfig || {}) }
     syncSkipDrafts()
+  }
+}
+
+async function loadVodInteractions(id = vod.value?.id) {
+  if (!id) return
+  const [commentRows, rating] = await Promise.all([
+    interactionConfig.value.commentsEnabled ? api.vodComments(id, 30).catch(() => []) : Promise.resolve([]),
+    interactionConfig.value.ratingsEnabled ? api.vodRating(id).catch(() => ({ avg: 0, count: 0, myScore: 0 })) : Promise.resolve({ avg: 0, count: 0, myScore: 0 }),
+  ])
+  comments.value = Array.isArray(commentRows) ? commentRows : []
+  ratingState.value = { avg: Number(rating?.avg || 0), count: Number(rating?.count || 0), myScore: Number(rating?.myScore || 0) }
+}
+
+async function submitVodRequest(title) {
+  const value = String(title || '').trim()
+  if (!value || vodRequesting.value) return
+  vodRequesting.value = true
+  try {
+    await api.requestVod({ title: value, source: 'x8' })
+    notifySuccess('求片已提交')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '求片提交失败'))
+  } finally {
+    vodRequesting.value = false
+  }
+}
+
+async function submitComment() {
+  if (!vod.value?.id || commentSubmitting.value) return
+  if (interactionConfig.value.commentRequireLogin && !user.value) {
+    goLogin()
+    return
+  }
+  const content = String(commentText.value || '').trim()
+  if (!content) return
+  commentSubmitting.value = true
+  try {
+    const row = await api.postVodComment(vod.value.id, { content, source: 'x8' })
+    comments.value = [row, ...comments.value].filter(Boolean)
+    commentText.value = ''
+    notifySuccess('评论已发送')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '评论发送失败'))
+  } finally {
+    commentSubmitting.value = false
+  }
+}
+
+async function submitRating(score) {
+  if (!vod.value?.id) return
+  if (interactionConfig.value.ratingRequireLogin && !user.value) {
+    goLogin()
+    return
+  }
+  try {
+    ratingState.value = await api.rateVod(vod.value.id, { score, source: 'x8' })
+    notifySuccess('评分已保存')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '评分失败'))
+  }
+}
+
+function openReport(type, targetId) {
+  reportForm.type = type || 'vod'
+  reportForm.targetId = Number(targetId) || Number(vod.value?.id || 0)
+  reportForm.vodId = Number(vod.value?.id || 0)
+  reportForm.reason = type === 'play' ? '无法播放' : '内容错误'
+  reportForm.content = ''
+  reportOpen.value = true
+}
+
+async function submitReport() {
+  if (interactionConfig.value.reportRequireLogin && !user.value) {
+    goLogin()
+    return
+  }
+  reportSubmitting.value = true
+  try {
+    await api.reportContent({ ...reportForm, source: 'x8' })
+    reportOpen.value = false
+    notifySuccess('举报已提交')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '举报失败'))
+  } finally {
+    reportSubmitting.value = false
+  }
+}
+
+async function loadDanmakuWindow(force = false) {
+  if (!interactionConfig.value.danmakuEnabled || !vod.value?.id) return
+  const now = Math.floor(Number(currentTime.value) || 0)
+  if (!force && Math.abs(now - danmakuLoadAt) < 45) return
+  danmakuLoadAt = now
+  const rows = await api.danmaku(vod.value.id, {
+    playId: currentLineId.value || undefined,
+    epIndex: currentEpIndex.value,
+    from: Math.max(0, now - 5),
+    to: now + 120,
+  }).catch(() => [])
+  danmakuRows.value = Array.isArray(rows) ? rows : []
+}
+
+function tickDanmaku() {
+  if (!danmakuVisible.value || !danmakuRows.value.length) return
+  const now = Math.floor(Number(currentTime.value) || 0)
+  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, 4)
+  if (!due.length) return
+  for (const item of due) item._shown = true
+  activeDanmakus.value = [
+    ...activeDanmakus.value,
+    ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, top: `${14 + ((danmakuNonce + index) % 7) * 10}%` })),
+  ].slice(-12)
+  window.setTimeout(() => {
+    activeDanmakus.value = activeDanmakus.value.filter(item => !due.some(x => x.id === item.id))
+  }, 7600)
+}
+
+async function submitDanmaku() {
+  if (!vod.value?.id || danmakuSubmitting.value) return
+  if (interactionConfig.value.danmakuRequireLogin && !user.value) {
+    goLogin()
+    return
+  }
+  const content = String(danmakuText.value || '').trim()
+  if (!content) return
+  danmakuSubmitting.value = true
+  try {
+    const row = await api.sendDanmaku(vod.value.id, {
+      playId: currentLineId.value || undefined,
+      epIndex: currentEpIndex.value,
+      timeSec: Math.floor(Number(currentTime.value) || 0),
+      content,
+      source: 'x8',
+    })
+    danmakuRows.value = [...danmakuRows.value, row]
+    danmakuText.value = ''
+    notifySuccess('弹幕已发送')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '弹幕发送失败'))
+  } finally {
+    danmakuSubmitting.value = false
   }
 }
 function destroyHls() {
@@ -2419,11 +2734,17 @@ function syncVideoState() {
   muted.value = Boolean(video.muted || video.volume === 0)
   playing.value = !video.paused && !video.ended
   saveHistoryTick()
+  void loadDanmakuWindow(false)
+  tickDanmaku()
 }
 function onVideoLoadedMetadata() {
   syncVideoState()
   applySubtitleMode()
   applySkipIntro()
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
+  void loadDanmakuWindow(true)
 }
 function defaultSubtitleValue() {
   return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
@@ -3011,6 +3332,9 @@ function selectDetailLine(id) {
 }
 function selectLine(id) {
   currentLineId.value = id
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   detailEpDesc.value = false
   playEpDesc.value = false
   selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
@@ -3038,6 +3362,9 @@ function syncPlayRouteQuery() {
 function selectEpisode(index) {
   saveWatchHistory(true)
   currentEpIndex.value = index
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   selectedPlayGroupIdx.value = playEpisodeGroups.value.findIndex(group => index >= group.start && index <= group.end)
   if (selectedPlayGroupIdx.value < 0) selectedPlayGroupIdx.value = 0
   qualityOpen.value = false
@@ -3117,8 +3444,16 @@ async function refreshSection(section) {
 }
 async function refreshRelated() {
   if (!vod.value?.id) return
-  const rows = await api.related({ id: vod.value.id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => [])
-  related.value = rows || related.value
+  const count = Math.max(1, Number(playLikeCount.value) || 12)
+  if (related.value.length > count) {
+    relatedPage.value = (relatedPage.value + 1) % Math.ceil(related.value.length / count)
+    return
+  }
+  const rows = await api.related({ id: vod.value.id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 24 }).catch(() => [])
+  if (Array.isArray(rows) && rows.length) {
+    related.value = rows
+    relatedPage.value = rows.length > count ? 1 : 0
+  }
 }
 async function refreshX8Types() {
   const rows = await api.types().catch(() => [])
@@ -3282,6 +3617,11 @@ async function loadVod(withPlay = false) {
   playEpDesc.value = false
   selectedPlayGroupIdx.value = 0
   followed.value = false
+  comments.value = []
+  ratingState.value = { avg: 0, count: 0, myScore: 0 }
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   vodHistory.value = null
   vodLineHistories.value = []
   userSkipPreference.value = null
@@ -3292,13 +3632,14 @@ async function loadVod(withPlay = false) {
     const currentUser = await ensureUser()
     vod.value = await api.vod(id).catch(() => ({}))
     userSkipPreference.value = readLocalSkipPreference(id)
+    relatedPage.value = 0
     const requestedLineId = Number(route.query.line || 0)
     const routeLine = (vod.value?.lines || []).find(line => line.id === requestedLineId)
     currentLineId.value = routeLine?.id || vod.value?.lines?.[0]?.id || 0
     currentEpIndex.value = Math.max(0, Number(route.query.ep || 1) - 1)
     selectedPlayGroupIdx.value = Math.max(0, Math.floor(currentEpIndex.value / 50))
     const [relatedRows, state] = await Promise.all([
-      api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 12 }).catch(() => []),
+      api.related({ id, type: vod.value?.typeName, sub: vod.value?.subType, limit: 24 }).catch(() => []),
       currentUser ? api.userVodState(id).catch(() => null) : Promise.resolve(null),
     ])
     related.value = relatedRows || []
@@ -3309,6 +3650,7 @@ async function loadVod(withPlay = false) {
     vodHistory.value = state?.history || vodLineHistories.value[0] || localHistoryForVod(id)
     const historyLine = (vod.value?.lines || []).find(line => line.id === Number(vodHistory.value?.lineId || 0))
     if (!requestedLineId && historyLine) currentLineId.value = historyLine.id
+    await loadVodInteractions(id)
     if (withPlay && currentLineId.value) playCurrent()
   } finally {
     loading.value = false
@@ -7663,6 +8005,198 @@ onBeforeUnmount(() => {
 .x8-float svg {
   width: 22px;
   height: 22px;
+}
+.x8-request-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.x8-request-empty strong { font-size: 20px; color: #fff; }
+.x8-request-empty span { color: rgba(255,255,255,.58); }
+.x8-request-empty button,
+.x8-interaction-head button,
+.x8-comment-input button,
+.x8-play-actions button,
+.x8-danmaku-input button,
+.x8-report-modal button {
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  font-weight: 800;
+}
+.x8-request-empty button { height: 38px; padding: 0 18px; }
+.x8-request-empty button:disabled,
+.x8-comment-input button:disabled,
+.x8-danmaku-input button:disabled,
+.x8-report-modal button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.x8-interaction-panel {
+  margin: 26px auto 0;
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.x8-interaction-panel.compact { margin-top: 18px; }
+.x8-interaction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.x8-interaction-head div { display: grid; gap: 4px; }
+.x8-interaction-head strong { font-size: 18px; }
+.x8-interaction-head span { color: rgba(255,255,255,.58); font-size: 13px; }
+.x8-interaction-head button {
+  height: 32px;
+  padding: 0 14px;
+  background: rgba(255,255,255,.12);
+  color: #fff;
+}
+.x8-rating-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.x8-rating-row button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.28);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.x8-rating-row button.on,
+.x8-rating-row button:hover { color: #ffc233; }
+.x8-comment-box,
+.x8-comment-list { display: grid; gap: 10px; }
+.x8-comment-input,
+.x8-danmaku-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px;
+  gap: 8px;
+}
+.x8-comment-input input,
+.x8-danmaku-input input,
+.x8-report-modal select,
+.x8-report-modal textarea {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: rgba(0,0,0,.24);
+  color: #fff;
+  outline: 0;
+}
+.x8-comment-input input,
+.x8-danmaku-input input {
+  height: 38px;
+  padding: 0 12px;
+}
+.x8-comment-input button,
+.x8-danmaku-input button { height: 38px; }
+.x8-comment-list article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.18);
+}
+.x8-comment-list b { font-size: 13px; }
+.x8-comment-list p {
+  margin: 0;
+  color: rgba(255,255,255,.82);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.x8-comment-list time,
+.x8-comment-empty {
+  color: rgba(255,255,255,.42);
+  font-size: 12px;
+}
+.x8-play-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.x8-play-actions button {
+  height: 34px;
+  padding: 0 14px;
+  background: rgba(255,255,255,.1);
+  color: #fff;
+}
+.x8-play-actions button.on { background: #fff; color: #111; }
+.x8-danmaku-input {
+  max-width: 520px;
+  margin-top: 12px;
+}
+.x8-danmaku-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+}
+.x8-danmaku-layer span {
+  position: absolute;
+  left: 100%;
+  min-width: max-content;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0,0,0,.85);
+  animation: x8DanmakuMove 7.6s linear forwards;
+}
+@keyframes x8DanmakuMove {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100vw - 100%)); }
+}
+.x8-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0,0,0,.62);
+}
+.x8-report-modal {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #1f1f1f;
+  border: 1px solid rgba(255,255,255,.12);
+}
+.x8-report-modal strong { font-size: 18px; }
+.x8-report-modal select {
+  height: 38px;
+  padding: 0 10px;
+}
+.x8-report-modal textarea {
+  min-height: 112px;
+  padding: 10px;
+  resize: vertical;
+}
+.x8-report-modal div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.x8-report-modal button {
+  height: 36px;
+  padding: 0 16px;
 }
 @media (max-width: 1749px) {
   .x8-panel,

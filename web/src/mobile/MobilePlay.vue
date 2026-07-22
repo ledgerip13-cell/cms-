@@ -34,6 +34,9 @@
         <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
       </video>
       <iframe v-else-if="mode === 'iframe' && !accessBlock" class="mp-video" :src="curUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+      <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="mp-danmaku-layer" aria-hidden="true">
+        <span v-for="item in activeDanmakus" :key="`mp-dm-${item.id}-${item._nonce || 0}`" :style="{ top: item.top, color: item.color || '#fff' }">{{ item.content }}</span>
+      </div>
       <div v-if="loading || resolving" class="mp-state">
         <div></div>
         <span>{{ loading ? '加载中' : '解析中' }}</span>
@@ -162,6 +165,31 @@
       <p v-if="vod.officialIntro || vod.blurb" class="mp-intro" :class="{ folded: !introOpen }" @click="introOpen = !introOpen">
         {{ vod.officialIntro || vod.blurb }}
       </p>
+      <div class="mp-interaction">
+        <div class="mp-interaction-head">
+          <strong>互动</strong>
+          <span>{{ ratingSummary }}</span>
+          <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport">举报</button>
+        </div>
+        <div v-if="interactionConfig.ratingsEnabled" class="mp-rating">
+          <button v-for="score in 5" :key="`mp-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+        </div>
+        <div v-if="interactionConfig.danmakuEnabled" class="mp-inline-input">
+          <input v-model.trim="danmakuText" maxlength="80" placeholder="发送弹幕" @keyup.enter="submitDanmaku" />
+          <button type="button" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '开' : '关' }}</button>
+          <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">发送</button>
+        </div>
+        <div v-if="interactionConfig.commentsEnabled" class="mp-inline-input">
+          <input v-model.trim="commentText" maxlength="500" placeholder="写评论" @keyup.enter="submitComment" />
+          <button type="button" :disabled="commentSubmitting" @click="submitComment">评论</button>
+        </div>
+        <div v-if="comments.length" class="mp-comments">
+          <article v-for="item in comments.slice(0, 5)" :key="`mp-comment-${item.id}`">
+            <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+            <p>{{ item.content }}</p>
+          </article>
+        </div>
+      </div>
     </section>
 
     <section v-if="vod.lines?.length" class="mp-panel mp-lines-panel">
@@ -222,6 +250,22 @@
         </article>
       </div>
     </section>
+    <div v-if="reportOpen" class="mp-report-mask" @click.self="reportOpen = false">
+      <div class="mp-report">
+        <strong>提交举报</strong>
+        <select v-model="reportReason">
+          <option value="无法播放">无法播放</option>
+          <option value="内容错误">内容错误</option>
+          <option value="违规内容">违规内容</option>
+          <option value="其他问题">其他问题</option>
+        </select>
+        <textarea v-model.trim="reportContent" maxlength="500" placeholder="补充说明"></textarea>
+        <div>
+          <button type="button" @click="reportOpen = false">取消</button>
+          <button type="button" :disabled="reportSubmitting" @click="submitReport">提交</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -231,7 +275,7 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
-import { notifySuccess, notifyWarning } from '../feedback'
+import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
 import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { currentUser } from '../userStore'
@@ -256,6 +300,15 @@ const playFailure = ref({ open: false, title: '', message: '', switching: false 
 const curUrl = ref('')
 const currentResolve = ref(null)
 const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
+const interactionConfig = ref({
+  commentsEnabled: true,
+  ratingsEnabled: true,
+  reportsEnabled: true,
+  danmakuEnabled: true,
+  commentRequireLogin: true,
+  ratingRequireLogin: true,
+  danmakuRequireLogin: true,
+})
 const userSkipPreference = ref(null)
 const subtitles = ref([])
 const selectedSubtitle = ref('off')
@@ -276,6 +329,19 @@ const controlsVisible = ref(false)
 const centerControlsVisible = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const comments = ref([])
+const commentText = ref('')
+const commentSubmitting = ref(false)
+const ratingState = ref({ avg: 0, count: 0, myScore: 0 })
+const danmakuText = ref('')
+const danmakuVisible = ref(true)
+const danmakuRows = ref([])
+const activeDanmakus = ref([])
+const danmakuSubmitting = ref(false)
+const reportOpen = ref(false)
+const reportReason = ref('无法播放')
+const reportContent = ref('')
+const reportSubmitting = ref(false)
 const playbackRate = ref(1)
 const skipIntroOutro = ref(false)
 const skipIntroDraft = ref(0)
@@ -308,6 +374,8 @@ let autoSwitchingLine = false
 let bodyOverflowBeforeLandscape = ''
 let pageActive = false
 let loadSeq = 0
+let danmakuLoadAt = 0
+let danmakuNonce = 0
 let playbackSeq = 0
 let introSkippedUrl = ''
 let outroSkippedUrl = ''
@@ -339,6 +407,8 @@ const effectivePlayConfig = computed(() => mergeSkipConfig(
   userSkipPreference.value || readLocalSkipPreference(vod.value?.id),
 ))
 const progressPercent = computed(() => duration.value ? `${Math.max(0, Math.min(100, (currentTime.value / duration.value) * 100))}%` : '0%')
+const myRating = computed(() => Number(ratingState.value.myScore || 0))
+const ratingSummary = computed(() => ratingState.value.count ? `${Number(ratingState.value.avg || 0).toFixed(1)}分 · ${ratingState.value.count}人` : '暂无评分')
 const historyMatchesCurrentLine = computed(() => {
   const h = activeLineHistory()
   return Boolean(h?.lineId && curChannel.value?.id && Number(h.lineId) === Number(curChannel.value.id))
@@ -484,6 +554,7 @@ async function refreshPlayConfig() {
     const site = await api.site()
     writeCachedSite(site)
     playConfig.value = normalizePlayConfig(site?.playConfig)
+    interactionConfig.value = { ...interactionConfig.value, ...(site?.interactionConfig || {}) }
     syncSkipDrafts()
     resetSubtitleSelection()
   } catch {
@@ -732,7 +803,6 @@ function onLoadedMetadata() {
   applySubtitleMode()
   applySkipIntro()
 }
-
 function defaultSubtitleValue() {
   return subtitleDefaultEnabled.value && subtitleOptions.value.length ? '0' : 'off'
 }
@@ -851,6 +921,105 @@ function applySkipRanges() {
 function onTimeUpdate() {
   syncVideoState()
   saveProgressSoon()
+  void loadDanmakuWindow(false)
+  tickDanmaku()
+}
+
+async function loadVodInteractions(id = vod.value?.id) {
+  if (!id) return
+  const [commentRows, rating] = await Promise.all([
+    interactionConfig.value.commentsEnabled ? api.vodComments(id, 20).catch(() => []) : Promise.resolve([]),
+    interactionConfig.value.ratingsEnabled ? api.vodRating(id).catch(() => ({ avg: 0, count: 0, myScore: 0 })) : Promise.resolve({ avg: 0, count: 0, myScore: 0 }),
+  ])
+  comments.value = Array.isArray(commentRows) ? commentRows : []
+  ratingState.value = { avg: Number(rating?.avg || 0), count: Number(rating?.count || 0), myScore: Number(rating?.myScore || 0) }
+}
+
+function requireInteractionLogin(reason) {
+  if (user.value) return true
+  openAuthDialog({ mode: 'login', redirect: route.fullPath, reason })
+  return false
+}
+
+async function submitComment() {
+  if (!vod.value?.id || !commentText.value || commentSubmitting.value) return
+  if (interactionConfig.value.commentRequireLogin && !requireInteractionLogin('登录后可评论')) return
+  commentSubmitting.value = true
+  try {
+    const row = await api.postVodComment(vod.value.id, { content: commentText.value, source: 'mobile' })
+    comments.value = [row, ...comments.value]
+    commentText.value = ''
+    notifySuccess('评论已发送')
+  } catch (error) { notifyError(apiErrorMessage(error, '评论发送失败')) } finally { commentSubmitting.value = false }
+}
+
+async function submitRating(score) {
+  if (!vod.value?.id) return
+  if (interactionConfig.value.ratingRequireLogin && !requireInteractionLogin('登录后可评分')) return
+  try {
+    ratingState.value = await api.rateVod(vod.value.id, { score, source: 'mobile' })
+    notifySuccess('评分已保存')
+  } catch (error) { notifyError(apiErrorMessage(error, '评分失败')) }
+}
+
+async function loadDanmakuWindow(force = false) {
+  if (!interactionConfig.value.danmakuEnabled || !vod.value?.id) return
+  const now = Math.floor(Number(currentTime.value) || 0)
+  if (!force && Math.abs(now - danmakuLoadAt) < 45) return
+  danmakuLoadAt = now
+  const rows = await api.danmaku(vod.value.id, {
+    playId: curChannel.value?.id || undefined,
+    epIndex: epIdx.value,
+    from: Math.max(0, now - 5),
+    to: now + 120,
+  }).catch(() => [])
+  danmakuRows.value = Array.isArray(rows) ? rows : []
+}
+
+function tickDanmaku() {
+  if (!danmakuVisible.value || !danmakuRows.value.length) return
+  const now = Math.floor(Number(currentTime.value) || 0)
+  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, 3)
+  if (!due.length) return
+  for (const item of due) item._shown = true
+  activeDanmakus.value = [...activeDanmakus.value, ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, top: `${18 + ((danmakuNonce + index) % 5) * 12}%` }))].slice(-8)
+  window.setTimeout(() => {
+    activeDanmakus.value = activeDanmakus.value.filter(item => !due.some(x => x.id === item.id))
+  }, 7000)
+}
+
+async function submitDanmaku() {
+  if (!vod.value?.id || !danmakuText.value || danmakuSubmitting.value) return
+  if (interactionConfig.value.danmakuRequireLogin && !requireInteractionLogin('登录后可发弹幕')) return
+  danmakuSubmitting.value = true
+  try {
+    const row = await api.sendDanmaku(vod.value.id, {
+      playId: curChannel.value?.id || undefined,
+      epIndex: epIdx.value,
+      timeSec: Math.floor(Number(currentTime.value) || 0),
+      content: danmakuText.value,
+      source: 'mobile',
+    })
+    danmakuRows.value = [...danmakuRows.value, row]
+    danmakuText.value = ''
+    notifySuccess('弹幕已发送')
+  } catch (error) { notifyError(apiErrorMessage(error, '弹幕发送失败')) } finally { danmakuSubmitting.value = false }
+}
+
+function openReport() {
+  reportReason.value = '无法播放'
+  reportContent.value = ''
+  reportOpen.value = true
+}
+
+async function submitReport() {
+  if (!vod.value?.id || reportSubmitting.value) return
+  reportSubmitting.value = true
+  try {
+    await api.reportContent({ type: 'play', targetId: curChannel.value?.id || vod.value.id, vodId: vod.value.id, reason: reportReason.value, content: reportContent.value, source: 'mobile' })
+    reportOpen.value = false
+    notifySuccess('举报已提交')
+  } catch (error) { notifyError(apiErrorMessage(error, '举报失败')) } finally { reportSubmitting.value = false }
 }
 
 function togglePlayback() {
@@ -1252,6 +1421,11 @@ async function playCurrent() {
   accessBlock.value = null
   closePlayFailure()
   subtitles.value = []
+  comments.value = []
+  ratingState.value = { avg: 0, count: 0, myScore: 0 }
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   resetSubtitleSelection()
   try {
     const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex })
@@ -1284,6 +1458,9 @@ async function playCurrent() {
 function playEp(index) {
   pendingSeekSec.value = 0
   epIdx.value = Math.max(0, Math.min(index, episodes.value.length - 1))
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
   retryingLine = false
@@ -1296,6 +1473,9 @@ function selectLine(index) {
   saveHistory()
   lineIdx.value = next
   chanIdx.value = 0
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
@@ -1308,6 +1488,9 @@ function selectChannel(index) {
   if (chanIdx.value === next) return
   saveHistory()
   chanIdx.value = next
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   epIdx.value = Math.max(0, Math.min(epIdx.value, episodes.value.length - 1))
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
@@ -1537,6 +1720,7 @@ async function loadVod(id) {
     applyRoutePlaybackSelection()
     alignEpisodeRange(epIdx.value)
     if (vod.value.lines?.length) playCurrent()
+    await loadVodInteractions(vod.value.id)
     const items = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => [])
     if (seq !== loadSeq || !pageActive || !isPlayRoute()) return
     related.value = items
@@ -2150,6 +2334,148 @@ onDeactivated(() => {
 .mp-info {
   padding: 14px 14px 16px;
   border-top: 0;
+}
+.mp-danmaku-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+}
+.mp-danmaku-layer span {
+  position: absolute;
+  left: 100%;
+  min-width: max-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0,0,0,.85);
+  animation: mpDanmakuMove 7s linear forwards;
+}
+@keyframes mpDanmakuMove {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100vw - 100%)); }
+}
+.mp-interaction {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mp-interaction-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.mp-interaction-head strong {
+  font-size: 15px;
+  color: #1f232b;
+}
+.mp-interaction-head span {
+  min-width: 0;
+  color: #7b8492;
+  font-size: 12px;
+}
+.mp-interaction-head button,
+.mp-inline-input button,
+.mp-report button {
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #1f232b;
+  color: #fff;
+  font-weight: 900;
+}
+.mp-rating {
+  display: flex;
+  gap: 3px;
+}
+.mp-rating button {
+  border: 0;
+  background: transparent;
+  color: #d3d7df;
+  font-size: 22px;
+}
+.mp-rating button.on {
+  color: #ffc233;
+}
+.mp-inline-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+}
+.mp-inline-input input,
+.mp-report select,
+.mp-report textarea {
+  min-width: 0;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #f7f8fa;
+  color: #1f232b;
+  outline: 0;
+}
+.mp-inline-input input {
+  height: 34px;
+  padding: 0 10px;
+}
+.mp-comments {
+  display: grid;
+  gap: 8px;
+}
+.mp-comments article {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border-radius: 10px;
+  background: #f7f8fa;
+}
+.mp-comments b {
+  color: #1f232b;
+  font-size: 12px;
+}
+.mp-comments p {
+  margin: 0;
+  color: #535b68;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mp-report-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0,0,0,.55);
+}
+.mp-report {
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff;
+}
+.mp-report strong {
+  color: #1f232b;
+}
+.mp-report select {
+  height: 36px;
+  padding: 0 10px;
+}
+.mp-report textarea {
+  min-height: 92px;
+  padding: 10px;
+}
+.mp-report div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .mp-title-row {
   display: flex;

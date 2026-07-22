@@ -221,7 +221,13 @@
       <div v-if="loading" class="grid">
         <div v-for="i in 18" :key="i" class="sk-card"><div class="sk sk-poster"></div><div class="sk sk-line"></div><div class="sk sk-line s"></div></div>
       </div>
-      <div v-else-if="!list.length" class="empty">没有找到相关影片</div>
+      <div v-else-if="!list.length" class="empty request-empty">
+        <strong>没有找到相关影片</strong>
+        <span v-if="route.query.kw && requestVodEnabled">可以提交「{{ route.query.kw }}」到后台求片</span>
+        <button v-if="route.query.kw && requestVodEnabled" type="button" :disabled="requesting" @click="submitVodRequest(route.query.kw)">
+          {{ requesting ? '提交中...' : '一键求片' }}
+        </button>
+      </div>
       <div v-else class="grid">
         <div v-for="v in list" :key="v.id" class="card2" @click="goPlay(v.id)">
           <div class="poster">
@@ -259,6 +265,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { categoryIconSvg, sectionIconSvg } from '../categoryIcons'
 import { currentUser } from '../userStore'
+import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
 defineOptions({ name: 'Home' })
 const route = useRoute()
 const router = useRouter()
@@ -266,6 +273,9 @@ const router = useRouter()
 const curType = computed(() => route.query.type || '')
 const isSearch = computed(() => !!route.query.kw)
 const discover = computed(() => !curType.value && !isSearch.value)
+const requesting = ref(false)
+const interactionConfig = ref({ requestsEnabled: true })
+const requestVodEnabled = computed(() => interactionConfig.value.requestsEnabled !== false)
 
 function goPlay(id) { router.push('/play/'+id) }
 function onErr(e, fallback = '') {
@@ -282,6 +292,26 @@ function fallbackPic(v) { return imgUrl(v.localPic || '') }
 function thumbPic(v) { return imgUrl(v.pic || v.officialPic || v.localPic || '') }
 function heroPic(v) { return imgUrl(v.heroImage || v.heroPic || v.officialPic || v.pic || v.localPic || '') }
 function heroImageWide(v) { return Boolean(v.heroImageWide) }
+async function submitVodRequest(title) {
+  const value = String(title || '').trim()
+  if (!value || requesting.value) return
+  requesting.value = true
+  try {
+    await api.requestVod({ title: value, source: 'pc' })
+    notifySuccess('求片已提交')
+  } catch (error) {
+    notifyError(apiErrorMessage(error, '求片提交失败'))
+  } finally {
+    requesting.value = false
+  }
+}
+async function loadInteractionConfig() {
+  try {
+    interactionConfig.value = { requestsEnabled: true, ...(await api.interactionConfig()) }
+  } catch {
+    interactionConfig.value = { requestsEnabled: true }
+  }
+}
 function withRandomHeroImage(v) {
   const images = Array.isArray(v.heroImages) ? v.heroImages.filter(img => img?.url) : []
   const wideImages = images.filter(img => img.wide && img.source !== 'poster' && img.source !== 'posterFallback')
@@ -650,8 +680,40 @@ async function boot() {
   void loadYears({ preferCache: true })
 }
 watch(() => route.query, async () => { page.value = 1; sub.value = ''; year.value=''; sort.value='recent'; mobileFiltersOpen.value = false; await boot() })
-onMounted(boot)
+onMounted(() => {
+  void loadInteractionConfig()
+  void boot()
+})
 onActivated(() => { if (discover.value && hero.value.length > 1) startHeroLoop() })
 onDeactivated(stopHeroLoop)
 onBeforeUnmount(stopHeroLoop)
 </script>
+
+<style scoped>
+.request-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.request-empty strong {
+  color: var(--text);
+  font-size: 18px;
+}
+.request-empty span {
+  color: var(--muted2);
+}
+.request-empty button {
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 18px;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-weight: 900;
+  cursor: pointer;
+}
+.request-empty button:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+</style>

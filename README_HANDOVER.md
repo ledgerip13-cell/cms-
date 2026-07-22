@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（影片级/用户级片头片尾跳过设置）
+> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次提交（P2 用户风控 + 用户互动）
 
 ---
 
@@ -90,6 +90,8 @@ video-cms/
 │       │   ├── site.ts         #   站点/主题/布局配置
 │       │   ├── img.ts          #   图片代理/服务
 │       │   ├── users.ts        #   后台用户 + Web 用户管理
+│       │   ├── risk.ts         #   用户风控：异常 IP/多账号/登录设备/封禁解封
+│       │   ├── interactions.ts #   用户互动：评论/评分/求片/举报/站内消息/弹幕
 │       │   ├── hot.ts          #   热榜配置
 │       │   ├── access.ts       #   邀请码/VIP等级/操作审计
 │       │   ├── ops.ts          #   QC问题队列 + 源SLA面板
@@ -130,6 +132,8 @@ video-cms/
 │           ├── Playback.vue    # 播放策略（从 Site.vue 拆出）
 │           ├── Ops.vue         # 质量监控：QC 队列 + 源 SLA
 │           ├── Users.vue       # 前台用户管理
+│           ├── Risk.vue        # 用户风控：风险事件、登录设备、封禁解封追踪
+│           ├── Interactions.vue # 互动管理：开关、评论、评分、求片、举报、消息、弹幕
 │           ├── Access.vue      # 邀请码/VIP/审计/播放错误/访问日志
 │           ├── Hot.vue         # 热门推荐配置与预览
 │           ├── Site.vue        # 站点设置壳：加载/保存/Tab 装配
@@ -144,8 +148,8 @@ video-cms/
         └── components/        # AuthModal/ToastStack
 ```
 
-### Prisma 数据模型（37 个）
-`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `SearchLog` `Vod` `VodSkipConfig` `UserVodSkipPreference` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `Play` `Task` `SyncLog`
+### Prisma 数据模型（47 个）
+`Source` `Category` `SourceTypeMap` `SiteConfig` `MetaConfig` `HotConfig` `HlsCleanConfig` `HlsCleanPolicy` `HlsCleanResult` `HlsAdFingerprint` `User` `WebUser` `LoginDevice` `UserRiskEvent` `UserBanLog` `SearchLog` `VipLevel` `LegacyMemberGroup` `LegacyWebUserGroup` `InviteCode` `AuditLog` `QcIssue` `AccessAudit` `IpLocationCache` `PlaybackErrorLog` `LoginLog` `RequestAccessLog` `Vod` `VodSkipConfig` `VodAlias` `VodSubType` `Person` `VodPerson` `VodImage` `UserFollow` `WatchHistory` `UserVodSkipPreference` `Comment` `UserRating` `VodRequest` `UserReport` `SiteMessage` `SiteMessageRead` `Danmaku` `Play` `Task` `SyncLog`
 
 ---
 
@@ -191,6 +195,8 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-22 P2 用户风控 + 用户互动断点**：按“全局自适应，先 X8、再 PC 默认、最后移动端”落地。后端新增 `server/src/routes/risk.ts` 与 `server/src/routes/interactions.ts`，Prisma 增加 `LoginDevice/UserRiskEvent/UserBanLog/Comment/UserRating/VodRequest/UserReport/SiteMessage/SiteMessageRead/Danmaku` 10 个模型，`WebUser/Vod/SiteConfig` 补封禁字段、评分聚合与互动配置。风控支持异常 IP、多账号设备/IP、登录设备记录、封禁/解封原因；后台新增 `admin/src/views/Risk.vue` 与 `admin/src/views/Interactions.vue`，可管理风险事件、互动开关、评论、评分、求片、举报、站内消息、弹幕。前台 `web/src/x8/X8Home.vue`、PC `Home.vue/Play.vue`、移动 `MobileSearch.vue/MobilePlay.vue` 接入一键求片、评论、评分、举报、站内消息入口与按播放时间飘过的弹幕。已执行 `pnpm --dir server exec prisma validate`、`pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir admin build`、`pnpm --dir web build`、`pnpm --dir server db:push`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `5150/health`、`5151`、`5152` 均 HTTP 200，`/api/interactions/config` 正常返回，评论/评分/弹幕只读接口正常，匿名举报可写入。当前站点配置为 `requestRequireLogin=true`，匿名求片按配置返回 401；PC/移动搜索页会读取互动开关，关闭求片时不显示入口。
+- **2026-07-22 X8 播放页猜你喜欢换一换修复断点**：定位播放页/详情页 `猜你喜欢` 的 `换一换` 点击无视觉变化，是因为 `refreshRelated()` 每次请求固定 `/api/related` 前 12 条，服务端排序确定导致返回同一批数据。`web/src/x8/X8Home.vue` 已改为初始/刷新拉取最多 24 条相关推荐，新增 `relatedPage/visibleRelated` 本地窗口切换；点击“换一换”时如果已有多页数据，直接切下一组，不再重复展示同一组。已执行 `pnpm --dir web build`、`git diff --check` 通过；当前工作区存在其它未提交改动，部署前需确认是否允许一并进入镜像。
 - **2026-07-22 影片级/用户级片头片尾跳过设置断点**：在全局播放策略基础上新增三层优先级：`用户本片偏好 > 后台单片配置 > 全局默认`。数据库新增 `VodSkipConfig`（后台单片覆盖）与 `UserVodSkipPreference`（登录用户本片偏好），`server/src/skipConfig.ts` 统一做秒数裁剪、空配置删除与有效配置合并；公开影片详情返回 `skipConfig/effectiveSkipConfig`，用户状态接口返回 `skipPreference`，并新增 `PUT/DELETE /api/user/vods/:id/skip`。后台 `admin/src/views/Vods.vue` 影片编辑弹窗新增“片头片尾”配置区，可对单片选择继承/开启/关闭并分别设置片头/片尾秒数继承。前台新增 `web/src/skipConfig.js`，游客偏好写 `localStorage`，登录用户同步数据库；PC `DesktopVideoPlayer`、移动播放页与 X8 播放页均可在播放器设置中保存/恢复本片跳过设置，并继续按片头阈值自动跳转、片尾阈值自动下一集/停在结尾。已执行 `pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir web build`、`pnpm --dir admin build`、`pnpm --dir server db:push`、`git diff --check`、`docker compose up -d --build server admin web` 通过；运行态 `5150/health`、`5151`、`5152` 均 HTTP 200，新表 `VodSkipConfig/UserVodSkipPreference` 可查询。
 - **2026-07-22 移动搜索意图引导与接口提速断点**：按反馈优化 `/m/search` 空搜索页与输入联想。移动搜索页现在接入 `/api/search-corrections`，输入时同时展示片名联想与纠错推荐；当输入弹层已有联想/纠错，或后台配置了 `HotConfig.searchTerms` 运营热搜词时，不再渲染下方综合热搜榜，避免同屏重复热门搜索。初始化阶段把原本 `api.hot(16)` + `api.hot(12)` 两次热榜请求合并为一次复用给“猜你想搜”和热榜缓存。后端搜索辅助接口新增 60 秒聚合缓存，`/api/search-corrections` 候选扫描从最多 300+180 条降到 90+45 条并跳过明显长度不匹配的 Levenshtein 计算；同时修正 `ensureHotConfig()` 每次读取热门配置都会清空全局聚合缓存的问题，改为仅后台保存热门配置时清缓存。已执行 `pnpm --dir server build`、`pnpm --dir web build`、`git diff --check`、`docker compose up -d --build server web` 通过；运行态 `5150 /health` 与 `5152` 均 200，接口抽样：纠错冷请求约 0.223s、缓存命中约 0.003s，联想缓存命中约 0.005s，运营热词缓存命中约 0.015s。
 - **2026-07-22 前台 HLS 缓冲上限调整断点**：按播放卡顿反馈，将 hls.js 播放缓冲上限从原普通播放约 30 秒提升到 180 秒（3 分钟），涉及 `web/src/components/DesktopVideoPlayer.vue`、`web/src/mobile/MobilePlay.vue`、`web/src/x8/X8Home.vue` 主播放链路；短剧链路从 12/20 秒级提升到 60 秒（1 分钟），涉及 `web/src/views/Shorts.vue` 与 `web/src/mobile/MobileShorts.vue`。X8 首页预告片仍保持 30 秒缓冲，避免预告墙消耗过多带宽；iOS/Safari 原生 HLS 分支不走 hls.js，实际缓冲仍由浏览器控制。已执行 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web` 通过；运行态 `5152` 返回 HTTP 200，`vcms-web/vcms-server` 均 Up。

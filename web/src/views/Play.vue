@@ -36,6 +36,9 @@
           @skip-change="saveSkipPreference"
           @skip-reset="resetSkipPreference"
         />
+        <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="pc-danmaku-layer" aria-hidden="true">
+          <span v-for="item in activeDanmakus" :key="`pc-dm-${item.id}-${item._nonce || 0}`" :style="{ top: item.top, color: item.color || '#fff' }">{{ item.content }}</span>
+        </div>
         <div v-if="playFailure.open && !accessBlock" class="play-failure-dialog">
           <strong>{{ playFailure.title }}</strong>
           <p>{{ playFailure.message }}</p>
@@ -110,6 +113,31 @@
           <div class="pv-actions">
             <button class="mini-btn primary" @click="toggleFollow">{{ followed ? '已追剧' : '追剧' }}</button>
             <button class="mini-btn" v-if="user" @click="router.push('/me')">我的片单</button>
+            <button class="mini-btn" v-if="interactionConfig.reportsEnabled" @click="openReport('vod', vod.id)">举报</button>
+          </div>
+          <div class="pc-interaction">
+            <div class="pc-interaction-head">
+              <strong>用户互动</strong>
+              <span>{{ ratingSummary }}</span>
+            </div>
+            <div v-if="interactionConfig.ratingsEnabled" class="pc-rating">
+              <button v-for="score in 5" :key="`pc-rate-${score}`" type="button" :class="{ on: myRating >= score * 2 }" @click="submitRating(score * 2)">★</button>
+            </div>
+            <div v-if="interactionConfig.danmakuEnabled" class="pc-danmaku-input">
+              <input v-model.trim="danmakuText" maxlength="80" placeholder="发送弹幕" @keyup.enter="submitDanmaku" />
+              <button type="button" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
+              <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
+            </div>
+            <div v-if="interactionConfig.commentsEnabled" class="pc-comments">
+              <div class="pc-comment-input">
+                <input v-model.trim="commentText" maxlength="500" placeholder="写下你的评论" @keyup.enter="submitComment" />
+                <button type="button" :disabled="commentSubmitting" @click="submitComment">{{ commentSubmitting ? '发送中' : '发送' }}</button>
+              </div>
+              <article v-for="item in comments.slice(0, 8)" :key="`pc-comment-${item.id}`">
+                <b>{{ item.user?.nickname || item.user?.username || '匿名用户' }}</b>
+                <p>{{ item.content }}</p>
+              </article>
+            </div>
           </div>
         </div>
       </div>
@@ -194,6 +222,22 @@
       </button>
       <div class="gv-count">{{ galleryIdx + 1 }} / {{ gallery.length }}</div>
     </div>
+    <div v-if="reportOpen" class="pc-report-mask" @click.self="reportOpen = false">
+      <div class="pc-report">
+        <strong>提交举报</strong>
+        <select v-model="reportForm.reason">
+          <option value="无法播放">无法播放</option>
+          <option value="内容错误">内容错误</option>
+          <option value="违规内容">违规内容</option>
+          <option value="其他问题">其他问题</option>
+        </select>
+        <textarea v-model.trim="reportForm.content" maxlength="500" placeholder="补充说明"></textarea>
+        <div>
+          <button type="button" @click="reportOpen = false">取消</button>
+          <button type="button" :disabled="reportSubmitting" @click="submitReport">{{ reportSubmitting ? '提交中' : '提交' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div v-else-if="notFound" class="page not-found">
     <div class="nf-box">
@@ -253,6 +297,17 @@ const followed = ref(false)
 const lineIdx = ref(0); const chanIdx = ref(0); const epIdx = ref(0); const curUrl = ref(''); const mode = ref('hls'); const resolving = ref(false)
 const subtitles = ref([])
 const playConfig = ref(normalizePlayConfig(readCachedSite()?.playConfig))
+const interactionConfig = ref({
+  commentsEnabled: true,
+  ratingsEnabled: true,
+  requestsEnabled: true,
+  reportsEnabled: true,
+  messagesEnabled: true,
+  danmakuEnabled: true,
+  commentRequireLogin: true,
+  ratingRequireLogin: true,
+  danmakuRequireLogin: true,
+})
 const userSkipPreference = ref(null)
 const qualities = ref([]); const preferredRes = ref(0) // 0=自动(最高清)；用户选择跨集持续
 const playNotice = ref('')
@@ -265,16 +320,32 @@ const historyLineStates = ref([])
 let selfHealTried = false // 自愈：sign 过期(403)时重解析一次拿新地址
 const pendingSeekSec = ref(0)
 const playerState = ref({ currentTime: 0, duration: 0 })
+const comments = ref([])
+const commentText = ref('')
+const commentSubmitting = ref(false)
+const ratingState = ref({ avg: 0, count: 0, myScore: 0 })
+const danmakuText = ref('')
+const danmakuVisible = ref(true)
+const danmakuRows = ref([])
+const activeDanmakus = ref([])
+const danmakuSubmitting = ref(false)
+const reportOpen = ref(false)
+const reportSubmitting = ref(false)
+const reportForm = ref({ type: 'vod', targetId: 0, vodId: 0, reason: '无法播放', content: '' })
 let lastHistorySaveAt = 0
 let playNoticeTimer = 0
 let playWatchdogTimer = 0
 let autoSwitchingPlayback = false
+let danmakuLoadAt = 0
+let danmakuNonce = 0
 const PLAY_LOCAL_HISTORY_KEY = 'vcms.play.local.history'
 const effectivePlayConfig = computed(() => mergeSkipConfig(
   playConfig.value,
   vod.value?.skipConfig,
   userSkipPreference.value || readLocalSkipPreference(vod.value?.id),
 ))
+const myRating = computed(() => Number(ratingState.value.myScore || 0))
+const ratingSummary = computed(() => ratingState.value.count ? `用户评分 ${Number(ratingState.value.avg || 0).toFixed(1)} · ${ratingState.value.count} 人` : '暂无用户评分')
 
 function isDirectM3u8(url) { return /\.m3u8(\?|$)/i.test(url) }
 function onErr(e, fallback = '') {
@@ -306,6 +377,7 @@ async function loadPlayConfig() {
     const site = await api.site()
     writeCachedSite(site)
     playConfig.value = normalizePlayConfig(site?.playConfig)
+    interactionConfig.value = { ...interactionConfig.value, ...(site?.interactionConfig || {}) }
   } catch {}
 }
 async function saveSkipPreference(value) {
@@ -820,6 +892,106 @@ function onPlayerState(state) {
   playerState.value = state || { currentTime: 0, duration: 0 }
   clearPlayWatchdog()
   onVideoTimeUpdate()
+  void loadDanmakuWindow(false)
+  tickDanmaku()
+}
+
+async function loadVodInteractions(id = vod.value?.id) {
+  if (!id) return
+  const [commentRows, rating] = await Promise.all([
+    interactionConfig.value.commentsEnabled ? api.vodComments(id, 30).catch(() => []) : Promise.resolve([]),
+    interactionConfig.value.ratingsEnabled ? api.vodRating(id).catch(() => ({ avg: 0, count: 0, myScore: 0 })) : Promise.resolve({ avg: 0, count: 0, myScore: 0 }),
+  ])
+  comments.value = Array.isArray(commentRows) ? commentRows : []
+  ratingState.value = { avg: Number(rating?.avg || 0), count: Number(rating?.count || 0), myScore: Number(rating?.myScore || 0) }
+}
+
+async function submitComment() {
+  if (!vod.value?.id || !commentText.value || commentSubmitting.value) return
+  if (interactionConfig.value.commentRequireLogin && !user.value) {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评论' })
+    return
+  }
+  commentSubmitting.value = true
+  try {
+    const row = await api.postVodComment(vod.value.id, { content: commentText.value, source: 'pc' })
+    comments.value = [row, ...comments.value]
+    commentText.value = ''
+    notifySuccess('评论已发送')
+  } catch (error) { notifyError(apiErrorMessage(error, '评论发送失败')) } finally { commentSubmitting.value = false }
+}
+
+async function submitRating(score) {
+  if (!vod.value?.id) return
+  if (interactionConfig.value.ratingRequireLogin && !user.value) {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评分' })
+    return
+  }
+  try {
+    ratingState.value = await api.rateVod(vod.value.id, { score, source: 'pc' })
+    notifySuccess('评分已保存')
+  } catch (error) { notifyError(apiErrorMessage(error, '评分失败')) }
+}
+
+async function loadDanmakuWindow(force = false) {
+  if (!interactionConfig.value.danmakuEnabled || !vod.value?.id) return
+  const now = Math.floor(Number(playerState.value.currentTime) || 0)
+  if (!force && Math.abs(now - danmakuLoadAt) < 45) return
+  danmakuLoadAt = now
+  const rows = await api.danmaku(vod.value.id, {
+    playId: curChannel.value?.id || undefined,
+    epIndex: epIdx.value,
+    from: Math.max(0, now - 5),
+    to: now + 120,
+  }).catch(() => [])
+  danmakuRows.value = Array.isArray(rows) ? rows : []
+}
+
+function tickDanmaku() {
+  if (!danmakuVisible.value || !danmakuRows.value.length) return
+  const now = Math.floor(Number(playerState.value.currentTime) || 0)
+  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, 4)
+  if (!due.length) return
+  for (const item of due) item._shown = true
+  activeDanmakus.value = [...activeDanmakus.value, ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, top: `${14 + ((danmakuNonce + index) % 7) * 10}%` }))].slice(-12)
+  window.setTimeout(() => {
+    activeDanmakus.value = activeDanmakus.value.filter(item => !due.some(x => x.id === item.id))
+  }, 7600)
+}
+
+async function submitDanmaku() {
+  if (!vod.value?.id || !danmakuText.value || danmakuSubmitting.value) return
+  if (interactionConfig.value.danmakuRequireLogin && !user.value) {
+    openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可发弹幕' })
+    return
+  }
+  danmakuSubmitting.value = true
+  try {
+    const row = await api.sendDanmaku(vod.value.id, {
+      playId: curChannel.value?.id || undefined,
+      epIndex: epIdx.value,
+      timeSec: Math.floor(Number(playerState.value.currentTime) || 0),
+      content: danmakuText.value,
+      source: 'pc',
+    })
+    danmakuRows.value = [...danmakuRows.value, row]
+    danmakuText.value = ''
+    notifySuccess('弹幕已发送')
+  } catch (error) { notifyError(apiErrorMessage(error, '弹幕发送失败')) } finally { danmakuSubmitting.value = false }
+}
+
+function openReport(type, targetId) {
+  reportForm.value = { type, targetId: Number(targetId) || vod.value.id, vodId: vod.value.id, reason: type === 'play' ? '无法播放' : '内容错误', content: '' }
+  reportOpen.value = true
+}
+
+async function submitReport() {
+  reportSubmitting.value = true
+  try {
+    await api.reportContent({ ...reportForm.value, source: 'pc' })
+    reportOpen.value = false
+    notifySuccess('举报已提交')
+  } catch (error) { notifyError(apiErrorMessage(error, '举报失败')) } finally { reportSubmitting.value = false }
 }
 
 function onPlayerEnded(payload) {
@@ -838,6 +1010,9 @@ function onPlayerError(data) {
 
 function playEp(i, opts = {}) {
   epIdx.value = i
+  activeDanmakus.value = []
+  danmakuRows.value = []
+  danmakuLoadAt = 0
   cleanFallbackUrl.value = ''
   if (!opts.keepResume) pendingSeekSec.value = 0
   playResolvedEp(i)
@@ -866,6 +1041,7 @@ async function loadVod(id) {
   galleryOpen.value = false; galleryIdx.value = 0
   notFound.value = false; vod.value = {}; followed.value = false; accessBlock.value = null
   historyState.value = null; historyLineStates.value = []; userSkipPreference.value = null
+  comments.value = []; ratingState.value = { avg: 0, count: 0, myScore: 0 }; activeDanmakus.value = []; danmakuRows.value = []; danmakuLoadAt = 0
   try {
     vod.value = await api.vod(id)
   } catch (e) {
@@ -885,6 +1061,7 @@ async function loadVod(id) {
     } catch {}
   }
   if (vod.value.lines?.length) playEp(Math.min(epIdx.value, (curChannel.value?.episodes?.length || 1) - 1), { keepResume: true })
+  await loadVodInteractions(vod.value.id)
   // 相关推荐
   try {
     related.value = await api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 12 })
@@ -946,6 +1123,31 @@ onBeforeUnmount(() => {
 .play-failure-dialog div { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .play-failure-dialog button { min-width: 78px; height: 34px; border: 0; border-radius: 9px; color: #fff; background: rgba(255,255,255,.12); cursor: pointer; font-weight: 800; }
 .play-failure-dialog button:first-child { background: #e50914; }
+.pc-danmaku-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; }
+.pc-danmaku-layer span { position: absolute; left: 100%; min-width: max-content; padding: 3px 10px; border-radius: 999px; background: rgba(0,0,0,.28); color: #fff; font-size: 20px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,.85); animation: pcDanmakuMove 7.6s linear forwards; }
+@keyframes pcDanmakuMove { from { transform: translateX(0); } to { transform: translateX(calc(-100vw - 100%)); } }
+.pc-interaction { display: grid; gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(255,255,255,.04); }
+.pc-interaction-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pc-interaction-head strong { color: var(--text); font-size: 16px; }
+.pc-interaction-head span { color: var(--muted2); font-size: 13px; }
+.pc-rating { display: flex; gap: 5px; }
+.pc-rating button { border: 0; background: transparent; color: rgba(255,255,255,.28); font-size: 22px; cursor: pointer; }
+.pc-rating button.on, .pc-rating button:hover { color: #ffc233; }
+.pc-danmaku-input, .pc-comment-input { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+.pc-comment-input { grid-template-columns: minmax(0, 1fr) 72px; }
+.pc-danmaku-input input, .pc-comment-input input, .pc-report select, .pc-report textarea { min-width: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.06); color: var(--text); outline: 0; }
+.pc-danmaku-input input, .pc-comment-input input { height: 38px; padding: 0 12px; }
+.pc-danmaku-input button, .pc-comment-input button, .pc-report button { height: 38px; border: 0; border-radius: 9px; padding: 0 14px; background: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 900; cursor: pointer; }
+.pc-comments { display: grid; gap: 10px; }
+.pc-comments article { display: grid; gap: 4px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
+.pc-comments b { color: var(--text); font-size: 13px; }
+.pc-comments p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.pc-report-mask { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.62); }
+.pc-report { width: min(420px, 100%); display: grid; gap: 12px; padding: 18px; border-radius: 14px; background: var(--card); border: 1px solid rgba(255,255,255,.12); }
+.pc-report strong { color: var(--text); font-size: 18px; }
+.pc-report select { height: 38px; padding: 0 10px; }
+.pc-report textarea { min-height: 108px; padding: 10px; resize: vertical; }
+.pc-report div { display: flex; justify-content: flex-end; gap: 8px; }
 .video { width: 100%; height: 100%; background: #000; object-fit: contain; }
 .sub-toggle { position: absolute; left: 12px; top: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.28); background: rgba(0,0,0,.5); color: rgba(255,255,255,.85); border-radius: 8px; cursor: pointer; z-index: 6; }
 .sub-toggle:hover, .sub-toggle.on { background: rgba(0,0,0,.72); color: #fff; }

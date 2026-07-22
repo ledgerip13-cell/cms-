@@ -125,6 +125,10 @@
         <div v-else-if="!resultItems.length" class="msr-empty">
           <strong>没有找到相关影片</strong>
           <span>换个关键词试试</span>
+          <button v-if="activeKw && requestVodEnabled" type="button" :disabled="requesting" @click="submitVodRequest">
+            {{ requesting ? '提交中...' : '一键求片' }}
+          </button>
+          <em v-if="requestMsg">{{ requestMsg }}</em>
         </div>
         <div v-else class="msr-card-grid">
           <article v-for="vod in resultItems" :key="vod.id" class="msr-card" @click="goVod(vod)">
@@ -170,6 +174,9 @@ const rankCache = ref({})
 const resultTab = ref('all')
 const resultItems = ref([])
 const resultLoading = ref(false)
+const requesting = ref(false)
+const requestMsg = ref('')
+const interactionConfig = ref({ requestsEnabled: true })
 const page = ref(1)
 const hasMore = ref(false)
 const headBg = ref('.9')
@@ -203,6 +210,7 @@ const filterSignature = computed(() => FILTER_KEYS.map(key => `${key}:${String(r
 const hasActiveFilters = computed(() => FILTER_KEYS.some(key => Boolean(route.query[key])))
 const hasSearchAssist = computed(() => searchSuggests.value.length > 0 || correctionSuggests.value.length > 0)
 const showRankPanel = computed(() => !hotWords.value.length && !(suggestOpen.value && hasSearchAssist.value))
+const requestVodEnabled = computed(() => interactionConfig.value.requestsEnabled !== false)
 const filterGroups = computed(() => [
   { key: 'area', label: '地区', items: optionItems(['大陆', '香港', '台湾', '日本', '韩国', '美国', '泰国', '英国']) },
   { key: 'lang', label: '语言', items: optionItems(['国语', '粤语', '英语', '日语', '韩语', '泰语']) },
@@ -363,6 +371,14 @@ async function loadHotWords() {
     hotWords.value = Array.isArray(rows) ? rows.map(row => String(row?.kw || '').trim()).filter(Boolean).slice(0, 10) : []
   } catch {
     hotWords.value = []
+  }
+}
+
+async function loadInteractionConfig() {
+  try {
+    interactionConfig.value = { requestsEnabled: true, ...(await api.interactionConfig()) }
+  } catch {
+    interactionConfig.value = { requestsEnabled: true }
   }
 }
 
@@ -547,6 +563,21 @@ async function loadResults({ append = false } = {}) {
   }
 }
 
+async function submitVodRequest() {
+  const title = activeKw.value
+  if (!title || requesting.value) return
+  requesting.value = true
+  requestMsg.value = ''
+  try {
+    await api.requestVod({ title, source: 'mobile' })
+    requestMsg.value = '已提交到后台'
+  } catch (e) {
+    requestMsg.value = e?.response?.data?.error || e?.message || '提交失败'
+  } finally {
+    requesting.value = false
+  }
+}
+
 async function loadMore() {
   page.value += 1
   await loadResults({ append: true })
@@ -580,7 +611,7 @@ onMounted(async () => {
   syncHeadBg()
   window.addEventListener('scroll', onPageScroll, { passive: true })
   readHistory()
-  await Promise.allSettled([loadDiscovery(), loadHotWords()])
+  await Promise.allSettled([loadDiscovery(), loadHotWords(), loadInteractionConfig()])
   if (!rankItems.value.length) await loadRank()
   await nextTick()
   syncHorizontalTabs()
@@ -1142,6 +1173,21 @@ onBeforeUnmount(() => {
 }
 .msr-empty strong {
   color: #2a2f38;
+}
+.msr-empty button {
+  justify-self: center;
+  height: 34px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 16px;
+  background: #1f232b;
+  color: #fff;
+  font-weight: 900;
+}
+.msr-empty em {
+  color: #5f6672;
+  font-size: 12px;
+  font-style: normal;
 }
 .msr-sk div,
 .msr-sk b,

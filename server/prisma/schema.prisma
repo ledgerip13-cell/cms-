@@ -85,6 +85,7 @@ model SiteConfig {
   shortsConfig       String   @default("{}") // 刷短剧配置 JSON
   playConfig         String   @default("{}") // 播放策略配置 JSON
   pwaConfig          String   @default("{}") // PWA安装与更新配置 JSON
+  interactionConfig  String   @default("{}") // 用户互动配置 JSON：评论/评分/求片/举报/站内消息/弹幕开关
   allowRegister      Boolean  @default(true) // 是否开放前台用户注册
   registerInviteCode String   @default("") // 注册邀请码(留空=不需要)
   updatedAt          DateTime @updatedAt
@@ -222,6 +223,11 @@ model WebUser {
   vipLevel      VipLevel?            @relation(fields: [vipLevelId], references: [id], onDelete: SetNull)
   vipLevelId    Int?
   favoriteTypes String               @default("[]") // JSON: ["动漫","电影"]
+  banReason     String               @default("")
+  bannedAt      DateTime?
+  bannedBy      String               @default("")
+  unbanReason   String               @default("")
+  unbannedAt    DateTime?
   lastLogin     DateTime?
   lastLoginIp   String               @default("")
   createdAt     DateTime             @default(now())
@@ -230,10 +236,89 @@ model WebUser {
   histories     WatchHistory[]
   skipPreferences UserVodSkipPreference[]
   searchLogs    SearchLog[]
+  loginDevices  LoginDevice[]
+  riskEvents    UserRiskEvent[]
+  banLogs       UserBanLog[]
+  comments      Comment[]
+  ratings       UserRating[]
+  vodRequests   VodRequest[]
+  reports       UserReport[]
+  danmakus      Danmaku[]
+  messageReads  SiteMessageRead[]
+  receivedMessages SiteMessage[]     @relation("MessageRecipient")
   legacyGroups  LegacyWebUserGroup[] // 旧用户分组，仅用于迁移兼容
   usedInvites   InviteCode[]
 
   @@index([vipLevelId])
+  @@index([enabled])
+  @@index([bannedAt])
+}
+
+model LoginDevice {
+  id           Int      @id @default(autoincrement())
+  user         WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int
+  deviceHash   String
+  label        String   @default("")
+  userAgent    String   @default("")
+  platform     String   @default("")
+  browser      String   @default("")
+  firstIp      String   @default("")
+  lastIp       String   @default("")
+  loginCount   Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, deviceHash])
+  @@index([deviceHash])
+  @@index([lastIp])
+  @@index([lastSeenAt])
+}
+
+model UserRiskEvent {
+  id             Int       @id @default(autoincrement())
+  type           String
+  severity       String    @default("medium")
+  status         String    @default("open") // open / confirmed / ignored / resolved
+  user           WebUser?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId         Int?
+  username       String    @default("")
+  ip             String    @default("")
+  deviceHash     String    @default("")
+  relatedUserIds String    @default("[]")
+  title          String
+  reason         String    @default("")
+  detail         String    @default("{}")
+  handledBy      String    @default("")
+  handledNote    String    @default("")
+  handledAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@index([userId])
+  @@index([ip])
+  @@index([deviceHash])
+  @@index([createdAt])
+}
+
+model UserBanLog {
+  id        Int      @id @default(autoincrement())
+  user      WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  action    String // ban / unban
+  reason    String
+  actor     String   @default("")
+  ip        String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model SearchLog {
@@ -499,6 +584,8 @@ model Vod {
   popularity               Float? // TMDB 热度值(popularity)
   heatScore                Int            @default(0) // 全站统一热度值：第三方评分人数/TMDB popularity 归一后的最大值
   heatSource               String         @default("") // rating_count / tmdb_popularity
+  userRatingAvg            Float          @default(0)
+  userRatingCount          Int            @default(0)
   officialPic              String         @default("") // 元数据高清封面
   officialIntro            String         @default("") // 元数据简介
   genres                   String         @default("") // 类型标签(逗号分隔)
@@ -532,6 +619,11 @@ model Vod {
   histories                WatchHistory[]
   skipConfig               VodSkipConfig?
   skipPreferences          UserVodSkipPreference[]
+  comments                 Comment[]
+  ratings                  UserRating[]
+  requests                 VodRequest[]
+  reports                  UserReport[]
+  danmakus                 Danmaku[]
   subTypes                 VodSubType[]   // 多分类标签(源站 vodClass 拆分)；subType 仅存主类型(首个)
   contentUpdatedAt         DateTime? // 内容/剧集真实更新时间；每日更新使用它，避免被元数据等后台维护任务污染
   updatedAt                DateTime       @updatedAt
@@ -545,6 +637,7 @@ model Vod {
   @@index([status, ratingCount, rating, updatedAt, id])
   @@index([status, rating, ratingCount, updatedAt, id])
   @@index([status, heatScore, rating, updatedAt, id])
+  @@index([status, userRatingAvg, userRatingCount, updatedAt, id])
   @@index([status, year, updatedAt, id])
   @@index([status, typeName, pinned, updatedAt, id])
   @@index([status, typeName, ratingCount, rating, updatedAt, id])
@@ -690,6 +783,164 @@ model UserVodSkipPreference {
 
   @@unique([userId, vodId])
   @@index([vodId])
+}
+
+model Comment {
+  id        Int       @id @default(autoincrement())
+  vod       Vod       @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId     Int
+  user      WebUser?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    Int?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  parentId  Int?
+  replies   Comment[] @relation("CommentReplies")
+  content   String
+  status    String    @default("visible") // visible / hidden / deleted
+  source    String    @default("web")
+  ip        String    @default("")
+  userAgent String    @default("")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([vodId, status, createdAt])
+  @@index([userId])
+  @@index([parentId])
+  @@index([status])
+  @@index([ip])
+}
+
+model UserRating {
+  id        Int      @id @default(autoincrement())
+  vod       Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId     Int
+  user      WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  score     Int
+  source    String   @default("web")
+  ip        String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, vodId])
+  @@index([vodId])
+  @@index([userId])
+  @@index([score])
+  @@index([createdAt])
+}
+
+model VodRequest {
+  id          Int      @id @default(autoincrement())
+  title       String
+  normalized  String   @default("")
+  authorName  String   @default("")
+  user        WebUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId      Int?
+  matchedVod  Vod?     @relation(fields: [matchedVodId], references: [id], onDelete: SetNull)
+  matchedVodId Int?
+  status      String   @default("pending") // pending / collecting / done / rejected
+  note        String   @default("")
+  source      String   @default("web")
+  ip          String   @default("")
+  userAgent   String   @default("")
+  handledBy   String   @default("")
+  handledAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([normalized])
+  @@index([status])
+  @@index([userId])
+  @@index([matchedVodId])
+  @@index([ip])
+  @@index([createdAt])
+}
+
+model UserReport {
+  id          Int      @id @default(autoincrement())
+  type        String   @default("vod") // vod / play / comment / danmaku / other
+  targetId    Int?
+  vod         Vod?     @relation(fields: [vodId], references: [id], onDelete: SetNull)
+  vodId       Int?
+  user        WebUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId      Int?
+  reason      String
+  content     String   @default("")
+  status      String   @default("pending") // pending / handling / resolved / rejected
+  source      String   @default("web")
+  ip          String   @default("")
+  userAgent   String   @default("")
+  handledBy   String   @default("")
+  handledNote String   @default("")
+  handledAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type])
+  @@index([targetId])
+  @@index([vodId])
+  @@index([userId])
+  @@index([status])
+  @@index([ip])
+  @@index([createdAt])
+}
+
+model SiteMessage {
+  id              Int               @id @default(autoincrement())
+  title           String
+  content         String
+  status          String            @default("sent") // draft / sent / archived
+  recipient       WebUser?          @relation("MessageRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  recipientUserId Int?
+  source          String            @default("admin")
+  sentBy          String            @default("")
+  sentAt          DateTime          @default(now())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  reads           SiteMessageRead[]
+
+  @@index([status])
+  @@index([recipientUserId])
+  @@index([sentAt])
+}
+
+model SiteMessageRead {
+  id        Int         @id @default(autoincrement())
+  message   SiteMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int
+  user      WebUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  readAt    DateTime    @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model Danmaku {
+  id        Int      @id @default(autoincrement())
+  vod       Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
+  vodId     Int
+  playId    Int?
+  epIndex   Int      @default(0)
+  timeSec   Int      @default(0)
+  content   String
+  color     String   @default("#ffffff")
+  mode      String   @default("scroll")
+  status    String   @default("visible") // visible / hidden / deleted
+  source    String   @default("web")
+  user      WebUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    Int?
+  ip        String   @default("")
+  userAgent String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vodId, epIndex, timeSec])
+  @@index([playId])
+  @@index([userId])
+  @@index([status])
+  @@index([ip])
+  @@index([createdAt])
 }
 
 // 播放线路（一部片挂 N 条，来自不同源）

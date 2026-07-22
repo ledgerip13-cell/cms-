@@ -84,7 +84,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, Link, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation, Expand, Fold } from '@element-plus/icons-vue'
+import { DataLine, Connection, Link, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation, Expand, Fold, WarningFilled, ChatDotRound } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
@@ -132,6 +132,8 @@ const menuSections = [
     icon: UserFilled,
     children: [
       { path: '/users', label: '用户管理', icon: UserFilled },
+      { path: '/risk', label: '风控中心', icon: WarningFilled },
+      { path: '/interactions', label: '互动管理', icon: ChatDotRound },
       { path: '/access', label: '权限管理', icon: Key },
     ],
   },

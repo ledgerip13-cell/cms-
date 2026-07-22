@@ -102,6 +102,14 @@ export async function webUserGuard(req: FastifyRequest, reply: FastifyReply) {
   try {
     const user = verifyToken(token);
     if (user?.kind !== "web" || !user?.mid) throw new Error("bad token");
+    const current = await prisma.webUser.findUnique({
+      where: { id: Number(user.mid) },
+      select: { enabled: true, banReason: true, bannedAt: true },
+    });
+    if (!current || !current.enabled) {
+      const reason = current?.bannedAt && current.banReason ? `账号已封禁：${current.banReason}` : "账号不存在或已禁用";
+      return reply.code(401).send({ error: reason });
+    }
     (req as any).webUser = user;
   } catch {
     return reply.code(401).send({ error: "登录已过期" });

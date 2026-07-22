@@ -19,6 +19,8 @@ import Access from './views/Access.vue'
 import HlsClean from './views/HlsClean.vue'
 import Playback from './views/Playback.vue'
 import Ops from './views/Ops.vue'
+import Risk from './views/Risk.vue'
+import Interactions from './views/Interactions.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -35,6 +37,8 @@ const router = createRouter({
     { path: '/playback', component: Playback, meta: { title: '播放策略' } },
     { path: '/ops', component: Ops, meta: { title: '质量监控' } },
     { path: '/users', component: Users, meta: { title: '用户管理' } },
+    { path: '/risk', component: Risk, meta: { title: '风控中心' } },
+    { path: '/interactions', component: Interactions, meta: { title: '互动管理' } },
     { path: '/access', component: Access, meta: { title: '权限访问' } },
     { path: '/meta', component: Meta, meta: { title: '元数据匹配' } },
     { path: '/site', component: Site, meta: { title: '系统设置' } },

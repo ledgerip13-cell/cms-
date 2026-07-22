@@ -136,6 +136,27 @@ export const api = {
   playbackErrorAggregate: (params = {}) => http.get('/admin/logs/playback-errors/aggregate', { params }),
   loginLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/logins', { params }),
   accessLogs: (params = { page: 1, size: 50 }) => http.get('/admin/logs/access', { params }),
+  riskOverview: () => http.get('/admin/risk/overview'),
+  riskEvents: (params = { page: 1, pageSize: 30 }) => http.get('/admin/risk/events', { params }),
+  updateRiskEvent: (id, d) => http.patch(`/admin/risk/events/${id}`, d),
+  riskDevices: (params = { page: 1, pageSize: 30 }) => http.get('/admin/risk/devices', { params }),
+  adminUserRisk: (id) => http.get(`/admin/users/${id}/risk`),
+  banAdminUser: (id, reason) => http.post(`/admin/users/${id}/ban`, { reason }),
+  unbanAdminUser: (id, reason) => http.post(`/admin/users/${id}/unban`, { reason }),
+  interactionConfig: () => http.get('/admin/interactions/config'),
+  updateInteractionConfig: (d) => http.put('/admin/interactions/config', d),
+  interactionComments: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/comments', { params }),
+  updateInteractionComment: (id, d) => http.patch(`/admin/interactions/comments/${id}`, d),
+  interactionRatings: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/ratings', { params }),
+  interactionRequests: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/requests', { params }),
+  updateInteractionRequest: (id, d) => http.patch(`/admin/interactions/requests/${id}`, d),
+  interactionReports: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/reports', { params }),
+  updateInteractionReport: (id, d) => http.patch(`/admin/interactions/reports/${id}`, d),
+  interactionMessages: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/messages', { params }),
+  createInteractionMessage: (d) => http.post('/admin/interactions/messages', d),
+  updateInteractionMessage: (id, d) => http.patch(`/admin/interactions/messages/${id}`, d),
+  interactionDanmaku: (params = { page: 1, pageSize: 30 }) => http.get('/admin/interactions/danmaku', { params }),
+  updateInteractionDanmaku: (id, d) => http.patch(`/admin/interactions/danmaku/${id}`, d),
   qcIssues: (params = { page: 1, size: 50 }) => http.get('/admin/qc/issues', { params }),
   scanQcIssues: () => http.post('/admin/qc/issues/scan'),
   updateQcIssue: (id, action, d = {}) => http.post(`/admin/qc/issues/${id}/${action}`, d),
@@ -160,6 +181,7 @@ export const EMPTY_SITE = {
   shortsConfig: {},
   playConfig: {},
   pwaConfig: {},
+  interactionConfig: {},
 }
 
 export const DEFAULT_THEME = {
@@ -239,6 +261,20 @@ export const DEFAULT_PWA_CONFIG = {
   icon: '',
   themeColor: '#0a0b0f',
   backgroundColor: '#0a0b0f',
+}
+
+export const DEFAULT_INTERACTION_CONFIG = {
+  commentsEnabled: true,
+  commentRequireLogin: true,
+  ratingsEnabled: true,
+  ratingRequireLogin: true,
+  requestsEnabled: true,
+  requestRequireLogin: false,
+  reportsEnabled: true,
+  reportRequireLogin: false,
+  messagesEnabled: true,
+  danmakuEnabled: true,
+  danmakuRequireLogin: true,
 }
 
 export function normalizeTheme(theme) {
