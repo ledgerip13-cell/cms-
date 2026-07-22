@@ -87,6 +87,12 @@ function filterByYear<T extends RawVod>(rows: T[], opts: SyncOptions) {
   return yearFilterEnabled(opts) ? rows.filter((r) => matchYearFilter(r.vod_year, opts)) : rows;
 }
 
+function yearSkipResult(raw: RawVod, opts: SyncOptions) {
+  return yearFilterEnabled(opts) && !matchYearFilter(raw.vod_year, opts)
+    ? { vodId: 0, added: 0, updated: 0, merged: 0, skipped: 1 }
+    : null;
+}
+
 function normalizeTypeIds(opts: SyncOptions) {
   const raw = Array.isArray(opts.typeIds) ? opts.typeIds : (opts.typeId ? [opts.typeId] : []);
   return [...new Set(raw.map((x) => String(x || "").trim()).filter(Boolean))];
@@ -297,6 +303,8 @@ async function upsertVod(
   catCache: Map<string, string>,
   opts: SyncOptions = {}
 ) {
+  const skipped = yearSkipResult(raw, opts);
+  if (skipped) return skipped;
   const lines = parsePlay(raw);
   if (!lines.length) return { vodId: 0, added: 0, updated: 0, merged: 0 };
 

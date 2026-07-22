@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createHash } from "crypto";
 import { verifyToken, webUserGuard, authGuard } from "../auth.js";
 import { prisma } from "../db.js";
 import { clientIpOf } from "../logging.js";
@@ -63,6 +64,11 @@ function sourceOf(value: any) {
 
 function actorOf(req: FastifyRequest) {
   return String((req as any).user?.username || "").slice(0, 120);
+}
+
+function anonymousRatingKey(req: FastifyRequest) {
+  const raw = `${clientIpOf(req)}|${userAgentOf(req)}`;
+  return createHash("sha256").update(raw).digest("hex");
 }
 
 function positiveInt(value: any) {
@@ -192,6 +198,10 @@ export default async function interactionRoutes(app: FastifyInstance) {
     if (user) {
       const mine = await prisma.userRating.findUnique({ where: { userId_vodId: { userId: user.id, vodId } }, select: { score: true } }).catch(() => null);
       myScore = Number(mine?.score || 0);
+    } else {
+      const anonymousKey = anonymousRatingKey(req);
+      const mine = await prisma.userRating.findUnique({ where: { anonymousKey_vodId: { anonymousKey, vodId } }, select: { score: true } }).catch(() => null);
+      myScore = Number(mine?.score || 0);
     }
     return { avg: vod?.userRatingAvg || 0, count: vod?.userRatingCount || 0, myScore };
   });
@@ -200,17 +210,29 @@ export default async function interactionRoutes(app: FastifyInstance) {
     const cfg = await interactionConfig();
     if (!cfg.ratingsEnabled) return reply.code(403).send({ error: "评分已关闭" });
     const user = await requireConfiguredUser(req, reply, cfg.ratingRequireLogin);
-    if (!user) return reply;
+    if (cfg.ratingRequireLogin && !user) return reply;
     const vodId = positiveInt((req.params as any).vodId);
     const score = Math.max(1, Math.min(10, Math.floor(Number(((req.body as any) || {}).score) || 0)));
     if (!score) return reply.code(400).send({ error: "评分无效" });
     const vod = await prisma.vod.findFirst({ where: { id: vodId, status: "online" }, select: { id: true } });
     if (!vod) return reply.code(404).send({ error: "影片不存在或已下架" });
-    await prisma.userRating.upsert({
-      where: { userId_vodId: { userId: user.id, vodId } },
-      create: { userId: user.id, vodId, score, source: sourceOf((req.body as any)?.source), ip: clientIpOf(req), userAgent: userAgentOf(req) },
-      update: { score, source: sourceOf((req.body as any)?.source), ip: clientIpOf(req), userAgent: userAgentOf(req) },
-    });
+    const source = sourceOf((req.body as any)?.source);
+    const ip = clientIpOf(req);
+    const userAgent = userAgentOf(req);
+    if (user) {
+      await prisma.userRating.upsert({
+        where: { userId_vodId: { userId: user.id, vodId } },
+        create: { userId: user.id, anonymousKey: null, vodId, score, source, ip, userAgent },
+        update: { score, source, ip, userAgent },
+      });
+    } else {
+      const anonymousKey = anonymousRatingKey(req);
+      await prisma.userRating.upsert({
+        where: { anonymousKey_vodId: { anonymousKey, vodId } },
+        create: { userId: null, anonymousKey, vodId, score, source, ip, userAgent },
+        update: { score, source, ip, userAgent },
+      });
+    }
     const rating = await recalcVodRating(vodId);
     return { ...rating, myScore: score };
   });

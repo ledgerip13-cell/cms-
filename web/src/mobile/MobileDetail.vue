@@ -4,9 +4,12 @@
       <button type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
-      <strong>{{ vod.name || '影片详情' }}</strong>
-      <button type="button" aria-label="分享" @click="shareVod">
-        <svg viewBox="0 0 24 24" v-html="icon('share')"></svg>
+      <button class="md-search-pill" type="button" @click="router.push('/m/search')">
+        <span>{{ vod.name || '搜索' }}</span>
+        <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
+      </button>
+      <button type="button" aria-label="我的" @click="router.push('/m/me')">
+        <svg viewBox="0 0 24 24" v-html="icon('user')"></svg>
       </button>
     </header>
 
@@ -22,50 +25,46 @@
         <div class="md-info">
           <h1>{{ vod.name }}</h1>
           <div class="md-tags">
-            <span v-if="vod.typeName">{{ vod.typeName }}</span>
-            <span v-if="vod.year">{{ vod.year }}</span>
-            <span v-if="vod.area">{{ vod.area }}</span>
-            <span v-if="vod.lang">{{ vod.lang }}</span>
-            <span v-if="vod.rating">评分 {{ vod.rating }}</span>
+            <span v-for="tag in detailTags" :key="tag">{{ tag }}</span>
           </div>
-          <p v-if="vod.remarks" class="md-remark">{{ vod.remarks }}</p>
-          <div class="md-actions">
-            <button class="primary" type="button" @click="playSelected()">
-              <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
-              播放
-            </button>
-            <button type="button" :class="{ on: followed }" @click="toggleFollow">
-              <svg viewBox="0 0 24 24" v-html="icon('heart')"></svg>
-              {{ followed ? '已追' : '追剧' }}
-            </button>
+          <div class="md-meta-list">
+            <p v-for="row in metaRows" :key="row.label"><span>{{ row.label }}：</span>{{ row.value }}</p>
           </div>
         </div>
       </section>
 
-      <section v-if="intro" class="md-section">
-        <header>
-          <h2>简介</h2>
-          <button v-if="intro.length > 88" type="button" @click="introOpen = !introOpen">{{ introOpen ? '收起' : '展开' }}</button>
-        </header>
-        <p class="md-intro" :class="{ folded: !introOpen }">{{ intro }}</p>
+      <section class="md-action-row">
+        <button class="primary" type="button" @click="playSelected()">
+          <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
+          立即播放
+        </button>
+        <button type="button" :class="{ on: followed }" aria-label="收藏" @click="toggleFollow">
+          <svg viewBox="0 0 24 24" v-html="icon('heart')"></svg>
+        </button>
+        <button type="button" aria-label="添加" @click="toggleFollow">
+          <svg viewBox="0 0 24 24" v-html="icon('plus')"></svg>
+        </button>
+        <button type="button" aria-label="分享" @click="shareVod">
+          <svg viewBox="0 0 24 24" v-html="icon('share')"></svg>
+        </button>
       </section>
 
-      <section v-if="directors.length || actors.length || vod.director || vod.actor" class="md-section">
-        <header><h2>演职员</h2></header>
-        <div v-if="directors.length || vod.director" class="md-people">
-          <span>导演</span>
-          <button v-for="person in directorsFallback" :key="`d-${person.id || person.name}`" type="button" @click="openPerson(person)">{{ person.name }}</button>
+      <section class="md-stats">
+        <div v-for="item in statRows" :key="item.label">
+          <b>{{ item.value }}</b>
+          <span>{{ item.label }}</span>
         </div>
-        <div v-if="actors.length || vod.actor" class="md-people">
-          <span>主演</span>
-          <button v-for="person in actorsFallback" :key="`a-${person.id || person.name}`" type="button" @click="openPerson(person)">{{ person.name }}</button>
-        </div>
+      </section>
+
+      <section v-if="intro" class="md-intro-block">
+        <p class="md-intro" :class="{ folded: !introOpen }">简介：{{ intro }}</p>
+        <button v-if="intro.length > 88" type="button" @click="introOpen = !introOpen">{{ introOpen ? '收起' : '展开全部' }}</button>
       </section>
 
       <section v-if="lines.length" class="md-section">
         <header>
-          <h2>播放线路</h2>
-          <span>{{ lines.length }} 条</span>
+          <h2>金牌影院播放器</h2>
+          <span>{{ selectedLineName }}</span>
         </header>
         <div class="md-line-tabs">
           <button v-for="(line, index) in lines" :key="line.id || index" type="button" :class="{ on: selectedLineIndex === index }" @click="selectedLineIndex = index">
@@ -80,7 +79,7 @@
       </section>
 
       <section v-if="related.length" class="md-section">
-        <header><h2>相关推荐</h2></header>
+        <header><h2>猜你喜欢</h2></header>
         <div class="md-related">
           <article v-for="item in related" :key="item.id" @click="goDetail(item.id)">
             <img class="m-img-fade" :src="poster(item)" :alt="item.name" loading="lazy" @load="onImgLoad" @error="hideBrokenImg" />
@@ -132,8 +131,35 @@ const actors = computed(() => peopleByRole('actor').slice(0, 12))
 const directors = computed(() => peopleByRole('director').slice(0, 6))
 const actorsFallback = computed(() => actors.value.length ? actors.value : splitNames(vod.value.actor).slice(0, 12).map(name => ({ id: 0, name })))
 const directorsFallback = computed(() => directors.value.length ? directors.value : splitNames(vod.value.director).slice(0, 6).map(name => ({ id: 0, name })))
+const detailTags = computed(() => {
+  const tags = []
+  const genreNames = splitNames(vod.value.genres).slice(0, 2)
+  if (vod.value.typeName) tags.push(vod.value.typeName)
+  for (const name of genreNames) if (!tags.includes(name)) tags.push(name)
+  if (!tags.length && vod.value.subType) tags.push(vod.value.subType)
+  return tags.slice(0, 3)
+})
+const metaRows = computed(() => [
+  { label: '导演', value: directorsFallback.value.map(item => item.name).join('、') },
+  { label: '主演', value: actorsFallback.value.map(item => item.name).join('、') },
+  { label: '别名', value: vod.value.aliasName || vod.value.aliasNames?.join('、') || vod.value.enName || '' },
+  { label: '语言', value: vod.value.lang || vod.value.area || '' },
+].filter(item => item.value))
+const selectedLineName = computed(() => lineLabel(selectedLine.value, selectedLineIndex.value))
+const episodeSummary = computed(() => {
+  if (vod.value.remarks) return vod.value.remarks
+  const total = episodes.value.length || Number(selectedLine.value?.epCount || 0)
+  return total ? `${total}集` : '待更新'
+})
+const statRows = computed(() => [
+  { label: '评分', value: vod.value.rating ? String(vod.value.rating) : '暂无' },
+  { label: '热度', value: heatText(vod.value.heatValue || vod.value.heatScore || vod.value.ratingCount) || '暂无' },
+  { label: '上映时间', value: vod.value.year || '未知' },
+  { label: '集数', value: episodeSummary.value },
+])
 
 function splitNames(value) {
+  if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean)
   return String(value || '').split(/[,，/、\s]+/).map(item => item.trim()).filter(Boolean)
 }
 function peopleByRole(role) {
@@ -154,6 +180,13 @@ function hideBrokenImg(event) {
 }
 function lineLabel(line, index = 0) {
   return line?.sourceName || line?.flag || `线路 ${index + 1}`
+}
+function heatText(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  const n = Math.max(0, Math.round(Number(value) || 0))
+  if (!n) return ''
+  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万`
+  return String(n)
 }
 function goBack() {
   if (window.history.length > 1) router.back()
@@ -252,9 +285,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .mdetail {
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 62px) 14px 34px;
-  background: #f7f7f8;
-  color: #1f232b;
+  padding: calc(env(safe-area-inset-top) + 70px) 14px 38px;
+  background: #191919;
+  color: #f4f4f4;
 }
 .md-head {
   position: fixed;
@@ -262,35 +295,53 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   top: 0;
-  height: calc(env(safe-area-inset-top) + 54px);
+  height: calc(env(safe-area-inset-top) + 58px);
   padding: env(safe-area-inset-top) 12px 0;
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 38px;
   align-items: center;
-  gap: 6px;
-  background: rgb(247 247 248 / var(--md-head-bg));
-  backdrop-filter: blur(10px);
+  gap: 10px;
+  background: rgb(13 13 13 / var(--md-head-bg));
+  backdrop-filter: blur(14px);
 }
 .md-head button,
-.md-actions button,
+.md-action-row button,
 .md-line-tabs button,
 .md-episodes button,
-.md-section header button,
-.md-people button,
+.md-intro-block button,
 .md-empty button {
   border: 0;
 }
-.md-head button {
+.md-head > button:not(.md-search-pill) {
   width: 38px;
   height: 38px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: transparent;
-  color: #1f232b;
+  color: #fff;
+}
+.md-search-pill {
+  min-width: 0;
+  height: 38px;
+  border-radius: 999px;
+  padding: 0 10px 0 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255,255,255,.5);
+  background: #242424;
+}
+.md-search-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
 }
 .md-head svg,
-.md-actions svg {
+.md-action-row svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -299,162 +350,219 @@ onBeforeUnmount(() => {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.md-head strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
-}
 .md-hero {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 106px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 .md-cover {
-  width: 118px;
+  width: 106px;
   aspect-ratio: 3 / 4;
-  border-radius: 8px;
+  border-radius: 9px;
   object-fit: cover;
-  background: #e6e8ee;
+  background: #2b2b2b;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08);
 }
 .md-info h1 {
-  margin: 2px 0 9px;
-  font-size: 22px;
-  line-height: 1.18;
+  margin: 3px 0 12px;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1.16;
   letter-spacing: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .md-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
+  margin-bottom: 16px;
 }
 .md-tags span {
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: #eceef2;
-  color: #59616f;
-  font-size: 12px;
-}
-.md-remark {
-  margin: 10px 0 0;
-  color: #f04438;
+  padding: 4px 9px;
+  border-radius: 6px;
+  color: rgba(255,255,255,.76);
+  background: rgba(255,255,255,.08);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
   font-size: 13px;
 }
-.md-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
+.md-meta-list {
+  display: grid;
+  gap: 9px;
 }
-.md-actions button {
-  height: 36px;
-  min-width: 78px;
-  border-radius: 999px;
-  padding: 0 13px;
+.md-meta-list p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.76);
+  font-size: 15px;
+  line-height: 1.34;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-meta-list span {
+  color: rgba(255,255,255,.55);
+}
+.md-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 52px);
+  gap: 12px;
+  margin-top: 24px;
+}
+.md-action-row button {
+  height: 52px;
+  min-width: 0;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  background: #fff;
-  color: #20242c;
-  font-size: 14px;
+  gap: 8px;
+  color: #fff;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.76);
+  font-size: 18px;
   font-weight: 600;
 }
-.md-actions button.primary {
-  background: #111318;
-  color: #fff;
+.md-action-row button.primary {
+  color: #111;
+  background: #fff;
+  box-shadow: none;
 }
-.md-actions button.on {
-  color: #f04438;
+.md-action-row button.primary svg {
+  fill: currentColor;
+  stroke: none;
+}
+.md-action-row button.on {
+  color: #fff;
+  background: rgba(255,255,255,.12);
+}
+.md-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 24px;
+}
+.md-stats div {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border-left: 1px solid rgba(255,255,255,.12);
+}
+.md-stats div:first-child {
+  border-left: 0;
+}
+.md-stats b,
+.md-stats span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-stats b {
+  color: rgba(255,255,255,.82);
+  font-size: 15px;
+  line-height: 1.1;
+}
+.md-stats span {
+  color: rgba(255,255,255,.58);
+  font-size: 13px;
+}
+.md-intro-block {
+  position: relative;
+  margin-top: 24px;
 }
 .md-section {
-  margin-top: 22px;
+  margin-top: 28px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #242424;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
 }
 .md-section header {
-  min-height: 30px;
-  margin-bottom: 9px;
+  min-height: 58px;
+  padding: 0 16px;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .md-section h2 {
   margin: 0;
-  font-size: 17px;
+  color: #fff;
+  font-size: 19px;
   line-height: 1;
 }
-.md-section header span,
-.md-section header button {
-  color: #8b929f;
+.md-section header span {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.56);
   font-size: 13px;
-  background: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .md-intro {
   margin: 0;
-  color: #4b5563;
-  font-size: 14px;
-  line-height: 1.72;
+  color: rgba(255,255,255,.88);
+  font-size: 17px;
+  line-height: 1.62;
 }
 .md-intro.folded {
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.md-people {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  margin-top: 8px;
-}
-.md-people span {
-  color: #8b929f;
-  font-size: 13px;
-  line-height: 32px;
-}
-.md-people button {
-  min-height: 32px;
-  margin: 0 6px 6px 0;
-  border-radius: 999px;
+.md-intro-block button {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  height: 31px;
+  border-radius: 7px;
   padding: 0 10px;
-  background: #fff;
-  color: #333946;
-  font-size: 13px;
+  color: #fff;
+  background: #242424;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.78);
+  font-size: 14px;
 }
 .md-line-tabs {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding: 14px 16px 2px;
 }
 .md-line-tabs button {
   flex: 0 0 auto;
   height: 34px;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 0 13px;
-  background: #fff;
-  color: #555e6e;
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.72);
   font-size: 13px;
 }
 .md-line-tabs button.on {
-  background: #111318;
+  background: rgba(255,255,255,.14);
   color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.72);
 }
 .md-episodes {
-  margin-top: 10px;
+  padding: 14px 16px 18px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 .md-episodes button {
-  height: 36px;
+  height: 50px;
   border-radius: 8px;
-  background: #fff;
-  color: #343b48;
-  font-size: 13px;
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.86);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+  font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -463,6 +571,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px 9px;
+  padding: 0 14px 16px;
 }
 .md-related article {
   min-width: 0;
@@ -472,7 +581,7 @@ onBeforeUnmount(() => {
   aspect-ratio: 3 / 4;
   border-radius: 8px;
   object-fit: cover;
-  background: #e6e8ee;
+  background: #303030;
 }
 .md-related strong,
 .md-related span {
@@ -483,13 +592,13 @@ onBeforeUnmount(() => {
 }
 .md-related strong {
   margin-top: 6px;
-  color: #20242c;
+  color: #f5f5f5;
   font-size: 14px;
   font-weight: 500;
 }
 .md-related span {
   margin-top: 3px;
-  color: #8b929f;
+  color: rgba(255,255,255,.52);
   font-size: 12px;
 }
 .md-empty {
@@ -503,8 +612,8 @@ onBeforeUnmount(() => {
   height: 38px;
   border-radius: 999px;
   padding: 0 16px;
-  background: #111318;
-  color: #fff;
+  background: #fff;
+  color: #111;
 }
 .md-skeleton {
   min-height: 178px;
@@ -513,12 +622,12 @@ onBeforeUnmount(() => {
 .md-skeleton b,
 .md-skeleton p {
   border-radius: 8px;
-  background: linear-gradient(110deg, #eceef2 8%, #f8f8fa 18%, #eceef2 33%);
+  background: linear-gradient(110deg, #252525 8%, #303030 18%, #252525 33%);
   background-size: 200% 100%;
   animation: md-shimmer 1.2s linear infinite;
 }
 .md-skeleton > div {
-  width: 118px;
+  width: 106px;
   aspect-ratio: 3 / 4;
 }
 .md-skeleton b {

@@ -813,8 +813,9 @@ model UserRating {
   id        Int      @id @default(autoincrement())
   vod       Vod      @relation(fields: [vodId], references: [id], onDelete: Cascade)
   vodId     Int
-  user      WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    Int
+  user      WebUser? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int?
+  anonymousKey String?
   score     Int
   source    String   @default("web")
   ip        String   @default("")
@@ -823,8 +824,10 @@ model UserRating {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, vodId])
+  @@unique([anonymousKey, vodId])
   @@index([vodId])
   @@index([userId])
+  @@index([anonymousKey])
   @@index([score])
   @@index([createdAt])
 }
