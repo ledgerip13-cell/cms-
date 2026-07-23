@@ -11,7 +11,7 @@
       </div>
       <p class="pv-desc">{{ form.description || '（网站描述）' }}</p>
       <p class="pv-foot">{{ form.footer || '（页脚文字）' }}</p>
-      <p class="pv-foot">注册：{{ form.allowRegister ? (form.inviteRequired ? '开放 · 需邀请码池' : '开放') : '关闭' }}</p>
+      <p class="pv-foot">注册：{{ form.allowRegister ? (form.registerInviteRequired ? '开放 · 需邀请码' : '开放 · 无需邀请码') : '关闭' }}</p>
     </template>
 
     <template v-else-if="activeTab === 'shorts'">

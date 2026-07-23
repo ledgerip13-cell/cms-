@@ -232,7 +232,7 @@ export function normalizePwaConfig(value: any) {
   };
 }
 
-function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = false) {
+function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, invitePoolAvailable = false) {
   const { registerInviteCode, ...rest } = s;
   return {
     ...rest,
@@ -241,7 +241,8 @@ function publicSite(s: Awaited<ReturnType<typeof ensureSite>>, inviteRequired = 
     playConfig: normalizePlayConfig((s as any).playConfig),
     pwaConfig: normalizePwaConfig((s as any).pwaConfig),
     interactionConfig: normalizeInteractionConfig((s as any).interactionConfig),
-    inviteRequired,
+    inviteRequired: Boolean((s as any).registerInviteRequired),
+    invitePoolAvailable,
   };
 }
 
@@ -287,6 +288,7 @@ export default async function siteRoutes(app: FastifyInstance) {
         pwaConfig: Object.prototype.hasOwnProperty.call(b, "pwaConfig") ? JSON.stringify(normalizePwaConfig(b.pwaConfig)) : (current as any).pwaConfig,
         interactionConfig: Object.prototype.hasOwnProperty.call(b, "interactionConfig") ? JSON.stringify(normalizeInteractionConfig(b.interactionConfig)) : (current as any).interactionConfig,
         allowRegister: Object.prototype.hasOwnProperty.call(b, "allowRegister") ? Boolean(b.allowRegister) : (current as any).allowRegister,
+        registerInviteRequired: Object.prototype.hasOwnProperty.call(b, "registerInviteRequired") ? Boolean(b.registerInviteRequired) : (current as any).registerInviteRequired,
       },
     });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });

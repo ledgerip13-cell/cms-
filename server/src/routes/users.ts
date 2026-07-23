@@ -356,7 +356,8 @@ export default async function userRoutes(app: FastifyInstance) {
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
     return {
       allowRegister: site.allowRegister,
-      inviteRequired: invitePoolCount > 0,
+      inviteRequired: site.registerInviteRequired,
+      invitePoolAvailable: invitePoolCount > 0,
     };
   });
 
@@ -375,7 +376,7 @@ export default async function userRoutes(app: FastifyInstance) {
     if (emailError) return reply.code(400).send({ error: emailError });
     if (password.length < 6) return reply.code(400).send({ error: "密码至少6位" });
     const invitePoolCount = await prisma.inviteCode.count({ where: { enabled: true } });
-    if (invitePoolCount > 0 && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
+    if (site.registerInviteRequired && !inviteCode) return reply.code(400).send({ error: "请输入邀请码" });
     const duplicateWhere: any[] = [{ username: { equals: username, mode: "insensitive" } }];
     if (email) duplicateWhere.push({ email: { equals: email, mode: "insensitive" } });
     const exists = await prisma.webUser.findFirst({
@@ -394,9 +395,9 @@ export default async function userRoutes(app: FastifyInstance) {
     } catch {
       return reply.code(409).send({ error: "账号或邮箱已存在" });
     }
-    if (invitePoolCount > 0 && !(await consumeInviteCode(inviteCode, u.id))) {
+    if (site.registerInviteRequired && !(await consumeInviteCode(inviteCode, u.id))) {
       await prisma.webUser.delete({ where: { id: u.id } });
-      return reply.code(400).send({ error: "邀请码无效或已失效" });
+      return reply.code(400).send({ error: invitePoolCount > 0 ? "邀请码无效或已失效" : "当前没有可用邀请码" });
     }
     const token = signWebToken({ mid: u.id, username: u.username });
     return { token, user: publicUser(u) };

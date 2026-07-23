@@ -87,6 +87,7 @@ model SiteConfig {
   pwaConfig          String   @default("{}") // PWA安装与更新配置 JSON
   interactionConfig  String   @default("{}") // 用户互动配置 JSON：评论/评分/求片/举报/站内消息/弹幕开关
   allowRegister      Boolean  @default(true) // 是否开放前台用户注册
+  registerInviteRequired Boolean @default(false) // 注册是否必须使用邀请码池
   registerInviteCode String   @default("") // 注册邀请码(留空=不需要)
   updatedAt          DateTime @updatedAt
 }

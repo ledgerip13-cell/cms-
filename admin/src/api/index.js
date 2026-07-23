@@ -182,6 +182,8 @@ export const EMPTY_SITE = {
   footer: '',
   announcement: '',
   allowRegister: true,
+  registerInviteRequired: false,
+  invitePoolAvailable: false,
   theme: {},
   homeConfig: {},
   shortsConfig: {},
@@ -449,6 +451,10 @@ export function normalizePwaConfig(config) {
 
 export function normalizeSite(site) {
   const next = { ...EMPTY_SITE, ...(site || {}) }
+  next.allowRegister = next.allowRegister !== false
+  next.registerInviteRequired = next.registerInviteRequired === true || next.inviteRequired === true
+  next.inviteRequired = next.registerInviteRequired
+  next.invitePoolAvailable = next.invitePoolAvailable === true
   next.theme = normalizeTheme(next.theme)
   next.homeConfig = normalizeHomeConfig(next.homeConfig)
   next.shortsConfig = normalizeShortsConfig(next.shortsConfig)

@@ -45,7 +45,19 @@
       <div class="hint inline">关闭后，新用户无法注册，已有用户仍可登录。</div>
     </el-form-item>
 
-    <el-alert type="info" :closable="false" title="邀请码已迁移到「权限访问 / 邀请码池」统一管理。" style="max-width:520px" />
+    <el-form-item label="邀请码注册">
+      <el-switch v-model="form.registerInviteRequired" :disabled="!form.allowRegister" inline-prompt active-text="需要" inactive-text="不需要" />
+      <div class="hint inline">{{ form.registerInviteRequired ? '注册时必须填写邀请码池中的有效邀请码。' : '注册时不校验邀请码。' }}</div>
+    </el-form-item>
+
+    <el-alert
+      :type="form.registerInviteRequired && !form.invitePoolAvailable ? 'warning' : 'info'"
+      :closable="false"
+      :title="form.registerInviteRequired && !form.invitePoolAvailable
+        ? '当前已要求邀请码注册，但邀请码池没有可用邀请码。请到「权限访问 / 邀请码池」生成。'
+        : '邀请码在「权限访问 / 邀请码池」统一管理。'"
+      style="max-width:520px"
+    />
   </el-form>
 </template>
 
