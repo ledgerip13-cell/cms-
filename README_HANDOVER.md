@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（移动端横屏控制层跟随旋转）
+> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（移动播放页横屏定位与标题操作区）
 
 ---
 
@@ -11,6 +11,7 @@
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
 
+- **2026-07-24 移动播放页横屏定位与标题操作区断点**：定位手机点击横屏但设备未实际旋转时位置错误的根因，是 `web/src/mobile/MobilePlay.vue` 横屏 fallback 中 `inset:auto` 写在 `top/left` 后面，覆盖了居中定位。现调整声明顺序，确保竖屏视口下旋转的整个播放器舞台按中心定位。移动播放信息区同步去掉封面图，标题行右侧新增 `追剧/追剧中` 与 `点赞` 操作，点赞从下方操作栏移入标题行右侧；下方操作栏保留点踩、报错、分享。后台/API/数据库未改。
 - **2026-07-24 移动端横屏控制层跟随旋转断点**：定位手机移动端点击横屏后“标题、进度条、所有交互还是竖屏”的根因，是 `web/src/mobile/MobilePlay.vue` 的方向锁失败 fallback 只旋转 `.mp-bg/.mp-video/.mp-danmaku-layer`，控制层刻意保留真实竖屏坐标。现改为在竖屏视口 fallback 下旋转整个 `.mp-player.landscape:not(.portrait)` 舞台，标题、底部进度条、播放控制和提示层跟随横屏坐标；播放设置菜单在横屏时禁用 Teleport，避免弹层脱离旋转舞台后仍按竖屏显示。后台/API/数据库未改。
 - **2026-07-24 弹幕开关 SVG 图标加大断点**：按老大要求只看弹幕开关“里面的图标”不看外部背景，本轮给弹幕开关按钮单独增加 toggle class，不影响设置齿轮和按钮容器尺寸。`web/src/x8/X8Home.vue` 普通 X8 弹幕开关 SVG 从 21px 加到 25px，剧场/全屏浮动开关从 24px 加到 28px；`web/src/mobile/MobilePlay.vue` 移动端弹幕开关 SVG 从 17px 加到 21px。后台/API/数据库未改。
 - **2026-07-24 X8 HLS 全屏隐藏评论区断点**：按老大反馈“都全屏了还要什么评论区”，定位 X8 HLS 全屏 `playerTheater` 已隐藏右侧详情、选集、猜你喜欢和页面级互动按钮，但评论区 `.x8-comment-section` 未被单独纳入隐藏规则。现 `web/src/x8/X8Home.vue` 在模板层改为 `interactionConfig.commentsEnabled && !playerTheater` 才渲染评论区，CSS 层同步把 `.x8-play.theater-mode .x8-comment-section` 加入 `display:none !important` 防线。后台/API/数据库未改。

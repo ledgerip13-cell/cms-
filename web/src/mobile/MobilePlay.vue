@@ -212,7 +212,6 @@
 
     <section v-if="vod.id" class="mp-info">
       <div class="mp-title-row">
-        <img class="mp-cover m-img-fade" :src="poster(vod)" :alt="vod.name" @load="onImgLoad" @error="hideBrokenImg" />
         <div>
           <h1>{{ vod.name }}</h1>
           <p>
@@ -221,6 +220,16 @@
             <span v-if="vod.remarks">{{ vod.remarks }}</span>
             <span v-if="vod.rating">豆瓣 {{ vod.rating }}</span>
           </p>
+        </div>
+        <div class="mp-title-actions">
+          <button class="mp-follow" type="button" :class="{ on: followed }" @click="toggleFollow">
+            <svg viewBox="0 0 24 24"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16Z" /></svg>
+            <span>{{ followed ? '追剧中' : '追剧' }}</span>
+          </button>
+          <button v-if="interactionConfig.ratingsEnabled" class="mp-like" type="button" :class="{ on: myRating >= 10 }" @click="submitRating(10)">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
+            <span>点赞</span>
+          </button>
         </div>
       </div>
       <div v-if="mobileCreditRows.length" class="mp-credit-list">
@@ -236,10 +245,6 @@
 
     <section v-if="vod.id && !playerLandscape" class="mp-action-panel">
       <div class="mp-action-strip">
-        <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" @click="submitRating(10)">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
-          <span>点赞</span>
-        </button>
         <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating > 0 && myRating <= 2 }" @click="submitRating(2)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
           <span>点踩</span>
@@ -2193,11 +2198,11 @@ onDeactivated(() => {
 /* 横片 + 手机处于竖屏且方向锁定未生效时，旋转整个播放器舞台，控制层跟随横屏坐标 */
 @media (orientation: portrait) {
   .mp-player.landscape:not(.portrait) {
+    inset: auto;
     top: 50%;
     left: 50%;
     width: 100dvh;
     height: 100vw;
-    inset: auto;
     transform: translate(-50%, -50%) rotate(90deg);
     transform-origin: center center;
     --mp-safe-top: 0px;
@@ -3192,14 +3197,6 @@ onDeactivated(() => {
   min-width: 0;
   flex: 1;
 }
-.mp-cover {
-  width: 58px;
-  aspect-ratio: 2 / 3;
-  flex: 0 0 58px;
-  border-radius: 9px;
-  object-fit: cover;
-  background: #eceef2;
-}
 .mp-title-row h1 {
   margin: 0;
   font-size: 18px;
@@ -3223,6 +3220,14 @@ onDeactivated(() => {
   padding: 4px 7px;
   border-radius: 8px;
   background: #f2f3f5;
+}
+.mp-title-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 .mp-credit-list {
   margin: 12px 0 0;
@@ -3253,7 +3258,7 @@ onDeactivated(() => {
 }
 .mp-follow {
   flex: 0 0 auto;
-  min-width: 58px;
+  min-width: 62px;
   height: 32px;
   border: 0;
   border-radius: 999px;
@@ -3276,6 +3281,30 @@ onDeactivated(() => {
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;
+}
+.mp-like {
+  flex: 0 0 auto;
+  min-width: 58px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #535b68;
+  background: #f2f3f5;
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-like.on {
+  color: #fff;
+  background: #f04438;
+}
+.mp-like svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 .mp-intro {
   margin: 10px 0 0;
