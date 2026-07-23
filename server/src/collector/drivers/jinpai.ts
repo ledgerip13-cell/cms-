@@ -109,7 +109,7 @@ function toRawVod(item: any, episodes?: { name: string; nid: string }[]): RawVod
     vod_director: String(item.vodDirector || ""),
     vod_area: String(item.vodArea || ""),
     vod_lang: String(item.vodLang || ""),
-    vod_remarks: String(item.vodRemarks || item.vodSerial || ""),
+    vod_remarks: episodeRemarkOf(item, episodes?.length || 0),
     vod_content: String(item.vodContent || item.vodBlurb || "").replace(/<[^>]+>/g, "").trim(),
     vod_time: String(item.vodPubdate || ""),
   };
@@ -124,6 +124,30 @@ function toRawVod(item: any, episodes?: { name: string; nid: string }[]): RawVod
 function cleanEpName(name: string, idx: number): string {
   const s = String(name || "").replace(/[#$]/g, " ").trim();
   return s || `第${idx + 1}集`;
+}
+
+function episodeCountHint(value: any): number {
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  if (/^\d+$/.test(text)) return Number(text) || 0;
+  const match = text.match(/(?:更新至|更至|第|全)?\s*(\d{1,5})\s*(?:集|期|话|回)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+function meaningfulEpisodeRemark(value: any): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const count = episodeCountHint(text);
+  if (/^0+$/.test(text) || /^0\s*(集|期|话|回)$/.test(text) || count <= 0 && /0\s*(集|期|话|回)/.test(text)) return "";
+  return /^\d+$/.test(text) && count > 0 ? `更新至${count}集` : text;
+}
+
+function episodeRemarkOf(item: any, episodeCount = 0): string {
+  const primary = meaningfulEpisodeRemark(item.vodRemarks);
+  if (primary) return primary;
+  const serial = meaningfulEpisodeRemark(item.vodSerial);
+  if (serial) return serial;
+  return episodeCount > 0 ? `更新至${episodeCount}集` : "";
 }
 
 // 分类树：顶级分类固定 5 项（子类走 vodClass 派生，不单列）

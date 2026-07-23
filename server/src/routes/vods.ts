@@ -129,6 +129,18 @@ function parseEpisodes(value: string | null | undefined): Array<{ name?: string;
   }
 }
 
+function episodeCountHint(value: any): number {
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  if (/^\d+$/.test(text)) return Number(text) || 0;
+  const match = text.match(/(?:更新至|更至|第|全)?\s*(\d{1,5})\s*(?:集|期|话|回)/);
+  return match ? Number(match[1]) || 0 : 0;
+}
+
+function publicEpCount(vod: any, channel: { epCount?: number | null }, episodes: Array<{ name?: string; url?: string }>) {
+  return Math.max(Number(channel.epCount) || 0, episodes.length, episodeCountHint(vod?.remarks));
+}
+
 async function saveVodSkipConfig(vodId: number, value: any) {
   const cfg = normalizeSkipOverride(value);
   if (emptySkipOverride(cfg)) {
@@ -612,7 +624,7 @@ function bestPublicPlay(vod: any, playConfig: any = null) {
         sourceName: p.source?.name || "",
         priority: Number(p.source?.priority ?? p.priority ?? 100),
         flag: p.flag,
-        epCount: Number(p.epCount) || episodes.length,
+        epCount: publicEpCount(vod, p, episodes),
         alive: p.alive !== false,
         score: Number(p.score) || 0,
         checkMs: Number(p.checkMs) || 0,
@@ -1409,7 +1421,7 @@ export default async function vodRoutes(app: FastifyInstance) {
           play: {
             id: play.id,
             sourceName: play.sourceName,
-            epCount: play.epCount || episodes.length,
+            epCount: publicEpCount(vod, play, episodes),
             alive: play.alive,
             score: play.score,
             playKind: play.playKind,
@@ -1572,17 +1584,20 @@ export default async function vodRoutes(app: FastifyInstance) {
     if (!vod || vod.status !== "online" || !isPublicType(publicTypes, vod.typeName) || !vod.plays.length) return reply.code(404).send({ error: "not found" });
     const playConfig = await sitePlayConfig();
     const allChannels = vod.plays.map((p) => ({
+      episodes: parseEpisodes(p.episodes),
+      _row: p,
+    })).map(({ episodes, _row: p }) => ({
       id: p.id,
       sourceId: p.sourceId,
       sourceName: p.source.name,
       priority: p.source.priority,
       flag: p.flag,
-      epCount: p.epCount,
+      epCount: publicEpCount(vod, p, episodes),
       alive: p.alive,
       score: p.score,
       checkMs: p.checkMs,
       playKind: p.playKind,
-      episodes: parseEpisodes(p.episodes),
+      episodes,
     }));
     // 健康优选排序：存活优先 → 评分高优先 → 源优先级
     const byHealth = (a: { alive: boolean; score: number; priority: number }, b: { alive: boolean; score: number; priority: number }) => {

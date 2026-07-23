@@ -174,8 +174,10 @@ const metaRows = computed(() => [
 ].filter(item => item.value))
 const selectedLineName = computed(() => lineLabel(selectedLine.value, selectedLineIndex.value))
 const episodeSummary = computed(() => {
-  if (vod.value.remarks) return vod.value.remarks
   const total = episodes.value.length || Number(selectedLine.value?.epCount || 0)
+  if (total) return `${total}集`
+  const remark = meaningfulEpisodeRemark(vod.value.remarks)
+  if (remark) return remark
   return total ? `${total}集` : '待更新'
 })
 const statRows = computed(() => [
@@ -188,6 +190,20 @@ const statRows = computed(() => [
 function splitNames(value) {
   if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean)
   return String(value || '').split(/[,，/、\s]+/).map(item => item.trim()).filter(Boolean)
+}
+function episodeCountHint(value) {
+  const text = String(value || '').trim()
+  if (!text) return 0
+  if (/^\d+$/.test(text)) return Number(text) || 0
+  const match = text.match(/(?:更新至|更至|第|全)?\s*(\d{1,5})\s*(?:集|期|话|回)/)
+  return match ? Number(match[1]) || 0 : 0
+}
+function meaningfulEpisodeRemark(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const count = episodeCountHint(text)
+  if (/^0+$/.test(text) || /^0\s*(集|期|话|回)$/.test(text) || (count <= 0 && /0\s*(集|期|话|回)/.test(text))) return ''
+  return /^\d+$/.test(text) && count > 0 ? `${count}集` : text
 }
 function peopleByRole(role) {
   return (vod.value.people || [])
