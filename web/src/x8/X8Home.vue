@@ -2027,6 +2027,7 @@ function submitSearch(text) {
   if (!value || value === '搜索') return
   kw.value = value
   saveSearchHistory(value)
+  x8SearchSuggests.value = []
   searchFocused.value = false
   router.push({ path: routeBase(), query: { kw: value } })
 }
@@ -2042,6 +2043,11 @@ function searchPerson(name) {
 }
 function openSearchPanel() {
   clearTimeout(searchBlurTimer)
+  if (activeSearchKw.value) {
+    x8SearchSuggests.value = []
+    searchFocused.value = true
+    return
+  }
   searchFocused.value = true
 }
 function onSearchBlur() {
@@ -2083,16 +2089,16 @@ function pickSearchSuggest(vod) {
 }
 async function loadX8SearchSuggests() {
   const text = String(kw.value || '').trim()
-  if (!text) {
+  if (activeSearchKw.value || !text) {
     x8SearchSuggests.value = []
     return
   }
   const seq = ++x8SuggestSeq
   try {
     const rows = await api.vodSuggest(text, 10)
-    if (seq !== x8SuggestSeq) return
+    if (seq !== x8SuggestSeq || activeSearchKw.value) return
     x8SearchSuggests.value = Array.isArray(rows) ? rows.filter(item => item?.id && item?.name).slice(0, 10) : []
-    searchFocused.value = true
+    searchFocused.value = !activeSearchKw.value && x8SearchSuggests.value.length > 0
   } catch {
     if (seq === x8SuggestSeq) x8SearchSuggests.value = []
   }
@@ -3859,6 +3865,12 @@ async function loadVod(withPlay = false) {
 watch(() => route.fullPath, (_next, prev) => {
   if (String(prev || '').includes('/play/')) saveWatchHistory(true)
   focusX8Nav()
+  if (activeSearchKw.value) {
+    searchFocused.value = false
+    x8SearchSuggests.value = []
+    clearTimeout(x8SuggestTimer)
+    x8SuggestSeq += 1
+  }
   const mode = pageMode.value
   if (mode !== 'play') {
     playerTheater.value = false
@@ -4105,8 +4117,8 @@ onBeforeUnmount(() => {
   top: 49px;
   left: 0;
   width: 100%;
-  min-height: 585px;
-  padding: 0 0 12px;
+  max-height: min(70vh, 585px);
+  padding: 0;
   overflow: hidden;
   border-radius: 12px;
   color: #fff;
@@ -4119,7 +4131,13 @@ onBeforeUnmount(() => {
 .x8-search-pop-scroll {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  max-height: min(70vh, 585px);
+  padding-bottom: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.x8-search-pop-scroll::-webkit-scrollbar {
+  display: none;
 }
 .x8-search-history-box {
   position: relative;
