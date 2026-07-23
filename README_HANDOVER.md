@@ -3,13 +3,15 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动端首屏与 PWA 缓存优化）
+> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动播放页小窗调用顺序回修）
 
 ---
 
 ## 0. 一句话定位
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
+
+- **2026-07-23 移动播放页小窗调用顺序回修断点**：手机网页小窗失败的核心在 `MobilePlay.vue` 原逻辑优先调用标准 `requestPictureInPicture()`，对 iOS/Safari 这类更适合走 `video.webkitSetPresentationMode('picture-in-picture')` 的浏览器不够贴合，并且 catch 统一提示“请先播放后重试”，掩盖了权限、准备状态、浏览器禁用等真实原因。现移动播放页优先调用 Safari 原生 presentation mode，两条 PiP 分支都会先保证视频进入可播放态；标准 PiP 分支额外检查 `document.pictureInPictureEnabled`、`video.readyState` 并等一帧后进入小窗；错误提示按 `NotAllowedError` / `InvalidStateError` / `NotSupportedError` 区分。后台/API/数据库未改。
 
 ---
 

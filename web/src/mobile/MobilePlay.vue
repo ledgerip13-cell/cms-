@@ -962,10 +962,12 @@ function enterFullscreen() {
 
 function canUsePictureInPicture(video = videoEl.value) {
   if (!video || mode.value !== 'hls') return false
-  const standardPip = typeof video.requestPictureInPicture === 'function'
   const webkitPip = typeof video.webkitSupportsPresentationMode === 'function' &&
     video.webkitSupportsPresentationMode('picture-in-picture') &&
     typeof video.webkitSetPresentationMode === 'function'
+  const standardPip = typeof document !== 'undefined' &&
+    document.pictureInPictureEnabled !== false &&
+    typeof video.requestPictureInPicture === 'function'
   return standardPip || webkitPip
 }
 
@@ -977,30 +979,38 @@ async function togglePictureInPicture() {
   const video = videoEl.value
   if (!video || mode.value !== 'hls') return
   try {
-    if (document.pictureInPictureElement) {
+    if (video.webkitSupportsPresentationMode?.('picture-in-picture') && typeof video.webkitSetPresentationMode === 'function') {
+      if (video.webkitPresentationMode === 'picture-in-picture') {
+        video.webkitSetPresentationMode('inline')
+        showControls(2600)
+        return
+      }
+      if (video.paused || video.readyState < 2) await video.play()
+      video.webkitSetPresentationMode('picture-in-picture')
+      showNotice('已开启小窗播放')
+      showControls(2600)
+      return
+    }
+    if (document.pictureInPictureElement === video) {
       await document.exitPictureInPicture()
       showControls(2600)
       return
     }
-    if (typeof video.requestPictureInPicture === 'function') {
-      if (video.paused) {
-        try { await video.play() } catch {}
-      }
+    if (document.pictureInPictureEnabled !== false && typeof video.requestPictureInPicture === 'function') {
+      if (video.paused || video.readyState < 2) await video.play()
+      await new Promise(resolve => requestAnimationFrame(resolve))
       await video.requestPictureInPicture()
       showNotice('已开启小窗播放')
       showControls(2600)
       return
     }
-    if (video.webkitSupportsPresentationMode?.('picture-in-picture') && video.webkitSetPresentationMode) {
-      const nextMode = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'
-      video.webkitSetPresentationMode(nextMode)
-      showNotice(nextMode === 'picture-in-picture' ? '已开启小窗播放' : '已退出小窗播放')
-      showControls(2600)
-      return
-    }
     showNotice('当前视频暂无法开启小窗')
-  } catch {
-    showNotice('小窗开启失败，请先播放后重试')
+  } catch (error) {
+    const name = String(error?.name || '')
+    if (name === 'NotAllowedError') showNotice('请先点一下播放画面后再开小窗')
+    else if (name === 'InvalidStateError') showNotice('视频准备中，稍后再试')
+    else if (name === 'NotSupportedError') showNotice('当前浏览器不允许网页小窗')
+    else showNotice('小窗开启失败')
   }
 }
 
