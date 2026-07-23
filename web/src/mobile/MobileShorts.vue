@@ -38,16 +38,11 @@
         <div class="ms-vignette"></div>
         <div
           v-if="isActiveDisplay(index) && clearScreen && fullMode && videoLandscape && !accessBlock"
-          class="ms-brightness-mask"
-          :style="{ opacity: brightnessMaskOpacity }"
-        ></div>
-        <div
-          v-if="isActiveDisplay(index) && clearScreen && fullMode && videoLandscape && !accessBlock"
           class="ms-clear-gesture-layer"
-          @touchstart.stop="onClearGestureStart($event, index)"
-          @touchmove.stop.prevent="onClearGestureMove($event, index)"
-          @touchend.stop.prevent="onClearGestureEnd($event, index)"
-          @touchcancel.stop.prevent="onClearGestureEnd($event, index)"
+          @touchstart="onClearGestureStart($event, index)"
+          @touchmove="onClearGestureMove($event, index)"
+          @touchend="onClearGestureEnd($event, index)"
+          @touchcancel="onClearGestureEnd($event, index)"
         ></div>
         <div v-if="isActiveDisplay(index) && clearGestureHud" class="ms-clear-hud">
           <strong>{{ clearGestureHud }}</strong>
@@ -455,7 +450,6 @@ const drawerTab = ref('intro')
 const activeRangeStart = ref(0)
 const toolMenuOpen = ref(false)
 const clearScreen = ref(false)
-const brightnessLevel = ref(1)
 const clearGestureHud = ref('')
 const clearGestureValue = ref('')
 const relatedItems = ref([])
@@ -492,12 +486,9 @@ const playbackLineFailures = new Map()
 const clearGesture = {
   active: false,
   axis: '',
-  side: '',
   startX: 0,
   startY: 0,
   startTime: 0,
-  startVolume: 1,
-  startBrightness: 1,
   nextTime: 0,
 }
 const jinpaiSelfHealTried = new Set()
@@ -529,7 +520,6 @@ const progressPercent = computed(() => {
   if (seeking.value) return Math.max(0, Math.min(100, (seekValue.value / 1000) * 100))
   return durationSec.value ? Math.max(0, Math.min(100, (currentSec.value / durationSec.value) * 100)) : 0
 })
-const brightnessMaskOpacity = computed(() => Math.max(0, Math.min(0.72, (1 - brightnessLevel.value) * 0.72)).toFixed(2))
 const shortsVars = computed(() => ({
   '--ms-landscape-object-y': LANDSCAPE_OBJECT_Y,
   ...(landscapePlayY.value ? { '--ms-landscape-play-y': landscapePlayY.value } : {}),
@@ -1122,7 +1112,6 @@ function stopVideo() {
   durationSec.value = 0
   seekValue.value = 0
   seeking.value = false
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
 }
 
@@ -1685,7 +1674,6 @@ function cancelSeek() {
 function resetClearGesture(options = {}) {
   clearGesture.active = false
   clearGesture.axis = ''
-  clearGesture.side = ''
   clearGesture.nextTime = 0
   seeking.value = false
   if (options.hideHud) {
@@ -1720,12 +1708,9 @@ function onClearGestureStart(event, index) {
   if (!point || !video) return
   clearGesture.active = true
   clearGesture.axis = ''
-  clearGesture.side = point.clientX < window.innerWidth / 2 ? 'brightness' : 'volume'
   clearGesture.startX = point.clientX
   clearGesture.startY = point.clientY
   clearGesture.startTime = Number(video.currentTime) || currentSec.value || 0
-  clearGesture.startVolume = Number.isFinite(video.volume) ? video.volume : (muted.value ? 0 : 1)
-  clearGesture.startBrightness = brightnessLevel.value
   clearGesture.nextTime = clearGesture.startTime
 }
 
@@ -1740,11 +1725,17 @@ function onClearGestureMove(event, index) {
   const absY = Math.abs(dy)
   if (!clearGesture.axis) {
     if (Math.max(absX, absY) < 10) return
-    clearGesture.axis = absX >= absY ? 'seek' : 'vertical'
+    if (absX < absY) {
+      resetClearGesture()
+      return
+    }
+    clearGesture.axis = 'seek'
   }
 
   if (clearGesture.axis === 'seek') {
     if (!durationSec.value) return
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
     seeking.value = true
     const seekSpan = Math.max(durationSec.value, 90)
     const nextTime = Math.max(0, Math.min(durationSec.value, Math.round(clearGesture.startTime + (dx / Math.max(window.innerWidth, 1)) * seekSpan)))
@@ -1752,33 +1743,15 @@ function onClearGestureMove(event, index) {
     currentSec.value = nextTime
     seekValue.value = Math.round((nextTime / durationSec.value) * 1000)
     showClearGestureHud('进度', `${formatEpisodeTime(nextTime)} / ${formatEpisodeTime(durationSec.value)}`)
-    return
   }
-
-  const delta = -dy / Math.max(window.innerHeight, 1)
-  if (clearGesture.side === 'brightness') {
-    const nextBrightness = Math.max(0.2, Math.min(1, clearGesture.startBrightness + delta))
-    brightnessLevel.value = nextBrightness
-    showClearGestureHud('亮度', `${Math.round(nextBrightness * 100)}%`)
-    return
-  }
-
-  const nextVolume = Math.max(0, Math.min(1, clearGesture.startVolume + delta))
-  video.volume = nextVolume
-  muted.value = nextVolume <= 0.01
-  video.muted = muted.value
-  if (!muted.value) {
-    soundPrompt.value = false
-    pendingUnmute = false
-  }
-  writeMutedPreference(muted.value)
-  showClearGestureHud('音量', `${Math.round(nextVolume * 100)}%`)
 }
 
 function onClearGestureEnd(event, index) {
   if (!clearGesture.active) return
   const video = getVideo()
   if (clearGesture.axis === 'seek' && canUseClearGesture(index) && video && durationSec.value) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
     try {
       const nextTime = Math.max(0, Math.min(durationSec.value, clearGesture.nextTime || currentSec.value || 0))
       video.currentTime = nextTime
@@ -1787,6 +1760,8 @@ function onClearGestureEnd(event, index) {
       saveHistory(true)
     } catch {}
   } else if (!clearGesture.axis) {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
     togglePlay()
   }
   resetClearGesture()
@@ -1930,7 +1905,6 @@ function openFullContent(unit) {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
   router.replace({ path: '/m/shorts', query: { ...route.query, mode: 'full' } })
   activeRangeStart.value = Math.floor((Number(unit.epIndex) || 0) / 30) * 30
@@ -1942,7 +1916,6 @@ function exitFullContent() {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
   const query = { ...route.query }
   delete query.mode
@@ -2014,7 +1987,6 @@ async function playVodInShorts(vodId) {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
   loading.value = !units.value.length
   try {
@@ -2081,7 +2053,6 @@ function toggleClearScreen() {
   clearScreen.value = !clearScreen.value
   toolMenuOpen.value = false
   resetClearGesture({ hideHud: true })
-  if (!clearScreen.value) brightnessLevel.value = 1
 }
 
 function requestPictureInPicture() {
@@ -2284,7 +2255,6 @@ async function resumePlaybackForLoggedInViewer() {
 watch(activeIndex, () => {
   saveHistory(true)
   writeShortsSession()
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
   ensureMoreAhead()
   schedulePlay(80)
@@ -2295,7 +2265,6 @@ watch(() => route.query.mode, () => {
   toolMenuOpen.value = false
   episodeDrawerOpen.value = false
   clearScreen.value = false
-  brightnessLevel.value = 1
   resetClearGesture({ hideHud: true })
   if (fullMode.value && activeUnit.value) activeRangeStart.value = Math.floor((Number(activeUnit.value.epIndex) || 0) / 30) * 30
   nextTick(() => {
@@ -2462,19 +2431,11 @@ onBeforeUnmount(() => {
 .ms-vignette {
   z-index: 3;
 }
-.ms-brightness-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  background: #000;
-  pointer-events: none;
-  transition: opacity .12s ease;
-}
 .ms-clear-gesture-layer {
   position: absolute;
   inset: 0;
   z-index: 70;
-  touch-action: none;
+  touch-action: pan-y;
   background: transparent;
 }
 .ms-clear-hud {
