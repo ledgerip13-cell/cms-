@@ -2,8 +2,16 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Prisma 需要 openssl（本地转存改为纯 Node 镜像 HLS，无需 ffmpeg）
-RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+# Prisma 需要 openssl；备份中心需要 PostgreSQL 16 的 pg_dump。
+RUN apt-get update \
+  && apt-get install -y openssl ca-certificates curl gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
+  && . /etc/os-release \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y postgresql-client-16 \
+  && rm -rf /var/lib/apt/lists/*
 RUN npm i -g pnpm@10
 
 # 依赖

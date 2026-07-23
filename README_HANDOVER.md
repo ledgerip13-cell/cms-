@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-22 (GMT+8)｜**对应提交**：本次工作（移动播放/详情布局优化）
+> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（备份中心）
 
 ---
 
@@ -50,7 +50,7 @@
 
 ```
 video-cms/
-├── docker-compose.yml          # 4 容器编排：postgres/server/admin/web
+├── docker-compose.yml          # 4 容器编排：postgres/server/admin/web；server 挂载 ./backups:/app/backups
 ├── restart-server.sh           # 服务重启脚本
 ├── .env                        # POSTGRES_* 等（占位，见 §3）
 ├── docs/
@@ -96,6 +96,7 @@ video-cms/
 │       │   ├── access.ts       #   邀请码/VIP等级/操作审计
 │       │   ├── ops.ts          #   QC问题队列 + 源SLA面板
 │       │   ├── seo.ts          #   影片真实落地页 /vod/:id + sitemap.xml + robots.txt
+│       │   ├── backups.ts      #   备份中心：pg_dump -Fc 全量/选择性导出、列表、下载、删除、备注
 │       │   ├── hlsClean.ts     #   HLS 清洗配置 + 结果
 │       │   └── hlsProxy.ts     #   HLS 播放代理
 │       │
@@ -135,6 +136,7 @@ video-cms/
 │           ├── Risk.vue        # 用户风控：风险事件、登录设备、封禁解封追踪
 │           ├── Interactions.vue # 互动管理：开关、评论、评分、求片、举报、消息、弹幕
 │           ├── Access.vue      # 邀请码/VIP/审计/播放错误/访问日志
+│           ├── Backups.vue     # 备份中心：创建全量/选择性备份、列表、下载、备注、删除
 │           ├── Hot.vue         # 热门推荐配置与预览
 │           ├── Site.vue        # 站点设置壳：加载/保存/Tab 装配
 │           └── site/           # Site.vue 子组件：Basic/Home/Shorts/PWA/Theme/Preview + siteTheme
@@ -164,6 +166,9 @@ POSTGRES_DB=<pg_db>
 # compose 内注入 server：
 JWT_SECRET=<jwt_secret>                 # 缺省回退 dev-secret，生产必改
 MEDIA_ENCRYPTION_KEY=<media_key_optional>
+BACKUP_DIR=/app/backups                 # 备份中心容器内目录；compose 挂载宿主 ./backups
+JINPAI_CN_CDN_SUFFIXES=blbtgg.com
+JINPAI_OVERSEA_CDN_SUFFIXES=kqgfbs.com,zyxsuntech.com
 ```
 **`server/.env`（本地开发/tsx）**
 ```env
@@ -174,6 +179,7 @@ DATABASE_URL=postgresql://<user>:<pwd>@localhost:5155/<db>?schema=public
 - **server**：`fastify@5` `@fastify/cors` `@prisma/client@6` `prisma@6` `jsonwebtoken` `bcryptjs` `node-cron` `sharp` `fast-xml-parser` `dotenv` · dev：`tsx` `typescript@5`
 - **admin**：`vue@3` `element-plus` `@element-plus/icons-vue` `vue-router@4` `axios` · dev：`vite@6` `@vitejs/plugin-vue`
 - **web**：`vue@3` `hls.js` `vue-router@4` `axios` · dev：`vite@6` `@vitejs/plugin-vue`
+- **系统包**：server 镜像需 `postgresql-client-16`，备份中心调用 `pg_dump -Fc`；宿主 `video-cms/backups/` 只存运行备份文件，已加入 `.gitignore`；如需提交 `.dump` 备份文件，走 `.gitattributes` 中的 Git LFS 规则。
 
 ### 常用命令
 ```bash
@@ -195,6 +201,9 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-23 备份中心导出断点**：后台新增 `/backups` 备份中心，支持创建全量备份与选择性数据包备份、备份列表、下载、删除、备注编辑；本轮只做导出侧，未做导入/恢复。后端新增 `server/src/routes/backups.ts` 并注册到 `index.ts`，全量走 `pg_dump -Fc --no-owner --no-acl`；选择性备份目前提供 `sources`(Source/Category/SourceTypeMap)、`hlsClean`(HlsCleanConfig/HlsCleanPolicy/HlsCleanResult/HlsAdFingerprint)、`meta`(MetaConfig/Person/VodPerson/VodAlias/VodSubType/VodImage)、`vods`(Vod/Play/VodImage/VodAlias/VodSubType/Person/VodPerson)、`site`(SiteConfig/HotConfig/VipLevel/LegacyMemberGroup/LegacyWebUserGroup)。选择性模式默认避开用户、日志、审计、弹幕、评论、评分、求片、举报、站内消息、播放错误、访问记录、观看历史等敏感/行为表。`docker-compose.yml` 已给 server 注入 `BACKUP_DIR=/app/backups` 并挂载 `./backups:/app/backups`，`.gitignore` 已忽略 `backups/`；`server/Dockerfile` 已接入 PGDG 并安装 `postgresql-client-16`，避免 PG16 数据库被低版本 `pg_dump` 拒绝；本次按要求将 `backups/vcms-selective-20260723-024351.dump` 通过 Git LFS 纳入仓库。已执行 `pnpm --dir server build`、`pnpm --dir admin build`、`docker compose up -d --build server admin`；运行态 `pg_dump --version` 为 16.14，选择性备份 API 创建/下载/列表/备注/删除通过，全量备份 API 在约 1.5GB 数据库上生成约 300MB `.dump` 并下载/删除通过。当前断点：导入/恢复、定时备份、异步任务进度与远端对象存储尚未实现。
+- **2026-07-23 HLS 全屏互动栏边界回修断点**：定位 X8 播放页 HLS 页面内全屏底部露出“点赞/点踩/评论/追剧/报错/分享/弹幕输入”的根因，是 7/23 新增的 `.x8-under-player-toolbar` 未纳入 `playerTheater` 全屏隐藏规则；现 `web/src/x8/X8Home.vue` 在 `.x8-play.theater-mode` 下隐藏所有页面级互动按钮、评论入口、弹幕输入/发送/设置，仅保留一个 42px 浮动弹幕开关入口，并在进入/退出 HLS 全屏时关闭弹幕设置浮层。移动端 `web/src/mobile/MobilePlay.vue` 增加横屏态防线：`playerLandscape` 时不渲染播放器下方弹幕工具条与点赞/评论/收藏等操作条，进入横屏同步关闭弹幕设置 Teleport，保持移动 HLS 全屏只显示原播放器层，不额外加入页面级内容。后台/API/数据库未改动。
+- **2026-07-23 金牌国内 CDN 命中与重签自愈断点**：定位国内用户金牌播放不稳定的核心不是“指定 CDN”，而是签名 IP 与浏览器直连 CDN 出口必须匹配；现 `server/src/routes/resolve.ts` 的金牌分支不再用空 IP 回落服务器出口，未识别真实公网 IP 时返回 `jinpai_client_ip_missing` 并降权该线路。解析时会用 `IpLocationCache` 判断客户端归属，默认国内 CDN 后缀 `blbtgg.com`、境外 CDN 后缀 `kqgfbs.com/zyxsuntech.com`（可用 `JINPAI_CN_CDN_SUFFIXES` / `JINPAI_OVERSEA_CDN_SUFFIXES` 覆盖，`docker-compose.yml` 已传入 server）；国内 IP 若拿到境外 CDN 会自动重签一次，仍异常则返回 `jinpai_cdn_region_mismatch`，避免把高概率 403 的 URL 下发给前端。后台线路诊断 `admin/src/views/Vods.vue` 已展示金牌签名 IP、客户端归属、CDN host/区域、重试 CDN 与 mismatch 标记。前端 `Play.vue`、`MobilePlay.vue`、`X8Home.vue`、`MobileShorts.vue` 在 `jinpai_client` 播放 fatal error 时先对当前线路 `fresh=1` 重签一次并保留播放进度，第二次失败才进入原有切线/失败上报流程。已执行 `pnpm --dir server build`、`pnpm --dir web build`、`pnpm --dir admin build`、`git diff --check`、`docker compose up -d --build server admin web` 与 server env 重启；运行态 `5150/health`、`5151`、`5152` 正常，`101.35.0.1` 解析命中 `ppvod011.blbtgg.com/cn`，`8.8.8.8` 命中 `ppvod021.zyxsuntech.com/oversea`，无真实 IP 返回 `jinpai_client_ip_missing`。
 - **2026-07-23 X8 播放页操作栏回修断点**：`web/src/x8/X8Home.vue` 播放页播放器下方操作栏移除“添加”按钮；“收藏”改名为“追剧”，已追剧时文案显示“追剧中”，追剧态心形图标改红色且点击时触发 `x8HeartPop` 心跳动画；点赞态图标改红色并在点击点赞时触发一次 `x8ThumbsUp` 抬头动画，模拟大拇指上扬反馈；点踩态使用蓝色区分，点击点踩时触发相反方向的 `x8ThumbsDown` 下压动画。动画状态通过 `ratingPulse` 临时 class 控制，卸载时清理 `ratingPulseTimer`。
 - **2026-07-23 移动详情页日间模式回修断点**：`web/src/mobile/MobileDetail.vue` 按老大反馈去掉顶部搜索胶囊与右侧个人中心入口，头部只保留返回与当前片名；详情页当前为日间模式，整体从此前深色金牌风格切回浅色背景、白色内容区、深色主按钮、浅灰标签/线路/剧集按钮。选集区字号从 16px 收到 12px，按钮高度从 50px 收到 38px，网格从 4 列改 5 列，避免移动端选集文字过大。此前深色方案记录为后续夜间模式可复用基线：页面背景 `#191919`、卡片 `#242424`、文字 `#f4f4f4/#fff`、弱文字 `rgba(255,255,255,.52-.76)`、白色主按钮与深色面板。
 - **2026-07-23 移动播放器控制栏与弹幕区回修断点**：按老大确认的移动播放方案重排 `web/src/mobile/MobilePlay.vue`：播放器右上角继续只保留 HLS 横屏播放，底部控制栏改为 `播放/静音/时间/清晰度/小窗/菜单/系统全屏`，移除底栏“下一集”以防窄屏挤压，上一集/下一集只保留在播放器中央控制；同时给播放器容器和 `<video>` 显式绑定 `click/pointerup` 控制层显隐，并在 `onMounted/onLoadedMetadata` 对 video DOM 再做原生事件兜底绑定，避免视频元素吞掉点击导致控制层不出现，控制层显隐门禁简化为只避开权限锁。新增小窗播放入口，支持标准 `requestPictureInPicture/exitPictureInPicture`，Safari 兼容 `webkitSetPresentationMode('picture-in-picture')`，不支持时按钮不显示或提示。移动弹幕条同步改为 `弹幕开关图标 / 弹幕设置图标 / 输入框 / 登录/发送`，移除 `弹幕开/弹幕关` 大文字按钮；弹幕条 section 去掉顶部 8px 分隔，紧贴播放器下方，且播放器下面只保留弹幕区域。点赞/点踩/评论/收藏/报错/分享/添加操作区已整体移动到影片简介下面。新增 `localStorage: vcms.mobile.danmaku.settings.v1`，支持透明度、区域、滚动/顶部/底部、密度、速度、字号、宽度，实际影响移动弹幕层 opacity、top 轨道、显示数量、动画时长、字号和文本宽度。评论登录区已移除右侧“写长文”入口。

@@ -21,6 +21,7 @@ import Playback from './views/Playback.vue'
 import Ops from './views/Ops.vue'
 import Risk from './views/Risk.vue'
 import Interactions from './views/Interactions.vue'
+import Backups from './views/Backups.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -40,6 +41,7 @@ const router = createRouter({
     { path: '/risk', component: Risk, meta: { title: '风控中心' } },
     { path: '/interactions', component: Interactions, meta: { title: '互动管理' } },
     { path: '/access', component: Access, meta: { title: '权限访问' } },
+    { path: '/backups', component: Backups, meta: { title: '备份中心' } },
     { path: '/meta', component: Meta, meta: { title: '元数据匹配' } },
     { path: '/site', component: Site, meta: { title: '系统设置' } },
   ]

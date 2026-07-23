@@ -747,6 +747,7 @@ function playDirectUrl(url, kind = '') {
 function trySelfHeal() {
   if (selfHealTried) return false
   selfHealTried = true
+  pendingSeekSec.value = Math.max(0, Math.floor(Number(currentPlayerState().currentTime) || 0))
   playResolvedEp(epIdx.value, { fresh: true })
   return true
 }

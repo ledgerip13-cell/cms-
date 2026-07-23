@@ -1,0 +1,61 @@
+{
+  "filename": "vcms-selective-20260723-024351.dump",
+  "kind": "selective",
+  "packages": [
+    "sources",
+    "hlsClean",
+    "meta",
+    "vods"
+  ],
+  "packageLabels": [
+    "采集源与分类映射",
+    "HLS 清洗数据",
+    "元数据资产",
+    "影片与播放线路"
+  ],
+  "tables": [
+    "Source",
+    "Category",
+    "SourceTypeMap",
+    "HlsCleanConfig",
+    "HlsCleanPolicy",
+    "HlsCleanResult",
+    "HlsAdFingerprint",
+    "MetaConfig",
+    "Person",
+    "VodPerson",
+    "VodAlias",
+    "VodSubType",
+    "VodImage",
+    "Vod",
+    "Play"
+  ],
+  "excludedTables": [
+    "User",
+    "WebUser",
+    "LoginDevice",
+    "UserRiskEvent",
+    "UserBanLog",
+    "SearchLog",
+    "InviteCode",
+    "AuditLog",
+    "QcIssue",
+    "AccessAudit",
+    "IpLocationCache",
+    "PlaybackErrorLog",
+    "LoginLog",
+    "RequestAccessLog",
+    "UserFollow",
+    "WatchHistory",
+    "UserVodSkipPreference",
+    "Comment",
+    "UserRating",
+    "VodRequest",
+    "UserReport",
+    "SiteMessage",
+    "SiteMessageRead",
+    "Danmaku"
+  ],
+  "remark": "方便迁移",
+  "createdAt": "2026-07-23T02:43:51.412Z"
+}

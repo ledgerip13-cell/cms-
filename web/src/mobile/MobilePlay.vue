@@ -177,7 +177,7 @@
       <div v-if="seeking" class="mp-seek-preview">{{ formatTime(seekPreviewTime) }} / {{ formatTime(duration) }}</div>
     </section>
 
-    <section v-if="vod.id" class="mp-toolbar-panel">
+    <section v-if="vod.id && !playerLandscape" class="mp-toolbar-panel">
       <div v-if="interactionConfig.danmakuEnabled" class="mp-toolbar-danmaku">
         <button class="mp-danmaku-icon-btn" type="button" :class="{ on: danmakuVisible }" :aria-label="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
           <svg viewBox="0 0 24 24" v-html="icon('danmaku')"></svg>
@@ -232,7 +232,7 @@
       </p>
     </section>
 
-    <section v-if="vod.id" class="mp-action-panel">
+    <section v-if="vod.id && !playerLandscape" class="mp-action-panel">
       <div class="mp-action-strip">
         <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" @click="submitRating(10)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
@@ -514,6 +514,7 @@ let historyTimer = 0
 let controlsTimer = 0
 let retryingLine = false
 let autoSwitchingLine = false
+let selfHealTried = false
 let bodyOverflowBeforeLandscape = ''
 let pageActive = false
 let loadSeq = 0
@@ -898,6 +899,7 @@ function bindVideoTapEvents() {
 
 async function toggleLandscape() {
   playerLandscape.value = !playerLandscape.value
+  danmakuSettingsOpen.value = false
   if (playerLandscape.value) {
     // 根据视频实际宽高判定横/竖：竖片锁竖屏全屏，横片锁横屏全屏
     const video = videoEl.value
@@ -1727,12 +1729,14 @@ function handleAccessAction() {
   router.push('/m/me')
 }
 
-async function playCurrent() {
+async function playCurrent(options = {}) {
   const channel = curChannel.value
   if (!vod.value?.id || !channel?.id) return
   const playEpIndex = Math.max(0, Math.min(epIdx.value, (channel.episodes || []).length - 1))
   const playEp = channel.episodes?.[playEpIndex]
   const seq = nextPlaybackSeq()
+  const fresh = Boolean(options?.fresh)
+  if (!fresh) selfHealTried = false
   resolving.value = true
   accessBlock.value = null
   closePlayFailure()
@@ -1744,7 +1748,7 @@ async function playCurrent() {
   danmakuLoadAt = 0
   resetSubtitleSelection()
   try {
-    const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex })
+    const result = await api.resolvePlay({ vodId: vod.value.id, playId: channel.id, epIndex: playEpIndex, ...(fresh ? { fresh: 1 } : {}) })
     if (!isPlaybackCurrent(seq)) return
     if (result?.ok && result.url) {
       currentResolve.value = result
@@ -1780,6 +1784,7 @@ function playEp(index) {
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
   retryingLine = false
+  selfHealTried = false
   playCurrent()
 }
 
@@ -1796,6 +1801,7 @@ function selectLine(index) {
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
   retryingLine = false
+  selfHealTried = false
   focusPlaybackContext('line')
 }
 
@@ -1811,10 +1817,22 @@ function selectChannel(index) {
   alignEpisodeRange(epIdx.value)
   syncPendingHistorySeek()
   retryingLine = false
+  selfHealTried = false
   focusPlaybackContext('channel')
 }
 
+function tryJinpaiSelfHeal() {
+  if (selfHealTried || currentResolve.value?.rule !== 'jinpai_client') return false
+  selfHealTried = true
+  const video = videoEl.value
+  pendingSeekSec.value = Math.max(0, Math.floor(Number(video?.currentTime) || currentTime.value || 0))
+  showNotice('播放异常，正在重新签名')
+  void playCurrent({ fresh: true })
+  return true
+}
+
 function handlePlaybackError() {
+  if (tryJinpaiSelfHeal()) return
   void tryNextLine('播放失败')
 }
 

@@ -465,6 +465,7 @@ const resolveCache = new Map()
 const resolveInflight = new Map()
 const vodDetailCache = new Map()
 const playbackLineFailures = new Map()
+const jinpaiSelfHealTried = new Set()
 const warmedManifests = new Set()
 const preloadedPosters = new Set()
 
@@ -1253,6 +1254,11 @@ function clearLineFailures(unit) {
   if (key) playbackLineFailures.delete(key)
 }
 
+function clearJinpaiSelfHeal(unit) {
+  const key = resolveCacheKey(unit)
+  if (key) jinpaiSelfHealTried.delete(key)
+}
+
 function reportShortsPlaybackError(unit, message, failures = []) {
   if (!unit?.vod?.id) return
   void api.reportPlaybackError({
@@ -1299,6 +1305,23 @@ async function tryNextShortsLine(unit, triedLineIds = new Set()) {
 async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
   const unit = activeUnit.value || playingUnit
   if (!unit?.vod?.id || !unit?.channel?.id) return false
+  if (unit.lastResolve?.rule === 'jinpai_client') {
+    const key = resolveCacheKey(unit)
+    if (!jinpaiSelfHealTried.has(key)) {
+      jinpaiSelfHealTried.add(key)
+      try {
+        const result = await resolveUnitPlayback(unit, { fresh: true })
+        if (result?.ok && result.url && activeUnit.value?.key === unit.key) {
+          unit.lastResolve = result
+          const seq = ++playSeq
+          playingUnit = unit
+          notifyWarning('播放异常，正在重新签名')
+          await attachVideo(result.url, result.kind || '', seq, unit)
+          return true
+        }
+      } catch {}
+    }
+  }
   rememberLineFailure(unit)
   const tried = new Set([Number(unit.channel.id)])
   try {
@@ -1351,6 +1374,7 @@ async function playActive() {
       }
       if (result?.ok && result.url) {
         unit.lastResolve = result
+        clearJinpaiSelfHeal(unit)
         if (activeUnit.value?.key !== unit.key) {
           applyShortsLineSwitch(unit)
           notifyWarning(`当前线路不可用，已切换到 ${unit.channel.sourceName || '备用线路'}`)
@@ -2077,6 +2101,7 @@ async function refreshViewerRuntime(options = {}) {
   resolveInflight.clear()
   vodDetailCache.clear()
   playbackLineFailures.clear()
+  jinpaiSelfHealTried.clear()
   await loadSite()
   await loadShortOptions()
   restoreSavedFilter()

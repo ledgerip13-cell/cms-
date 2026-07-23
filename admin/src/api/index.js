@@ -161,6 +161,12 @@ export const api = {
   scanQcIssues: () => http.post('/admin/qc/issues/scan'),
   updateQcIssue: (id, action, d = {}) => http.post(`/admin/qc/issues/${id}/${action}`, d),
   sourceSla: (days = 7) => http.get('/admin/source-sla', { params: { days } }),
+  backupPackages: () => http.get('/admin/backups/packages'),
+  backups: () => http.get('/admin/backups'),
+  createBackup: (d) => http.post('/admin/backups', d),
+  updateBackup: (filename, d) => http.patch(`/admin/backups/${encodeURIComponent(filename)}`, d),
+  deleteBackup: (filename) => http.delete(`/admin/backups/${encodeURIComponent(filename)}`),
+  downloadBackup: (filename) => http.get(`/admin/backups/${encodeURIComponent(filename)}/download`, { responseType: 'blob' }),
   // site
   site: () => http.get('/site'),
   adminSite: () => http.get('/admin/site'),

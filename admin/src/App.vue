@@ -84,7 +84,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Connection, Link, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation, Expand, Fold, WarningFilled, ChatDotRound } from '@element-plus/icons-vue'
+import { DataLine, Connection, Link, List, Files, Film, Setting, MagicStick, UserFilled, StarFilled, Key, VideoPlay, Operation, Expand, Fold, WarningFilled, ChatDotRound, Download } from '@element-plus/icons-vue'
 import { api } from './api'
 
 const route = useRoute()
@@ -126,6 +126,7 @@ const menuSections = [
     ],
   },
   { index: 'ops', path: '/ops', label: '质量监控', icon: Operation },
+  { index: 'backups', path: '/backups', label: '备份中心', icon: Download },
   {
     index: 'users-security',
     label: '用户与权限',

@@ -13,6 +13,7 @@ import { JINPAI_FLAG } from "../collector/drivers/jinpai.js";
 import { fetchEpisodeUrls, pickBest, clientIpOf, isEpisodeArchived, archiveEpDir, ARCHIVE_DIR } from "../jinpaiPlay.js";
 import { LOCAL_FLAG } from "../collector/localSource.js";
 import { recordPlayHealth } from "../playHealth.js";
+import { ipLocation } from "../logging.js";
 import fsp from "node:fs";
 import nodePath from "node:path";
 
@@ -23,6 +24,8 @@ const TTL = 30 * 60 * 1000; // 30分钟（sign 实测稳定 >1h，配合前端 4
 const MAX_CACHE = 2000;
 const SHORTS_PREVIEW_CODES = new Set(["login_required", "vip_required", "level_required", "vip_or_level_required"]);
 const LOCAL_ARCHIVE_TOKEN_SCOPE = "jinpai_local";
+const JINPAI_CN_CDN_SUFFIXES = (process.env.JINPAI_CN_CDN_SUFFIXES || "blbtgg.com").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+const JINPAI_OVERSEA_CDN_SUFFIXES = (process.env.JINPAI_OVERSEA_CDN_SUFFIXES || "kqgfbs.com,zyxsuntech.com").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
 
 function vodInShortsScope(vod: { typeName?: string; subType?: string }, config: any) {
   const type = String(vod?.typeName || "");
@@ -44,6 +47,32 @@ function signLocalArchiveToken(payload: {
   mid?: number;
 }) {
   return signPlaybackToken({ ...payload, scope: LOCAL_ARCHIVE_TOKEN_SCOPE });
+}
+
+function hostOfUrl(url: string): string {
+  try { return new URL(url).host.toLowerCase(); } catch { return ""; }
+}
+
+function hostMatches(host: string, suffixes: string[]) {
+  const h = String(host || "").toLowerCase();
+  return suffixes.some((suffix) => h === suffix || h.endsWith(`.${suffix}`));
+}
+
+function jinpaiCdnRegion(host: string): "cn" | "oversea" | "unknown" {
+  if (hostMatches(host, JINPAI_CN_CDN_SUFFIXES)) return "cn";
+  if (hostMatches(host, JINPAI_OVERSEA_CDN_SUFFIXES)) return "oversea";
+  return "unknown";
+}
+
+function isChinaLocation(loc: any) {
+  const country = String(loc?.country || "").trim().toLowerCase();
+  const raw = (() => { try { return JSON.parse(String(loc?.raw || "{}")); } catch { return {}; } })();
+  const code = String(raw?.countryCode || raw?.country || "").trim().toLowerCase();
+  return country === "cn" || country.includes("china") || country.includes("中国") || code === "cn";
+}
+
+function locationSummary(loc: any) {
+  return [loc?.country, loc?.region, loc?.city].map((x) => String(x || "").trim()).filter(Boolean).join(" / ");
 }
 
 function localArchiveUrl(params: {
@@ -215,16 +244,98 @@ export default async function resolveRoutes(app: FastifyInstance) {
         // 客户端 IP 签名 → CDN 直连；返回全部清晰度供前台切换
         try {
           const publicClientIp = clientIpOf(req);
-          const signClientIp = publicClientIp || "";
-          const list = await fetchEpisodeUrls({
+          if (!publicClientIp) {
+            void recordPlayHealth(play.id, false, { reason: "jinpai_client_ip_missing" });
+            return {
+              ok: false,
+              code: "jinpai_client_ip_missing",
+              error: "未识别到真实公网 IP，已拒绝使用服务器出口签名",
+              kind: "m3u8",
+              rule: "jinpai_client",
+              jinpai: {
+                clientIp: "",
+                signClientIp: "",
+                clientCountry: "",
+                clientRegion: "unknown",
+                cdnHost: "",
+                cdnRegion: "unknown",
+                regionMismatch: false,
+              },
+            };
+          }
+          const loc = await ipLocation(publicClientIp).catch(() => null as any);
+          const clientIsCn = isChinaLocation(loc);
+          const clientRegion = clientIsCn ? "cn" : (loc?.country ? "oversea" : "unknown");
+          const clientCountry = locationSummary(loc);
+          const signClientIp = publicClientIp;
+          let list = await fetchEpisodeUrls({
             apiUrl: (play.source as any).apiUrl,
             signKey: (play.source as any).signKey,
             vodId: vodSvid,
             nid,
             clientIp: signClientIp,
           });
-          const best = pickBest(list);
+          let best = pickBest(list);
           if (!best?.url) return { ok: false, error: "源站无可播地址" };
+          let cdnHost = hostOfUrl(best.url);
+          let cdnRegion = jinpaiCdnRegion(cdnHost);
+          let regionMismatch = clientIsCn && cdnRegion === "oversea";
+          let retryCdnHost = "";
+          let retryCdnRegion: "cn" | "oversea" | "unknown" = "unknown";
+          if (regionMismatch) {
+            const retryList = await fetchEpisodeUrls({
+              apiUrl: (play.source as any).apiUrl,
+              signKey: (play.source as any).signKey,
+              vodId: vodSvid,
+              nid,
+              clientIp: signClientIp,
+            });
+            const retryBest = pickBest(retryList);
+            retryCdnHost = hostOfUrl(retryBest?.url || "");
+            retryCdnRegion = jinpaiCdnRegion(retryCdnHost);
+            if (retryBest?.url && retryCdnRegion !== "oversea") {
+              list = retryList;
+              best = retryBest;
+              cdnHost = retryCdnHost;
+              cdnRegion = retryCdnRegion;
+              regionMismatch = false;
+            }
+          }
+          if (regionMismatch) {
+            req.log.warn({
+              vodId,
+              playId,
+              epIndex,
+              rule: "jinpai_client",
+              clientIp: publicClientIp,
+              signClientIp,
+              clientCountry,
+              clientRegion,
+              cdnHost,
+              cdnRegion,
+              retryCdnHost,
+              retryCdnRegion,
+            }, "jinpai cdn region mismatch");
+            void recordPlayHealth(play.id, false, { reason: "jinpai_cdn_region_mismatch" });
+            return {
+              ok: false,
+              code: "jinpai_cdn_region_mismatch",
+              error: "国内用户签名未命中国内 CDN，已阻断异常线路并建议重新解析或切换网络",
+              kind: "m3u8",
+              rule: "jinpai_client",
+              jinpai: {
+                clientIp: publicClientIp,
+                signClientIp,
+                clientCountry,
+                clientRegion,
+                cdnHost,
+                cdnRegion,
+                retryCdnHost,
+                retryCdnRegion,
+                regionMismatch: true,
+              },
+            };
+          }
           const qualities = list.map((x) => ({ resolution: x.resolution, name: x.resolutionName, url: x.url }));
           req.log.info({
             vodId,
@@ -233,7 +344,10 @@ export default async function resolveRoutes(app: FastifyInstance) {
             rule: "jinpai_client",
             clientIp: publicClientIp || "",
             signClientIp,
-            cdnHost: new URL(best.url).host,
+            clientCountry,
+            clientRegion,
+            cdnHost,
+            cdnRegion,
             resolutions: qualities.map((x) => x.resolution),
           }, "jinpai resolve");
           void recordPlayHealth(play.id, true, { reason: "resolve_jinpai_client" });
@@ -247,7 +361,11 @@ export default async function resolveRoutes(app: FastifyInstance) {
             jinpai: {
               clientIp: publicClientIp || "",
               signClientIp,
-              cdnHost: new URL(best.url).host,
+              clientCountry,
+              clientRegion,
+              cdnHost,
+              cdnRegion,
+              regionMismatch: false,
               resolutions: qualities.map((x) => x.resolution),
             },
           };

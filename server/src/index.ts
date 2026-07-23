@@ -19,6 +19,7 @@ import opsRoutes from "./routes/ops.js";
 import seoRoutes from "./routes/seo.js";
 import riskRoutes from "./routes/risk.js";
 import interactionRoutes from "./routes/interactions.js";
+import backupRoutes from "./routes/backups.js";
 import { authGuard, seedAdmin } from "./auth.js";
 import { seedVipLevels } from "./vipLevels.js";
 import { startScheduler } from "./scheduler.js";
@@ -58,6 +59,7 @@ await app.register(accessRoutes);
 await app.register(opsRoutes);
 await app.register(riskRoutes);
 await app.register(interactionRoutes);
+await app.register(backupRoutes);
 await app.register(hlsCleanRoutes);
 await app.register(hlsProxyRoutes);
 

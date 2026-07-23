@@ -1342,6 +1342,7 @@ let historySaveAt = 0
 let hls = null
 let trailerHls = null
 let autoSwitchingPlayback = false
+let selfHealTried = false
 let introSkippedUrl = ''
 let outroSkippedUrl = ''
 let danmakuLoadAt = 0
@@ -3225,6 +3226,19 @@ function attachVideo(url, kind = '') {
     }
   })
 }
+function restorePlaybackPosition(seconds) {
+  const seekTo = Math.max(0, Math.floor(Number(seconds) || 0))
+  if (seekTo <= 3) return
+  nextTick(() => {
+    const video = videoEl.value
+    if (!video) return
+    const onLoaded = () => {
+      try { video.currentTime = seekTo } catch {}
+      video.removeEventListener('loadedmetadata', onLoaded)
+    }
+    video.addEventListener('loadedmetadata', onLoaded)
+  })
+}
 async function probePlaybackUrl(url, kind = '') {
   if (!url || kind === 'iframe') return true
   if (!/\.m3u8(\?|$)/i.test(url)) return true
@@ -3244,16 +3258,18 @@ function shouldProbeResolvedPlayback(result) {
   // 金牌源 m3u8 由客户端 IP 签名直连，预 fetch 会误判 403；交给播放器实际起播。
   return result?.rule !== 'jinpai_client'
 }
-async function playCurrent() {
+async function playCurrent(options = {}) {
   const line = currentLine.value
   const ep = episodes.value[currentEpIndex.value]
   if (!vod.value?.id || !line || !ep) return
+  const fresh = Boolean(options?.fresh)
+  if (!fresh) selfHealTried = false
   resolving.value = true
   qualityOpen.value = false
   qualities.value = []
   defaultQualityUrl.value = ''
   try {
-    const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value })
+    const result = await api.resolvePlay({ vodId: vod.value.id, playId: line.id, epIndex: currentEpIndex.value, ...(fresh ? { fresh: 1 } : {}) })
     if (result?.ok !== false && result?.url) {
       currentResolve.value = result
       // 多清晰度（金牌直连源）：记录可选档位，按用户偏好选 URL
@@ -3267,6 +3283,7 @@ async function playCurrent() {
       }
       qualityOpen.value = false
       attachVideo(playHere, result.kind || line.playKind || '')
+      restorePlaybackPosition(options?.seekTo)
     } else if (['login_required', 'vip_required', 'level_required', 'vip_or_level_required'].includes(result?.code)) {
       notifyWarning(result?.error || '当前影片暂无观看权限')
     } else {
@@ -3350,7 +3367,16 @@ async function tryNextPlayback(reason = '当前线路播放失败') {
     autoSwitchingPlayback = false
   }
 }
+function tryJinpaiSelfHeal() {
+  if (selfHealTried || currentResolve.value?.rule !== 'jinpai_client') return false
+  selfHealTried = true
+  const seekTo = Math.max(0, Math.floor(Number(videoEl.value?.currentTime) || currentTime.value || 0))
+  notifyWarning('播放异常，正在重新签名')
+  void playCurrent({ fresh: true, seekTo })
+  return true
+}
 function handlePlaybackError() {
+  if (tryJinpaiSelfHeal()) return
   void tryNextPlayback('播放失败')
 }
 // X8 播放器切换清晰度：保留当前播放位重新加载选定档 URL
@@ -3365,10 +3391,7 @@ function switchQuality(res) {
   const video = videoEl.value
   const seekTo = Math.floor(Number(video?.currentTime) || 0)
   attachVideo(url, '')
-  if (video && seekTo > 3) {
-    const onLoaded = () => { try { video.currentTime = seekTo } catch {} video.removeEventListener('loadedmetadata', onLoaded) }
-    video.addEventListener('loadedmetadata', onLoaded)
-  }
+  restorePlaybackPosition(seekTo)
 }
 function togglePlay() {
   const video = videoEl.value
@@ -3486,6 +3509,7 @@ function togglePlayerTheater() {
   playerTheater.value = !playerTheater.value
   videoFullscreen.value = playerTheater.value
   nativeFullscreen.value = false
+  danmakuSettingsOpen.value = false
   const video = videoEl.value
   if (video) video.controls = false
   showPlayerControls()
@@ -6300,6 +6324,9 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
 }
+.x8-play.theater-mode .x8-player-video-left {
+  position: relative;
+}
 .x8-play.theater-mode .x8-player-area {
   aspect-ratio: auto;
 }
@@ -6308,6 +6335,44 @@ onBeforeUnmount(() => {
 .x8-play.theater-mode .x8-mini-play-list,
 .x8-play.theater-mode .x8-panel {
   display: none !important;
+}
+.x8-play.theater-mode .x8-under-player-toolbar {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  z-index: 12;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.x8-play.theater-mode .x8-toolbar-left,
+.x8-play.theater-mode .x8-toolbar-danmaku input,
+.x8-play.theater-mode .x8-danmaku-send,
+.x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn + .x8-danmaku-icon-btn,
+.x8-play.theater-mode .x8-danmaku-settings {
+  display: none !important;
+}
+.x8-play.theater-mode .x8-toolbar-danmaku {
+  width: auto;
+  min-width: 0;
+  display: block;
+  flex: none;
+  pointer-events: auto;
+}
+.x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.58);
+  color: rgba(255,255,255,.82);
+  box-shadow: 0 8px 22px rgba(0,0,0,.38);
+  backdrop-filter: blur(10px);
+}
+.x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn.on {
+  background: rgba(255,255,255,.88);
+  color: #111;
 }
 .x8-player-video {
   display: grid;

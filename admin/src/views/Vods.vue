@@ -547,6 +547,20 @@
         </div>
       </el-descriptions-item>
       <el-descriptions-item label="探测结果">{{ diag.result?.probeSummary || diag.probe || '未探测' }}</el-descriptions-item>
+      <template v-if="diag.result?.jinpaiStatus">
+        <el-descriptions-item label="金牌签名IP">{{ diag.result.jinpaiStatus.signClientIp || diag.result.jinpaiStatus.clientIp || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="客户端归属">{{ diag.result.jinpaiStatus.clientCountry || diag.result.jinpaiStatus.clientRegion || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="CDN 区域">
+          {{ diag.result.jinpaiStatus.cdnHost || '—' }}
+          <el-tag v-if="diag.result.jinpaiStatus.cdnRegion" size="small" :type="diag.result.jinpaiStatus.regionMismatch ? 'danger' : 'success'">
+            {{ diag.result.jinpaiStatus.cdnRegion }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="diag.result.jinpaiStatus.retryCdnHost" label="重试 CDN">
+          {{ diag.result.jinpaiStatus.retryCdnHost }}
+          <el-tag size="small">{{ diag.result.jinpaiStatus.retryCdnRegion || 'unknown' }}</el-tag>
+        </el-descriptions-item>
+      </template>
       <el-descriptions-item v-if="diag.result?.probe?.stages?.length" label="真实链路">
         <div class="diag-stages">
           <el-tag v-for="s in diag.result.probe.stages" :key="s.name" size="small" :type="s.ok ? 'success' : 'danger'">

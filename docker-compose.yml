@@ -28,12 +28,16 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
       JWT_SECRET: "${JWT_SECRET:-video-cms-dev-secret-change-me}"
       MEDIA_ENCRYPTION_KEY: "${MEDIA_ENCRYPTION_KEY:-}"
+      JINPAI_CN_CDN_SUFFIXES: "${JINPAI_CN_CDN_SUFFIXES:-blbtgg.com}"
+      JINPAI_OVERSEA_CDN_SUFFIXES: "${JINPAI_OVERSEA_CDN_SUFFIXES:-kqgfbs.com,zyxsuntech.com}"
+      BACKUP_DIR: "/app/backups"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - vcms_storage:/app/storage
       - /data/vod-archive:/app/archive
+      - ./backups:/app/backups
     ports:
       - "127.0.0.1:5150:5150"
 
