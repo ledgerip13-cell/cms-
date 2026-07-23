@@ -113,7 +113,7 @@
         <button v-else class="mp-control-btn mp-iframe-full" type="button" aria-label="全屏播放" @click.stop="enterFullscreen">
           <svg viewBox="0 0 24 24" v-html="icon('expand')"></svg>
         </button>
-        <Teleport to="body">
+        <Teleport to="body" :disabled="playerLandscape">
           <div v-if="menuOpen && mode === 'hls'" class="mp-menu-sheet-mask" @click.self="closePlayerMenu">
             <div class="mp-menu" @click.stop>
               <header>
@@ -179,7 +179,7 @@
 
     <section v-if="vod.id && !playerLandscape" class="mp-toolbar-panel">
       <div v-if="interactionConfig.danmakuEnabled" class="mp-toolbar-danmaku">
-        <button class="mp-danmaku-icon-btn" type="button" :class="{ on: danmakuVisible }" :aria-label="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
+        <button class="mp-danmaku-icon-btn mp-danmaku-toggle-btn" type="button" :class="{ on: danmakuVisible }" :aria-label="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
           <svg viewBox="0 0 24 24" v-html="icon('danmaku')"></svg>
         </button>
         <button class="mp-danmaku-icon-btn" type="button" :class="{ on: danmakuSettingsOpen }" aria-label="弹幕设置" @click="toggleDanmakuSettings">
@@ -2190,24 +2190,20 @@ onDeactivated(() => {
   --mp-top-btn: clamp(36px, 7vmin, 46px);
   --mp-bottom-btn: clamp(30px, 6vmin, 38px);
 }
-/* 横片 + 手机处于竖屏且方向锁定未生效时，只旋转视频层，控制层继续按真实屏幕安全区定位 */
+/* 横片 + 手机处于竖屏且方向锁定未生效时，旋转整个播放器舞台，控制层跟随横屏坐标 */
 @media (orientation: portrait) {
   .mp-player.landscape:not(.portrait) {
-    inset: 0;
-    width: 100vw;
-    height: 100dvh;
-    transform: none;
-  }
-  .mp-player.landscape:not(.portrait) .mp-bg,
-  .mp-player.landscape:not(.portrait) .mp-video,
-  .mp-player.landscape:not(.portrait) .mp-danmaku-layer {
-    inset: auto;
     top: 50%;
     left: 50%;
     width: 100dvh;
     height: 100vw;
+    inset: auto;
     transform: translate(-50%, -50%) rotate(90deg);
     transform-origin: center center;
+    --mp-safe-top: 0px;
+    --mp-safe-right: env(safe-area-inset-top);
+    --mp-safe-bottom: 0px;
+    --mp-safe-left: env(safe-area-inset-bottom);
   }
 }
 .mp-bg {
@@ -2938,6 +2934,10 @@ onDeactivated(() => {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.mp-toolbar-danmaku .mp-danmaku-toggle-btn svg {
+  width: 21px;
+  height: 21px;
 }
 .mp-toolbar-danmaku button.on {
   background: rgba(255,255,255,.18);

@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（X8 HLS 全屏隐藏评论区）
+> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（移动端横屏控制层跟随旋转）
 
 ---
 
@@ -11,6 +11,8 @@
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
 
+- **2026-07-24 移动端横屏控制层跟随旋转断点**：定位手机移动端点击横屏后“标题、进度条、所有交互还是竖屏”的根因，是 `web/src/mobile/MobilePlay.vue` 的方向锁失败 fallback 只旋转 `.mp-bg/.mp-video/.mp-danmaku-layer`，控制层刻意保留真实竖屏坐标。现改为在竖屏视口 fallback 下旋转整个 `.mp-player.landscape:not(.portrait)` 舞台，标题、底部进度条、播放控制和提示层跟随横屏坐标；播放设置菜单在横屏时禁用 Teleport，避免弹层脱离旋转舞台后仍按竖屏显示。后台/API/数据库未改。
+- **2026-07-24 弹幕开关 SVG 图标加大断点**：按老大要求只看弹幕开关“里面的图标”不看外部背景，本轮给弹幕开关按钮单独增加 toggle class，不影响设置齿轮和按钮容器尺寸。`web/src/x8/X8Home.vue` 普通 X8 弹幕开关 SVG 从 21px 加到 25px，剧场/全屏浮动开关从 24px 加到 28px；`web/src/mobile/MobilePlay.vue` 移动端弹幕开关 SVG 从 17px 加到 21px。后台/API/数据库未改。
 - **2026-07-24 X8 HLS 全屏隐藏评论区断点**：按老大反馈“都全屏了还要什么评论区”，定位 X8 HLS 全屏 `playerTheater` 已隐藏右侧详情、选集、猜你喜欢和页面级互动按钮，但评论区 `.x8-comment-section` 未被单独纳入隐藏规则。现 `web/src/x8/X8Home.vue` 在模板层改为 `interactionConfig.commentsEnabled && !playerTheater` 才渲染评论区，CSS 层同步把 `.x8-play.theater-mode .x8-comment-section` 加入 `display:none !important` 防线。后台/API/数据库未改。
 - **2026-07-24 X8 弹幕图标尺寸回修断点**：定位 X8 播放器弹幕图标偏小的原因是 `web/src/x8/X8Home.vue` 的弹幕工具条使用 34px 网格列、32px 按钮、18px SVG；剧场模式只把按钮容器放到 42px，没有同步放大 SVG，导致视觉上仍偏小。现普通弹幕/设置按钮改为 40px 列宽、36px 高、21px SVG；剧场模式入口改为 46px 按钮、24px SVG，保持与播放器控制区尺寸更接近。后台/API/数据库未改。
 - **2026-07-23 移动播放页小窗调用顺序回修断点**：手机网页小窗失败的核心在 `MobilePlay.vue` 原逻辑优先调用标准 `requestPictureInPicture()`，对 iOS/Safari 这类更适合走 `video.webkitSetPresentationMode('picture-in-picture')` 的浏览器不够贴合，并且 catch 统一提示“请先播放后重试”，掩盖了权限、准备状态、浏览器禁用等真实原因。现移动播放页优先调用 Safari 原生 presentation mode，两条 PiP 分支都会先保证视频进入可播放态；标准 PiP 分支额外检查 `document.pictureInPictureEnabled`、`video.readyState` 并等一帧后进入小窗；错误提示按 `NotAllowedError` / `InvalidStateError` / `NotSupportedError` 区分。后台/API/数据库未改。

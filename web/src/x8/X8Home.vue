@@ -626,7 +626,7 @@
                     </button>
                   </div>
                   <div v-if="interactionConfig.danmakuEnabled" class="x8-toolbar-danmaku">
-                    <button class="x8-danmaku-icon-btn" type="button" :class="{ on: danmakuVisible }" :title="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
+                    <button class="x8-danmaku-icon-btn x8-danmaku-toggle-btn" type="button" :class="{ on: danmakuVisible }" :title="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M4 6.8A2.8 2.8 0 0 1 6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v5.4a2.8 2.8 0 0 1-2.8 2.8H12l-4.4 3.5V15h-.8A2.8 2.8 0 0 1 4 12.2V6.8Z" />
                         <path d="M8 8h8" />
@@ -6376,6 +6376,10 @@ onBeforeUnmount(() => {
   height: 24px;
   stroke-width: 2;
 }
+.x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-toggle-btn svg {
+  width: 28px;
+  height: 28px;
+}
 .x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn.on {
   background: rgba(255,255,255,.88);
   color: #111;
@@ -8405,6 +8409,10 @@ onBeforeUnmount(() => {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.x8-danmaku-toggle-btn svg {
+  width: 25px;
+  height: 25px;
 }
 .x8-toolbar-danmaku input {
   min-width: 0;
