@@ -6362,13 +6362,18 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 .x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   background: rgba(0,0,0,.58);
   color: rgba(255,255,255,.82);
   box-shadow: 0 8px 22px rgba(0,0,0,.38);
   backdrop-filter: blur(10px);
+}
+.x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
 }
 .x8-play.theater-mode .x8-toolbar-danmaku .x8-danmaku-icon-btn.on {
   background: rgba(255,255,255,.88);
@@ -8369,12 +8374,12 @@ onBeforeUnmount(() => {
   flex: 0 1 420px;
   min-width: 260px;
   display: grid;
-  grid-template-columns: 34px 34px minmax(0, 1fr) 52px;
+  grid-template-columns: 40px 40px minmax(0, 1fr) 52px;
   gap: 6px;
   align-items: center;
 }
 .x8-toolbar-danmaku button {
-  height: 32px;
+  height: 36px;
   padding: 0 10px;
   background: rgba(255,255,255,.12);
   color: #fff;
@@ -8386,14 +8391,14 @@ onBeforeUnmount(() => {
   color: #111;
 }
 .x8-danmaku-icon-btn {
-  width: 34px;
+  width: 40px;
   padding: 0 !important;
   display: inline-grid;
   place-items: center;
 }
 .x8-danmaku-icon-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -9007,7 +9012,7 @@ onBeforeUnmount(() => {
     width: 100%;
     min-width: 0;
     flex: none;
-    grid-template-columns: 34px 34px minmax(0, 1fr) 52px;
+    grid-template-columns: 40px 40px minmax(0, 1fr) 52px;
   }
   .x8-danmaku-settings {
     right: auto;

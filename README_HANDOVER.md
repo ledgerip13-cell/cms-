@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（金牌集数 0 展示兜底）
+> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（X8 弹幕图标尺寸回修）
 
 ---
 
@@ -11,6 +11,7 @@
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
 
+- **2026-07-24 X8 弹幕图标尺寸回修断点**：定位 X8 播放器弹幕图标偏小的原因是 `web/src/x8/X8Home.vue` 的弹幕工具条使用 34px 网格列、32px 按钮、18px SVG；剧场模式只把按钮容器放到 42px，没有同步放大 SVG，导致视觉上仍偏小。现普通弹幕/设置按钮改为 40px 列宽、36px 高、21px SVG；剧场模式入口改为 46px 按钮、24px SVG，保持与播放器控制区尺寸更接近。后台/API/数据库未改。
 - **2026-07-23 移动播放页小窗调用顺序回修断点**：手机网页小窗失败的核心在 `MobilePlay.vue` 原逻辑优先调用标准 `requestPictureInPicture()`，对 iOS/Safari 这类更适合走 `video.webkitSetPresentationMode('picture-in-picture')` 的浏览器不够贴合，并且 catch 统一提示“请先播放后重试”，掩盖了权限、准备状态、浏览器禁用等真实原因。现移动播放页优先调用 Safari 原生 presentation mode，两条 PiP 分支都会先保证视频进入可播放态；标准 PiP 分支额外检查 `document.pictureInPictureEnabled`、`video.readyState` 并等一帧后进入小窗；错误提示按 `NotAllowedError` / `InvalidStateError` / `NotSupportedError` 区分。后台/API/数据库未改。
 - **2026-07-23 金牌集数 0 展示兜底断点**：定位金牌源采集集数显示 0 的风险点：金牌真实可播集依赖详情接口 `episodeList[].nid`，列表阶段只有 `vodRemarks/vodSerial`，若 `vodRemarks` 返回空/0/0集 或详情接口短时失败，旧逻辑可能把无效备注写入并让移动详情优先显示 0。现 `server/src/collector/drivers/jinpai.ts` 采集时会跳过无效 0 备注，回退 `vodSerial`，纯数字规范为“更新至N集”，详情有真实 `episodeList` 时再用真实集数生成备注；`server/src/routes/vods.ts` 公开 API 输出 `epCount` 时取 `Play.epCount / episodes.length / Vod.remarks` 中最大有效集数；`web/src/mobile/MobileDetail.vue` 移动详情优先显示真实线路集数，避免历史 `remarks=0` 继续污染展示。注意：兜底只修展示和排序，不伪造播放按钮；没有 `nid` 的集仍不能播放。
 
