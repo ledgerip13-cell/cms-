@@ -1,5 +1,5 @@
 <template>
-  <main class="ms" :class="{ 'full-mode': fullMode, 'clear-mode': clearScreen }" :style="shortsVars">
+  <main class="ms" :class="{ 'full-mode': fullMode, 'clear-mode': clearScreen, 'route-hidden': !shortsVisible }" :style="shortsVars">
     <section
       v-if="!disabled && units.length"
       ref="feedEl"
@@ -405,6 +405,7 @@ const shortOptions = ref({ types: [], subtypes: {} })
 const units = ref([])
 const activeIndex = ref(0)
 const loading = ref(true)
+const shortsVisible = ref(true)
 const loadingMore = ref(false)
 const filterOpen = ref(false)
 const resolving = ref(false)
@@ -2175,10 +2176,14 @@ onMounted(async () => {
 })
 
 onDeactivated(() => {
+  shortsVisible.value = false
   saveHistory(true)
   writeShortsSession()
   cancelPendingPlayback()
   clearFullCommitTimer()
+  filterOpen.value = false
+  episodeDrawerOpen.value = false
+  toolMenuOpen.value = false
   const video = getVideo()
   resumeAfterActivate = Boolean(video && !video.paused && !accessBlock.value)
   if (video) {
@@ -2187,6 +2192,7 @@ onDeactivated(() => {
 })
 
 onActivated(() => {
+  shortsVisible.value = true
   nextTick(() => {
     if (fullMode.value) scrollToFullCurrent('auto')
     else scrollTo(activeIndex.value, 'auto')
@@ -2219,6 +2225,11 @@ onBeforeUnmount(() => {
   color: #fff;
   overflow: visible;
   overflow-x: hidden;
+}
+.ms.route-hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 .ms-feed {
   height: 100dvh;

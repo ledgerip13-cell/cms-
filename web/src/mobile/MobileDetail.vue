@@ -274,6 +274,7 @@ async function loadDetail(id) {
     if (seq !== loadSeq) return
     vod.value = data || {}
     document.title = vod.value.name ? `${vod.value.name} - 详情` : document.title
+    loading.value = false
     const [items, state] = await Promise.all([
       api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => []),
       currentUser.value ? api.userVodState(id).catch(() => null) : Promise.resolve(null),

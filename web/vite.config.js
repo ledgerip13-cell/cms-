@@ -106,7 +106,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) {
-    if (shouldCacheApi(url)) event.respondWith(apiNetworkFirst(request));
+    if (shouldCacheApi(url)) event.respondWith(apiStaleWhileRevalidate(request));
     return;
   }
   if (request.destination === 'video' || request.destination === 'audio') return;
@@ -124,20 +124,26 @@ self.addEventListener('fetch', (event) => {
   );
 });
 function shouldCacheApi(url) {
+  if (url.pathname === '/api/site') return true;
   if (url.pathname === '/api/vods') return true;
-  if (url.pathname === '/api/hot' || url.pathname === '/api/types' || url.pathname === '/api/categories') return true;
+  if (url.pathname === '/api/hot' || url.pathname === '/api/types' || url.pathname === '/api/categories' || url.pathname === '/api/related') return true;
   if (/^\\/api\\/vods\\/\\d+$/.test(url.pathname)) return true;
   return false;
 }
-async function apiNetworkFirst(request) {
+async function apiStaleWhileRevalidate(request) {
   const cache = await caches.open(API_CACHE_NAME);
-  try {
-    const response = await fetch(request);
+  const cached = await cache.match(request);
+  const refreshing = fetch(request).then((response) => {
     if (response && response.ok && response.type === 'basic') cache.put(request, response.clone()).catch(() => {});
     return response;
+  });
+  if (cached) {
+    refreshing.catch(() => {});
+    return cached;
+  }
+  try {
+    return await refreshing;
   } catch (e) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
     return new Response(JSON.stringify({ offline: true, error: 'offline_cache_miss' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }

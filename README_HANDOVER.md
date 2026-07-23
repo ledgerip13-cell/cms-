@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动详情页骨架图重做）
+> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动端首屏与 PWA 缓存优化）
 
 ---
 
@@ -201,6 +201,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-23 移动端首屏与 PWA 缓存优化断点**：按性能反馈优化移动端首屏加载。`web/src/mobile/MobileDetail.vue` 的 `loadDetail()` 改为详情主接口 `/api/vods/:id` 返回后立即关闭 loading 并渲染主内容，猜你喜欢 `/api/related` 和用户追剧状态后台补齐，不再拖住详情首屏。`web/src/mobile/MobileHome.vue` 新增 `vcms.mobile.home.cache.v2` 本地缓存，首页先读 hero/hot/new/guess/history 缓存秒显，再后台并发刷新并回写缓存，避免每次等 `site + hot + 3 个 vods + history` 全部完成才结束 loading。`web/vite.config.js` 生成的 SW 将核心 GET API 从 network-first 改为 stale-while-revalidate，缓存命中时立即返回并后台刷新，覆盖 `/api/site`、`/api/vods`、`/api/hot`、`/api/types`、`/api/categories`、`/api/related`、`/api/vods/:id`。短剧页不取消 keep-alive、不重新加载数据；`web/src/mobile/MobileShorts.vue` 在 `onDeactivated` 时仅暂停视频、关闭浮层并加 `route-hidden` 隐藏合成层，`onActivated` 恢复显示和原播放恢复逻辑，避免切到其他底部 tab 时残留短剧封面。
 - **2026-07-23 移动详情页骨架图重做断点**：按反馈重做 `web/src/mobile/MobileDetail.vue` 的 loading skeleton，旧版只显示顶部少量占位，和真实详情页结构不一致。现骨架按实际首屏完整铺开：海报 + 标题/标签/导演主演信息、立即播放与 3 个动作按钮、4 项统计、简介三行、播放线路卡片（标题/线路 tabs/5 列选集）和猜你喜欢 3 列卡片，占位尺寸复用 `--md-cover-w/--md-cover-h` 等真实布局变量，避免加载态到内容态大幅跳动。仅改 skeleton 展示，接口和详情数据逻辑未改。已执行 `pnpm --dir web build`、`git diff --check`、`docker compose up -d --build web`，运行态 `5150/health` 与 `5152` 均 200。
 - **2026-07-23 移动详情页顶部信息布局回修断点**：按反馈调整 `web/src/mobile/MobileDetail.vue`：详情页内容起始位置从固定顶栏下方继续下移，避免标题/封面贴顶；封面宽度由固定 106px 改为 `clamp(122px, 32vw, 132px)` 并派生封面高度变量；右侧标题、标签、元信息容器增加 `max-height` 与 `overflow:hidden`，高度不超过封面图，同时收紧内部间距保证信息密度；简介“展开全部/收起”按钮由绝对定位改为独立行右对齐，避免覆盖简介文字。仅调整移动详情页展示样式，播放线路数据和播放逻辑未改动。
 - **2026-07-23 移动详情页播放线路文案断点**：按反馈将 `web/src/mobile/MobileDetail.vue` 详情页选集区标题从“金牌影院播放器”改为“播放线路”，避免品牌化误导；本轮只改展示文案，不触碰播放逻辑、线路选择逻辑和 `MobilePlay.vue` 现有未提交差异。

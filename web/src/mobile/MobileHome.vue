@@ -141,6 +141,8 @@ let heroTouchX = 0
 let heroTouchY = 0
 let ignoreHeroClick = false
 let headRaf = 0
+const HOME_CACHE_KEY = 'vcms.mobile.home.cache.v2'
+const HOME_CACHE_MAX_AGE = 10 * 60 * 1000
 
 const heroSlides = computed(() => heroList.value.slice(0, 5))
 const hero = computed(() => heroSlides.value[heroIndex.value] || heroSlides.value[0] || null)
@@ -262,8 +264,46 @@ function onHeroTouchEnd(event) {
   window.setTimeout(() => { ignoreHeroClick = false }, 80)
 }
 
+function applyHomeCache(data) {
+  if (!data || typeof data !== 'object') return false
+  heroList.value = Array.isArray(data.heroList) ? data.heroList : []
+  hotItems.value = Array.isArray(data.hotItems) ? data.hotItems : []
+  newItems.value = Array.isArray(data.newItems) ? data.newItems : []
+  guessItems.value = Array.isArray(data.guessItems) ? data.guessItems : []
+  historyItems.value = Array.isArray(data.historyItems) ? data.historyItems : []
+  heroIndex.value = 0
+  return Boolean(heroList.value.length || hotItems.value.length || newItems.value.length || guessItems.value.length || historyItems.value.length)
+}
+
+function readHomeCache() {
+  try {
+    const row = JSON.parse(localStorage.getItem(HOME_CACHE_KEY) || 'null')
+    if (!row || Date.now() - Number(row.ts || 0) > HOME_CACHE_MAX_AGE) return null
+    return row.data || null
+  } catch {
+    return null
+  }
+}
+
+function writeHomeCache() {
+  try {
+    localStorage.setItem(HOME_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      data: {
+        heroList: heroList.value,
+        hotItems: hotItems.value,
+        newItems: newItems.value,
+        guessItems: guessItems.value,
+        historyItems: historyItems.value,
+      },
+    }))
+  } catch {}
+}
+
 async function loadHome() {
-  loading.value = true
+  const cached = readHomeCache()
+  const usedCache = applyHomeCache(cached)
+  loading.value = !usedCache
   try {
     const sitePromise = api.site().then(data => { site.value = writeCachedSite(data) }).catch(() => {})
     const heroPromise = api.hot(10).then(data => {
@@ -279,6 +319,7 @@ async function loadHome() {
       historyItems.value = Array.isArray(rows) ? rows.slice(0, 6) : []
     }).catch(() => {})
     await Promise.allSettled([sitePromise, heroPromise, hotPromise, newPromise, guessPromise, userPromise])
+    writeHomeCache()
     startHeroTimer()
   } finally {
     loading.value = false
