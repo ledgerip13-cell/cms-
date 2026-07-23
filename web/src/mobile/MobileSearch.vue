@@ -6,9 +6,9 @@
       </button>
       <form class="msr-form" @submit.prevent="submitSearch">
         <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
-        <input ref="inputEl" v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" @focus="suggestOpen = true" @blur="closeSuggestSoon" />
+        <input ref="inputEl" v-model.trim="draftKw" enterkeyhint="search" placeholder="搜索电影、剧集、动漫、短剧" @focus="openSuggestPanel" @blur="closeSuggestSoon" />
         <button v-if="draftKw" class="msr-clear" type="button" aria-label="清空" @click="clearDraft">×</button>
-        <div v-if="suggestOpen && hasSearchAssist" class="msr-suggest-pop">
+        <div v-if="!activeKw && suggestOpen && hasSearchAssist" class="msr-suggest-pop">
           <button v-for="vod in searchSuggests" :key="vod.id" type="button" @mousedown.prevent @click="pickSuggest(vod)">
             <strong>{{ vod.name }}</strong>
             <span>{{ [vod.typeName, vod.year, vod.remarks].filter(Boolean).join(' · ') }}</span>
@@ -157,7 +157,7 @@ import { api, imgUrl } from '../api'
 import { icon } from './icons'
 
 const HISTORY_KEY = 'vcms.mobile.search.history'
-const FILTER_KEYS = ['area', 'lang', 'year', 'finish', 'vip', 'minRating', 'sort']
+const FILTER_KEYS = ['year', 'finish', 'sort']
 
 const route = useRoute()
 const router = useRouter()
@@ -212,12 +212,8 @@ const hasSearchAssist = computed(() => searchSuggests.value.length > 0 || correc
 const showRankPanel = computed(() => !hotWords.value.length && !(suggestOpen.value && hasSearchAssist.value))
 const requestVodEnabled = computed(() => interactionConfig.value.requestsEnabled !== false)
 const filterGroups = computed(() => [
-  { key: 'area', label: '地区', items: optionItems(['大陆', '香港', '台湾', '日本', '韩国', '美国', '泰国', '英国']) },
-  { key: 'lang', label: '语言', items: optionItems(['国语', '粤语', '英语', '日语', '韩语', '泰语']) },
   { key: 'year', label: '年份', items: optionItems(yearOptions()) },
   { key: 'finish', label: '状态', items: [{ label: '全部', value: '' }, { label: '完结', value: 'done' }, { label: '连载', value: 'updating' }] },
-  { key: 'vip', label: '权限', items: [{ label: '全部', value: '' }, { label: '免费', value: 'free' }, { label: 'VIP', value: 'vip' }] },
-  { key: 'minRating', label: '评分', items: [{ label: '全部', value: '' }, { label: '6+', value: '6' }, { label: '7+', value: '7' }, { label: '8+', value: '8' }] },
   { key: 'sort', label: '排序', items: [{ label: '热度', value: '' }, { label: '高分', value: 'rating' }, { label: '最新', value: 'recent' }, { label: '年份', value: 'year' }] },
 ])
 const suggestItems = computed(() => {
@@ -301,6 +297,10 @@ function clearDraft() {
   inputEl.value?.focus?.()
 }
 
+function openSuggestPanel() {
+  suggestOpen.value = !activeKw.value
+}
+
 function submitSearch() {
   const kw = draftKw.value.trim()
   const baseQuery = { ...(fromShorts.value ? { from: 'shorts' } : {}), ...currentFilterQuery() }
@@ -339,9 +339,10 @@ function closeSuggestSoon() {
 
 async function loadSearchSuggests() {
   const kw = String(draftKw.value || '').trim()
-  if (!kw || kw === activeKw.value) {
+  if (activeKw.value || !kw || kw === activeKw.value) {
     searchSuggests.value = []
     correctionSuggests.value = []
+    suggestOpen.value = false
     return
   }
   const seq = ++suggestSeq
@@ -356,7 +357,7 @@ async function loadSearchSuggests() {
     const seen = new Set(rows.map(vod => Number(vod?.id)).filter(Boolean))
     searchSuggests.value = rows.filter(vod => vod?.id && vod?.name).slice(0, 8)
     correctionSuggests.value = fixes.filter(item => item?.id && !seen.has(Number(item.id)) && (item?.kw || item?.name)).slice(0, 3)
-    suggestOpen.value = hasSearchAssist.value
+    suggestOpen.value = !activeKw.value && hasSearchAssist.value
   } catch {
     if (seq === suggestSeq) {
       searchSuggests.value = []
@@ -1050,7 +1051,7 @@ onBeforeUnmount(() => {
   top: calc(env(safe-area-inset-top) + 52px);
   margin: 0 -14px 12px;
   padding: 0 14px 10px;
-  background: linear-gradient(180deg, rgba(255, 244, 241, .94), rgba(247, 247, 248, .94));
+  background: #fffefe;
 }
 .msr-result-tabs button {
   height: 36px;
@@ -1062,7 +1063,7 @@ onBeforeUnmount(() => {
 }
 .msr-result-tabs button.on {
   color: #fff;
-  background: linear-gradient(135deg, #ff6a4f, #f04438);
+  background: #f04438;
 }
 .msr-filter-panel {
   margin: 0 -14px 14px;
