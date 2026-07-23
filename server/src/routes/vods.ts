@@ -712,12 +712,20 @@ function cleanupExcludeWhere(input: any) {
   return ids.length ? { id: { notIn: ids } } : null;
 }
 
+function cleanupCategoryNames(input: any) {
+  const list = Array.isArray(input?.categoryNames) ? input.categoryNames : [];
+  const names = [...new Set(list.map((name: any) => String(name || "").trim()).filter(Boolean))].slice(0, 100);
+  const legacyName = String(input?.categoryName || "").trim();
+  return names.length ? names : legacyName ? [legacyName] : [];
+}
+
 function cleanupCategoryWhere(input: any) {
-  const categoryName = String(input?.categoryName || "").trim();
+  const categoryNames = cleanupCategoryNames(input);
   const subType = String(input?.subType || "").trim();
-  if (subType && !categoryName) throw new Error("选择子分类前请先选择主分类");
-  if (!categoryName) return null;
-  return subType ? { typeName: categoryName, subType } : { typeName: categoryName };
+  if (subType && categoryNames.length !== 1) throw new Error("选择子分类前请先选择单个主分类");
+  if (!categoryNames.length) return null;
+  if (subType) return { typeName: categoryNames[0], subType };
+  return categoryNames.length === 1 ? { typeName: categoryNames[0] } : { typeName: { in: categoryNames } };
 }
 
 const SERIES_MARKER_RE = /(第?[一二三四五六七八九十百千万0-9]+季|第?[一二三四五六七八九十百千万0-9]+部|第?[一二三四五六七八九十百千万0-9]+篇|season[0-9]+|s[0-9]+|续篇|前传|后传|剧场版|特别篇|总集篇)$/i;
@@ -760,7 +768,7 @@ function cleanupRuleWhere(input: any): any {
   if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, vodScopeWhere) };
   if (rule === "category_vods") {
     if (!categoryWhere) throw new Error("按分类清理必须选择主分类或子分类");
-    return { rule, where: andWhere(categoryWhere, yWhere) };
+    return { rule, where: mergeWhere(categoryWhere, yWhere, excludeWhere) };
   }
   if (rule === "no_cover") return { rule, where: andWhere({ pic: "", officialPic: "", localPic: "" }, vodScopeWhere) };
   if (rule === "no_official_pic") return { rule, where: andWhere({ officialPic: "" }, vodScopeWhere) };

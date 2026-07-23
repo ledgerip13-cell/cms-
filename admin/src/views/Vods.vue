@@ -436,15 +436,15 @@
         </el-select>
       </el-form-item>
       <el-form-item label="主分类">
-        <el-select v-model="cleanupForm.categoryName" clearable filterable placeholder="全部主分类" style="width:260px" @change="onCleanupCategoryChange">
+        <el-select v-model="cleanupForm.categoryNames" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部主分类" style="width:360px" @change="onCleanupCategoryChange">
           <el-option v-for="t in types" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
         </el-select>
       </el-form-item>
       <el-form-item label="子分类">
         <el-select v-model="cleanupForm.subType" clearable filterable
-          :disabled="!cleanupForm.categoryName"
+          :disabled="cleanupSelectedCategoryNames.length !== 1"
           :loading="cleanupSubtypesLoading"
-          :placeholder="cleanupForm.categoryName ? '全部子分类' : '先选择主分类'"
+          :placeholder="cleanupSubtypesPlaceholder"
           style="width:260px" @change="resetCleanupPreview">
           <el-option v-for="t in cleanupSubtypes" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
         </el-select>
@@ -733,6 +733,7 @@ const cleanupForm = ref({
   rule: 'disabled_source_only',
   sourceId: '',
   categoryName: '',
+  categoryNames: [],
   subType: '',
   days: 30,
   limit: 500,
@@ -751,6 +752,19 @@ const cleanupCanExecute = computed(() => {
   if (!cleanupPreview.value) return false
   if (cleanupPreview.value.mode === 'delete_lines') return Boolean(cleanupPreview.value.playCount || cleanupPreviewTotal.value)
   return cleanupPreviewTotal.value > 0
+})
+const cleanupSelectedCategoryNames = computed(() => {
+  const names = Array.isArray(cleanupForm.value.categoryNames)
+    ? cleanupForm.value.categoryNames
+    : cleanupForm.value.categoryName
+      ? [cleanupForm.value.categoryName]
+      : []
+  return [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))]
+})
+const cleanupSubtypesPlaceholder = computed(() => {
+  if (!cleanupSelectedCategoryNames.value.length) return '先选择主分类'
+  if (cleanupSelectedCategoryNames.value.length > 1) return '多主分类时不可选子分类'
+  return '全部子分类'
 })
 const weekdayOptions = [
   { value: 1, label: '周一' },
@@ -862,7 +876,7 @@ async function confirmMerge() {
 }
 function openCleanup() {
   cleanupDlg.value = true
-  if (cleanupForm.value.categoryName && !cleanupSubtypes.value.length) loadCleanupSubtypes()
+  if (cleanupSelectedCategoryNames.value.length === 1 && !cleanupSubtypes.value.length) loadCleanupSubtypes()
 }
 function resetCleanupPreview() {
   cleanupPreview.value = null
@@ -878,12 +892,14 @@ function resetCleanupExcluded() {
 }
 async function onCleanupCategoryChange() {
   resetCleanupPreview()
+  const names = cleanupSelectedCategoryNames.value
+  cleanupForm.value.categoryName = names.length === 1 ? names[0] : ''
   cleanupForm.value.subType = ''
   cleanupSubtypes.value = []
-  await loadCleanupSubtypes()
+  if (names.length === 1) await loadCleanupSubtypes()
 }
 async function loadCleanupSubtypes() {
-  const type = cleanupForm.value.categoryName
+  const type = cleanupSelectedCategoryNames.value[0]
   if (!type) return
   cleanupSubtypesLoading.value = true
   try {
@@ -894,10 +910,19 @@ async function loadCleanupSubtypes() {
     cleanupSubtypesLoading.value = false
   }
 }
+function cleanupPayload(extra = {}) {
+  const categoryNames = cleanupSelectedCategoryNames.value
+  return {
+    ...cleanupForm.value,
+    ...extra,
+    categoryName: categoryNames.length === 1 ? categoryNames[0] : '',
+    categoryNames,
+  }
+}
 async function previewCleanup() {
   cleanupLoading.value = true
   try {
-    const r = await api.previewVodCleanup(cleanupForm.value)
+    const r = await api.previewVodCleanup(cleanupPayload())
     if (!r.ok) return ElMessage.error(r.error || '预检失败')
     cleanupPreview.value = r
     cleanupExcludedIds.value = new Set()
@@ -912,10 +937,9 @@ async function executeCleanup() {
   if (!ok) return
   cleanupLoading.value = true
   try {
-    const r = await api.executeVodCleanup({
-      ...cleanupForm.value,
+    const r = await api.executeVodCleanup(cleanupPayload({
       excludeVodIds: [...cleanupExcludedIds.value],
-    })
+    }))
     if (!r.ok) return ElMessage.error(r.error || '清理失败')
     ElMessage.success(`清理完成：影片 ${r.deletedVods || r.deletedOrphans || 0}，线路 ${r.deletedLines || 0}`)
     cleanupPreview.value = null
