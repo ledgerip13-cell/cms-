@@ -226,7 +226,9 @@
         <svg viewBox="0 0 24 24" v-html="icon('clean')"></svg>
       </button>
     </div>
-    <button v-if="fullMode && clearScreen" class="ms-clear-exit" type="button" @click="toggleClearScreen">退出清屏</button>
+    <button v-if="fullMode && clearScreen" class="ms-clear-exit" type="button" aria-label="退出清屏" @click="toggleClearScreen">
+      <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
+    </button>
 
     <transition name="ms-fade">
       <div v-if="filterOpen" class="ms-filter-mask" @click="filterOpen = false"></div>
@@ -2906,14 +2908,26 @@ onBeforeUnmount(() => {
   right: 14px;
   bottom: calc(14px + env(safe-area-inset-bottom));
   border: 0;
+  width: 40px;
   height: 36px;
-  padding: 0 14px;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
   background: rgba(255,255,255,.16);
   color: #fff;
-  font-weight: 900;
   backdrop-filter: blur(14px);
 }
+.ms-clear-exit svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.clear-mode .ms-vignette,
 .clear-mode .ms-top,
 .clear-mode .ms-actions,
 .clear-mode .ms-meta,
