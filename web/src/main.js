@@ -17,6 +17,7 @@ import MobilePerson from './mobile/MobilePerson.vue'
 import MobilePlay from './mobile/MobilePlay.vue'
 import X8Home from './x8/X8Home.vue'
 import './style.css'
+import './mobile/common.css'
 
 const router = createRouter({
   history: createWebHashHistory(),

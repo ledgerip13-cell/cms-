@@ -1,7 +1,7 @@
 <template>
   <main class="msearch" :style="{ '--msr-head-bg': headBg }">
     <header class="msr-head">
-      <button class="msr-back" type="button" aria-label="返回" @click="goBack">
+      <button class="msr-back m-back-btn" type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
       <form class="msr-form" @submit.prevent="submitSearch">
@@ -640,28 +640,19 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: calc(env(safe-area-inset-top) + 8px) 15px 10px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 46px;
+  grid-template-columns: 40px minmax(0, 1fr) 46px;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   background: rgb(255 255 255 / var(--msr-head-bg));
   backdrop-filter: blur(9px);
   transition: background .16s ease;
 }
-.msr-back,
 .msr-submit,
 .msr-section-head button {
   border: 0;
   background: transparent;
 }
-.msr-back {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #1f232b;
-}
-.msr-back svg,
+.msr-back { color: #1f232b; }
 .msr-form svg,
 .msr-section-head svg {
   width: 20px;

@@ -2,7 +2,7 @@
   <main class="mme" :class="{ settings: settingsOpen }">
     <template v-if="settingsOpen">
       <header class="mme-subhead">
-        <button type="button" aria-label="返回" @click="settingsOpen = false">
+        <button class="m-back-btn" type="button" aria-label="返回" @click="settingsOpen = false">
           <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
         </button>
         <strong>账号设置</strong>
@@ -397,16 +397,17 @@ onActivated(load)
 }
 .mme-topbar button,
 .mme-subhead button {
-  width: 38px;
-  height: 38px;
   border: 0;
   display: grid;
   place-items: center;
   color: #1f232b;
   background: transparent;
 }
+.mme-topbar button {
+  width: 38px;
+  height: 38px;
+}
 .mme-topbar svg,
-.mme-subhead svg,
 .mme-quick svg,
 .mme-list-action svg {
   width: 21px;

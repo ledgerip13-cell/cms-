@@ -40,7 +40,7 @@
         <div v-if="isActiveDisplay(index)" class="ms-top" :class="{ full: fullMode }">
           <template v-if="fullMode">
             <div class="ms-top-left">
-              <button type="button" aria-label="返回刷剧" @click="exitFullContent">
+              <button class="m-back-btn" type="button" aria-label="返回刷剧" @click="exitFullContent">
                 <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
               </button>
               <span class="ms-episode-title">{{ unit.epName || `第${unit.epIndex + 1}集` }}</span>
@@ -2412,7 +2412,8 @@ onBeforeUnmount(() => {
   color: inherit;
   background: transparent;
 }
-.ms-top button {
+.ms-top button { transition: transform .16s ease, color .16s ease; }
+.ms-top button:not(.m-back-btn) {
   width: 34px;
   height: 34px;
   display: grid;
@@ -2420,7 +2421,6 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: transparent;
   touch-action: manipulation;
-  transition: transform .16s ease, color .16s ease;
 }
 .ms-top.full .ms-top-right button {
   width: 48px;
@@ -2431,7 +2431,7 @@ onBeforeUnmount(() => {
   width: 22px;
   height: 22px;
 }
-.ms-top svg,
+.ms-top button:not(.m-back-btn) svg,
 .ms-play svg,
 .ms-actions svg,
 .ms-filter svg,

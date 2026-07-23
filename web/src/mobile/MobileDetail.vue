@@ -1,7 +1,7 @@
 <template>
   <main class="mdetail" :style="{ '--md-head-bg': headBg }">
     <header class="md-head">
-      <button type="button" aria-label="返回" @click="goBack">
+      <button class="m-back-btn" type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
       <strong class="md-head-title">{{ vod.name || '详情' }}</strong>
@@ -344,9 +344,9 @@ onBeforeUnmount(() => {
   height: calc(env(safe-area-inset-top) + 58px);
   padding: env(safe-area-inset-top) 12px 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: rgb(255 255 255 / var(--md-head-bg));
   backdrop-filter: blur(14px);
   box-shadow: 0 1px 0 rgba(18,24,36,.06);
@@ -359,15 +359,7 @@ onBeforeUnmount(() => {
 .md-empty button {
   border: 0;
 }
-.md-head > button {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: #1f2530;
-}
+.md-head > button { color: #1f2530; }
 .md-head-title {
   min-width: 0;
   overflow: hidden;
@@ -378,7 +370,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.md-head svg,
 .md-action-row svg {
   width: 20px;
   height: 20px;

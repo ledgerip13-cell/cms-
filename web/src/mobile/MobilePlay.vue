@@ -2,7 +2,7 @@
   <main class="mp">
     <section class="mp-player" :class="{ landscape: playerLandscape, portrait: playerLandscape && fullscreenPortrait }" :style="heroStyle" @click="onPlayerTap" @pointerup="onPlayerPointerUp" @touchstart="onPlayerTouchStart" @touchmove="onPlayerTouchMove" @touchend="onPlayerTouchEnd" @touchcancel="onPlayerTouchEnd">
       <div class="mp-topbar">
-        <button class="mp-icon-btn" type="button" aria-label="返回" @click.stop="goBack">
+        <button class="mp-icon-btn m-back-btn" type="button" aria-label="返回" @click.stop="goBack">
           <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
         </button>
         <strong>{{ playerTitle }}</strong>
@@ -338,7 +338,6 @@
       </div>
       <div class="mp-comment-tabs">
         <button type="button" class="active">全部评论</button>
-        <button type="button">热门评论</button>
       </div>
       <div v-if="comments.length" class="mp-comments">
         <article v-for="item in comments.slice(0, 20)" :key="`mp-comment-${item.id}`">
@@ -2257,25 +2256,10 @@ onDeactivated(() => {
   white-space: nowrap;
 }
 .mp-icon-btn {
-  width: var(--mp-top-btn);
-  height: var(--mp-top-btn);
-  border: 0;
-  display: grid;
-  place-items: center;
   color: #fff;
-  background: transparent;
   pointer-events: auto;
 }
-.mp-icon-btn svg {
-  width: 23px;
-  height: 23px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 1px 6px rgba(0,0,0,.72));
-}
+.mp-icon-btn svg { filter: drop-shadow(0 1px 6px rgba(0,0,0,.72)); }
 .mp-state,
 .mp-lock,
 .mp-play {

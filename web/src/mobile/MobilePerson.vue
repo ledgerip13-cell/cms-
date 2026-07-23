@@ -1,7 +1,7 @@
 <template>
   <main class="mperson">
     <header class="mps-head">
-      <button type="button" aria-label="返回" @click="goBack">
+      <button class="m-back-btn" type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
       <strong>{{ person.name || '人物作品' }}</strong>
@@ -124,34 +124,16 @@ watch(() => route.params.id, (id) => {
   height: calc(env(safe-area-inset-top) + 54px);
   padding: env(safe-area-inset-top) 12px 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: rgb(247 247 248 / .96);
   backdrop-filter: blur(10px);
 }
-.mps-head button,
 .mps-empty button {
   border: 0;
 }
-.mps-head button {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  color: #1f232b;
-}
-.mps-head svg {
-  width: 22px;
-  height: 22px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+.mps-head button { color: #1f232b; }
 .mps-head strong {
   overflow: hidden;
   text-overflow: ellipsis;
