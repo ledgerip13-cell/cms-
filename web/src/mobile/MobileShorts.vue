@@ -36,6 +36,23 @@
           @click="togglePlay"
         ></video>
         <div class="ms-vignette"></div>
+        <div
+          v-if="isActiveDisplay(index) && clearScreen && fullMode && videoLandscape && !accessBlock"
+          class="ms-brightness-mask"
+          :style="{ opacity: brightnessMaskOpacity }"
+        ></div>
+        <div
+          v-if="isActiveDisplay(index) && clearScreen && fullMode && videoLandscape && !accessBlock"
+          class="ms-clear-gesture-layer"
+          @touchstart.stop="onClearGestureStart($event, index)"
+          @touchmove.stop.prevent="onClearGestureMove($event, index)"
+          @touchend.stop.prevent="onClearGestureEnd($event, index)"
+          @touchcancel.stop.prevent="onClearGestureEnd($event, index)"
+        ></div>
+        <div v-if="isActiveDisplay(index) && clearGestureHud" class="ms-clear-hud">
+          <strong>{{ clearGestureHud }}</strong>
+          <span>{{ clearGestureValue }}</span>
+        </div>
 
         <div v-if="isActiveDisplay(index)" class="ms-top" :class="{ full: fullMode }">
           <template v-if="fullMode">
@@ -438,6 +455,9 @@ const drawerTab = ref('intro')
 const activeRangeStart = ref(0)
 const toolMenuOpen = ref(false)
 const clearScreen = ref(false)
+const brightnessLevel = ref(1)
+const clearGestureHud = ref('')
+const clearGestureValue = ref('')
 const relatedItems = ref([])
 const relatedLoading = ref(false)
 const vodHistoryState = ref({})
@@ -457,6 +477,7 @@ let historySaveAt = 0
 let playingUnit = null
 let pendingUnmute = false
 let resizeRaf = 0
+let clearGestureHudTimer = 0
 let fullResizeIgnoreUntil = 0
 let resumeAfterActivate = false
 let resumePlaybackAfterLogin = false
@@ -468,6 +489,17 @@ const resolveCache = new Map()
 const resolveInflight = new Map()
 const vodDetailCache = new Map()
 const playbackLineFailures = new Map()
+const clearGesture = {
+  active: false,
+  axis: '',
+  side: '',
+  startX: 0,
+  startY: 0,
+  startTime: 0,
+  startVolume: 1,
+  startBrightness: 1,
+  nextTime: 0,
+}
 const jinpaiSelfHealTried = new Set()
 const warmedManifests = new Set()
 const preloadedPosters = new Set()
@@ -497,6 +529,7 @@ const progressPercent = computed(() => {
   if (seeking.value) return Math.max(0, Math.min(100, (seekValue.value / 1000) * 100))
   return durationSec.value ? Math.max(0, Math.min(100, (currentSec.value / durationSec.value) * 100)) : 0
 })
+const brightnessMaskOpacity = computed(() => Math.max(0, Math.min(0.72, (1 - brightnessLevel.value) * 0.72)).toFixed(2))
 const shortsVars = computed(() => ({
   '--ms-landscape-object-y': LANDSCAPE_OBJECT_Y,
   ...(landscapePlayY.value ? { '--ms-landscape-play-y': landscapePlayY.value } : {}),
@@ -1089,6 +1122,8 @@ function stopVideo() {
   durationSec.value = 0
   seekValue.value = 0
   seeking.value = false
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
 }
 
 function getVideo() {
@@ -1647,6 +1682,116 @@ function cancelSeek() {
   seekValue.value = durationSec.value ? Math.round((currentSec.value / durationSec.value) * 1000) : 0
 }
 
+function resetClearGesture(options = {}) {
+  clearGesture.active = false
+  clearGesture.axis = ''
+  clearGesture.side = ''
+  clearGesture.nextTime = 0
+  seeking.value = false
+  if (options.hideHud) {
+    clearGestureHud.value = ''
+    clearGestureValue.value = ''
+  }
+}
+
+function showClearGestureHud(label, value) {
+  clearGestureHud.value = label
+  clearGestureValue.value = value
+  if (clearGestureHudTimer) window.clearTimeout(clearGestureHudTimer)
+  clearGestureHudTimer = window.setTimeout(() => {
+    clearGestureHudTimer = 0
+    clearGestureHud.value = ''
+    clearGestureValue.value = ''
+  }, 720)
+}
+
+function canUseClearGesture(index) {
+  return fullMode.value && clearScreen.value && videoLandscape.value && isActiveDisplay(index) && !accessBlock.value && !!getVideo()
+}
+
+function clearGesturePoint(event) {
+  return event?.touches?.[0] || event?.changedTouches?.[0] || null
+}
+
+function onClearGestureStart(event, index) {
+  if (!canUseClearGesture(index)) return
+  const point = clearGesturePoint(event)
+  const video = getVideo()
+  if (!point || !video) return
+  clearGesture.active = true
+  clearGesture.axis = ''
+  clearGesture.side = point.clientX < window.innerWidth / 2 ? 'brightness' : 'volume'
+  clearGesture.startX = point.clientX
+  clearGesture.startY = point.clientY
+  clearGesture.startTime = Number(video.currentTime) || currentSec.value || 0
+  clearGesture.startVolume = Number.isFinite(video.volume) ? video.volume : (muted.value ? 0 : 1)
+  clearGesture.startBrightness = brightnessLevel.value
+  clearGesture.nextTime = clearGesture.startTime
+}
+
+function onClearGestureMove(event, index) {
+  if (!clearGesture.active || !canUseClearGesture(index)) return
+  const point = clearGesturePoint(event)
+  const video = getVideo()
+  if (!point || !video) return
+  const dx = point.clientX - clearGesture.startX
+  const dy = point.clientY - clearGesture.startY
+  const absX = Math.abs(dx)
+  const absY = Math.abs(dy)
+  if (!clearGesture.axis) {
+    if (Math.max(absX, absY) < 10) return
+    clearGesture.axis = absX >= absY ? 'seek' : 'vertical'
+  }
+
+  if (clearGesture.axis === 'seek') {
+    if (!durationSec.value) return
+    seeking.value = true
+    const seekSpan = Math.max(durationSec.value, 90)
+    const nextTime = Math.max(0, Math.min(durationSec.value, Math.round(clearGesture.startTime + (dx / Math.max(window.innerWidth, 1)) * seekSpan)))
+    clearGesture.nextTime = nextTime
+    currentSec.value = nextTime
+    seekValue.value = Math.round((nextTime / durationSec.value) * 1000)
+    showClearGestureHud('进度', `${formatEpisodeTime(nextTime)} / ${formatEpisodeTime(durationSec.value)}`)
+    return
+  }
+
+  const delta = -dy / Math.max(window.innerHeight, 1)
+  if (clearGesture.side === 'brightness') {
+    const nextBrightness = Math.max(0.2, Math.min(1, clearGesture.startBrightness + delta))
+    brightnessLevel.value = nextBrightness
+    showClearGestureHud('亮度', `${Math.round(nextBrightness * 100)}%`)
+    return
+  }
+
+  const nextVolume = Math.max(0, Math.min(1, clearGesture.startVolume + delta))
+  video.volume = nextVolume
+  muted.value = nextVolume <= 0.01
+  video.muted = muted.value
+  if (!muted.value) {
+    soundPrompt.value = false
+    pendingUnmute = false
+  }
+  writeMutedPreference(muted.value)
+  showClearGestureHud('音量', `${Math.round(nextVolume * 100)}%`)
+}
+
+function onClearGestureEnd(event, index) {
+  if (!clearGesture.active) return
+  const video = getVideo()
+  if (clearGesture.axis === 'seek' && canUseClearGesture(index) && video && durationSec.value) {
+    try {
+      const nextTime = Math.max(0, Math.min(durationSec.value, clearGesture.nextTime || currentSec.value || 0))
+      video.currentTime = nextTime
+      currentSec.value = nextTime
+      seekValue.value = Math.round((nextTime / durationSec.value) * 1000)
+      saveHistory(true)
+    } catch {}
+  } else if (!clearGesture.axis) {
+    togglePlay()
+  }
+  resetClearGesture()
+}
+
 function nextItem() {
   saveHistory(true)
   if (fullMode.value) {
@@ -1785,6 +1930,8 @@ function openFullContent(unit) {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
   router.replace({ path: '/m/shorts', query: { ...route.query, mode: 'full' } })
   activeRangeStart.value = Math.floor((Number(unit.epIndex) || 0) / 30) * 30
   nextTick(() => scrollToFullCurrent('auto'))
@@ -1795,6 +1942,8 @@ function exitFullContent() {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
   const query = { ...route.query }
   delete query.mode
   router.replace({ path: '/m/shorts', query })
@@ -1865,6 +2014,8 @@ async function playVodInShorts(vodId) {
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
   clearScreen.value = false
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
   loading.value = !units.value.length
   try {
     const detail = await loadVodPlaybackDetail(id)
@@ -1929,6 +2080,8 @@ function setPlaybackRate(rate) {
 function toggleClearScreen() {
   clearScreen.value = !clearScreen.value
   toolMenuOpen.value = false
+  resetClearGesture({ hideHud: true })
+  if (!clearScreen.value) brightnessLevel.value = 1
 }
 
 function requestPictureInPicture() {
@@ -2131,6 +2284,8 @@ async function resumePlaybackForLoggedInViewer() {
 watch(activeIndex, () => {
   saveHistory(true)
   writeShortsSession()
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
   ensureMoreAhead()
   schedulePlay(80)
   void refreshFollowState()
@@ -2140,6 +2295,8 @@ watch(() => route.query.mode, () => {
   toolMenuOpen.value = false
   episodeDrawerOpen.value = false
   clearScreen.value = false
+  brightnessLevel.value = 1
+  resetClearGesture({ hideHud: true })
   if (fullMode.value && activeUnit.value) activeRangeStart.value = Math.floor((Number(activeUnit.value.epIndex) || 0) / 30) * 30
   nextTick(() => {
     if (fullMode.value) scrollToFullCurrent('auto')
@@ -2186,6 +2343,7 @@ onDeactivated(() => {
   filterOpen.value = false
   episodeDrawerOpen.value = false
   toolMenuOpen.value = false
+  resetClearGesture({ hideHud: true })
   const video = getVideo()
   resumeAfterActivate = Boolean(video && !video.paused && !accessBlock.value)
   if (video) {
@@ -2213,6 +2371,7 @@ onBeforeUnmount(() => {
   writeShortsSession()
   cancelPendingPlayback()
   clearFullCommitTimer()
+  if (clearGestureHudTimer) window.clearTimeout(clearGestureHudTimer)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   if (resizeRaf) cancelAnimationFrame(resizeRaf)
   window.removeEventListener('resize', scheduleLandscapeMetrics)
@@ -2302,6 +2461,49 @@ onBeforeUnmount(() => {
 }
 .ms-vignette {
   z-index: 3;
+}
+.ms-brightness-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #000;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.ms-clear-gesture-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  touch-action: none;
+  background: transparent;
+}
+.ms-clear-hud {
+  position: absolute;
+  z-index: 76;
+  left: 50%;
+  top: 50%;
+  min-width: 108px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  color: #fff;
+  background: rgba(0, 0, 0, .58);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .38);
+  pointer-events: none;
+}
+.ms-clear-hud strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+.ms-clear-hud span {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, .78);
+  white-space: nowrap;
 }
 .ms-prompt-row {
   position: absolute;
