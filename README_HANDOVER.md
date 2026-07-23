@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动小窗播放能力判断回修）
+> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动详情页播放线路文案）
 
 ---
 
@@ -201,6 +201,9 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-23 移动详情页播放线路文案断点**：按反馈将 `web/src/mobile/MobileDetail.vue` 详情页选集区标题从“金牌影院播放器”改为“播放线路”，避免品牌化误导；本轮只改展示文案，不触碰播放逻辑、线路选择逻辑和 `MobilePlay.vue` 现有未提交差异。
+- **2026-07-23 移动播放器 PiP 与横屏控制层回修断点**：按老大反馈回修 `web/src/mobile/MobilePlay.vue`：小窗播放不再被 `document.pictureInPictureEnabled=false` 误判拦截，只要 `<video>` 暴露标准 `requestPictureInPicture()` 就直接在用户点击里尝试调用，调用前会尝试恢复播放；Safari 分支继续使用 `webkitSupportsPresentationMode('picture-in-picture')/webkitSetPresentationMode()`，失败提示改为“请先播放后重试/当前视频暂无法开启小窗”，不再把可支持设备误报为“浏览器不支持”。播放器内顶栏、底部进度条和播放控制从固定像素改为 `vmin + clamp()` 的播放器尺寸相对变量，并统一走 `--mp-safe-top/right/bottom/left`；普通全屏用真实 `env(safe-area-inset-*)`，方向锁失败的 CSS fallback 不再旋转整个播放器容器，而是只旋转视频画面/背景/弹幕层，标题/返回/关闭/进度条/暂停等控制层保持真实屏幕坐标并贴底部安全区，避免横屏后跑到刘海或浏览器交互区。后台/API/数据库未改动。
+- **2026-07-23 移动播放页操作区与详情信息回修断点**：按老大要求调整 `web/src/mobile/MobilePlay.vue`：播放器下方操作区移除评论、收藏、添加入口，标题区同步去掉追剧按钮，当前仅保留点赞、点踩、报错、分享四个动作；影片详情信息块在名称、标签、简介之外新增导演/主演显示，优先读取结构化 `vod.people` 中 `director/actor`，无结构化人员时回退 `vod.director/vod.actor` 字符串，并做移动端单行省略以防挤压。评论区数据/API、收藏逻辑、后台/API/数据库均未改动。
 - **2026-07-23 移动小窗播放能力判断回修断点**：定位移动播放页出现“当前浏览器暂不支持小窗”的原因，是 `web/src/mobile/MobilePlay.vue` 的 PiP 能力判断过宽：只要存在 `document.pictureInPictureEnabled` 或 `webkitSetPresentationMode` 就显示“小窗播放”按钮，但真实触发还需要标准 `video.requestPictureInPicture()` 或 Safari `video.webkitSupportsPresentationMode('picture-in-picture')` 返回支持；部分移动浏览器/内置 WebView 因此会显示按钮但点击失败。现新增 `canUsePictureInPicture()` 统一判断，只有标准 PiP 方法真实存在且未被禁用，或 Safari 明确支持 picture-in-picture presentation mode 时才显示并触发小窗；不支持的移动浏览器不再露出小窗入口。后台/API/数据库未改动。
 - **2026-07-23 注册邀请码开关断点**：后台 `admin/src/views/site/SiteBasicTab.vue` 在“前台用户注册”中新增“邀请码注册”开关，字段为 `registerInviteRequired`；右侧预览 `SitePreview.vue` 同步显示“开放 · 需邀请码 / 无需邀请码”。后端 `SiteConfig` 新增 `registerInviteRequired Boolean @default(false)`，`server/src/routes/site.ts` 的公开/后台站点配置返回 `inviteRequired=registerInviteRequired` 与 `invitePoolAvailable`，不再用“邀请码池是否有启用码”自动决定；`server/src/routes/users.ts` 的 `/api/user/register-config` 与 `/api/user/register` 改为仅在该开关开启时要求并消耗邀请码，开关关闭时即使邀请码池有可用码也允许普通注册。默认关闭，避免无邀请码池时误锁注册；开启但无可用邀请码时注册接口返回“当前没有可用邀请码”，后台提示去「权限访问 / 邀请码池」生成。已执行 `prisma validate/generate/db push`、`pnpm --dir server build`、`pnpm --dir admin build`、`docker compose up -d --build server admin`；运行态临时打开开关后 `/api/user/register-config` 返回 `inviteRequired=true`，无邀请码注册返回 400 `请输入邀请码`，随后已恢复原开关值。
 - **2026-07-23 影片清理分类多选断点**：后台 `admin/src/views/Vods.vue` 的“影片清理”弹窗已将主分类从单选改为多选，预检/执行统一发送 `categoryNames[]`；子分类仍只在选中单个主分类时可用，避免多主分类下子分类归属不明确。后端 `server/src/routes/vods.ts` 的 `cleanupCategoryWhere()` 已兼容 `categoryNames[]` 与旧的 `categoryName`，多个主分类时使用 `typeName in [...]`；同时修正 `category_vods` 规则未合并 `excludeVodIds` 的风险，确保预检列表手动排除的影片不会在按分类执行时被误删。已执行 `pnpm --dir server build`、`pnpm --dir admin build`、`docker compose up -d --build server admin`；运行态 `5150/health` 正常，API 实测 `categoryNames=["私人专区","短剧"]` 预检命中 121862 条候选，排除样本 ID 后该 ID 不再出现在候选列表。

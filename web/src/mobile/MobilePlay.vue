@@ -222,10 +222,12 @@
             <span v-if="vod.rating">豆瓣 {{ vod.rating }}</span>
           </p>
         </div>
-        <button class="mp-follow" type="button" :class="{ on: followed }" @click="toggleFollow">
-          <svg viewBox="0 0 24 24" v-html="icon('heart')"></svg>
-          {{ followed ? '已追' : '追剧' }}
-        </button>
+      </div>
+      <div v-if="mobileCreditRows.length" class="mp-credit-list">
+        <p v-for="row in mobileCreditRows" :key="row.label">
+          <span>{{ row.label }}</span>
+          <b>{{ row.value }}</b>
+        </p>
       </div>
       <p v-if="vod.officialIntro || vod.blurb" class="mp-intro" :class="{ folded: !introOpen }" @click="introOpen = !introOpen">
         {{ vod.officialIntro || vod.blurb }}
@@ -242,14 +244,6 @@
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
           <span>点踩</span>
         </button>
-        <button v-if="interactionConfig.commentsEnabled" type="button" @click="scrollToComments">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
-          <span>评论</span>
-        </button>
-        <button type="button" :class="{ on: followed }" @click="toggleFollow">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
-          <span>收藏</span>
-        </button>
         <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
           <span>报错</span>
@@ -257,10 +251,6 @@
         <button type="button" @click="shareCurrentVod">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.6 6.8-4.2" /><path d="m8.6 13.4 6.8 4.2" /></svg>
           <span>分享</span>
-        </button>
-        <button type="button" @click="openMyList">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
-          <span>添加</span>
         </button>
       </div>
     </section>
@@ -627,6 +617,30 @@ const heroStyle = computed(() => {
   const url = poster(vod.value)
   return url ? { backgroundImage: `url(${url})` } : {}
 })
+const mobileActors = computed(() => peopleByRole('actor').slice(0, 8))
+const mobileDirectors = computed(() => peopleByRole('director').slice(0, 4))
+const mobileActorNames = computed(() => (
+  mobileActors.value.length ? mobileActors.value.map(item => item.name) : splitNames(vod.value.actor).slice(0, 8)
+))
+const mobileDirectorNames = computed(() => (
+  mobileDirectors.value.length ? mobileDirectors.value.map(item => item.name) : splitNames(vod.value.director).slice(0, 4)
+))
+const mobileCreditRows = computed(() => [
+  { label: '导演', value: mobileDirectorNames.value.join('、') },
+  { label: '主演', value: mobileActorNames.value.join('、') },
+].filter(row => row.value))
+
+function splitNames(value) {
+  if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean)
+  return String(value || '').split(/[,，/、\s]+/).map(item => item.trim()).filter(Boolean)
+}
+
+function peopleByRole(role) {
+  return (vod.value?.people || [])
+    .filter(item => item.role === role && item.person?.name)
+    .map(item => ({ id: Number(item.person?.id || 0), name: item.person.name }))
+    .filter(item => item.name)
+}
 
 function poster(row) {
   return imgUrl(row?.officialPic || row?.heroImage || row?.heroPic || row?.pic || row?.localPic || '')
@@ -946,13 +960,17 @@ function enterFullscreen() {
   }
 }
 
+function canUsePictureInPicture(video = videoEl.value) {
+  if (!video || mode.value !== 'hls') return false
+  const standardPip = typeof video.requestPictureInPicture === 'function'
+  const webkitPip = typeof video.webkitSupportsPresentationMode === 'function' &&
+    video.webkitSupportsPresentationMode('picture-in-picture') &&
+    typeof video.webkitSetPresentationMode === 'function'
+  return standardPip || webkitPip
+}
+
 function updatePictureInPictureSupport() {
-  const video = videoEl.value
-  pipSupported.value = mode.value === 'hls' && Boolean(
-    video?.requestPictureInPicture ||
-    video?.webkitSetPresentationMode ||
-    (typeof document !== 'undefined' && document.pictureInPictureEnabled)
-  )
+  pipSupported.value = canUsePictureInPicture()
 }
 
 async function togglePictureInPicture() {
@@ -964,7 +982,10 @@ async function togglePictureInPicture() {
       showControls(2600)
       return
     }
-    if (video.requestPictureInPicture && document.pictureInPictureEnabled !== false) {
+    if (typeof video.requestPictureInPicture === 'function') {
+      if (video.paused) {
+        try { await video.play() } catch {}
+      }
       await video.requestPictureInPicture()
       showNotice('已开启小窗播放')
       showControls(2600)
@@ -977,9 +998,9 @@ async function togglePictureInPicture() {
       showControls(2600)
       return
     }
-    showNotice('当前浏览器暂不支持小窗')
+    showNotice('当前视频暂无法开启小窗')
   } catch {
-    showNotice('当前浏览器暂不支持小窗')
+    showNotice('小窗开启失败，请先播放后重试')
   }
 }
 
@@ -2131,6 +2152,16 @@ onDeactivated(() => {
   background-color: #08090d;
   background-size: cover;
   background-position: center;
+  --mp-safe-top: 0px;
+  --mp-safe-right: 0px;
+  --mp-safe-bottom: 0px;
+  --mp-safe-left: 0px;
+  --mp-edge-x: clamp(8px, 2.3vmin, 18px);
+  --mp-top-gap: clamp(5px, 1.7vmin, 12px);
+  --mp-bottom-gap: clamp(3px, 1.2vmin, 8px);
+  --mp-top-btn: clamp(34px, 8.6vmin, 42px);
+  --mp-bottom-btn: clamp(28px, 7.2vmin, 36px);
+  --mp-control-gap: clamp(3px, 1.1vmin, 6px);
 }
 .mp-player.landscape {
   position: fixed;
@@ -2139,11 +2170,27 @@ onDeactivated(() => {
   width: 100vw;
   height: 100dvh;
   aspect-ratio: auto;
-  --mp-player-top-safe: env(safe-area-inset-top);
+  --mp-safe-top: env(safe-area-inset-top);
+  --mp-safe-right: env(safe-area-inset-right);
+  --mp-safe-bottom: env(safe-area-inset-bottom);
+  --mp-safe-left: env(safe-area-inset-left);
+  --mp-edge-x: clamp(10px, 2.5vmin, 24px);
+  --mp-top-gap: clamp(6px, 1.8vmin, 16px);
+  --mp-bottom-gap: clamp(2px, 1.1vmin, 10px);
+  --mp-top-btn: clamp(36px, 7vmin, 46px);
+  --mp-bottom-btn: clamp(30px, 6vmin, 38px);
 }
-/* 横片 + 手机处于竖屏且方向锁定未生效时，用 CSS 旋转铺满横向全屏（方向锁成功时视口已为横向，不匹配此规则） */
+/* 横片 + 手机处于竖屏且方向锁定未生效时，只旋转视频层，控制层继续按真实屏幕安全区定位 */
 @media (orientation: portrait) {
   .mp-player.landscape:not(.portrait) {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    transform: none;
+  }
+  .mp-player.landscape:not(.portrait) .mp-bg,
+  .mp-player.landscape:not(.portrait) .mp-video,
+  .mp-player.landscape:not(.portrait) .mp-danmaku-layer {
     inset: auto;
     top: 50%;
     left: 50%;
@@ -2177,13 +2224,13 @@ onDeactivated(() => {
 .mp-topbar {
   position: absolute;
   z-index: 10;
-  top: calc(var(--mp-player-top-safe, 0px) + 6px);
-  left: 8px;
-  right: 8px;
+  top: calc(var(--mp-safe-top) + var(--mp-top-gap));
+  left: calc(var(--mp-safe-left) + var(--mp-edge-x));
+  right: calc(var(--mp-safe-right) + var(--mp-edge-x));
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  grid-template-columns: var(--mp-top-btn) minmax(0, 1fr) var(--mp-top-btn);
   align-items: center;
-  gap: 4px;
+  gap: clamp(4px, 1.2vmin, 10px);
   color: #fff;
   pointer-events: none;
 }
@@ -2199,8 +2246,8 @@ onDeactivated(() => {
   white-space: nowrap;
 }
 .mp-icon-btn {
-  width: 38px;
-  height: 38px;
+  width: var(--mp-top-btn);
+  height: var(--mp-top-btn);
   border: 0;
   display: grid;
   place-items: center;
@@ -2311,26 +2358,26 @@ onDeactivated(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  min-height: 70px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  min-height: 0;
+  padding: var(--mp-bottom-gap) calc(var(--mp-safe-right) + var(--mp-edge-x)) calc(var(--mp-safe-bottom) + var(--mp-bottom-gap)) calc(var(--mp-safe-left) + var(--mp-edge-x));
   color: #fff;
   background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.76));
 }
 .mp-control-stack {
   display: grid;
-  gap: 5px;
+  gap: var(--mp-control-gap);
   min-width: 0;
 }
 .mp-control-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--mp-control-gap);
   min-width: 0;
 }
 .mp-control-btn {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 30px;
+  flex: 0 0 var(--mp-bottom-btn);
+  width: var(--mp-bottom-btn);
+  height: var(--mp-bottom-btn);
   border: 0;
   border-radius: 8px;
   display: grid;
@@ -2389,7 +2436,7 @@ onDeactivated(() => {
 .mp-range {
   min-width: 0;
   width: 100%;
-  height: 20px;
+  height: clamp(14px, 3.6vmin, 20px);
   margin: 0;
   appearance: none;
   background: transparent;
@@ -2677,9 +2724,9 @@ onDeactivated(() => {
   position: absolute;
   z-index: 8;
   left: 50%;
-  bottom: 56px;
+  bottom: calc(var(--mp-safe-bottom) + var(--mp-bottom-gap) + var(--mp-bottom-btn) + clamp(12px, 3vmin, 24px));
   transform: translateX(-50%);
-  max-width: calc(100vw - 40px);
+  max-width: calc(100% - var(--mp-safe-left) - var(--mp-safe-right) - 32px);
   padding: 8px 12px;
   border-radius: 999px;
   color: #fff;
@@ -3166,6 +3213,33 @@ onDeactivated(() => {
   padding: 4px 7px;
   border-radius: 8px;
   background: #f2f3f5;
+}
+.mp-credit-list {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 7px;
+}
+.mp-credit-list p {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: #535966;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mp-credit-list span {
+  color: #8a909a;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-credit-list b {
+  min-width: 0;
+  color: #313641;
+  font-weight: var(--small-text-max-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mp-follow {
   flex: 0 0 auto;

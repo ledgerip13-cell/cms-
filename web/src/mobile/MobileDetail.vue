@@ -57,7 +57,7 @@
 
       <section v-if="lines.length" class="md-section">
         <header>
-          <h2>金牌影院播放器</h2>
+          <h2>播放线路</h2>
           <span>{{ selectedLineName }}</span>
         </header>
         <div class="md-line-tabs">
@@ -279,9 +279,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .mdetail {
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 62px) 14px 38px;
+  padding: calc(env(safe-area-inset-top) + 82px) 14px 38px;
   background: #f5f6f8;
   color: #151922;
+  --md-cover-w: clamp(122px, 32vw, 132px);
+  --md-cover-h: calc(var(--md-cover-w) * 4 / 3);
 }
 .md-head {
   position: fixed;
@@ -338,22 +340,31 @@ onBeforeUnmount(() => {
 }
 .md-hero {
   display: grid;
-  grid-template-columns: 106px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: var(--md-cover-w) minmax(0, 1fr);
+  gap: 15px;
   align-items: start;
 }
 .md-cover {
-  width: 106px;
+  width: var(--md-cover-w);
   aspect-ratio: 3 / 4;
   border-radius: 9px;
   object-fit: cover;
   background: #e8ebf0;
   box-shadow: 0 8px 22px rgba(20,28,42,.12);
 }
+.md-info {
+  min-width: 0;
+  max-height: var(--md-cover-h);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 1px;
+}
 .md-info h1 {
-  margin: 3px 0 12px;
+  margin: 0;
   color: #121722;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1.16;
   letter-spacing: 0;
   display: -webkit-box;
@@ -364,27 +375,31 @@ onBeforeUnmount(() => {
 .md-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: 16px;
+  gap: 6px;
+  max-height: 55px;
+  overflow: hidden;
 }
 .md-tags span {
-  padding: 4px 9px;
+  padding: 4px 8px;
   border-radius: 6px;
   color: #596273;
   background: #eef1f5;
   box-shadow: inset 0 0 0 1px #e3e7ee;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 .md-meta-list {
   display: grid;
-  gap: 9px;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
 }
 .md-meta-list p {
   min-width: 0;
   margin: 0;
   overflow: hidden;
   color: #4d5665;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.34;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -458,7 +473,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .md-intro-block {
-  position: relative;
+  display: grid;
+  justify-items: stretch;
+  gap: 10px;
   margin-top: 24px;
 }
 .md-section {
@@ -505,9 +522,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .md-intro-block button {
-  position: absolute;
-  right: 0;
-  bottom: 1px;
+  justify-self: end;
   height: 31px;
   border-radius: 7px;
   padding: 0 10px;
