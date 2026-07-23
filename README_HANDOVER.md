@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动详情页顶部信息布局回修）
+> **最后更新**：2026-07-23 (GMT+8)｜**对应提交**：本次工作（移动详情页骨架图重做）
 
 ---
 
@@ -201,6 +201,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-23 移动详情页骨架图重做断点**：按反馈重做 `web/src/mobile/MobileDetail.vue` 的 loading skeleton，旧版只显示顶部少量占位，和真实详情页结构不一致。现骨架按实际首屏完整铺开：海报 + 标题/标签/导演主演信息、立即播放与 3 个动作按钮、4 项统计、简介三行、播放线路卡片（标题/线路 tabs/5 列选集）和猜你喜欢 3 列卡片，占位尺寸复用 `--md-cover-w/--md-cover-h` 等真实布局变量，避免加载态到内容态大幅跳动。仅改 skeleton 展示，接口和详情数据逻辑未改。
 - **2026-07-23 移动详情页顶部信息布局回修断点**：按反馈调整 `web/src/mobile/MobileDetail.vue`：详情页内容起始位置从固定顶栏下方继续下移，避免标题/封面贴顶；封面宽度由固定 106px 改为 `clamp(122px, 32vw, 132px)` 并派生封面高度变量；右侧标题、标签、元信息容器增加 `max-height` 与 `overflow:hidden`，高度不超过封面图，同时收紧内部间距保证信息密度；简介“展开全部/收起”按钮由绝对定位改为独立行右对齐，避免覆盖简介文字。仅调整移动详情页展示样式，播放线路数据和播放逻辑未改动。
 - **2026-07-23 移动详情页播放线路文案断点**：按反馈将 `web/src/mobile/MobileDetail.vue` 详情页选集区标题从“金牌影院播放器”改为“播放线路”，避免品牌化误导；本轮只改展示文案，不触碰播放逻辑、线路选择逻辑和 `MobilePlay.vue` 现有未提交差异。
 - **2026-07-23 移动播放器 PiP 与横屏控制层回修断点**：按老大反馈回修 `web/src/mobile/MobilePlay.vue`：小窗播放不再被 `document.pictureInPictureEnabled=false` 误判拦截，只要 `<video>` 暴露标准 `requestPictureInPicture()` 就直接在用户点击里尝试调用，调用前会尝试恢复播放；Safari 分支继续使用 `webkitSupportsPresentationMode('picture-in-picture')/webkitSetPresentationMode()`，失败提示改为“请先播放后重试/当前视频暂无法开启小窗”，不再把可支持设备误报为“浏览器不支持”。播放器内顶栏、底部进度条和播放控制从固定像素改为 `vmin + clamp()` 的播放器尺寸相对变量，并统一走 `--mp-safe-top/right/bottom/left`；普通全屏用真实 `env(safe-area-inset-*)`，方向锁失败的 CSS fallback 不再旋转整个播放器容器，而是只旋转视频画面/背景/弹幕层，标题/返回/关闭/进度条/暂停等控制层保持真实屏幕坐标并贴底部安全区，避免横屏后跑到刘海或浏览器交互区。后台/API/数据库未改动。

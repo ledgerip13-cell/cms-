@@ -7,11 +7,44 @@
       <strong class="md-head-title">{{ vod.name || '详情' }}</strong>
     </header>
 
-    <section v-if="loading" class="md-hero md-skeleton">
-      <div></div>
-      <b></b>
-      <p></p>
-    </section>
+    <template v-if="loading">
+      <section class="md-hero md-skeleton-hero" aria-label="详情加载中">
+        <div class="md-sk-cover"></div>
+        <div class="md-sk-info">
+          <i class="md-sk-title"></i>
+          <div class="md-sk-tags">
+            <i></i><i></i><i></i>
+          </div>
+          <i class="md-sk-line wide"></i>
+          <i class="md-sk-line"></i>
+          <i class="md-sk-line short"></i>
+        </div>
+      </section>
+
+      <section class="md-sk-actions" aria-hidden="true">
+        <i class="primary"></i>
+        <i></i><i></i><i></i>
+      </section>
+
+      <section class="md-sk-stats" aria-hidden="true">
+        <div v-for="i in 4" :key="`stat-${i}`"><i></i><b></b></div>
+      </section>
+
+      <section class="md-sk-intro" aria-hidden="true">
+        <i></i><i></i><i class="short"></i>
+      </section>
+
+      <section class="md-section md-sk-section" aria-hidden="true">
+        <header><i></i><b></b></header>
+        <div class="md-sk-tabs"><i v-for="i in 3" :key="`tab-${i}`"></i></div>
+        <div class="md-sk-episodes"><i v-for="i in 15" :key="`ep-${i}`"></i></div>
+      </section>
+
+      <section class="md-section md-sk-section" aria-hidden="true">
+        <header><i></i></header>
+        <div class="md-sk-related"><article v-for="i in 6" :key="`rel-${i}`"><i></i><b></b><em></em></article></div>
+      </section>
+    </template>
 
     <template v-else-if="vod.id">
       <section class="md-hero">
@@ -617,28 +650,168 @@ onBeforeUnmount(() => {
   background: #1f2530;
   color: #fff;
 }
-.md-skeleton {
-  min-height: 178px;
+.md-skeleton-hero,
+.md-sk-actions,
+.md-sk-stats,
+.md-sk-intro,
+.md-sk-section {
+  pointer-events: none;
 }
-.md-skeleton > div,
-.md-skeleton b,
-.md-skeleton p {
+.md-skeleton-hero i,
+.md-sk-actions i,
+.md-sk-stats i,
+.md-sk-stats b,
+.md-sk-intro i,
+.md-sk-section i,
+.md-sk-section b,
+.md-sk-section em {
+  display: block;
   border-radius: 8px;
-  background: linear-gradient(110deg, #eceff4 8%, #f7f8fa 18%, #eceff4 33%);
+  background: linear-gradient(110deg, #e8ebf1 8%, #f8f9fb 18%, #e8ebf1 33%);
   background-size: 200% 100%;
-  animation: md-shimmer 1.2s linear infinite;
+  animation: md-shimmer 1.15s linear infinite;
 }
-.md-skeleton > div {
-  width: 106px;
+.md-sk-cover {
+  width: var(--md-cover-w);
+  aspect-ratio: 3 / 4;
+  border-radius: 9px;
+  background: linear-gradient(110deg, #e2e6ee 8%, #f7f8fb 18%, #e2e6ee 33%);
+  background-size: 200% 100%;
+  animation: md-shimmer 1.15s linear infinite;
+  box-shadow: 0 8px 22px rgba(20,28,42,.08);
+}
+.md-sk-info {
+  min-width: 0;
+  max-height: var(--md-cover-h);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 2px;
+  overflow: hidden;
+}
+.md-sk-title {
+  width: min(92%, 240px);
+  height: 54px;
+}
+.md-sk-tags {
+  display: flex;
+  gap: 6px;
+}
+.md-sk-tags i {
+  width: 46px;
+  height: 24px;
+  border-radius: 6px;
+}
+.md-sk-line {
+  width: 78%;
+  height: 18px;
+}
+.md-sk-line.wide {
+  width: 96%;
+}
+.md-sk-line.short {
+  width: 62%;
+}
+.md-sk-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 52px);
+  gap: 12px;
+  margin-top: 24px;
+}
+.md-sk-actions i {
+  height: 52px;
+  border-radius: 12px;
+}
+.md-sk-actions i:not(.primary) {
+  border-radius: 50%;
+}
+.md-sk-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 24px;
+}
+.md-sk-stats div {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  border-left: 1px solid #e2e6ee;
+}
+.md-sk-stats div:first-child {
+  border-left: 0;
+}
+.md-sk-stats i {
+  width: 42px;
+  height: 16px;
+}
+.md-sk-stats b {
+  width: 34px;
+  height: 13px;
+}
+.md-sk-intro {
+  display: grid;
+  gap: 9px;
+  margin-top: 24px;
+}
+.md-sk-intro i {
+  width: 100%;
+  height: 17px;
+}
+.md-sk-intro i.short {
+  width: 68%;
+}
+.md-sk-section {
+  min-height: 0;
+}
+.md-sk-section header i {
+  width: 96px;
+  height: 18px;
+}
+.md-sk-section header b {
+  width: 72px;
+  height: 14px;
+}
+.md-sk-tabs {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+  padding: 14px 16px 2px;
+}
+.md-sk-tabs i {
+  flex: 0 0 78px;
+  height: 34px;
+}
+.md-sk-episodes {
+  padding: 12px 14px 16px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.md-sk-episodes i {
+  height: 38px;
+}
+.md-sk-related {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 9px;
+  padding: 0 14px 16px;
+}
+.md-sk-related article {
+  min-width: 0;
+}
+.md-sk-related article > i {
+  width: 100%;
   aspect-ratio: 3 / 4;
 }
-.md-skeleton b {
-  width: 70%;
-  height: 24px;
+.md-sk-related b {
+  width: 86%;
+  height: 15px;
+  margin-top: 7px;
 }
-.md-skeleton p {
-  width: 90%;
-  height: 80px;
+.md-sk-related em {
+  width: 58%;
+  height: 12px;
+  margin-top: 5px;
 }
 @keyframes md-shimmer {
   to { background-position-x: -200%; }
