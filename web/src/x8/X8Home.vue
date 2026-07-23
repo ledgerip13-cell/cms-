@@ -1459,7 +1459,8 @@ const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
 const searchHotRows = computed(() => searchHints.value.slice(0, 12))
-const showSearchHotBox = computed(() => !activeSearchKw.value && searchHotRows.value.length > 0)
+const searchDraft = computed(() => String(kw.value || '').trim())
+const showSearchHotBox = computed(() => !searchDraft.value && searchHotRows.value.length > 0)
 const x8UserName = computed(() => user.value?.nickname || user.value?.username || '我的')
 const x8UserInitial = computed(() => x8UserName.value.slice(0, 1).toUpperCase())
 const x8UserAvatar = computed(() => {
@@ -2043,11 +2044,6 @@ function searchPerson(name) {
 }
 function openSearchPanel() {
   clearTimeout(searchBlurTimer)
-  if (activeSearchKw.value) {
-    x8SearchSuggests.value = []
-    searchFocused.value = true
-    return
-  }
   searchFocused.value = true
 }
 function onSearchBlur() {
@@ -2089,16 +2085,15 @@ function pickSearchSuggest(vod) {
 }
 async function loadX8SearchSuggests() {
   const text = String(kw.value || '').trim()
-  if (activeSearchKw.value || !text) {
+  if (!text) {
     x8SearchSuggests.value = []
     return
   }
   const seq = ++x8SuggestSeq
   try {
     const rows = await api.vodSuggest(text, 10)
-    if (seq !== x8SuggestSeq || activeSearchKw.value) return
+    if (seq !== x8SuggestSeq) return
     x8SearchSuggests.value = Array.isArray(rows) ? rows.filter(item => item?.id && item?.name).slice(0, 10) : []
-    searchFocused.value = !activeSearchKw.value && x8SearchSuggests.value.length > 0
   } catch {
     if (seq === x8SuggestSeq) x8SearchSuggests.value = []
   }
@@ -4117,9 +4112,11 @@ onBeforeUnmount(() => {
   top: 49px;
   left: 0;
   width: 100%;
+  max-width: 100%;
   max-height: min(70vh, 585px);
   padding: 0;
   overflow: hidden;
+  overflow-x: hidden;
   border-radius: 12px;
   color: #fff;
   background: #1a1a1a;
@@ -4131,9 +4128,12 @@ onBeforeUnmount(() => {
 .x8-search-pop-scroll {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
   max-height: min(70vh, 585px);
   padding-bottom: 12px;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 .x8-search-pop-scroll::-webkit-scrollbar {
@@ -4246,8 +4246,11 @@ onBeforeUnmount(() => {
   font-weight: 400;
 }
 .x8-search-hot-box {
+  width: 100%;
+  min-width: 0;
   padding: 0 12px;
   color: #fff;
+  overflow: hidden;
 }
 .x8-search-hot-title {
   height: 44px;
@@ -4261,19 +4264,23 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 2px;
+  min-width: 0;
 }
 .x8-search-hot-list button {
   width: 100%;
+  min-width: 0;
   height: 36px;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
+  justify-items: stretch;
   justify-content: start;
   gap: 10px;
   padding: 0 8px;
   border-radius: 8px;
   color: #fff;
   text-align: left;
+  overflow: hidden;
 }
 .x8-search-hot-list button:hover {
   background: rgba(255,255,255,.07);
@@ -4291,6 +4298,13 @@ onBeforeUnmount(() => {
   font-style: normal;
   font-weight: 600;
   text-align: center;
+}
+.x8-search-hot-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-self: start;
 }
 .x8-search-hot-list button:nth-child(1) i {
   color: #fff;
