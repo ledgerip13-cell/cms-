@@ -28,7 +28,7 @@
                 <span>{{ [vod.typeName, vod.year, vod.remarks].filter(Boolean).join(' · ') }}</span>
               </button>
             </div>
-            <div v-else class="x8-search-history-box">
+            <div v-else-if="showSearchHistoryBox" class="x8-search-history-box">
               <div class="x8-search-pop-title">
                 <span>搜索历史</span>
                 <button class="x8-search-clear" type="button" aria-label="清空搜索历史" @mousedown.prevent @click.stop="clearSearchHistory">
@@ -37,7 +37,6 @@
               </div>
               <div class="x8-search-history-list">
                 <button v-for="word in searchHistoryRows" :key="`x8-search-h-${word}`" type="button" @mousedown.prevent @click.stop="pickSearchWord(word)">{{ word }}</button>
-                <div v-if="!searchHistoryRows.length" class="x8-search-none">暂无搜索记录</div>
               </div>
             </div>
             <div v-if="showSearchHotBox" class="x8-search-hot-box">
@@ -1458,8 +1457,9 @@ const currentSearchHint = computed(() => searchHints.value[searchHintIdx.value %
 const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
-const searchHotRows = computed(() => searchHints.value.slice(0, 12))
 const searchDraft = computed(() => String(kw.value || '').trim())
+const searchHotRows = computed(() => searchHints.value.slice(0, 10))
+const showSearchHistoryBox = computed(() => !searchDraft.value && searchHistoryRows.value.length > 0)
 const showSearchHotBox = computed(() => !searchDraft.value && searchHotRows.value.length > 0)
 const x8UserName = computed(() => user.value?.nickname || user.value?.username || '我的')
 const x8UserInitial = computed(() => x8UserName.value.slice(0, 1).toUpperCase())
@@ -4239,12 +4239,6 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.14);
   transform: none;
 }
-.x8-search-none {
-  margin: 0 25px 28px 0;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 400;
-}
 .x8-search-hot-box {
   width: 100%;
   min-width: 0;
@@ -4271,7 +4265,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: 36px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
   justify-items: stretch;
   justify-content: start;
@@ -4287,7 +4281,7 @@ onBeforeUnmount(() => {
   transform: none;
 }
 .x8-search-hot-list i {
-  width: 20px;
+  width: 24px;
   height: 20px;
   display: inline-grid;
   place-items: center;
@@ -4302,6 +4296,9 @@ onBeforeUnmount(() => {
 .x8-search-hot-list span {
   min-width: 0;
   overflow: hidden;
+  color: #fff;
+  font-size: 14px;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   justify-self: start;
@@ -4317,15 +4314,6 @@ onBeforeUnmount(() => {
 .x8-search-hot-list button:nth-child(3) i {
   color: #fff;
   background: linear-gradient(135deg, #ffcf4a 0%, #f28a1b 100%);
-}
-.x8-search-hot-list span {
-  min-width: 0;
-  overflow: hidden;
-  color: #fff;
-  font-size: 14px;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .x8-header-tools {
   display: flex;
