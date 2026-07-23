@@ -746,7 +746,7 @@
                 <x8-card v-for="item in visibleRelated" :key="`play-rel-${item.id}`" :item="item" :followed="isCardFollowed(item)" short @open="goDetail" @follow="toggleCardFollow" />
               </div>
             </x8-panel>
-            <section v-if="interactionConfig.commentsEnabled" ref="commentSectionEl" class="x8-comment-section">
+            <section v-if="interactionConfig.commentsEnabled && !playerTheater" ref="commentSectionEl" class="x8-comment-section">
               <div class="x8-comment-title">
                 <span></span>
                 <strong>评论区</strong>
@@ -6333,6 +6333,7 @@ onBeforeUnmount(() => {
 .x8-play.theater-mode .x8-player-video-right,
 .x8-play.theater-mode .x8-player-detail,
 .x8-play.theater-mode .x8-mini-play-list,
+.x8-play.theater-mode .x8-comment-section,
 .x8-play.theater-mode .x8-panel {
   display: none !important;
 }
