@@ -40,7 +40,7 @@
                 <div v-if="!searchHistoryRows.length" class="x8-search-none">暂无搜索记录</div>
               </div>
             </div>
-            <div class="x8-search-hot-box">
+            <div v-if="showSearchHotBox" class="x8-search-hot-box">
               <div class="x8-search-hot-title">热门搜索：</div>
               <div class="x8-search-hot-list">
                 <button v-for="(word, index) in searchHotRows" :key="`x8-search-hot-${word}`" type="button" @mousedown.prevent @click.stop="pickSearchWord(word)">
@@ -1413,6 +1413,7 @@ const pageMode = computed(() => {
   if (route.query.kw || route.query.type || route.path.includes('/show/')) return 'show'
   return 'home'
 })
+const activeSearchKw = computed(() => String(route.query.kw || '').trim())
 const useX8Routes = computed(() => route.path.startsWith('/x8') || site.value?.homeConfig?.adaptiveTemplate === 'x8')
 const routeType = computed(() => {
   const id = String(route.params.type || '')
@@ -1458,6 +1459,7 @@ const searchPlaceholder = computed(() => {
   return currentSearchHint.value || '搜索'
 })
 const searchHotRows = computed(() => searchHints.value.slice(0, 12))
+const showSearchHotBox = computed(() => !activeSearchKw.value && searchHotRows.value.length > 0)
 const x8UserName = computed(() => user.value?.nickname || user.value?.username || '我的')
 const x8UserInitial = computed(() => x8UserName.value.slice(0, 1).toUpperCase())
 const x8UserAvatar = computed(() => {

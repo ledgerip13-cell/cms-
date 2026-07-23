@@ -1074,6 +1074,27 @@ export default async function vodRoutes(app: FastifyInstance) {
       return manual;
     }
     const since = new Date(Date.now() - 30 * DAY_MS);
+    const fillWithHotVodNames = async (rows: any[]) => {
+      const used = new Set(rows.map((row) => normalizeName(row.kw)).filter(Boolean));
+      if (rows.length >= limit) return rows.slice(0, limit);
+      const hotQuery = await hotVodQuery("hot", limit);
+      const vods = await prisma.vod.findMany({
+        where: hotQuery.where,
+        orderBy: hotQuery.orderBy,
+        take: Math.max(limit * 2, 20),
+        select: { name: true },
+      });
+      const filled = [...rows];
+      for (const vod of vods) {
+        const kw = String(vod?.name || "").trim();
+        const normalized = normalizeName(kw);
+        if (!kw || !normalized || used.has(normalized)) continue;
+        used.add(normalized);
+        filled.push({ kw, count: 0, source: "hot_vod", rank: filled.length + 1 });
+        if (filled.length >= limit) break;
+      }
+      return filled.slice(0, limit);
+    };
     const rows = await prisma.searchLog.groupBy({
       by: ["normalizedKw"],
       where: {
@@ -1084,7 +1105,11 @@ export default async function vodRoutes(app: FastifyInstance) {
       orderBy: { _count: { normalizedKw: "desc" } },
       take: remaining * 2,
     });
-    if (!rows.length) return manual;
+    if (!rows.length) {
+      const data = await fillWithHotVodNames(manual);
+      aggregateCacheSet(cacheKey, data, SEARCH_ASSIST_CACHE_TTL_MS);
+      return data;
+    }
     const logs = await prisma.searchLog.findMany({
       where: { normalizedKw: { in: rows.map((row) => row.normalizedKw) } },
       orderBy: { createdAt: "desc" },
@@ -1101,7 +1126,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       source: "log",
       rank: manual.length + index + 1,
     }));
-    const data = [...manual, ...dynamic].slice(0, limit);
+    const data = await fillWithHotVodNames([...manual, ...dynamic]);
     aggregateCacheSet(cacheKey, data, SEARCH_ASSIST_CACHE_TTL_MS);
     return data;
   });
