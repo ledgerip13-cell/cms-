@@ -478,8 +478,8 @@
                       <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
                     </video>
                     <iframe v-else-if="playUrl" :src="playUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
-                    <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="x8-danmaku-layer" aria-hidden="true">
-                      <span v-for="item in activeDanmakus" :key="`dm-${item.id}-${item._nonce || 0}`" :style="{ top: item.top, color: item.color || '#fff' }">{{ item.content }}</span>
+                    <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="x8-danmaku-layer" :style="danmakuLayerStyle" aria-hidden="true">
+                      <span v-for="item in activeDanmakus" :key="`dm-${item.id}-${item._nonce || 0}`" :class="`mode-${item.mode || 'scroll'}`" :style="danmakuItemStyle(item)">{{ item.content }}</span>
                     </div>
                     <button v-if="playKind !== 'iframe'" class="x8-airplay-btn" type="button" title="投屏" @click.stop="openAirplay">
                       <svg class="x8-lucide" viewBox="0 0 24 24"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" /><path d="m12 15 5 6H7Z" /></svg>
@@ -600,11 +600,11 @@
                 </div>
                 <div class="x8-under-player-toolbar">
                   <div class="x8-toolbar-left">
-                    <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" title="点赞" @click="submitRating(10)">
+                    <button v-if="interactionConfig.ratingsEnabled" type="button" class="x8-toolbar-like" :class="{ on: myRating >= 10, pulse: ratingPulse === 'like' }" title="点赞" @click="submitRating(10)">
                       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
                       <span>点赞</span>
                     </button>
-                    <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating > 0 && myRating <= 2 }" title="点踩" @click="submitRating(2)">
+                    <button v-if="interactionConfig.ratingsEnabled" type="button" class="x8-toolbar-dislike" :class="{ on: myRating > 0 && myRating <= 2, pulse: ratingPulse === 'dislike' }" title="点踩" @click="submitRating(2)">
                       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
                       <span>点踩</span>
                     </button>
@@ -612,9 +612,9 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
                       <span>评论</span>
                     </button>
-                    <button type="button" :class="{ on: followed }" title="收藏" @click="toggleFollow">
+                    <button type="button" class="x8-toolbar-follow" :class="{ on: followed, pulse: ratingPulse === 'follow' }" :title="followed ? '追剧中' : '追剧'" @click="toggleFollow">
                       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.5s-7.5-4.4-9.4-9A5.1 5.1 0 0 1 11.7 7l.3.4.3-.4a5.1 5.1 0 0 1 9.1 4.5c-1.9 4.6-9.4 9-9.4 9Z" /></svg>
-                      <span>收藏</span>
+                      <span>{{ followed ? '追剧中' : '追剧' }}</span>
                     </button>
                     <button v-if="interactionConfig.reportsEnabled" type="button" title="报错" @click="openReport('play', currentLineId)">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
@@ -624,15 +624,33 @@
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.6 6.8-4.2" /><path d="m8.6 13.4 6.8 4.2" /></svg>
                       <span>分享</span>
                     </button>
-                    <button type="button" title="添加" @click="openMyList">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
-                      <span>添加</span>
-                    </button>
                   </div>
                   <div v-if="interactionConfig.danmakuEnabled" class="x8-toolbar-danmaku">
-                    <button type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
-                    <input v-model.trim="danmakuText" maxlength="80" placeholder="发个弹幕..." @keyup.enter="submitDanmaku" />
-                    <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSubmitting ? '发送中' : '发送' }}</button>
+                    <button class="x8-danmaku-icon-btn" type="button" :class="{ on: danmakuVisible }" :title="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 6.8A2.8 2.8 0 0 1 6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v5.4a2.8 2.8 0 0 1-2.8 2.8H12l-4.4 3.5V15h-.8A2.8 2.8 0 0 1 4 12.2V6.8Z" />
+                        <path d="M8 8h8" />
+                        <path d="M8 11h5" />
+                      </svg>
+                    </button>
+                    <button class="x8-danmaku-icon-btn" type="button" :class="{ on: danmakuSettingsOpen }" title="弹幕设置" @click="danmakuSettingsOpen = !danmakuSettingsOpen">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" />
+                        <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 0 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a1.9 1.9 0 0 1-3.8 0v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 0 1-2.7-2.7l.1-.1A1.6 1.6 0 0 0 5.1 15a1.6 1.6 0 0 0-1.5-1H3.4a1.9 1.9 0 0 1 0-3.8h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 0 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5V3a1.9 1.9 0 0 1 3.8 0v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 0 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1h.2a1.9 1.9 0 0 1 0 3.8h-.2a1.6 1.6 0 0 0-1.5 1Z" />
+                      </svg>
+                    </button>
+                    <div v-if="danmakuSettingsOpen" class="x8-danmaku-settings" @click.stop>
+                      <div v-for="group in danmakuOptionGroups" :key="group.key" class="x8-danmaku-setting-group">
+                        <span>{{ group.label }}</span>
+                        <div>
+                          <button v-for="option in group.options" :key="`${group.key}-${option.value}`" type="button" :class="{ on: isDanmakuOptionOn(group.key, option.value) }" @click="setDanmakuOption(group.key, option.value)">
+                            {{ option.label }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <input v-model.trim="danmakuText" maxlength="80" :placeholder="danmakuInputPlaceholder" @keyup.enter="submitDanmaku" />
+                    <button class="x8-danmaku-send" type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSendLabel }}</button>
                   </div>
                 </div>
               </div>
@@ -736,7 +754,6 @@
               </div>
               <div v-if="!user" class="x8-comment-login">
                 <button type="button" @click="goLogin">您还未 <b>登录</b> 请登录后发表评论</button>
-                <button type="button" @click="goLogin"><i></i><span>写长文</span></button>
               </div>
               <div v-else class="x8-comment-compose">
                 <div v-if="interactionConfig.ratingsEnabled" class="x8-rating-row">
@@ -1137,6 +1154,24 @@ defineOptions({ name: 'X8Home' })
 
 const route = useRoute()
 const router = useRouter()
+const X8_DANMAKU_SETTINGS_KEY = 'vcms.x8.danmaku.settings.v1'
+const X8_DANMAKU_DEFAULTS = {
+  opacity: 0.75,
+  area: 50,
+  mode: 'scroll',
+  density: 'normal',
+  speed: 7,
+  fontSize: 16,
+  width: 70,
+}
+function readX8DanmakuSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(X8_DANMAKU_SETTINGS_KEY) || 'null')
+    return raw && typeof raw === 'object' ? { ...X8_DANMAKU_DEFAULTS, ...raw } : { ...X8_DANMAKU_DEFAULTS }
+  } catch {
+    return { ...X8_DANMAKU_DEFAULTS }
+  }
+}
 const site = ref(readCachedSite())
 const playConfig = ref(normalizePlayConfig(site.value?.playConfig))
 const interactionConfig = ref({
@@ -1223,6 +1258,8 @@ const danmakuVisible = ref(true)
 const danmakuRows = ref([])
 const activeDanmakus = ref([])
 const danmakuSubmitting = ref(false)
+const danmakuSettingsOpen = ref(false)
+const danmakuSettings = reactive(readX8DanmakuSettings())
 const resolving = ref(false)
 const vodHistory = ref(null)
 const vodLineHistories = ref([])
@@ -1241,6 +1278,7 @@ const miniEpisodesEl = ref(null)
 const user = currentUser
 const followed = ref(false)
 const followedVodIds = ref(new Set())
+const ratingPulse = ref('')
 const x8AvatarBroken = ref(false)
 const loginMode = ref('login')
 const loginConfig = ref({ allowRegister: true, inviteRequired: false })
@@ -1298,6 +1336,7 @@ let searchBlurTimer = 0
 let x8SuggestTimer = 0
 let x8SuggestSeq = 0
 let controlsTimer = 0
+let ratingPulseTimer = 0
 let browseRequestId = 0
 let historySaveAt = 0
 let hls = null
@@ -1326,6 +1365,21 @@ const DEFAULT_INTERACTION_CONFIG = {
   requestRequireLogin: false,
   reportRequireLogin: false,
   danmakuRequireLogin: true,
+}
+const danmakuOptionGroups = [
+  { key: 'opacity', label: '透明度', options: [{ label: '30%', value: 0.3 }, { label: '50%', value: 0.5 }, { label: '75%', value: 0.75 }, { label: '100%', value: 1 }] },
+  { key: 'area', label: '区域', options: [{ label: '1/4', value: 25 }, { label: '1/2', value: 50 }, { label: '3/4', value: 75 }, { label: '全屏', value: 100 }] },
+  { key: 'mode', label: '位置', options: [{ label: '滚动', value: 'scroll' }, { label: '顶部', value: 'top' }, { label: '底部', value: 'bottom' }] },
+  { key: 'density', label: '密度', options: [{ label: '低', value: 'low' }, { label: '标准', value: 'normal' }, { label: '高', value: 'high' }, { label: '极限', value: 'max' }] },
+  { key: 'speed', label: '速度', options: [{ label: '慢', value: 9 }, { label: '标准', value: 7 }, { label: '快', value: 5 }] },
+  { key: 'fontSize', label: '字号', options: [{ label: '小', value: 14 }, { label: '标准', value: 16 }, { label: '大', value: 18 }] },
+  { key: 'width', label: '宽度', options: [{ label: '50%', value: 50 }, { label: '70%', value: 70 }, { label: '90%', value: 90 }] },
+]
+const danmakuDensityMap = {
+  low: { perTick: 2, max: 6 },
+  normal: { perTick: 4, max: 12 },
+  high: { perTick: 6, max: 20 },
+  max: { perTick: 10, max: 40 },
 }
 const X8_BROWSE_PAGE_SIZE = 30
 const effectivePlayConfig = computed(() => mergeSkipConfig(
@@ -1575,6 +1629,19 @@ const ratingSummary = computed(() => {
   const count = Number(ratingState.value.count || 0)
   return count ? `用户评分 ${avg.toFixed(1)} · ${count} 人` : '暂无用户评分'
 })
+const danmakuSendLabel = computed(() => {
+  if (danmakuSubmitting.value) return '...'
+  return interactionConfig.value.danmakuRequireLogin && !user.value ? '登录' : '发送'
+})
+const danmakuInputPlaceholder = computed(() => (
+  interactionConfig.value.danmakuRequireLogin && !user.value ? '登录后发弹幕' : '发个弹幕...'
+))
+const danmakuLayerStyle = computed(() => ({
+  '--x8-danmaku-opacity': String(danmakuSettings.opacity),
+  '--x8-danmaku-font-size': `${Number(danmakuSettings.fontSize) || 16}px`,
+  '--x8-danmaku-duration': `${Number(danmakuSettings.speed) || 7}s`,
+  '--x8-danmaku-width': `${Number(danmakuSettings.width) || 70}vw`,
+}))
 
 const X8Panel = defineComponent({
   name: 'X8Panel',
@@ -2571,6 +2638,18 @@ async function submitComment() {
   }
 }
 
+function triggerRatingPulse(kind) {
+  ratingPulse.value = ''
+  if (ratingPulseTimer) clearTimeout(ratingPulseTimer)
+  requestAnimationFrame(() => {
+    ratingPulse.value = kind
+    ratingPulseTimer = window.setTimeout(() => {
+      ratingPulse.value = ''
+      ratingPulseTimer = 0
+    }, 560)
+  })
+}
+
 async function submitRating(score) {
   if (!vod.value?.id) return
   if (interactionConfig.value.ratingRequireLogin && !user.value) {
@@ -2578,6 +2657,8 @@ async function submitRating(score) {
     return
   }
   try {
+    if (score >= 10) triggerRatingPulse('like')
+    else if (score > 0 && score <= 2) triggerRatingPulse('dislike')
     ratingState.value = await api.rateVod(vod.value.id, { score, source: 'x8' })
     notifySuccess('评分已保存')
   } catch (error) {
@@ -2655,19 +2736,52 @@ async function loadDanmakuWindow(force = false) {
   danmakuRows.value = Array.isArray(rows) ? rows : []
 }
 
+function saveDanmakuSettings() {
+  try {
+    localStorage.setItem(X8_DANMAKU_SETTINGS_KEY, JSON.stringify({ ...danmakuSettings }))
+  } catch {}
+}
+
+function setDanmakuOption(key, value) {
+  danmakuSettings[key] = value
+  saveDanmakuSettings()
+}
+
+function isDanmakuOptionOn(key, value) {
+  return String(danmakuSettings[key]) === String(value)
+}
+
+function danmakuDensity() {
+  return danmakuDensityMap[danmakuSettings.density] || danmakuDensityMap.normal
+}
+
+function danmakuTop(index) {
+  const area = Math.max(25, Math.min(100, Number(danmakuSettings.area) || 50))
+  const lanes = Math.max(2, Math.round(area / 10))
+  const step = area / (lanes + 1)
+  const lane = (danmakuNonce + index) % lanes
+  if (danmakuSettings.mode === 'bottom') return `${100 - area + step * (lane + 1)}%`
+  return `${Math.max(5, step * (lane + 1))}%`
+}
+
+function danmakuItemStyle(item) {
+  return { top: item.top, color: item.color || '#fff' }
+}
+
 function tickDanmaku() {
   if (!danmakuVisible.value || !danmakuRows.value.length) return
   const now = Math.floor(Number(currentTime.value) || 0)
-  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, 4)
+  const density = danmakuDensity()
+  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, density.perTick)
   if (!due.length) return
   for (const item of due) item._shown = true
   activeDanmakus.value = [
     ...activeDanmakus.value,
-    ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, top: `${14 + ((danmakuNonce + index) % 7) * 10}%` })),
-  ].slice(-12)
+    ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, mode: danmakuSettings.mode, top: danmakuTop(index) })),
+  ].slice(-density.max)
   window.setTimeout(() => {
     activeDanmakus.value = activeDanmakus.value.filter(item => !due.some(x => x.id === item.id))
-  }, 7600)
+  }, Math.max(4, Number(danmakuSettings.speed) || 7) * 1000)
 }
 
 async function submitDanmaku() {
@@ -3487,6 +3601,7 @@ async function toggleFollow() {
     goLogin()
     return
   }
+  triggerRatingPulse('follow')
   const result = followed.value ? await api.unfollowVod(vod.value.id) : await api.followVod(vod.value.id)
   followed.value = Boolean(result?.followed)
   setFollowedId(vod.value.id, Boolean(result?.followed))
@@ -3776,6 +3891,7 @@ onBeforeUnmount(() => {
   clearTimeout(searchBlurTimer)
   clearTimeout(x8SuggestTimer)
   clearTimeout(controlsTimer)
+  clearTimeout(ratingPulseTimer)
   destroyHls()
   destroyTrailerHls()
 })
@@ -8137,40 +8253,143 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.08);
   border-radius: 8px;
 }
+.x8-toolbar-left button.on.x8-toolbar-like,
+.x8-toolbar-left button.on.x8-toolbar-follow {
+  color: #ff4d55;
+  background: rgba(255,77,85,.12);
+}
+.x8-toolbar-left button.on.x8-toolbar-dislike {
+  color: #8fb4ff;
+  background: rgba(143,180,255,.12);
+}
 .x8-toolbar-left svg {
   width: 19px;
   height: 19px;
+  transform-origin: 50% 78%;
+  transition: color .16s ease, transform .16s ease;
+}
+.x8-toolbar-left button.x8-toolbar-like.pulse svg {
+  animation: x8ThumbsUp 520ms cubic-bezier(.2,.8,.2,1);
+}
+.x8-toolbar-left button.x8-toolbar-dislike.pulse svg {
+  animation: x8ThumbsDown 520ms cubic-bezier(.2,.8,.2,1);
+}
+.x8-toolbar-left button.x8-toolbar-follow.pulse svg {
+  animation: x8HeartPop 520ms cubic-bezier(.2,.8,.2,1);
 }
 .x8-toolbar-left span {
   font-size: 12px;
   line-height: 1;
 }
+@keyframes x8ThumbsUp {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  28% { transform: translateY(-5px) rotate(-12deg) scale(1.14); }
+  58% { transform: translateY(-2px) rotate(-7deg) scale(1.08); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); }
+}
+@keyframes x8ThumbsDown {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  28% { transform: translateY(5px) rotate(12deg) scale(1.14); }
+  58% { transform: translateY(2px) rotate(7deg) scale(1.08); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); }
+}
+@keyframes x8HeartPop {
+  0% { transform: scale(1); }
+  32% { transform: scale(1.24); }
+  62% { transform: scale(.94); }
+  100% { transform: scale(1); }
+}
 .x8-toolbar-danmaku {
-  flex: 0 1 430px;
-  min-width: 280px;
+  position: relative;
+  flex: 0 1 420px;
+  min-width: 260px;
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 66px;
-  gap: 8px;
+  grid-template-columns: 34px 34px minmax(0, 1fr) 52px;
+  gap: 6px;
+  align-items: center;
 }
 .x8-toolbar-danmaku button {
-  height: 36px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 10px;
   background: rgba(255,255,255,.12);
   color: #fff;
+  font-size: 12px;
+  line-height: 1;
 }
 .x8-toolbar-danmaku button.on {
   background: #fff;
   color: #111;
 }
+.x8-danmaku-icon-btn {
+  width: 34px;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+}
+.x8-danmaku-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .x8-toolbar-danmaku input {
   min-width: 0;
-  height: 36px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 8px;
   background: rgba(255,255,255,.08);
   color: #fff;
+  font-size: 13px;
   outline: 0;
+}
+.x8-danmaku-send {
+  min-width: 0;
+}
+.x8-danmaku-settings {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  width: min(380px, calc(100vw - 32px));
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 10px;
+  background: rgba(18,20,28,.92);
+  box-shadow: 0 18px 46px rgba(0,0,0,.45);
+  backdrop-filter: blur(16px);
+}
+.x8-danmaku-setting-group {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.x8-danmaku-setting-group > span {
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+}
+.x8-danmaku-setting-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.x8-danmaku-setting-group button {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.78);
+  font-weight: 700;
+}
+.x8-danmaku-setting-group button.on {
+  background: #fff;
+  color: #111;
 }
 .x8-comment-section {
   margin-top: 24px;
@@ -8209,14 +8428,13 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 .x8-comment-login {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 116px;
-  gap: 12px;
+  display: block;
   margin-bottom: 18px;
 }
 .x8-comment-login button {
+  width: 100%;
   min-width: 0;
-  height: 70px;
+  height: 58px;
   border: 0;
   border-radius: 8px;
   background: rgba(255,255,255,.045);
@@ -8238,19 +8456,6 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255,255,255,.84);
   border-radius: 4px;
   color: #fff;
-}
-.x8-comment-login button:last-child {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
-  font-size: 13px;
-}
-.x8-comment-login i {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(255,255,255,.18);
 }
 .x8-comment-compose {
   display: grid;
@@ -8352,20 +8557,38 @@ onBeforeUnmount(() => {
 }
 .x8-danmaku-layer span {
   position: absolute;
-  left: 100%;
+  max-width: var(--x8-danmaku-width, 70vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   min-width: max-content;
-  padding: 3px 9px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: rgba(0,0,0,.24);
   color: #fff;
-  font-size: 20px;
-  font-weight: 700;
+  opacity: var(--x8-danmaku-opacity, .75);
+  font-size: var(--x8-danmaku-font-size, 16px);
+  font-weight: 600;
   text-shadow: 0 1px 2px rgba(0,0,0,.85);
-  animation: x8DanmakuMove 7.6s linear forwards;
+}
+.x8-danmaku-layer span.mode-scroll {
+  left: 100%;
+  animation: x8DanmakuMove var(--x8-danmaku-duration, 7s) linear forwards;
+}
+.x8-danmaku-layer span.mode-top,
+.x8-danmaku-layer span.mode-bottom {
+  left: 50%;
+  transform: translateX(-50%);
+  animation: x8DanmakuHold var(--x8-danmaku-duration, 7s) linear forwards;
 }
 @keyframes x8DanmakuMove {
   from { transform: translateX(0); }
   to { transform: translateX(calc(-100vw - 100%)); }
+}
+@keyframes x8DanmakuHold {
+  0% { opacity: 0; }
+  12%, 88% { opacity: var(--x8-danmaku-opacity, .75); }
+  100% { opacity: 0; }
 }
 .x8-modal-mask {
   position: fixed;
@@ -8719,7 +8942,12 @@ onBeforeUnmount(() => {
     width: 100%;
     min-width: 0;
     flex: none;
-    grid-template-columns: 68px minmax(0, 1fr) 58px;
+    grid-template-columns: 34px 34px minmax(0, 1fr) 52px;
+  }
+  .x8-danmaku-settings {
+    right: auto;
+    left: 0;
+    width: calc(100vw - 20px);
   }
   .x8-page .x8-panel-title,
   .x8-rank-head h3 {

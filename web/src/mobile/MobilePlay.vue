@@ -1,6 +1,6 @@
 <template>
   <main class="mp">
-    <section class="mp-player" :class="{ landscape: playerLandscape, portrait: playerLandscape && fullscreenPortrait }" :style="heroStyle" @click="onPlayerTap" @touchstart="onPlayerTouchStart" @touchmove="onPlayerTouchMove" @touchend="onPlayerTouchEnd" @touchcancel="onPlayerTouchEnd">
+    <section class="mp-player" :class="{ landscape: playerLandscape, portrait: playerLandscape && fullscreenPortrait }" :style="heroStyle" @click="onPlayerTap" @pointerup="onPlayerPointerUp" @touchstart="onPlayerTouchStart" @touchmove="onPlayerTouchMove" @touchend="onPlayerTouchEnd" @touchcancel="onPlayerTouchEnd">
       <div class="mp-topbar">
         <button class="mp-icon-btn" type="button" aria-label="返回" @click.stop="goBack">
           <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
@@ -32,12 +32,14 @@
         @durationchange="syncVideoState"
         @timeupdate="onTimeUpdate"
         @error="handlePlaybackError"
+        @click.stop="onPlayerTap"
+        @pointerup.stop="onPlayerPointerUp"
       >
         <track v-for="(sub, index) in subtitleOptions" :key="sub.url" kind="subtitles" :src="sub.url" :srclang="sub.lang" :label="sub.label" :default="subtitleDefaultEnabled && index === 0" @load="applySubtitleMode" />
       </video>
       <iframe v-else-if="mode === 'iframe' && !accessBlock" class="mp-video" :src="curUrl" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
-      <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="mp-danmaku-layer" aria-hidden="true">
-        <span v-for="item in activeDanmakus" :key="`mp-dm-${item.id}-${item._nonce || 0}`" :style="{ top: item.top, color: item.color || '#fff' }">{{ item.content }}</span>
+      <div v-if="interactionConfig.danmakuEnabled && danmakuVisible" class="mp-danmaku-layer" :style="danmakuLayerStyle" aria-hidden="true">
+        <span v-for="item in activeDanmakus" :key="`mp-dm-${item.id}-${item._nonce || 0}`" :class="`mode-${item.mode || 'scroll'}`" :style="danmakuItemStyle(item)">{{ item.content }}</span>
       </div>
       <div v-if="loading || resolving" class="mp-state">
         <div></div>
@@ -51,7 +53,7 @@
       <button v-else-if="!curUrl" class="mp-play" type="button" aria-label="播放" @click="playCurrent">
         <svg viewBox="0 0 24 24" v-html="icon('play')"></svg>
       </button>
-      <div v-if="curUrl && !accessBlock && showCenterControls && mode === 'hls'" class="mp-center-controls">
+      <div v-if="!accessBlock && showCenterControls && mode === 'hls'" class="mp-center-controls">
         <button class="mp-round-btn" type="button" aria-label="上一集" :disabled="!hasPrevEp" @click.stop="playPrevEp">
           <svg viewBox="0 0 24 24" v-html="icon('skipBack')"></svg>
         </button>
@@ -62,7 +64,7 @@
           <svg viewBox="0 0 24 24" v-html="icon('skipForward')"></svg>
         </button>
       </div>
-      <div v-if="curUrl && !accessBlock && controlsVisible" class="mp-bottom-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="keepControlsVisible()">
+      <div v-if="!accessBlock && controlsVisible" class="mp-bottom-controls" :class="{ iframe: mode === 'iframe' }" @click.stop="keepControlsVisible()">
         <div v-if="mode === 'hls'" class="mp-control-stack">
           <input
             class="mp-range"
@@ -88,8 +90,8 @@
             <button class="mp-control-btn mp-play-toggle" type="button" :aria-label="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
               <svg viewBox="0 0 24 24" v-html="icon(isPlaying ? 'pause' : 'play')"></svg>
             </button>
-            <button class="mp-control-btn mp-next-toggle" type="button" aria-label="下一集" :disabled="!hasNextEp" @click.stop="playNextEp">
-              <svg viewBox="0 0 24 24" v-html="icon('skipForward')"></svg>
+            <button class="mp-control-btn" type="button" :aria-label="isMuted ? '取消静音' : '静音'" @click.stop="toggleMuted">
+              <svg viewBox="0 0 24 24" v-html="icon(isMuted ? 'volumeOff' : 'volume')"></svg>
             </button>
             <span class="mp-time mp-time-combo">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
             <span class="mp-control-spacer"></span>
@@ -97,6 +99,9 @@
               <span>{{ currentQualityLabel }}</span>
             </button>
             <span v-else-if="showQualityLabel" class="mp-quality-readonly">{{ currentQualityLabel }}</span>
+            <button v-if="showPictureInPicture" class="mp-control-btn" type="button" aria-label="小窗播放" @click.stop="togglePictureInPicture">
+              <svg viewBox="0 0 24 24" v-html="icon('pip')"></svg>
+            </button>
             <button class="mp-control-btn" type="button" aria-label="播放设置" @click.stop="togglePlayerMenu">
               <svg viewBox="0 0 24 24" v-html="icon('more')"></svg>
             </button>
@@ -173,6 +178,61 @@
     </section>
 
     <section v-if="vod.id" class="mp-toolbar-panel">
+      <div v-if="interactionConfig.danmakuEnabled" class="mp-toolbar-danmaku">
+        <button class="mp-danmaku-icon-btn" type="button" :class="{ on: danmakuVisible }" :aria-label="danmakuVisible ? '关闭弹幕' : '打开弹幕'" @click="danmakuVisible = !danmakuVisible">
+          <svg viewBox="0 0 24 24" v-html="icon('danmaku')"></svg>
+        </button>
+        <button class="mp-danmaku-icon-btn" type="button" :class="{ on: danmakuSettingsOpen }" aria-label="弹幕设置" @click="toggleDanmakuSettings">
+          <svg viewBox="0 0 24 24" v-html="icon('settings')"></svg>
+        </button>
+        <input v-model.trim="danmakuText" maxlength="80" :placeholder="danmakuInputPlaceholder" @keyup.enter="submitDanmaku" />
+        <button class="mp-danmaku-send" type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">{{ danmakuSendLabel }}</button>
+        <Teleport to="body">
+          <div v-if="danmakuSettingsOpen" class="mp-danmaku-settings-mask" @click.self="closeDanmakuSettings">
+            <div class="mp-danmaku-settings" @click.stop>
+              <header>
+                <strong>弹幕设置</strong>
+                <button type="button" aria-label="关闭" @click="closeDanmakuSettings">
+                  <svg viewBox="0 0 24 24" v-html="icon('close')"></svg>
+                </button>
+              </header>
+              <div v-for="group in danmakuOptionGroups" :key="group.key" class="mp-danmaku-setting-group">
+                <span>{{ group.label }}</span>
+                <div>
+                  <button v-for="option in group.options" :key="`${group.key}-${option.value}`" type="button" :class="{ on: isDanmakuOptionOn(group.key, option.value) }" @click="setDanmakuOption(group.key, option.value)">
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+      </div>
+    </section>
+
+    <section v-if="vod.id" class="mp-info">
+      <div class="mp-title-row">
+        <img class="mp-cover m-img-fade" :src="poster(vod)" :alt="vod.name" @load="onImgLoad" @error="hideBrokenImg" />
+        <div>
+          <h1>{{ vod.name }}</h1>
+          <p>
+            <span v-if="vod.typeName">{{ vod.typeName }}</span>
+            <span v-if="vod.year">{{ vod.year }}</span>
+            <span v-if="vod.remarks">{{ vod.remarks }}</span>
+            <span v-if="vod.rating">豆瓣 {{ vod.rating }}</span>
+          </p>
+        </div>
+        <button class="mp-follow" type="button" :class="{ on: followed }" @click="toggleFollow">
+          <svg viewBox="0 0 24 24" v-html="icon('heart')"></svg>
+          {{ followed ? '已追' : '追剧' }}
+        </button>
+      </div>
+      <p v-if="vod.officialIntro || vod.blurb" class="mp-intro" :class="{ folded: !introOpen }" @click="introOpen = !introOpen">
+        {{ vod.officialIntro || vod.blurb }}
+      </p>
+    </section>
+
+    <section v-if="vod.id" class="mp-action-panel">
       <div class="mp-action-strip">
         <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating >= 10 }" @click="submitRating(10)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h4v11Zm2 0V10.5l4.1-7.2a1.7 1.7 0 0 1 3.1.95V9h2.2a2.6 2.6 0 0 1 2.55 3.1l-1.2 6.2A3.4 3.4 0 0 1 18.4 21H11Z" /></svg>
@@ -203,33 +263,6 @@
           <span>添加</span>
         </button>
       </div>
-      <div v-if="interactionConfig.danmakuEnabled" class="mp-toolbar-danmaku">
-        <button type="button" :class="{ on: danmakuVisible }" @click="danmakuVisible = !danmakuVisible">{{ danmakuVisible ? '弹幕开' : '弹幕关' }}</button>
-        <input v-model.trim="danmakuText" maxlength="80" placeholder="发个弹幕..." @keyup.enter="submitDanmaku" />
-        <button type="button" :disabled="danmakuSubmitting" @click="submitDanmaku">发送</button>
-      </div>
-    </section>
-
-    <section v-if="vod.id" class="mp-info">
-      <div class="mp-title-row">
-        <img class="mp-cover m-img-fade" :src="poster(vod)" :alt="vod.name" @load="onImgLoad" @error="hideBrokenImg" />
-        <div>
-          <h1>{{ vod.name }}</h1>
-          <p>
-            <span v-if="vod.typeName">{{ vod.typeName }}</span>
-            <span v-if="vod.year">{{ vod.year }}</span>
-            <span v-if="vod.remarks">{{ vod.remarks }}</span>
-            <span v-if="vod.rating">豆瓣 {{ vod.rating }}</span>
-          </p>
-        </div>
-        <button class="mp-follow" type="button" :class="{ on: followed }" @click="toggleFollow">
-          <svg viewBox="0 0 24 24" v-html="icon('heart')"></svg>
-          {{ followed ? '已追' : '追剧' }}
-        </button>
-      </div>
-      <p v-if="vod.officialIntro || vod.blurb" class="mp-intro" :class="{ folded: !introOpen }" @click="introOpen = !introOpen">
-        {{ vod.officialIntro || vod.blurb }}
-      </p>
     </section>
 
     <section v-if="vod.lines?.length" class="mp-panel mp-lines-panel">
@@ -297,7 +330,6 @@
       </header>
       <div v-if="!user" class="mp-comment-login">
         <button type="button" @click="openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评论' })">您还未 <b>登录</b> 请登录后发表评论</button>
-        <button type="button" @click="openAuthDialog({ mode: 'login', redirect: route.fullPath, reason: '登录后可评论' })"><i></i><span>写长文</span></button>
       </div>
       <div v-else class="mp-comment-compose">
         <div v-if="interactionConfig.ratingsEnabled" class="mp-rating">
@@ -342,7 +374,7 @@
 
 <script setup>
 import Hls from 'hls.js'
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
@@ -354,6 +386,24 @@ import { icon } from './icons'
 
 const route = useRoute()
 const router = useRouter()
+const MOBILE_DANMAKU_SETTINGS_KEY = 'vcms.mobile.danmaku.settings.v1'
+const MOBILE_DANMAKU_DEFAULTS = {
+  opacity: 0.75,
+  area: 50,
+  mode: 'scroll',
+  density: 'normal',
+  speed: 7,
+  fontSize: 16,
+  width: 70,
+}
+function readMobileDanmakuSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MOBILE_DANMAKU_SETTINGS_KEY) || 'null')
+    return raw && typeof raw === 'object' ? { ...MOBILE_DANMAKU_DEFAULTS, ...raw } : { ...MOBILE_DANMAKU_DEFAULTS }
+  } catch {
+    return { ...MOBILE_DANMAKU_DEFAULTS }
+  }
+}
 const user = currentUser
 const videoEl = ref(null)
 const lineTabsEl = ref(null)
@@ -408,6 +458,8 @@ const commentSubmitting = ref(false)
 const ratingState = ref({ avg: 0, count: 0, myScore: 0 })
 const danmakuText = ref('')
 const danmakuVisible = ref(true)
+const danmakuSettingsOpen = ref(false)
+const danmakuSettings = reactive(readMobileDanmakuSettings())
 const danmakuRows = ref([])
 const activeDanmakus = ref([])
 const danmakuSubmitting = ref(false)
@@ -424,9 +476,25 @@ const currentQualityLevel = ref(-1)
 const qualityOptions = ref([])
 const nativeQualityLabel = ref('')
 const menuOpen = ref(false)
+const pipSupported = ref(false)
 const playerLandscape = ref(false)
 const fullscreenPortrait = ref(false)   // 全屏时的实际方向：true=竖屏全屏，false=横屏全屏
 const speedOptions = [0.75, 1, 1.25, 1.5, 2]
+const danmakuOptionGroups = [
+  { key: 'opacity', label: '透明度', options: [{ label: '30%', value: 0.3 }, { label: '50%', value: 0.5 }, { label: '75%', value: 0.75 }, { label: '100%', value: 1 }] },
+  { key: 'area', label: '区域', options: [{ label: '1/4', value: 25 }, { label: '1/2', value: 50 }, { label: '3/4', value: 75 }, { label: '全屏', value: 100 }] },
+  { key: 'mode', label: '位置', options: [{ label: '滚动', value: 'scroll' }, { label: '顶部', value: 'top' }, { label: '底部', value: 'bottom' }] },
+  { key: 'density', label: '密度', options: [{ label: '低', value: 'low' }, { label: '标准', value: 'normal' }, { label: '高', value: 'high' }, { label: '极限', value: 'max' }] },
+  { key: 'speed', label: '速度', options: [{ label: '慢', value: 9 }, { label: '标准', value: 7 }, { label: '快', value: 5 }] },
+  { key: 'fontSize', label: '字号', options: [{ label: '小', value: 14 }, { label: '标准', value: 16 }, { label: '大', value: 18 }] },
+  { key: 'width', label: '宽度', options: [{ label: '50%', value: 50 }, { label: '70%', value: 70 }, { label: '90%', value: 90 }] },
+]
+const danmakuDensityMap = {
+  low: { perTick: 2, max: 6 },
+  normal: { perTick: 4, max: 12 },
+  high: { perTick: 6, max: 20 },
+  max: { perTick: 10, max: 36 },
+}
 const EPISODE_GROUP_SIZE = 30
 const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
 const AUTO_SWITCH_MAX_ROUNDS = 2
@@ -506,6 +574,7 @@ const historyProgressPercent = computed(() => {
 })
 const showQualityControl = computed(() => qualityOptions.value.length > 1)
 const showQualityLabel = computed(() => mode.value === 'hls' && currentQualityLabel.value && currentQualityLabel.value !== '清晰度')
+const showPictureInPicture = computed(() => mode.value === 'hls' && pipSupported.value)
 const subtitleOptions = computed(() => (Array.isArray(subtitles.value) ? subtitles.value : [])
   .map((item, index) => ({
     url: String(item?.url || '').trim(),
@@ -527,6 +596,18 @@ const currentQualityLabel = computed(() => {
   const current = qualityOptions.value.find(item => item.level === currentQualityLevel.value)?.label || nativeQualityLabel.value
   return qualityOptions.value.find(item => item.level === qualityLevel.value)?.label || current || qualityOptions.value[0]?.label || '清晰度'
 })
+const danmakuSendLabel = computed(() => (
+  interactionConfig.value.danmakuRequireLogin && !user.value ? '登录' : (danmakuSubmitting.value ? '...' : '发送')
+))
+const danmakuInputPlaceholder = computed(() => (
+  interactionConfig.value.danmakuRequireLogin && !user.value ? '登录后发弹幕' : '来发表弹幕吧~'
+))
+const danmakuLayerStyle = computed(() => ({
+  '--mp-danmaku-opacity': String(danmakuSettings.opacity),
+  '--mp-danmaku-font-size': `${Number(danmakuSettings.fontSize) || 16}px`,
+  '--mp-danmaku-duration': `${Number(danmakuSettings.speed) || 7}s`,
+  '--mp-danmaku-width': `${Number(danmakuSettings.width) || 70}vw`,
+}))
 const currentEpisodeName = computed(() => {
   const ep = episodes.value[epIdx.value]
   return ep?.name || (episodes.value.length ? `第 ${epIdx.value + 1} 集` : '')
@@ -755,7 +836,7 @@ function startVideo(video, seq) {
 }
 
 function showControls(timeout = 5000, options = {}) {
-  if (!curUrl.value || accessBlock.value) return
+  if (accessBlock.value) return
   const showCenter = options.center !== false
   controlsVisible.value = true
   centerControlsVisible.value = showCenter
@@ -764,6 +845,7 @@ function showControls(timeout = 5000, options = {}) {
     controlsVisible.value = false
     centerControlsVisible.value = false
     menuOpen.value = false
+    danmakuSettingsOpen.value = false
     controlsTimer = 0
   }, timeout)
 }
@@ -776,6 +858,7 @@ function hideControls() {
   controlsVisible.value = false
   centerControlsVisible.value = false
   menuOpen.value = false
+  danmakuSettingsOpen.value = false
   if (controlsTimer) { clearTimeout(controlsTimer); controlsTimer = 0 }
 }
 
@@ -788,11 +871,29 @@ function isControlTarget(e) {
 
 // 点击播放器：显隐切换（区分滑动——滑动后短时间内抑制合成 click）
 function onPlayerTap(e) {
-  if (!curUrl.value || accessBlock.value) return
+  if (accessBlock.value) return
   if (Date.now() < suppressTapUntil) return
   if (isControlTarget(e)) return
   if (controlsVisible.value) hideControls()
   else showControls()
+}
+
+function onPlayerPointerUp(e) {
+  if (accessBlock.value || touchMoved || seeking.value) return
+  if (Date.now() < suppressTapUntil) return
+  if (isControlTarget(e)) return
+  e?.preventDefault?.()
+  suppressTapUntil = Date.now() + 350
+  if (controlsVisible.value) hideControls()
+  else showControls()
+}
+
+function bindVideoTapEvents() {
+  const video = videoEl.value
+  if (!video || video.__mpTapBound) return
+  video.__mpTapBound = true
+  video.addEventListener('click', onPlayerTap)
+  video.addEventListener('pointerup', onPlayerPointerUp, { passive: false })
 }
 
 async function toggleLandscape() {
@@ -843,6 +944,43 @@ function enterFullscreen() {
   }
 }
 
+function updatePictureInPictureSupport() {
+  const video = videoEl.value
+  pipSupported.value = mode.value === 'hls' && Boolean(
+    video?.requestPictureInPicture ||
+    video?.webkitSetPresentationMode ||
+    (typeof document !== 'undefined' && document.pictureInPictureEnabled)
+  )
+}
+
+async function togglePictureInPicture() {
+  const video = videoEl.value
+  if (!video || mode.value !== 'hls') return
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture()
+      showControls(2600)
+      return
+    }
+    if (video.requestPictureInPicture && document.pictureInPictureEnabled !== false) {
+      await video.requestPictureInPicture()
+      showNotice('已开启小窗播放')
+      showControls(2600)
+      return
+    }
+    if (video.webkitSupportsPresentationMode?.('picture-in-picture') && video.webkitSetPresentationMode) {
+      const nextMode = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'
+      video.webkitSetPresentationMode(nextMode)
+      showNotice(nextMode === 'picture-in-picture' ? '已开启小窗播放' : '已退出小窗播放')
+      showControls(2600)
+      return
+    }
+    showNotice('当前浏览器暂不支持小窗')
+  } catch {
+    showNotice('当前浏览器暂不支持小窗')
+  }
+}
+
 async function openCast() {
   const video = videoEl.value
   menuOpen.value = false
@@ -880,7 +1018,9 @@ function syncVideoState() {
 }
 
 function onLoadedMetadata() {
+  bindVideoTapEvents()
   updateNativeQualityLabel()
+  updatePictureInPictureSupport()
   syncVideoState()
   applySubtitleMode()
   applySkipIntro()
@@ -1094,21 +1234,66 @@ async function loadDanmakuWindow(force = false) {
   danmakuRows.value = Array.isArray(rows) ? rows : []
 }
 
+function saveDanmakuSettings() {
+  try {
+    localStorage.setItem(MOBILE_DANMAKU_SETTINGS_KEY, JSON.stringify({ ...danmakuSettings }))
+  } catch {}
+}
+
+function setDanmakuOption(key, value) {
+  danmakuSettings[key] = value
+  saveDanmakuSettings()
+}
+
+function isDanmakuOptionOn(key, value) {
+  return String(danmakuSettings[key]) === String(value)
+}
+
+function toggleDanmakuSettings() {
+  danmakuSettingsOpen.value = !danmakuSettingsOpen.value
+}
+
+function closeDanmakuSettings() {
+  danmakuSettingsOpen.value = false
+}
+
+function danmakuDensity() {
+  return danmakuDensityMap[danmakuSettings.density] || danmakuDensityMap.normal
+}
+
+function danmakuTop(index) {
+  const area = Math.max(25, Math.min(100, Number(danmakuSettings.area) || 50))
+  const lanes = Math.max(2, Math.round(area / 10))
+  const step = area / (lanes + 1)
+  const lane = (danmakuNonce + index) % lanes
+  if (danmakuSettings.mode === 'bottom') return `${100 - area + step * (lane + 1)}%`
+  return `${Math.max(5, step * (lane + 1))}%`
+}
+
+function danmakuItemStyle(item) {
+  return { top: item.top, color: item.color || '#fff' }
+}
+
 function tickDanmaku() {
   if (!danmakuVisible.value || !danmakuRows.value.length) return
   const now = Math.floor(Number(currentTime.value) || 0)
-  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, 3)
+  const density = danmakuDensity()
+  const due = danmakuRows.value.filter(item => !item._shown && Math.abs(Number(item.timeSec || 0) - now) <= 1).slice(0, density.perTick)
   if (!due.length) return
   for (const item of due) item._shown = true
-  activeDanmakus.value = [...activeDanmakus.value, ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, top: `${18 + ((danmakuNonce + index) % 5) * 12}%` }))].slice(-8)
+  activeDanmakus.value = [
+    ...activeDanmakus.value,
+    ...due.map((item, index) => ({ ...item, _nonce: ++danmakuNonce, mode: danmakuSettings.mode, top: danmakuTop(index) })),
+  ].slice(-density.max)
   window.setTimeout(() => {
     activeDanmakus.value = activeDanmakus.value.filter(item => !due.some(x => x.id === item.id))
-  }, 7000)
+  }, Math.max(4, Number(danmakuSettings.speed) || 7) * 1000)
 }
 
 async function submitDanmaku() {
-  if (!vod.value?.id || !danmakuText.value || danmakuSubmitting.value) return
+  if (!vod.value?.id || danmakuSubmitting.value) return
   if (interactionConfig.value.danmakuRequireLogin && !requireInteractionLogin('登录后可发弹幕')) return
+  if (!danmakuText.value) return
   danmakuSubmitting.value = true
   try {
     const row = await api.sendDanmaku(vod.value.id, {
@@ -1879,6 +2064,10 @@ watch(() => route.path, (path) => {
 })
 onMounted(() => {
   pageActive = true
+  nextTick(() => {
+    bindVideoTapEvents()
+    updatePictureInPictureSupport()
+  })
   void refreshPlayConfig()
   if (isPlayRoute() && route.params.id) loadVod(route.params.id)
 })
@@ -2117,12 +2306,12 @@ onDeactivated(() => {
 .mp-control-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 .mp-control-btn {
-  flex: 0 0 30px;
-  width: 30px;
+  flex: 0 0 28px;
+  width: 28px;
   height: 30px;
   border: 0;
   border-radius: 8px;
@@ -2135,8 +2324,8 @@ onDeactivated(() => {
   opacity: .35;
 }
 .mp-control-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.1;
@@ -2144,12 +2333,6 @@ onDeactivated(() => {
   stroke-linejoin: round;
 }
 .mp-play-toggle svg {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
-  stroke: none;
-}
-.mp-next-toggle svg {
   width: 24px;
   height: 24px;
   fill: currentColor;
@@ -2158,8 +2341,8 @@ onDeactivated(() => {
 .mp-quality-btn {
   flex-basis: auto;
   width: auto;
-  min-width: 48px;
-  max-width: 62px;
+  min-width: 42px;
+  max-width: 58px;
   padding: 0 5px;
 }
 .mp-quality-btn span,
@@ -2175,7 +2358,7 @@ onDeactivated(() => {
 }
 .mp-quality-readonly {
   flex: 0 1 auto;
-  max-width: 62px;
+  max-width: 58px;
   padding: 0 3px;
 }
 .mp-control-spacer {
@@ -2571,31 +2754,54 @@ onDeactivated(() => {
 }
 .mp-danmaku-layer span {
   position: absolute;
-  left: 100%;
+  max-width: var(--mp-danmaku-width, 70vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   min-width: max-content;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(0,0,0,.24);
   color: #fff;
-  font-size: 15px;
-  font-weight: 800;
+  opacity: var(--mp-danmaku-opacity, .75);
+  font-size: var(--mp-danmaku-font-size, 16px);
+  font-weight: 600;
   text-shadow: 0 1px 2px rgba(0,0,0,.85);
-  animation: mpDanmakuMove 7s linear forwards;
+}
+.mp-danmaku-layer span.mode-scroll {
+  left: 100%;
+  animation: mpDanmakuMove var(--mp-danmaku-duration, 7s) linear forwards;
+}
+.mp-danmaku-layer span.mode-top,
+.mp-danmaku-layer span.mode-bottom {
+  left: 50%;
+  transform: translateX(-50%);
+  animation: mpDanmakuHold var(--mp-danmaku-duration, 7s) linear forwards;
 }
 @keyframes mpDanmakuMove {
   from { transform: translateX(0); }
   to { transform: translateX(calc(-100vw - 100%)); }
 }
+@keyframes mpDanmakuHold {
+  0% { opacity: 0; }
+  12%, 88% { opacity: var(--mp-danmaku-opacity, .75); }
+  100% { opacity: 0; }
+}
 .mp-toolbar-panel {
+  padding: 8px 0 10px;
+  background: #111216;
+  border-top: 0;
+  border-bottom: 8px solid #f5f6f8;
+}
+.mp-action-panel {
   padding: 10px 0 12px;
   background: #fff;
-  border-top: 8px solid #f5f6f8;
   border-bottom: 8px solid #f5f6f8;
 }
 .mp-action-strip {
   display: flex;
   gap: 4px;
-  padding: 0 10px 8px;
+  padding: 0 10px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2625,9 +2831,10 @@ onDeactivated(() => {
 }
 .mp-toolbar-danmaku {
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr) 58px;
-  gap: 7px;
-  padding: 0 14px;
+  grid-template-columns: 32px 32px minmax(0, 1fr) 50px;
+  gap: 6px;
+  align-items: center;
+  padding: 0 10px;
 }
 .mp-toolbar-danmaku button,
 .mp-comment-input button,
@@ -2640,9 +2847,26 @@ onDeactivated(() => {
   color: #fff;
   font-weight: 900;
 }
+.mp-toolbar-danmaku .mp-danmaku-icon-btn {
+  width: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,.68);
+  background: rgba(255,255,255,.08);
+}
+.mp-toolbar-danmaku .mp-danmaku-icon-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .mp-toolbar-danmaku button.on {
-  background: #f0f2f5;
-  color: #11151d;
+  background: rgba(255,255,255,.18);
+  color: #fff;
 }
 .mp-toolbar-danmaku button:disabled,
 .mp-comment-input button:disabled {
@@ -2664,13 +2888,103 @@ onDeactivated(() => {
   height: 34px;
   padding: 0 10px;
 }
+.mp-toolbar-danmaku input {
+  border-color: rgba(255,255,255,.1);
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  font-size: 13px;
+}
+.mp-toolbar-danmaku input::placeholder {
+  color: rgba(255,255,255,.42);
+}
+.mp-danmaku-send {
+  min-width: 0;
+  padding: 0 8px !important;
+  font-size: 12px;
+}
+.mp-danmaku-settings-mask {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 18px 10px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(0,0,0,.46);
+}
+.mp-danmaku-settings {
+  width: 100%;
+  max-height: min(72dvh, 520px);
+  padding: 14px;
+  border-radius: 18px 18px 12px 12px;
+  display: grid;
+  gap: 12px;
+  overflow-y: auto;
+  color: #fff;
+  background: rgba(22,22,24,.98);
+  box-shadow: 0 -16px 40px rgba(0,0,0,.36);
+  backdrop-filter: blur(16px);
+}
+.mp-danmaku-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mp-danmaku-settings header strong {
+  font-size: 16px;
+  line-height: 1;
+}
+.mp-danmaku-settings header button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,.82);
+  background: rgba(255,255,255,.1);
+}
+.mp-danmaku-settings header svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+.mp-danmaku-setting-group {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.mp-danmaku-setting-group > span {
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+}
+.mp-danmaku-setting-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mp-danmaku-setting-group button {
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: rgba(255,255,255,.78);
+  background: rgba(255,255,255,.08);
+  font-size: 12px;
+  font-weight: var(--small-text-max-weight);
+}
+.mp-danmaku-setting-group button.on {
+  color: #111;
+  background: #fff;
+}
 .mp-comment-section {
   border-bottom: 8px solid #f5f6f8;
 }
 .mp-comment-login {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px;
-  gap: 8px;
+  display: block;
   margin-bottom: 14px;
 }
 .mp-comment-login button {
@@ -2678,18 +2992,16 @@ onDeactivated(() => {
   min-height: 58px;
   border: 0;
   border-radius: 10px;
-  background: #f7f8fa;
-  color: #697180;
-}
-.mp-comment-login button:first-child {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
+  padding: 8px 10px;
+  background: #f7f8fa;
+  color: #697180;
   font-size: 12px;
   line-height: 1.35;
   flex-wrap: wrap;
-  padding: 8px 10px;
 }
 .mp-comment-login b {
   display: inline-grid;
@@ -2699,19 +3011,6 @@ onDeactivated(() => {
   border: 1px solid #1f232b;
   border-radius: 6px;
   color: #1f232b;
-}
-.mp-comment-login button:last-child {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 4px;
-  font-size: 12px;
-}
-.mp-comment-login i {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: #e4e7ec;
 }
 .mp-comment-compose {
   display: grid;

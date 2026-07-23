@@ -34,6 +34,7 @@ const icons = {
   cast: '<path d="M4 7V5h16v14h-5"/><path d="M4 15a4 4 0 0 1 4 4M4 19h.01M4 11a8 8 0 0 1 8 8"/>',
   speed: '<path d="M4 14a8 8 0 1 1 16 0"/><path d="m12 14 4-4"/><path d="M12 14h.01"/>',
   quality: '<path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/><circle cx="18" cy="12" r="2"/><circle cx="15" cy="18" r="2"/>',
+  danmaku: '<path d="M21 12c0 4.4-4 8-9 8a10.5 10.5 0 0 1-3.8-.7L3 20l1.3-3.8A7.2 7.2 0 0 1 3 12c0-4.4 4-8 9-8s9 3.6 9 8Z"/><path d="M8 10h8M8 14h5"/>',
   skipBack: '<path d="M11 6 5 12l6 6V6Z"/><path d="M19 6 13 12l6 6V6Z"/>',
   skipForward: '<path d="m13 6 6 6-6 6V6Z"/><path d="m5 6 6 6-6 6V6Z"/>',
   pip: '<rect x="3" y="5" width="18" height="14" rx="3"/><rect x="12" y="12" width="6" height="4" rx="1"/>',

@@ -4,13 +4,7 @@
       <button type="button" aria-label="返回" @click="goBack">
         <svg viewBox="0 0 24 24" v-html="icon('back')"></svg>
       </button>
-      <button class="md-search-pill" type="button" @click="router.push('/m/search')">
-        <span>{{ vod.name || '搜索' }}</span>
-        <svg viewBox="0 0 24 24" v-html="icon('search')"></svg>
-      </button>
-      <button type="button" aria-label="我的" @click="router.push('/m/me')">
-        <svg viewBox="0 0 24 24" v-html="icon('user')"></svg>
-      </button>
+      <strong class="md-head-title">{{ vod.name || '详情' }}</strong>
     </header>
 
     <section v-if="loading" class="md-hero md-skeleton">
@@ -114,7 +108,7 @@ const loading = ref(true)
 const followed = ref(false)
 const introOpen = ref(false)
 const selectedLineIndex = ref(0)
-const headBg = ref('.78')
+const headBg = ref('.94')
 let headRaf = 0
 let loadSeq = 0
 
@@ -262,7 +256,7 @@ async function loadDetail(id) {
 }
 function syncHeadBg() {
   headRaf = 0
-  headBg.value = Math.max(.78, Math.min(1, .78 + (window.scrollY / 96) * .22)).toFixed(3)
+  headBg.value = Math.max(.94, Math.min(1, .94 + (window.scrollY / 96) * .06)).toFixed(3)
 }
 function onPageScroll() {
   if (headRaf) return
@@ -285,9 +279,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .mdetail {
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 70px) 14px 38px;
-  background: #191919;
-  color: #f4f4f4;
+  padding: calc(env(safe-area-inset-top) + 62px) 14px 38px;
+  background: #f5f6f8;
+  color: #151922;
 }
 .md-head {
   position: fixed;
@@ -298,11 +292,12 @@ onBeforeUnmount(() => {
   height: calc(env(safe-area-inset-top) + 58px);
   padding: env(safe-area-inset-top) 12px 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  grid-template-columns: 38px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  background: rgb(13 13 13 / var(--md-head-bg));
+  background: rgb(255 255 255 / var(--md-head-bg));
   backdrop-filter: blur(14px);
+  box-shadow: 0 1px 0 rgba(18,24,36,.06);
 }
 .md-head button,
 .md-action-row button,
@@ -312,33 +307,24 @@ onBeforeUnmount(() => {
 .md-empty button {
   border: 0;
 }
-.md-head > button:not(.md-search-pill) {
+.md-head > button {
   width: 38px;
   height: 38px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: transparent;
-  color: #fff;
+  color: #1f2530;
 }
-.md-search-pill {
-  min-width: 0;
-  height: 38px;
-  border-radius: 999px;
-  padding: 0 10px 0 15px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: rgba(255,255,255,.5);
-  background: #242424;
-}
-.md-search-pill span {
+.md-head-title {
   min-width: 0;
   overflow: hidden;
+  color: #151922;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
 }
 .md-head svg,
 .md-action-row svg {
@@ -361,12 +347,12 @@ onBeforeUnmount(() => {
   aspect-ratio: 3 / 4;
   border-radius: 9px;
   object-fit: cover;
-  background: #2b2b2b;
-  box-shadow: 0 0 0 1px rgba(255,255,255,.08);
+  background: #e8ebf0;
+  box-shadow: 0 8px 22px rgba(20,28,42,.12);
 }
 .md-info h1 {
   margin: 3px 0 12px;
-  color: #fff;
+  color: #121722;
   font-size: 24px;
   line-height: 1.16;
   letter-spacing: 0;
@@ -384,9 +370,9 @@ onBeforeUnmount(() => {
 .md-tags span {
   padding: 4px 9px;
   border-radius: 6px;
-  color: rgba(255,255,255,.76);
-  background: rgba(255,255,255,.08);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  color: #596273;
+  background: #eef1f5;
+  box-shadow: inset 0 0 0 1px #e3e7ee;
   font-size: 13px;
 }
 .md-meta-list {
@@ -397,14 +383,14 @@ onBeforeUnmount(() => {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: rgba(255,255,255,.76);
+  color: #4d5665;
   font-size: 15px;
   line-height: 1.34;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .md-meta-list span {
-  color: rgba(255,255,255,.55);
+  color: #8a93a3;
 }
 .md-action-row {
   display: grid;
@@ -420,15 +406,15 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #fff;
+  color: #151922;
   background: transparent;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.76);
+  box-shadow: inset 0 0 0 1px #d6dbe4;
   font-size: 18px;
   font-weight: 600;
 }
 .md-action-row button.primary {
-  color: #111;
-  background: #fff;
+  color: #fff;
+  background: #1f2530;
   box-shadow: none;
 }
 .md-action-row button.primary svg {
@@ -436,8 +422,8 @@ onBeforeUnmount(() => {
   stroke: none;
 }
 .md-action-row button.on {
-  color: #fff;
-  background: rgba(255,255,255,.12);
+  color: #f04438;
+  background: #fff1ef;
 }
 .md-stats {
   display: grid;
@@ -450,7 +436,7 @@ onBeforeUnmount(() => {
   justify-items: center;
   gap: 8px;
   padding: 0 7px;
-  border-left: 1px solid rgba(255,255,255,.12);
+  border-left: 1px solid #e2e6ee;
 }
 .md-stats div:first-child {
   border-left: 0;
@@ -463,12 +449,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .md-stats b {
-  color: rgba(255,255,255,.82);
+  color: #222936;
   font-size: 15px;
   line-height: 1.1;
 }
 .md-stats span {
-  color: rgba(255,255,255,.58);
+  color: #7c8595;
   font-size: 13px;
 }
 .md-intro-block {
@@ -479,8 +465,8 @@ onBeforeUnmount(() => {
   margin-top: 28px;
   border-radius: 12px;
   overflow: hidden;
-  background: #242424;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(18,24,36,.04);
 }
 .md-section header {
   min-height: 58px;
@@ -490,26 +476,26 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,.08);
+  border-bottom: 1px solid #edf0f5;
 }
 .md-section h2 {
   margin: 0;
-  color: #fff;
-  font-size: 19px;
+  color: #151922;
+  font-size: 16px;
   line-height: 1;
 }
 .md-section header span {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255,255,255,.56);
+  color: #8a93a3;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .md-intro {
   margin: 0;
-  color: rgba(255,255,255,.88);
-  font-size: 17px;
+  color: #394150;
+  font-size: 15px;
   line-height: 1.62;
 }
 .md-intro.folded {
@@ -525,10 +511,10 @@ onBeforeUnmount(() => {
   height: 31px;
   border-radius: 7px;
   padding: 0 10px;
-  color: #fff;
-  background: #242424;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.78);
-  font-size: 14px;
+  color: #1f2530;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #d6dbe4;
+  font-size: 13px;
 }
 .md-line-tabs {
   display: flex;
@@ -541,28 +527,29 @@ onBeforeUnmount(() => {
   height: 34px;
   border-radius: 8px;
   padding: 0 13px;
-  background: rgba(255,255,255,.08);
-  color: rgba(255,255,255,.72);
+  background: #f1f3f6;
+  color: #626b7a;
   font-size: 13px;
 }
 .md-line-tabs button.on {
-  background: rgba(255,255,255,.14);
+  background: #1f2530;
   color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.72);
+  box-shadow: none;
 }
 .md-episodes {
-  padding: 14px 16px 18px;
+  padding: 12px 14px 16px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 .md-episodes button {
-  height: 50px;
+  height: 38px;
   border-radius: 8px;
-  background: rgba(255,255,255,.04);
-  color: rgba(255,255,255,.86);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
-  font-size: 16px;
+  background: #f6f7f9;
+  color: #394150;
+  box-shadow: inset 0 0 0 1px #e5e8ef;
+  font-size: 12px;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -581,7 +568,7 @@ onBeforeUnmount(() => {
   aspect-ratio: 3 / 4;
   border-radius: 8px;
   object-fit: cover;
-  background: #303030;
+  background: #e8ebf0;
 }
 .md-related strong,
 .md-related span {
@@ -592,13 +579,13 @@ onBeforeUnmount(() => {
 }
 .md-related strong {
   margin-top: 6px;
-  color: #f5f5f5;
+  color: #1d2330;
   font-size: 14px;
   font-weight: 500;
 }
 .md-related span {
   margin-top: 3px;
-  color: rgba(255,255,255,.52);
+  color: #7d8796;
   font-size: 12px;
 }
 .md-empty {
@@ -612,8 +599,8 @@ onBeforeUnmount(() => {
   height: 38px;
   border-radius: 999px;
   padding: 0 16px;
-  background: #fff;
-  color: #111;
+  background: #1f2530;
+  color: #fff;
 }
 .md-skeleton {
   min-height: 178px;
@@ -622,7 +609,7 @@ onBeforeUnmount(() => {
 .md-skeleton b,
 .md-skeleton p {
   border-radius: 8px;
-  background: linear-gradient(110deg, #252525 8%, #303030 18%, #252525 33%);
+  background: linear-gradient(110deg, #eceff4 8%, #f7f8fa 18%, #eceff4 33%);
   background-size: 200% 100%;
   animation: md-shimmer 1.2s linear infinite;
 }
