@@ -2265,8 +2265,8 @@ onDeactivated(() => {
   place-items: center;
 }
 .mp-landscape-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 23px;
+  height: 23px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.5;
