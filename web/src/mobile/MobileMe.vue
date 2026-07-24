@@ -196,6 +196,7 @@ import { openAuthDialog } from '../authDialog'
 import { notifySuccess } from '../feedback'
 import { levelTagStyle } from '../levelTag'
 import { USER_INFO_KEY, clearSession, currentUser, refreshUser } from '../userStore'
+import { MOBILE_HISTORY_KEY, hydrateLocalHistoryRows, syncHistoryRowsToLocal } from '../historyStore'
 import { icon } from './icons'
 
 const router = useRouter()
@@ -216,7 +217,7 @@ const emailMsg = ref('')
 const passwordMsg = ref('')
 const emailForm = reactive({ email: '' })
 const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
-const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
+let loadSeq = 0
 
 const displayName = computed(() => user.value?.nickname || user.value?.username || '我的')
 const userLine = computed(() => {
@@ -347,56 +348,40 @@ function clearMobileCache() {
   keys.forEach(key => localStorage.removeItem(key))
   notifySuccess(keys.length ? '缓存已清理' : '暂无可清理缓存')
 }
-function readLocalHistoryRows(limit = 50) {
-  try {
-    const data = JSON.parse(localStorage.getItem(MOBILE_HISTORY_KEY) || '{}')
-    return Object.values(data || {})
-      .map(item => item?.latest || item)
-      .filter(item => Number(item?.vodId) > 0)
-      .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
-      .slice(0, limit)
-  } catch {
-    return []
-  }
-}
 async function loadLocalHistories(limit = 50) {
-  const rows = readLocalHistoryRows(limit)
-  const settled = await Promise.all(rows.map(async (row) => {
-    const vodId = Number(row.vodId) || 0
-    if (!vodId) return null
-    const vod = await api.vod(vodId).catch(() => null)
-    return {
-      id: `local-${vodId}-${row.lineId || 0}-${row.epIndex || 0}`,
-      vodId,
-      lineId: row.lineId,
-      epIndex: Number(row.epIndex) || 0,
-      epName: row.epName,
-      progressSec: Number(row.progress) || Number(row.progressSec) || 0,
-      durationSec: Number(row.duration) || Number(row.durationSec) || 0,
-      updatedAt: row.updatedAt,
-      vod,
-    }
-  }))
-  return settled.filter(Boolean)
+  return hydrateLocalHistoryRows(MOBILE_HISTORY_KEY, limit)
 }
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   try {
+    const localRows = await loadLocalHistories(50)
+    if (seq !== loadSeq) return
+    histories.value = localRows
+    loading.value = false
+
     const fresh = await refreshUser().catch(() => null)
+    if (seq !== loadSeq) return
     if (!fresh && !user.value) {
-      histories.value = await loadLocalHistories(50)
       follows.value = []
       recs.value = []
       return
     }
-    const [historyRows, followRows, recData] = await Promise.all([
-      api.history(50).catch(() => []),
+
+    const [followRows, recData] = await Promise.all([
       api.follows(50).catch(() => []),
       api.userRecommendations(18).catch(() => ({ list: [] })),
     ])
-    histories.value = Array.isArray(historyRows) ? historyRows : []
+    if (seq !== loadSeq) return
     follows.value = Array.isArray(followRows) ? followRows : []
     recs.value = Array.isArray(recData?.list) ? recData.list : []
+
+    api.history(50).then(async (historyRows) => {
+      if (!Array.isArray(historyRows)) return
+      syncHistoryRowsToLocal(historyRows, MOBILE_HISTORY_KEY)
+      const mergedRows = await loadLocalHistories(50)
+      if (seq === loadSeq) histories.value = mergedRows
+    }).catch(() => {})
   } finally {
     loading.value = false
   }

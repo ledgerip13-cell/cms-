@@ -798,6 +798,8 @@ function cleanupRuleWhere(input: any): any {
   const categoryWhere = cleanupCategoryWhere(input);
   const excludeWhere = cleanupExcludeWhere(input);
   const vodScopeWhere = mergeWhere(yWhere, categoryWhere, excludeWhere);
+  if (rule === "online") return { rule, where: andWhere({ status: "online" }, vodScopeWhere) };
+  if (rule === "offline") return { rule, where: andWhere({ status: "offline" }, vodScopeWhere) };
   if (rule === "empty_plays") return { rule, where: andWhere({ plays: { none: {} } }, vodScopeWhere) };
   if (rule === "all_dead") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { alive: true } } } }, vodScopeWhere) };
   if (rule === "disabled_source_only") return { rule, where: andWhere({ plays: { some: {} }, NOT: { plays: { some: { source: { enabled: true } } } } }, vodScopeWhere) };
@@ -2168,21 +2170,39 @@ export default async function vodRoutes(app: FastifyInstance) {
         const b = (req.body as any) || {};
         const { rule, sourceId, where, playWhere, orphanWhere } = cleanupRuleWhere(b);
         const limit = Math.max(1, Math.min(5000, Number(b.limit) || 500));
-        if (rule === "source_lines") {
-          const playIds = await prisma.play.findMany({ where: playWhere || { sourceId }, select: { id: true }, take: limit, orderBy: { id: "asc" } });
+        const action = String(b.action || (rule === "source_lines" ? "delete_lines" : "delete"));
+        if (!["delete", "offline", "online", "delete_lines"].includes(action)) {
+          return reply.code(400).send({ ok: false, error: "不支持的影片管理操作" });
+        }
+        const includeVodIds = Array.isArray(b.includeVodIds)
+          ? [...new Set(b.includeVodIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))]
+          : [];
+        const scopedWhere = includeVodIds.length ? andWhere(where, { id: { in: includeVodIds } }) : where;
+        if (rule === "source_lines" && action === "delete_lines") {
+          const scopedPlayWhere = includeVodIds.length
+            ? mergeWhere(playWhere || { sourceId }, { vodId: { in: includeVodIds } })
+            : (playWhere || { sourceId });
+          const playIds = await prisma.play.findMany({ where: scopedPlayWhere, select: { id: true }, take: limit, orderBy: { id: "asc" } });
           const playIdList = playIds.map((p) => p.id);
           const deleted = playIdList.length ? await prisma.play.deleteMany({ where: { id: { in: playIdList } } }) : { count: 0 };
           let orphanDeleted = { count: 0 };
           if (b.deleteOrphans) {
-            const orphans = await prisma.vod.findMany({ where: orphanWhere || { plays: { none: {} } }, select: { id: true }, take: limit });
+            const orphanBaseWhere = orphanWhere || { plays: { none: {} } };
+            const orphanScopedWhere = includeVodIds.length ? andWhere(orphanBaseWhere, { id: { in: includeVodIds } }) : orphanBaseWhere;
+            const orphans = await prisma.vod.findMany({ where: orphanScopedWhere, select: { id: true }, take: limit });
             orphanDeleted = orphans.length ? await prisma.vod.deleteMany({ where: { id: { in: orphans.map((v) => v.id) } } }) : { count: 0 };
           }
-          return { ok: true, rule, deletedLines: deleted.count, deletedOrphans: orphanDeleted.count };
+          return { ok: true, rule, action, deletedLines: deleted.count, deletedOrphans: orphanDeleted.count };
         }
-        const rows = await prisma.vod.findMany({ where, select: { id: true }, take: limit, orderBy: { id: "asc" } });
+        const rows = await prisma.vod.findMany({ where: scopedWhere, select: { id: true }, take: limit, orderBy: { id: "asc" } });
         const ids = rows.map((v) => v.id);
-        const r = ids.length ? await prisma.vod.deleteMany({ where: { id: { in: ids } } }) : { count: 0 };
-        return { ok: true, rule, deletedVods: r.count };
+        if (action === "delete") {
+          const r = ids.length ? await prisma.vod.deleteMany({ where: { id: { in: ids } } }) : { count: 0 };
+          return { ok: true, rule, action, deletedVods: r.count };
+        }
+        const status = action === "online" ? "online" : "offline";
+        const r = ids.length ? await prisma.vod.updateMany({ where: { id: { in: ids } }, data: { status } }) : { count: 0 };
+        return { ok: true, rule, action, updatedVods: r.count, status };
       } catch (e: any) {
         return reply.code(400).send({ ok: false, error: e?.message || String(e) });
       }

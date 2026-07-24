@@ -25,7 +25,7 @@
           元数据匹配<span v-if="mstat.none || mstat.pending" style="margin-left:2px">（{{ mstat.none }} 待匹 / {{ mstat.pending || 0 }} 待确认）</span>
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
-        <el-button type="danger" plain @click="openCleanup">影片清理</el-button>
+        <el-button type="danger" plain @click="openCleanup">影片管理</el-button>
         <el-button type="primary" plain @click="openPlaybackDiagnose">播放诊断</el-button>
         <span class="vod-count">去重后 {{ total }} 部</span>
       </div>
@@ -425,16 +425,18 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="cleanupDlg" title="影片清理" width="760">
+  <el-dialog v-model="cleanupDlg" title="影片管理" width="820">
     <el-form :model="cleanupForm" label-width="100px">
-      <el-form-item label="清理规则">
+      <el-form-item label="筛选规则">
         <el-select v-model="cleanupForm.rule" style="width:260px" @change="resetCleanupPreview">
+          <el-option label="已上架影片" value="online" />
+          <el-option label="已下架影片" value="offline" />
           <el-option label="没有任何播放线路" value="empty_plays" />
           <el-option label="全部线路失效" value="all_dead" />
           <el-option label="只剩禁用源线路" value="disabled_source_only" />
           <el-option label="下架超过 N 天" value="offline_old" />
           <el-option label="按源清退线路" value="source_lines" />
-          <el-option label="按分类/子分类删除影片" value="category_vods" />
+          <el-option label="按分类/子分类筛选" value="category_vods" />
           <el-option label="无任何封面" value="no_cover" />
           <el-option label="无元数据封面" value="no_official_pic" />
           <el-option label="无横图/Hero图" value="no_hero_pic" />
@@ -493,17 +495,21 @@
     </el-form>
     <div class="cleanup-actions">
       <el-button type="primary" plain :loading="cleanupLoading" @click="previewCleanup">预检</el-button>
-      <el-button type="danger" :disabled="!cleanupCanExecute" :loading="cleanupLoading" @click="executeCleanup">确认执行</el-button>
+      <el-button v-if="cleanupForm.rule === 'source_lines'" type="warning" :disabled="!cleanupCanExecute" :loading="cleanupLoading" @click="executeCleanup('delete_lines')">清退选中线路</el-button>
+      <el-button type="success" plain :disabled="!cleanupCanExecute" :loading="cleanupLoading" @click="executeCleanup('online')">上架选中</el-button>
+      <el-button type="warning" plain :disabled="!cleanupCanExecute" :loading="cleanupLoading" @click="executeCleanup('offline')">下架选中</el-button>
+      <el-button type="danger" :disabled="!cleanupCanExecute" :loading="cleanupLoading" @click="executeCleanup('delete')">删除选中</el-button>
     </div>
     <el-alert v-if="cleanupPreview" type="warning" :closable="false" show-icon
       :title="cleanupPreview.mode === 'delete_lines'
-        ? `将删除 ${cleanupPreview.playCount || 0} 条线路，涉及 ${cleanupPreviewTotal} 部影片，已排除 ${cleanupExcludedIds.size} 部`
-        : `将删除 ${cleanupPreviewTotal} 部影片，已排除 ${cleanupExcludedIds.size} 部`" />
+        ? `筛出 ${cleanupPreview.playCount || 0} 条线路，涉及 ${cleanupPreviewTotal} 部影片，已选 ${cleanupSelectedIds.length} 部`
+        : `筛出 ${cleanupPreviewTotal} 部影片，已选 ${cleanupSelectedIds.length} 部`" />
     <div v-if="cleanupPreview?.samples?.length" class="cleanup-preview-head">
-      <span>当前列表为本次执行候选，可手动排除不想清理的影片。</span>
-      <el-button v-if="cleanupExcludedIds.size" size="small" link type="primary" @click="resetCleanupExcluded">恢复全部</el-button>
+      <span>先勾选需要操作的影片，再执行删除、下架或上架。</span>
+      <el-button v-if="cleanupSelectedRows.length" size="small" link type="primary" @click="clearCleanupSelection">清空选择</el-button>
     </div>
-    <el-table v-if="cleanupVisibleSamples.length" :data="cleanupVisibleSamples" size="small" style="margin-top:8px" max-height="320">
+    <el-table v-if="cleanupVisibleSamples.length" ref="cleanupTableRef" :data="cleanupVisibleSamples" size="small" style="margin-top:8px" max-height="320" @selection-change="rows => cleanupSelectedRows = rows">
+      <el-table-column type="selection" width="42" />
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="片名" min-width="180" />
       <el-table-column prop="year" label="年份" width="80" />
@@ -515,13 +521,8 @@
       <el-table-column label="状态" width="80">
         <template #default="{ row }">{{ row.status === 'online' ? '在线' : '下架' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="86" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" link type="danger" @click="excludeCleanupVod(row)">排除</el-button>
-        </template>
-      </el-table-column>
     </el-table>
-    <el-empty v-else-if="cleanupPreview?.samples?.length" description="候选已全部排除" :image-size="64" />
+    <el-empty v-else-if="cleanupPreview?.samples?.length" description="暂无可选候选" :image-size="64" />
   </el-dialog>
 
   <el-dialog v-model="playbackDiagnoseDlg" title="播放链接诊断 / 死链治理" width="880">
@@ -852,11 +853,13 @@ async function submitCleanAds() {
 const cleanupLoading = ref(false)
 const cleanupPreview = ref(null)
 const cleanupExcludedIds = ref(new Set())
+const cleanupSelectedRows = ref([])
+const cleanupTableRef = ref(null)
 const cleanupSubtypes = ref([])
 const cleanupSubtypesLoading = ref(false)
 const currentYear = new Date().getFullYear()
 const cleanupForm = ref({
-  rule: 'disabled_source_only',
+  rule: 'online',
   sourceId: '',
   categoryName: '',
   categoryNames: [],
@@ -874,10 +877,12 @@ const cleanupVisibleSamples = computed(() => {
   return rows.filter(row => !cleanupExcludedIds.value.has(Number(row.id)))
 })
 const cleanupPreviewTotal = computed(() => Math.max(0, Number(cleanupPreview.value?.total || 0) - cleanupExcludedIds.value.size))
+const cleanupSelectedIds = computed(() => cleanupSelectedRows.value
+  .map(row => Number(row?.id))
+  .filter(id => Number.isInteger(id) && id > 0))
 const cleanupCanExecute = computed(() => {
   if (!cleanupPreview.value) return false
-  if (cleanupPreview.value.mode === 'delete_lines') return Boolean(cleanupPreview.value.playCount || cleanupPreviewTotal.value)
-  return cleanupPreviewTotal.value > 0
+  return cleanupSelectedIds.value.length > 0
 })
 const cleanupSelectedCategoryNames = computed(() => {
   const names = Array.isArray(cleanupForm.value.categoryNames)
@@ -1017,6 +1022,7 @@ function openCleanup() {
 function resetCleanupPreview() {
   cleanupPreview.value = null
   cleanupExcludedIds.value = new Set()
+  cleanupSelectedRows.value = []
 }
 function excludeCleanupVod(row) {
   const id = Number(row?.id)
@@ -1025,6 +1031,10 @@ function excludeCleanupVod(row) {
 }
 function resetCleanupExcluded() {
   cleanupExcludedIds.value = new Set()
+}
+function clearCleanupSelection() {
+  cleanupTableRef.value?.clearSelection?.()
+  cleanupSelectedRows.value = []
 }
 async function onCleanupCategoryChange() {
   resetCleanupPreview()
@@ -1062,27 +1072,36 @@ async function previewCleanup() {
     if (!r.ok) return ElMessage.error(r.error || '预检失败')
     cleanupPreview.value = r
     cleanupExcludedIds.value = new Set()
+    cleanupSelectedRows.value = []
   } catch (e) { ElMessage.error(e.message || '预检失败') } finally { cleanupLoading.value = false }
 }
-async function executeCleanup() {
+async function executeCleanup(action = 'delete') {
   if (!cleanupPreview.value) return
-  const msg = cleanupPreview.value.mode === 'delete_lines'
-    ? `确认执行清理？已排除 ${cleanupExcludedIds.value.size} 部影片，线路数以执行结果为准。`
-    : `确认删除 ${cleanupPreviewTotal.value} 部影片？`
-  const ok = await ElMessageBox.confirm(msg, '确认清理', { type: 'warning' }).then(() => true).catch(() => false)
+  const ids = cleanupSelectedIds.value
+  if (!ids.length) return ElMessage.warning('请先勾选要操作的影片')
+  const label = { delete: '删除', offline: '下架', online: '上架', delete_lines: '清退线路' }[action] || '操作'
+  const msg = action === 'delete_lines'
+    ? `确认清退选中 ${ids.length} 部影片中符合筛选规则的线路？`
+    : `确认${label}选中的 ${ids.length} 部影片？${action === 'delete' ? '删除不可恢复。' : ''}`
+  const ok = await ElMessageBox.confirm(msg, `确认${label}`, { type: action === 'delete' ? 'warning' : 'info' }).then(() => true).catch(() => false)
   if (!ok) return
   cleanupLoading.value = true
   try {
     const r = await api.executeVodCleanup(cleanupPayload({
       excludeVodIds: [...cleanupExcludedIds.value],
+      includeVodIds: ids,
+      action,
     }))
-    if (!r.ok) return ElMessage.error(r.error || '清理失败')
-    ElMessage.success(`清理完成：影片 ${r.deletedVods || r.deletedOrphans || 0}，线路 ${r.deletedLines || 0}`)
+    if (!r.ok) return ElMessage.error(r.error || '操作失败')
+    const changed = r.deletedVods || r.updatedVods || r.deletedOrphans || 0
+    const lineChanged = r.deletedLines || 0
+    ElMessage.success(`${label}完成：影片 ${changed}，线路 ${lineChanged}`)
     cleanupPreview.value = null
     cleanupExcludedIds.value = new Set()
+    cleanupSelectedRows.value = []
     cleanupDlg.value = false
     load()
-  } catch (e) { ElMessage.error(e.message || '清理失败') } finally { cleanupLoading.value = false }
+  } catch (e) { ElMessage.error(e.message || '操作失败') } finally { cleanupLoading.value = false }
 }
 function resetPlaybackDiagnose() {
   playbackDiagnosePreview.value = null

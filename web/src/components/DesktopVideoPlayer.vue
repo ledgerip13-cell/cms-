@@ -31,7 +31,7 @@
       @pause="onPause"
       @volumechange="syncState"
       @ended="onEnded"
-      @error="$emit('error')"
+      @error="onNativeError"
       @webkitbeginfullscreen="onNativeFullscreen(true)"
       @webkitendfullscreen="onNativeFullscreen(false)"
     >
@@ -164,6 +164,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Hls from 'hls.js'
+import { serializeHlsError, serializeNativeMediaError } from '../hlsErrorReport'
 
 const props = defineProps({
   src: { type: String, default: '' },
@@ -299,12 +300,17 @@ function loadSource() {
       hls.attachMedia(video)
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(props.src))
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncState).catch(syncState))
-      hls.on(Hls.Events.ERROR, (_, data) => { if (data?.fatal) emit('error', data) })
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data?.fatal) emit('error', serializeHlsError(data, { event: 'hls_fatal', currentUrl: props.src, video }))
+      })
     } else {
       video.src = props.src
       video.play().then(syncState).catch(syncState)
     }
   })
+}
+function onNativeError(event) {
+  emit('error', serializeNativeMediaError(event, { event: 'native_video_error', currentUrl: props.src, video: videoEl.value }))
 }
 function seekPending() {
   const video = videoEl.value

@@ -1147,6 +1147,8 @@ import { useRoute, useRouter } from 'vue-router'
 import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
+import { historyUpdatedAt } from '../historyStore'
+import { serializeHlsError, serializeNativeMediaError, serializePlaybackWatchdog } from '../hlsErrorReport'
 import { normalizePlayConfig, readCachedCategories, readCachedSite, writeCachedCategories, writeCachedSite } from '../siteConfig'
 import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { clearSession, currentUser, refreshUser, setSession } from '../userStore'
@@ -2451,14 +2453,14 @@ async function loadX8UserCenter() {
     return
   }
   x8UserLoading.value = true
+  const localRows = readLocalHistory()
+  x8UserHistory.value = localRows
+  x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
   try {
-    const [historyRows, followRows, messageRows] = await Promise.all([
-      api.history(50).catch(() => []),
+    const [followRows, messageRows] = await Promise.all([
       api.follows(50).catch(() => []),
       api.userMessages().catch(() => ({ list: [] })),
     ])
-    x8UserHistory.value = Array.isArray(historyRows) ? historyRows : []
-    x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
     x8UserFollows.value = Array.isArray(followRows) ? followRows : []
     x8Messages.value = Array.isArray(messageRows?.list) ? messageRows.list : []
     syncFollowedIds(x8UserFollows.value)
@@ -2468,6 +2470,11 @@ async function loadX8UserCenter() {
     x8SelectedPrefTypes.value.forEach(type => { void loadX8PrefSubtypes(type) })
     syncX8ProfileForm()
     syncX8EmailForm()
+    api.history(50).then((historyRows) => {
+      if (!Array.isArray(historyRows)) return
+      x8UserHistory.value = syncX8OnlineHistoryToLocal(historyRows)
+      x8HistoryPage.value = Math.min(x8HistoryPage.value, x8HistoryPageCount.value)
+    }).catch(() => {})
   } finally {
     x8UserLoading.value = false
   }
@@ -3099,6 +3106,17 @@ function reportPlaybackError(message, failures = [], override = {}) {
     detail: { context: 'x8', failures, event: override.event || '', current: currentResolve.value || {} },
   })
 }
+function playbackErrorContext(url = playUrl.value) {
+  const video = videoEl.value
+  return {
+    currentUrl: url,
+    rule: currentResolve.value?.rule || '',
+    proxyMode: currentResolve.value?.proxyMode || '',
+    cleanId: currentResolve.value?.cleanId || null,
+    fallbackUrl: currentResolve.value?.fallbackUrl || '',
+    video,
+  }
+}
 function showPlayFailure(title, message, switching = false) {
   playFailure.value = { open: true, title, message, switching }
 }
@@ -3115,12 +3133,37 @@ function manualSwitchLine() {
 }
 function readLocalHistory() {
   try {
-    const rows = JSON.parse(localStorage.getItem(X8_LOCAL_HISTORY_KEY) || '[]')
-    localHistoryRows.value = Array.isArray(rows) ? rows.filter(item => item?.vodId).slice(0, 30) : []
+    const raw = JSON.parse(localStorage.getItem(X8_LOCAL_HISTORY_KEY) || '[]')
+    const rows = Array.isArray(raw) ? raw : Object.values(raw || {}).map(item => item?.latest || item)
+    localHistoryRows.value = rows
+      .filter(item => Number(item?.vodId || item?.vod?.id || 0) > 0)
+      .sort((a, b) => historyUpdatedAt(b) - historyUpdatedAt(a))
+      .slice(0, 30)
   } catch {
     localHistoryRows.value = []
   }
   return localHistoryRows.value
+}
+function syncX8OnlineHistoryToLocal(rows) {
+  if (!Array.isArray(rows) || !rows.length) return readLocalHistory()
+  const merged = [...rows, ...readLocalHistory()]
+  const seen = new Set()
+  const next = []
+  for (const row of merged.sort((a, b) => historyUpdatedAt(b) - historyUpdatedAt(a))) {
+    const vodId = Number(row?.vodId || row?.vod?.id || 0)
+    if (!vodId || seen.has(vodId)) continue
+    seen.add(vodId)
+    next.push({
+      ...row,
+      vodId,
+      updatedAt: row.updatedAt || new Date().toISOString(),
+      vod: row.vod || null,
+    })
+    if (next.length >= 30) break
+  }
+  localHistoryRows.value = next
+  try { localStorage.setItem(X8_LOCAL_HISTORY_KEY, JSON.stringify(next)) } catch {}
+  return next
 }
 function saveLocalHistory(payload) {
   const row = {
@@ -3232,11 +3275,29 @@ function clearCleanFallbackWatchdog(url = '') {
     cleanFallbackTimer = 0
   }
 }
-function tryCleanFallback(reason = '清洗线路播放失败') {
+function tryCleanFallback(reason = '清洗线路播放失败', hlsErrorData = {}) {
   const fallback = cleanFallbackUrl()
   if (!fallback) return false
   clearCleanFallbackWatchdog()
   const previous = currentResolve.value || {}
+  reportPlaybackError(reason, [{
+    playId: currentLine.value?.id,
+    line: currentLine.value?.sourceName || currentLine.value?.flag || '',
+    epIndex: currentEpIndex.value,
+    error: reason,
+    url: playUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+    hlsErrorData,
+  }], {
+    event: 'hls_clean_fallback',
+    hlsErrorData,
+    url: playUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+  })
   currentResolve.value = { ...previous, url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
   notifyWarning(`${reason}，已回退原始线路`)
   attachVideo(fallback, 'm3u8')
@@ -3249,7 +3310,8 @@ function scheduleCleanFallbackWatchdog(url) {
     cleanFallbackTimer = 0
     const video = videoEl.value
     if (playUrl.value !== url || Number(video?.readyState || 0) >= 2) return
-    tryCleanFallback('清洗线路起播超时')
+    const hlsErrorData = serializePlaybackWatchdog('first_frame_timeout', { ...playbackErrorContext(url), event: 'play_watchdog' })
+    tryCleanFallback('清洗线路起播超时', hlsErrorData)
   }, 9000)
 }
 function attachVideo(url, kind = '') {
@@ -3279,7 +3341,9 @@ function attachVideo(url, kind = '') {
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncVideoState).catch(syncVideoState))
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data?.fatal && !tryCleanFallback()) handlePlaybackError()
+        if (!data?.fatal) return
+        const hlsErrorData = serializeHlsError(data, { ...playbackErrorContext(url), event: 'hls_fatal' })
+        if (!tryCleanFallback('清洗线路播放失败', hlsErrorData)) handlePlaybackError(hlsErrorData)
       })
     } else {
       video.src = url
@@ -3361,9 +3425,9 @@ function playbackSlots() {
     .map((line) => ({ line }))
     .filter(({ line }) => line?.id && line.alive !== false && (line.episodes || [])[currentEpIndex.value])
 }
-async function tryNextPlayback(reason = '当前线路播放失败') {
+async function tryNextPlayback(reason = '当前线路播放失败', hlsErrorData = {}) {
   if (autoSwitchingPlayback) return false
-  reportPlaybackError(reason, [{ playId: currentLine.value?.id, line: currentLine.value?.sourceName || currentLine.value?.flag || '', epIndex: currentEpIndex.value, error: reason }], { event: 'current_line_failed' })
+  reportPlaybackError(reason, [{ playId: currentLine.value?.id, line: currentLine.value?.sourceName || currentLine.value?.flag || '', epIndex: currentEpIndex.value, error: reason, hlsErrorData }], { event: 'current_line_failed', hlsErrorData })
   const slots = playbackSlots()
   const failMessage = '当前无可播放线路，请稍后重试'
   if (slots.length <= 1) {
@@ -3436,10 +3500,11 @@ function tryJinpaiSelfHeal() {
   void playCurrent({ fresh: true, seekTo })
   return true
 }
-function handlePlaybackError() {
+function handlePlaybackError(eventOrData = null) {
+  const hlsErrorData = eventOrData?.kind ? eventOrData : serializeNativeMediaError(eventOrData, { ...playbackErrorContext(playUrl.value), event: 'native_video_error' })
   if (tryJinpaiSelfHeal()) return
-  if (tryCleanFallback()) return
-  void tryNextPlayback('播放失败')
+  if (tryCleanFallback('清洗线路播放失败', hlsErrorData)) return
+  void tryNextPlayback('播放失败', hlsErrorData)
 }
 // X8 播放器切换清晰度：保留当前播放位重新加载选定档 URL
 function switchQuality(res) {

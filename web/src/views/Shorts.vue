@@ -424,6 +424,7 @@ import Hls from 'hls.js'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
+import { serializeHlsError, serializeNativeMediaError, serializePlaybackWatchdog } from '../hlsErrorReport'
 import { normalizeShortsConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { currentUser } from '../userStore'
 
@@ -1424,11 +1425,61 @@ function cleanFallbackUrlForUnit(unit) {
   const fallback = String(r?.fallbackUrl || '').trim()
   return fallback && fallback !== playUrl.value ? fallback : ''
 }
-async function tryCleanFallbackForUnit(unit, reason = '清洗线路播放失败', seq = playSeq) {
+function shortsPlaybackErrorContext(unit, url = playUrl.value) {
+  const r = unit?.lastResolve || {}
+  return {
+    currentUrl: url,
+    rule: r.rule || '',
+    proxyMode: r.proxyMode || '',
+    cleanId: r.cleanId || null,
+    fallbackUrl: r.fallbackUrl || '',
+    video: getVideo(),
+  }
+}
+function reportShortsPlaybackError(unit, message, failures = [], override = {}) {
+  if (!unit?.vod?.id) return
+  void api.reportPlaybackError({
+    vodId: unit.vod.id,
+    vodName: unit.vod.name || '',
+    playId: unit.channel?.id || null,
+    lineName: unit.channel?.sourceName || unit.channel?.name || '',
+    sourceName: unit.channel?.sourceName || '',
+    epIndex: unit.epIndex,
+    epName: unit.epName || '',
+    url: override.url ?? unit.lastResolve?.url ?? playUrl.value,
+    rule: override.rule ?? unit.lastResolve?.rule ?? '',
+    proxyMode: override.proxyMode ?? unit.lastResolve?.proxyMode ?? '',
+    cleanId: override.cleanId ?? unit.lastResolve?.cleanId ?? null,
+    fallbackUrl: override.fallbackUrl ?? unit.lastResolve?.fallbackUrl ?? '',
+    hlsErrorData: override.hlsErrorData ?? {},
+    page: location.href,
+    message,
+    detail: { context: 'shorts', failures, event: override.event || '', current: unit.lastResolve || {} },
+  })
+}
+async function tryCleanFallbackForUnit(unit, reason = '清洗线路播放失败', seq = playSeq, hlsErrorData = {}) {
   if (seq !== playSeq || activeUnit.value?.key !== unit?.key) return false
   const fallback = cleanFallbackUrlForUnit(unit)
   if (!fallback) return false
   clearCleanFallbackWatchdog()
+  const previous = unit.lastResolve || {}
+  reportShortsPlaybackError(unit, reason, [{
+    lineName: unit.channel?.sourceName || unit.channel?.name || '',
+    epName: unit.epName || '',
+    message: reason,
+    url: playUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+    hlsErrorData,
+  }], {
+    event: 'hls_clean_fallback',
+    hlsErrorData,
+    url: playUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+  })
   unit.lastResolve = { ...(unit.lastResolve || {}), url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
   unit.resumeHistory = { ...(unit.resumeHistory || {}), epIndex: unit.epIndex, progressSec: currentSec.value, durationSec: durationSec.value }
   pendingResumeSeek = buildResumeSeek(unit)
@@ -1444,19 +1495,21 @@ function scheduleCleanFallbackWatchdog(url, seq, unit) {
     cleanFallbackTimer = 0
     const video = getVideo()
     if (seq !== playSeq || activeUnit.value?.key !== unit?.key || playUrl.value !== url || Number(video?.readyState || 0) >= 2) return
-    void tryCleanFallbackForUnit(unit, '清洗线路起播超时', seq)
+    const hlsErrorData = serializePlaybackWatchdog('first_frame_timeout', { ...shortsPlaybackErrorContext(unit, url), event: 'play_watchdog' })
+    void tryCleanFallbackForUnit(unit, '清洗线路起播超时', seq, hlsErrorData)
   }, 9000)
 }
 
-async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
+async function recoverShortsPlaybackLine(reason = '当前线路播放失败', hlsErrorData = {}) {
   const unit = activeUnit.value || playingUnit
   if (!unit?.vod?.id || !unit?.channel?.id) return false
-  if (await tryCleanFallbackForUnit(unit, '清洗线路播放失败')) return true
+  if (await tryCleanFallbackForUnit(unit, '清洗线路播放失败', playSeq, hlsErrorData)) return true
   rememberLineFailure(unit)
   const tried = new Set([Number(unit.channel.id)])
   try {
     const nextUnit = await tryNextShortsLine(unit, tried)
     if (!nextUnit) {
+      reportShortsPlaybackError(unit, reason, [{ lineName: unit.channel?.sourceName || unit.channel?.name || '', epName: unit.epName || '', message: reason, hlsErrorData }], { event: 'current_line_failed', hlsErrorData })
       notifyWarning(reason)
       stopPlayback()
       return false
@@ -1464,6 +1517,7 @@ async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
     schedulePlayActive(0)
     return true
   } catch {
+    reportShortsPlaybackError(unit, reason, [{ lineName: unit.channel?.sourceName || unit.channel?.name || '', epName: unit.epName || '', message: reason, hlsErrorData }], { event: 'current_line_failed', hlsErrorData })
     notifyWarning(reason)
     stopPlayback()
     return false
@@ -1646,7 +1700,8 @@ async function attachVideo(url, kind) {
       })
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data?.fatal || !hls) return
-        void recoverShortsPlaybackLine('当前线路播放失败，已暂停')
+        const hlsErrorData = serializeHlsError(data, { ...shortsPlaybackErrorContext(attachedUnit, url), event: 'hls_fatal' })
+        void recoverShortsPlaybackLine('当前线路播放失败，已暂停', hlsErrorData)
       })
       return
     }
@@ -1812,8 +1867,10 @@ function onVideoCanPlay(event) {
   videoReady.value = true
 }
 
-function onVideoError() {
-  void recoverShortsPlaybackLine('当前集播放失败')
+function onVideoError(event) {
+  const unit = activeUnit.value || playingUnit
+  const hlsErrorData = serializeNativeMediaError(event, { ...shortsPlaybackErrorContext(unit, playUrl.value), event: 'native_video_error' })
+  void recoverShortsPlaybackLine('当前集播放失败', hlsErrorData)
   paused.value = true
   videoLandscape.value = false
   videoReady.value = false

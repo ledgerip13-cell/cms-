@@ -369,6 +369,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess, notifyWarning } from '../feedback'
+import { serializeHlsError, serializeNativeMediaError, serializePlaybackWatchdog } from '../hlsErrorReport'
 import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { currentUser } from '../userStore'
@@ -782,6 +783,17 @@ function playbackErrorPayload(message, failures = [], override = {}) {
 
 function reportPlaybackError(message, failures = [], override = {}) {
   void api.reportPlaybackError(playbackErrorPayload(message, failures, override))
+}
+function playbackErrorContext(url = curUrl.value) {
+  const video = videoEl.value
+  return {
+    currentUrl: url,
+    rule: currentResolve.value?.rule || '',
+    proxyMode: currentResolve.value?.proxyMode || '',
+    cleanId: currentResolve.value?.cleanId || null,
+    fallbackUrl: currentResolve.value?.fallbackUrl || '',
+    video,
+  }
 }
 
 function isPlayRoute() {
@@ -1692,7 +1704,7 @@ function clearCleanFallbackWatchdog(url = '') {
     cleanFallbackTimer = 0
   }
 }
-function tryCleanFallback(seq = playbackSeq, reason = '清洗线路播放失败') {
+function tryCleanFallback(seq = playbackSeq, reason = '清洗线路播放失败', hlsErrorData = {}) {
   if (!isPlaybackCurrent(seq)) return false
   const fallback = cleanFallbackUrl()
   if (!fallback) return false
@@ -1700,6 +1712,24 @@ function tryCleanFallback(seq = playbackSeq, reason = '清洗线路播放失败'
   const video = videoEl.value
   pendingSeekSec.value = Math.max(0, Math.floor(Number(video?.currentTime) || currentTime.value || 0))
   const previous = currentResolve.value || {}
+  reportPlaybackError(reason, [{
+    playId: curChannel.value?.id,
+    line: playbackLineLabel(),
+    epIndex: epIdx.value,
+    error: reason,
+    url: curUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+    hlsErrorData,
+  }], {
+    event: 'hls_clean_fallback',
+    hlsErrorData,
+    url: curUrl.value,
+    rule: previous.rule || '',
+    cleanId: previous.cleanId || null,
+    fallbackUrl: fallback,
+  })
   currentResolve.value = { ...previous, url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
   showNotice(`${reason}，已回退原始线路`)
   playDirect(fallback, 'm3u8', nextPlaybackSeq())
@@ -1712,7 +1742,8 @@ function scheduleCleanFallbackWatchdog(url, seq) {
     cleanFallbackTimer = 0
     const video = videoEl.value
     if (!isPlaybackCurrent(seq) || curUrl.value !== url || Number(video?.readyState || 0) >= 2) return
-    tryCleanFallback(seq, '清洗线路起播超时')
+    const hlsErrorData = serializePlaybackWatchdog('first_frame_timeout', { ...playbackErrorContext(url), event: 'play_watchdog' })
+    tryCleanFallback(seq, '清洗线路起播超时', hlsErrorData)
   }, 9000)
 }
 function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
@@ -1761,8 +1792,9 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
       hlsInstance.on(Hls.Events.ERROR, (_, data) => {
         if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
         if (!data?.fatal) return
-        if (tryCleanFallback(seq)) return
-        handlePlaybackError()
+        const hlsErrorData = serializeHlsError(data, { ...playbackErrorContext(url), event: 'hls_fatal' })
+        if (tryCleanFallback(seq, '清洗线路播放失败', hlsErrorData)) return
+        handlePlaybackError(hlsErrorData)
       })
     } else {
       if (!isPlaybackCurrent(seq)) return
@@ -1904,10 +1936,11 @@ function tryJinpaiSelfHeal() {
   return true
 }
 
-function handlePlaybackError() {
+function handlePlaybackError(eventOrData = null) {
+  const hlsErrorData = eventOrData?.kind ? eventOrData : serializeNativeMediaError(eventOrData, { ...playbackErrorContext(curUrl.value), event: 'native_video_error' })
   if (tryJinpaiSelfHeal()) return
-  if (tryCleanFallback(playbackSeq)) return
-  void tryNextLine('播放失败')
+  if (tryCleanFallback(playbackSeq, '清洗线路播放失败', hlsErrorData)) return
+  void tryNextLine('播放失败', hlsErrorData)
 }
 
 function playbackSlots() {
@@ -1944,9 +1977,9 @@ function shouldProbeResolvedPlayback(result) {
   return result?.rule !== 'jinpai_client'
 }
 
-async function tryNextLine(reason = '当前线路播放失败') {
+async function tryNextLine(reason = '当前线路播放失败', hlsErrorData = {}) {
   if (retryingLine || autoSwitchingLine) return false
-  reportPlaybackError(reason, [{ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason }], { event: 'current_line_failed' })
+  reportPlaybackError(reason, [{ playId: curChannel.value?.id, line: playbackLineLabel(), error: reason, hlsErrorData }], { event: 'current_line_failed', hlsErrorData })
   showPlayFailure('线路异常', '当前线路播放失败，正在尝试备用线路。', true)
   const slots = playbackSlots()
   const failures = []

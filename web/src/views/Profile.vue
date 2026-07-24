@@ -88,6 +88,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifySuccess, notifyError } from '../feedback'
+import { PLAY_LOCAL_HISTORY_KEY, hydrateLocalHistoryRows, syncHistoryRowsToLocal } from '../historyStore'
 import { levelTagStyle } from '../levelTag'
 import { clearSession, currentUser, refreshUser } from '../userStore'
 
@@ -226,11 +227,16 @@ async function load() {
     return
   }
   prefs.value = user.value?.favoriteTypes || []
-  const [ts, fs, hs] = await Promise.all([api.categories(), api.follows(100), api.history(100)])
+  histories.value = await hydrateLocalHistoryRows(PLAY_LOCAL_HISTORY_KEY, 100)
+  const [ts, fs] = await Promise.all([api.categories(), api.follows(100)])
   types.value = ts
   follows.value = fs
-  histories.value = hs
   await loadRecommendations()
+  api.history(100).then(async (rows) => {
+    if (!Array.isArray(rows)) return
+    syncHistoryRowsToLocal(rows, PLAY_LOCAL_HISTORY_KEY)
+    histories.value = await hydrateLocalHistoryRows(PLAY_LOCAL_HISTORY_KEY, 100)
+  }).catch(() => {})
 }
 onMounted(() => {
   window.addEventListener('profile-tab', onProfileTab)

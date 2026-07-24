@@ -322,6 +322,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
 import { apiErrorMessage, notifyError, notifySuccess } from '../feedback'
+import { serializeNativeMediaError, serializePlaybackWatchdog } from '../hlsErrorReport'
 import { normalizePlayConfig, readCachedSite, writeCachedSite } from '../siteConfig'
 import { mergeSkipConfig, readLocalSkipPreference, writeLocalSkipPreference } from '../skipConfig'
 import { currentUser } from '../userStore'
@@ -478,6 +479,17 @@ function reportPlayError(message, failures = [], override = {}) {
     detail: { context: 'desktop', failures, event: override.event || '', current: currentResolve.value || {} },
   })
 }
+function playbackErrorContext(url = curUrl.value) {
+  const video = currentVideo()
+  return {
+    currentUrl: url,
+    rule: currentResolve.value?.rule || '',
+    proxyMode: currentResolve.value?.proxyMode || '',
+    cleanId: currentResolve.value?.cleanId || null,
+    fallbackUrl: currentResolve.value?.fallbackUrl || '',
+    video,
+  }
+}
 function clearPlayWatchdog() {
   if (playWatchdogTimer) clearTimeout(playWatchdogTimer)
   playWatchdogTimer = 0
@@ -487,9 +499,10 @@ function schedulePlayWatchdog(url) {
   playWatchdogTimer = window.setTimeout(() => {
     const video = currentVideo()
     if (curUrl.value !== url || mode.value !== 'hls' || Number(video?.readyState || 0) > 0) return
+    const hlsErrorData = serializePlaybackWatchdog('first_frame_timeout', { ...playbackErrorContext(url), event: 'play_watchdog' })
     showPlayNotice('连接超时或被当前网络拦截，已尝试切换线路')
-    if (tryCleanFallback(url)) return
-    tryNextPlayback()
+    if (tryCleanFallback(url, hlsErrorData, '清洗线路起播超时')) return
+    tryNextPlayback('当前线路播放失败', hlsErrorData)
   }, 9000)
 }
 function describePlaybackError(data) {
@@ -499,9 +512,27 @@ function describePlaybackError(data) {
   if (String(data?.details || '').toLowerCase().includes('timeout')) return '连接超时或被当前网络拦截，已尝试切换线路'
   return '当前网络无法访问，已尝试切换线路'
 }
-function tryCleanFallback(failedUrl) {
+function tryCleanFallback(failedUrl, hlsErrorData = {}, reason = '清洗线路播放失败') {
   if (!cleanFallbackUrl.value || failedUrl !== curUrl.value) return false
   const raw = cleanFallbackUrl.value
+  reportPlayError(reason, [{
+    playId: curChannel.value?.id,
+    lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '',
+    epName: curEp.value?.name || '',
+    message: reason,
+    url: curUrl.value,
+    rule: currentResolve.value?.rule || '',
+    cleanId: currentResolve.value?.cleanId || null,
+    fallbackUrl: raw,
+    hlsErrorData,
+  }], {
+    event: 'hls_clean_fallback',
+    hlsErrorData,
+    url: curUrl.value,
+    rule: currentResolve.value?.rule || '',
+    cleanId: currentResolve.value?.cleanId || null,
+    fallbackUrl: raw,
+  })
   cleanFallbackUrl.value = ''
   showPlayNotice('清洗线路播放失败，已回退原始线路')
   playDirectUrl(raw, 'm3u8')
@@ -814,9 +845,9 @@ function switchQuality(payload) {
   playDirectUrl(url, 'm3u8')
 }
 
-async function tryNextPlayback(reason = '当前线路播放失败') {
+async function tryNextPlayback(reason = '当前线路播放失败', hlsErrorData = {}) {
   if (autoSwitchingPlayback) return
-  reportPlayError(reason, [{ playId: curChannel.value?.id, lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '', epName: curEp.value?.name || '', message: reason }], { event: 'current_line_failed' })
+  reportPlayError(reason, [{ playId: curChannel.value?.id, lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '', epName: curEp.value?.name || '', message: reason, hlsErrorData }], { event: 'current_line_failed', hlsErrorData })
   showPlayFailure('线路异常', '当前线路播放失败，正在尝试备用线路。', true)
   const lines = vod.value.lines || []
   const slots = []
@@ -1080,10 +1111,15 @@ function onPlayerEnded(payload) {
 function onPlayerError(data) {
   if (!curUrl.value) return
   clearPlayWatchdog()
-  if (trySelfHeal()) return
-  showPlayNotice(describePlaybackError(data))
-  if (tryCleanFallback(curUrl.value)) return
-  void tryNextPlayback(describePlaybackError(data))
+  const hlsErrorData = data?.kind ? data : serializeNativeMediaError(data, { ...playbackErrorContext(curUrl.value), event: 'desktop_player_error' })
+  if (tryCleanFallback(curUrl.value, hlsErrorData)) return
+  if (trySelfHeal()) {
+    reportPlayError('播放异常，正在刷新解析', [{ playId: curChannel.value?.id, lineName: curChannel.value?.sourceName || curLine.value?.sourceName || '', epName: curEp.value?.name || '', message: '播放异常，正在刷新解析', hlsErrorData }], { event: 'self_heal_refresh', hlsErrorData })
+    return
+  }
+  const message = describePlaybackError(hlsErrorData)
+  showPlayNotice(message)
+  void tryNextPlayback(message, hlsErrorData)
 }
 
 function playEp(i, opts = {}) {
