@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（HLS清洗任务模式翻译）
+> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（HLS clean 新鲜度配置）
 
 ---
 
@@ -11,6 +11,7 @@
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
 
+- **2026-07-24 HLS clean 新鲜度配置断点**：新增 `HlsCleanConfig.cleanMaxAgeHours`（默认 168 小时，允许 1~8760），后台 `admin/src/views/HlsClean.vue` 配置页新增“clean 新鲜度”输入项；`server/src/hls/cleaner.ts` 播放解析命中 clean 结果时改读该配置计算 `freshSince`，不再只依赖 env 常量。`HLS_CLEAN_MAX_AGE_HOURS` 仍作为首次创建配置时的默认值来源；数据库配置保存后以后台配置为准。已执行 `pnpm --dir server db:gen`、`pnpm --dir server build`、`pnpm --dir admin build`、`git diff --check`、`pnpm --dir server db:push`、`docker compose up -d --build server admin`；运行态 `5150/health` 与 `5151` 均 200。
 - **2026-07-24 HLS 清洗任务模式翻译断点**：确认 `HlsCleanResult` 清洗结果没有 7 天自动删除逻辑，`HLS_CLEAN_MAX_AGE_HOURS` 默认 7 天只作为播放解析命中 clean 结果的新鲜度门槛；旧结果仍保留在库中，超过门槛会在 `autoQueueOnMiss=true` 时补排单线路/单集清洗。后台任务列表 `admin/src/views/Tasks.vue` 的模式列不再把 HLS 清洗任务 `mode=full` 显示为“全量”，改为 `生成 clean`，`dry` 显示为“只检测”。后台/API/数据库结构未改。
 - **2026-07-24 移动播放器横屏图标替换断点**：按老大指定将移动播放器右上角横屏入口替换为 SVGRepo `Rotate Shape` 图标（`https://www.svgrepo.com/svg/379595/rotate-shape`，CC0）。`web/src/mobile/icons.js` 的 `ratio` 图标改为该 SVG 的单 path 版本；`web/src/mobile/MobilePlay.vue` 为未横屏时的 `ratio` SVG 加 `mp-ratio-icon`，让它按实心 `fill:currentColor` 渲染，同时保留退出横屏 `close` 图标为线框样式。评论区标题前的小图形不是 SVG，而是 `pc-comment-title` / `x8-comment-title` 的 CSS 伪元素边框绘制。后台/API/数据库未改。
 - **2026-07-24 移动播放器横屏图标回修断点**：定位 `web/src/mobile/MobilePlay.vue` 右上角横屏图标变成一坨的原因，是该按钮使用 `icon('ratio')`，旧 `ratio` 图标由两个重叠 `<rect>` 组成，而播放器按钮样式链路会让部分图标走实心 `fill: currentColor`，重叠矩形被填满后视觉上糊成块。现给横屏按钮增加 `mp-landscape-btn` 专属线框样式，强制 `fill:none + stroke:currentColor`；`web/src/mobile/icons.js` 的 `ratio` 图标改为单个横屏矩形加左右方向线，避免重叠实心形状。后台/API/数据库未改。

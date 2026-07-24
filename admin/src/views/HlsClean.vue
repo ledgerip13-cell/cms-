@@ -48,6 +48,10 @@
             <b>建议：</b>默认 80。误删正片就调高到 90；广告漏清就调低到 70-75；低于 70 风险较高，建议先用“只检测不用于播放”观察结果。
           </div>
         </el-form-item>
+        <el-form-item label="clean 新鲜度">
+          <el-input-number v-model="cfg.cleanMaxAgeHours" :min="1" :max="8760" />
+          <span class="unit">小时；超过后播放不命中旧 clean，会按配置补排清洗</span>
+        </el-form-item>
         <el-form-item label="清洗 worker">
           <el-input-number v-model="cfg.workerConcurrency" :min="1" :max="12" />
           <span class="unit">单个清洗任务内并发处理集数</span>
@@ -413,7 +417,7 @@ const starting = ref(false)
 const previewing = ref(false)
 const strategySaving = ref('')
 const DEFAULT_STRATEGIES = ['discontinuity_profile_v1']
-const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, requireCleanPlayback: false, minConfidence: 80, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
+const cfg = ref({ enabled: false, autoOnCollect: false, autoQueueOnMiss: false, requireCleanPlayback: false, minConfidence: 80, cleanMaxAgeHours: 168, workerConcurrency: 3, sourceConcurrency: 1, defaultStrategies: [...DEFAULT_STRATEGIES] })
 const strategies = ref([])
 const strategyStats = ref({})
 const sources = ref([])
@@ -494,6 +498,7 @@ function normalizeConfig(config) {
   return {
     ...config,
     requireCleanPlayback: Boolean(config?.requireCleanPlayback),
+    cleanMaxAgeHours: Math.max(1, Math.min(8760, Number(config?.cleanMaxAgeHours) || 168)),
     defaultStrategies: normalizeStrategyIds(config?.defaultStrategies || config?.defaultStrategy),
   }
 }

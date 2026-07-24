@@ -8,7 +8,7 @@ import { probeTsBytes, type SegmentProfile } from "./tsProbe.js";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120";
 const RANGE_BYTES = 320 * 1024;
-const HLS_CLEAN_MAX_AGE_HOURS = Math.max(1, Number(process.env.HLS_CLEAN_MAX_AGE_HOURS) || 24 * 7);
+const DEFAULT_HLS_CLEAN_MAX_AGE_HOURS = Math.max(1, Number(process.env.HLS_CLEAN_MAX_AGE_HOURS) || 24 * 7);
 
 export interface HlsStrategy {
   id: string;
@@ -23,6 +23,7 @@ export interface HlsPolicyDecision {
   strategyIds: string[];
   reason: string;
   minConfidence: number;
+  cleanMaxAgeHours: number;
 }
 
 export interface HlsCleanRunOptions {
@@ -606,7 +607,7 @@ export async function ensureHlsCleanConfig() {
   return prisma.hlsCleanConfig.upsert({
     where: { id: 1 },
     update: {},
-    create: { id: 1 },
+    create: { id: 1, cleanMaxAgeHours: DEFAULT_HLS_CLEAN_MAX_AGE_HOURS },
   });
 }
 
@@ -621,6 +622,7 @@ export async function updateHlsCleanConfig(body: any) {
       autoQueueOnMiss: Boolean(body.autoQueueOnMiss),
       requireCleanPlayback: Boolean(body.requireCleanPlayback),
       minConfidence: Math.max(0, Math.min(100, Number(body.minConfidence) || 80)),
+      cleanMaxAgeHours: clampInt(body.cleanMaxAgeHours, DEFAULT_HLS_CLEAN_MAX_AGE_HOURS, 1, 8760),
       defaultStrategy: strategy,
       workerConcurrency: clampInt(body.workerConcurrency, 3, 1, 12),
       sourceConcurrency: clampInt(body.sourceConcurrency, 1, 1, 4),
@@ -654,6 +656,7 @@ export async function decideHlsClean(play: { id: number; sourceId: number; vod: 
       strategyIds: defaultStrategyIds,
       reason: "global_disabled",
       minConfidence: cfg.minConfidence,
+      cleanMaxAgeHours: cfg.cleanMaxAgeHours,
     };
   }
   const keys = [`play:${play.id}`, `source:${play.sourceId}`, `category:${play.vod.typeName}`];
@@ -671,7 +674,7 @@ export async function decideHlsClean(play: { id: number; sourceId: number; vod: 
     if (p.mode === "dry_run") { dryRun = true; reason = `${p.scope}_dry_run`; }
     if (p.mode === "enabled") { enabled = true; reason = `${p.scope}_enabled`; }
   }
-  return { enabled, dryRun, strategyId: strategyIds.join(","), strategyIds, reason, minConfidence: cfg.minConfidence };
+  return { enabled, dryRun, strategyId: strategyIds.join(","), strategyIds, reason, minConfidence: cfg.minConfidence, cleanMaxAgeHours: cfg.cleanMaxAgeHours };
 }
 
 async function analyzeManifest(
@@ -921,7 +924,7 @@ export async function findCleanResultForPlayback(play: { id: number; sourceId: n
   if (!decision.enabled || decision.dryRun) return null;
   const sourceUrlHash = hashText(resolvedUrl);
   const strategyId = decision.strategyIds.join(",");
-  const freshSince = new Date(Date.now() - HLS_CLEAN_MAX_AGE_HOURS * 60 * 60 * 1000);
+  const freshSince = new Date(Date.now() - decision.cleanMaxAgeHours * 60 * 60 * 1000);
   const exact = await prisma.hlsCleanResult.findFirst({
     where: {
       playId: play.id,

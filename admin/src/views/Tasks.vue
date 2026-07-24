@@ -37,7 +37,7 @@
       </el-table-column>
       <el-table-column prop="sourceName" label="源" width="130" />
       <el-table-column label="模式" width="80">
-        <template #default="{ row }">{{ row.mode==='full'?'全量':'增量' }}</template>
+        <template #default="{ row }">{{ modeLabel(row) }}</template>
       </el-table-column>
       <el-table-column label="进度" min-width="200">
         <template #default="{ row }">
@@ -110,6 +110,10 @@ const selected = ref([])
 let es = null
 
 const typeLabel = (t) => ({ collect:'采集', probe:'探活', meta:'元数据', keyword:'按片名', subtype:'补小类', hls_clean:'HLS清洗', archive:'本地转存' }[t] || t)
+const modeLabel = (row) => {
+  if (row.type === 'hls_clean') return row.mode === 'dry' ? '只检测' : '生成 clean'
+  return row.mode === 'full' ? '全量' : '增量'
+}
 const statusLabel = (s) => ({ pending:'排队', running:'进行中', paused:'已暂停', canceling:'中止中', done:'完成', failed:'失败', canceled:'已中止' }[s] || s)
 const statusType = (s) => ({ done:'success', failed:'danger', running:'warning', canceling:'warning', paused:'info', pending:'info' }[s] || 'info')
 const fmt = (t) => t ? new Date(t).toLocaleString('zh-CN') : '—'

@@ -128,6 +128,7 @@ model HlsCleanConfig {
   autoQueueOnMiss      Boolean  @default(false) // 播放命中缺失时是否异步排队清洗
   requireCleanPlayback Boolean  @default(false) // 开启后缺少 clean 结果不回退原始源
   minConfidence        Int      @default(80) // 低于该置信度不用于播放
+  cleanMaxAgeHours     Int      @default(168) // 播放命中 clean 结果的新鲜度窗口，超过后会补排清洗
   defaultStrategy      String   @default("discontinuity_profile_v1") // 默认清洗策略
   workerConcurrency    Int      @default(3) // 单个清洗任务内并发 worker 数
   sourceConcurrency    Int      @default(1) // 同一采集源并发探测上限，防止打爆源站
