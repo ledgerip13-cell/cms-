@@ -3,7 +3,7 @@
 > **文档性质**：动态交接文档（Handover Doc），供任意 AI/工程师无缝接班。
 > **维护官**：Zia（gogo·全栈）｜**唯一真相源**：`workspace-gogo/video-cms/README_HANDOVER.md`
 > **文档中心镜像**：小虎虾文档中心 → 分组 `cms视频`（经软链实时同步，改源文件即更新）
-> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（移动播放器横屏图标替换）
+> **最后更新**：2026-07-24 (GMT+8)｜**对应提交**：本次工作（HLS清洗任务模式翻译）
 
 ---
 
@@ -11,6 +11,7 @@
 
 一套**视频内容采集 + 聚合 + 分发 CMS**：后端从上游源（MacCMS API + 元数据源：豆瓣/TMDB）采集影片 → 分类/去重/补全 → 清洗 HLS(m3u8) 去广告 → 播放解析与代理；对外提供**观众前端**（PC + 移动端模板）与**运营后台**（鉴权管理台）。
 
+- **2026-07-24 HLS 清洗任务模式翻译断点**：确认 `HlsCleanResult` 清洗结果没有 7 天自动删除逻辑，`HLS_CLEAN_MAX_AGE_HOURS` 默认 7 天只作为播放解析命中 clean 结果的新鲜度门槛；旧结果仍保留在库中，超过门槛会在 `autoQueueOnMiss=true` 时补排单线路/单集清洗。后台任务列表 `admin/src/views/Tasks.vue` 的模式列不再把 HLS 清洗任务 `mode=full` 显示为“全量”，改为 `生成 clean`，`dry` 显示为“只检测”。后台/API/数据库结构未改。
 - **2026-07-24 移动播放器横屏图标替换断点**：按老大指定将移动播放器右上角横屏入口替换为 SVGRepo `Rotate Shape` 图标（`https://www.svgrepo.com/svg/379595/rotate-shape`，CC0）。`web/src/mobile/icons.js` 的 `ratio` 图标改为该 SVG 的单 path 版本；`web/src/mobile/MobilePlay.vue` 为未横屏时的 `ratio` SVG 加 `mp-ratio-icon`，让它按实心 `fill:currentColor` 渲染，同时保留退出横屏 `close` 图标为线框样式。评论区标题前的小图形不是 SVG，而是 `pc-comment-title` / `x8-comment-title` 的 CSS 伪元素边框绘制。后台/API/数据库未改。
 - **2026-07-24 移动播放器横屏图标回修断点**：定位 `web/src/mobile/MobilePlay.vue` 右上角横屏图标变成一坨的原因，是该按钮使用 `icon('ratio')`，旧 `ratio` 图标由两个重叠 `<rect>` 组成，而播放器按钮样式链路会让部分图标走实心 `fill: currentColor`，重叠矩形被填满后视觉上糊成块。现给横屏按钮增加 `mp-landscape-btn` 专属线框样式，强制 `fill:none + stroke:currentColor`；`web/src/mobile/icons.js` 的 `ratio` 图标改为单个横屏矩形加左右方向线，避免重叠实心形状。后台/API/数据库未改。
 - **2026-07-24 X8 搜索历史空态与热榜数量回修断点**：按老大反馈继续调整 `web/src/x8/X8Home.vue`：清空搜索历史后不再渲染“搜索历史”区和“暂无搜索记录”空态，输入为空时直接只显示热门搜索；热门搜索展示数量从 12 条固定为 10 条，避免第 11 条以后在当前下拉容器内显示不完整；热榜序号列从 22px 放宽到 28px、序号 badge 从 20px 放宽到 24px，确保第 10 位两位数字完整显示；同步合并重复的热榜标题 span 样式。后台/API/数据库未改。
@@ -219,6 +220,7 @@ docker compose up -d --build
 
 ## 4. 当前开发进度（断点记录）
 
+- **2026-07-24 移动播放页标签省略回修断点**：定位播放页标题下方标签显示成“电…/20…”的根因，是 `web/src/mobile/MobilePlay.vue` 上轮为保证标签一行展示时把 `.mp-title-row p span` 设为 `flex: 0 1 auto` 且 `min-width:0`，浏览器会在整行空间足够时仍压缩单个标签。现改为 `flex: 0 0 auto`，单个标签按内容宽度显示，并保留整行一行内裁切；后台/API/数据库未改动。已执行 `git diff --check`、`pnpm --dir web build`、`docker compose up -d --build web`，运行态 `5150/health` 与 `5152` 均 200，新资源 `assets/index-zn1nRZ76.js / assets/index-CtCXC13V.css` 已挂载。
 - **2026-07-24 移动播放器右上角图标放大断点**：按反馈将 `web/src/mobile/MobilePlay.vue` 播放器右上角横屏/关闭图标在当前 19px 基础上放大约 20% 至 23px，保留透明背景和加粗线宽设置；仅改移动播放页图标尺寸，后台/API/数据库未改动。已执行 `git diff --check`、`pnpm --dir web build`、`docker compose up -d --build web`，运行态 `5150/health` 与 `5152` 均 200，新资源 `assets/index-DBkkNjt2.js / assets/index-BuISUXqB.css` 已挂载。
 - **2026-07-24 移动端游客历史与播放详情回修断点**：`web/src/mobile/MobileMe.vue` 已接入游客本机观看历史，未登录时读取 `vcms.mobile.play.history.v1`，补拉影片详情后在“继续观看”展示，并带 `line/ep` 回到播放页；登录用户仍使用服务端历史/追剧/推荐。`web/src/mobile/MobileDetail.vue` 的播放线路增加“最近看过”标记、进入详情后按历史线路和集数自动定位，选集按 40 集一段显示为 `1-40/41-80`，第一集前新增“上次看到 第 N 集 + 进度”入口，线路/分段/历史集会滚动跟随焦点。`web/src/mobile/MobilePlay.vue` 播放页信息标签改为单行展示，移除移动端播放器下方“点踩”按钮，仅保留点赞入口；报错/分享右对齐，右上角横屏按钮去掉额外背景，图标缩小并加粗。后台/API/数据库未改动。已执行 `git diff --check`、`pnpm --dir web build`、`docker compose up -d --build web`，运行态 `5150/health` 与 `5152` 均 200，新资源 `assets/index-Kfk7uB4v.js / assets/index-DNsAo0Yw.css` 已挂载。
 - **2026-07-23 移动端首屏与 PWA 缓存优化断点**：按性能反馈优化移动端首屏加载。`web/src/mobile/MobileDetail.vue` 的 `loadDetail()` 改为详情主接口 `/api/vods/:id` 返回后立即关闭 loading 并渲染主内容，猜你喜欢 `/api/related` 和用户追剧状态后台补齐，不再拖住详情首屏。`web/src/mobile/MobileHome.vue` 新增 `vcms.mobile.home.cache.v2` 本地缓存，首页先读 hero/hot/new/guess/history 缓存秒显，再后台并发刷新并回写缓存，避免每次等 `site + hot + 3 个 vods + history` 全部完成才结束 loading。`web/vite.config.js` 生成的 SW 将核心 GET API 从 network-first 改为 stale-while-revalidate，缓存命中时立即返回并后台刷新，覆盖 `/api/site`、`/api/vods`、`/api/hot`、`/api/types`、`/api/categories`、`/api/related`、`/api/vods/:id`。短剧页不取消 keep-alive、不重新加载数据；`web/src/mobile/MobileShorts.vue` 在 `onDeactivated` 时仅暂停视频、关闭浮层并加 `route-hidden` 隐藏合成层，`onActivated` 恢复显示和原播放恢复逻辑，避免切到其他底部 tab 时残留短剧封面。

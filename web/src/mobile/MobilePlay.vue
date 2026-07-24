@@ -3220,8 +3220,8 @@ onDeactivated(() => {
   white-space: nowrap;
 }
 .mp-title-row p span {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 42%;
   overflow: hidden;
   padding: 4px 6px;
   border-radius: 8px;
