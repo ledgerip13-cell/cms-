@@ -382,6 +382,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
         const clean = await findCleanResultForPlayback({ id: play.id, sourceId: play.sourceId, vod: play.vod }, result.url);
         if (clean) {
           const token = signPlaybackToken({ cleanId: clean.id, playId: play.id, vodId: play.vodId, mid: viewer?.id });
+          const allowCleanFallback = !(play.source as any).cleanOnly && !cfg.requireCleanPlayback;
           void recordPlayHealth(play.id, true, { ms: Date.now() - startedAt, reason: "resolve_hls_clean" });
           return {
             ...result,
@@ -389,7 +390,7 @@ export default async function resolveRoutes(app: FastifyInstance) {
             kind: "m3u8",
             rule: "hls_clean",
             cleanId: clean.id,
-            fallbackUrl: result.url,
+            fallbackUrl: allowCleanFallback ? result.url : "",
           };
         }
         if (cfg.autoQueueOnMiss) {

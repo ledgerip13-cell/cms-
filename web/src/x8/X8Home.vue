@@ -463,6 +463,8 @@
                       :poster="heroImage(vod)"
                       @click="onVideoClick"
                       @timeupdate="syncVideoState"
+                      @progress="syncVideoState"
+                      @durationchange="syncVideoState"
                       @loadedmetadata="onVideoLoadedMetadata"
                       @loadeddata="updateNativeQualityLabel"
                       @canplay="updateNativeQualityLabel"
@@ -488,7 +490,7 @@
                       <em>{{ resolving ? '解析中...' : '立即播放' }}</em>
                     </button>
                     <div class="x8-video-toolbar" @click.stop @mousemove.stop="showPlayerControls">
-                      <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :style="{ '--x8-progress': progressPercent + '%' }" @input="seekVideo" />
+                      <input class="x8-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :style="{ '--x8-progress': progressPercent + '%', '--x8-buffered': bufferedPercent + '%' }" @input="seekVideo" />
                       <div class="x8-control-row">
                         <div class="x8-control-left">
                           <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
@@ -1309,6 +1311,7 @@ const playing = ref(false)
 const muted = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const bufferedEnd = ref(0)
 const controlsVisible = ref(false)
 const playerTheater = ref(false)
 const videoFullscreen = ref(false)
@@ -1342,6 +1345,7 @@ let hls = null
 let trailerHls = null
 let autoSwitchingPlayback = false
 let selfHealTried = false
+let cleanFallbackTimer = 0
 let introSkippedUrl = ''
 let outroSkippedUrl = ''
 let danmakuLoadAt = 0
@@ -1614,6 +1618,10 @@ const qualityBadgeLabel = computed(() => {
 const progressPercent = computed(() => {
   if (!duration.value) return 0
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
+})
+const bufferedPercent = computed(() => {
+  if (!duration.value) return 0
+  return Math.min(100, Math.max(progressPercent.value, (bufferedEnd.value / duration.value) * 100))
 })
 const historyPercent = computed(() => {
   const h = activeLineHistory()
@@ -2815,6 +2823,7 @@ async function submitDanmaku() {
   }
 }
 function destroyHls() {
+  clearCleanFallbackWatchdog()
   if (hls) {
     hls.destroy()
     hls = null
@@ -2899,11 +2908,24 @@ function syncVideoState() {
   applySkipRanges()
   currentTime.value = Number(video.currentTime) || 0
   duration.value = Number.isFinite(video.duration) ? Number(video.duration) : 0
+  bufferedEnd.value = bufferedEndFor(video, currentTime.value)
   muted.value = Boolean(video.muted || video.volume === 0)
   playing.value = !video.paused && !video.ended
   saveHistoryTick()
   void loadDanmakuWindow(false)
   tickDanmaku()
+}
+function bufferedEndFor(video, current) {
+  const ranges = video?.buffered
+  if (!ranges?.length) return 0
+  let end = 0
+  for (let i = 0; i < ranges.length; i += 1) {
+    const start = Number(ranges.start(i)) || 0
+    const rangeEnd = Number(ranges.end(i)) || 0
+    if (current >= start && current <= rangeEnd) return rangeEnd
+    end = Math.max(end, rangeEnd)
+  }
+  return end
 }
 function onVideoLoadedMetadata() {
   updateNativeQualityLabel()
@@ -3198,6 +3220,38 @@ function hidePlayerControlsSoon() {
     }, 900)
   }
 }
+function cleanFallbackUrl() {
+  const r = currentResolve.value
+  if (r?.rule !== 'hls_clean') return ''
+  const fallback = String(r?.fallbackUrl || '').trim()
+  return fallback && fallback !== playUrl.value ? fallback : ''
+}
+function clearCleanFallbackWatchdog(url = '') {
+  if (cleanFallbackTimer && (!url || url === playUrl.value)) {
+    window.clearTimeout(cleanFallbackTimer)
+    cleanFallbackTimer = 0
+  }
+}
+function tryCleanFallback(reason = '清洗线路播放失败') {
+  const fallback = cleanFallbackUrl()
+  if (!fallback) return false
+  clearCleanFallbackWatchdog()
+  const previous = currentResolve.value || {}
+  currentResolve.value = { ...previous, url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
+  notifyWarning(`${reason}，已回退原始线路`)
+  attachVideo(fallback, 'm3u8')
+  return true
+}
+function scheduleCleanFallbackWatchdog(url) {
+  clearCleanFallbackWatchdog()
+  if (!cleanFallbackUrl()) return
+  cleanFallbackTimer = window.setTimeout(() => {
+    cleanFallbackTimer = 0
+    const video = videoEl.value
+    if (playUrl.value !== url || Number(video?.readyState || 0) >= 2) return
+    tryCleanFallback('清洗线路起播超时')
+  }, 9000)
+}
 function attachVideo(url, kind = '') {
   playUrl.value = url
   playKind.value = kind === 'iframe' ? 'iframe' : ''
@@ -3215,13 +3269,17 @@ function attachVideo(url, kind = '') {
     video.controls = false
     video.playbackRate = playbackRate.value
     video.load()
+    const markReady = () => clearCleanFallbackWatchdog(url)
+    video.addEventListener('loadeddata', markReady, { once: true })
+    video.addEventListener('canplay', markReady, { once: true })
+    scheduleCleanFallbackWatchdog(url)
     if (/\.m3u8(\?|$)/i.test(url) && Hls.isSupported()) {
       hls = new Hls({ maxBufferLength: 180, maxMaxBufferLength: 180, capLevelToPlayerSize: true })
       hls.loadSource(url)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().then(syncVideoState).catch(syncVideoState))
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data?.fatal) handlePlaybackError()
+        if (data?.fatal && !tryCleanFallback()) handlePlaybackError()
       })
     } else {
       video.src = url
@@ -3380,6 +3438,7 @@ function tryJinpaiSelfHeal() {
 }
 function handlePlaybackError() {
   if (tryJinpaiSelfHeal()) return
+  if (tryCleanFallback()) return
   void tryNextPlayback('播放失败')
 }
 // X8 播放器切换清晰度：保留当前播放位重新加载选定档 URL
@@ -3811,6 +3870,7 @@ async function loadVod(withPlay = false) {
   nativeQualityLabel.value = ''
   currentTime.value = 0
   duration.value = 0
+  bufferedEnd.value = 0
   playing.value = false
   settingsOpen.value = false
   detailEpDesc.value = false
@@ -4223,7 +4283,8 @@ onBeforeUnmount(() => {
 }
 .x8-search-history-list button {
   width: auto;
-  max-width: 100%;
+  max-width: min(100%, 180px);
+  min-width: 0;
   height: 28px;
   display: inline-flex;
   align-items: center;
@@ -4234,6 +4295,9 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,.08);
   font-size: 14px;
   line-height: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .x8-search-history-list button:hover {
   background: rgba(255,255,255,.14);
@@ -6671,46 +6735,47 @@ onBeforeUnmount(() => {
 }
 .x8-progress {
   width: 100%;
-  height: 10px;
-  margin: 0;
+  height: 30px;
+  margin: -10px 0 -4px;
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
   cursor: pointer;
+  touch-action: pan-x;
 }
 .x8-progress::-webkit-slider-runnable-track {
-  height: 2px;
+  height: 3px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #fff 0%, #fff var(--x8-progress, 0%), rgba(255,255,255,.24) var(--x8-progress, 0%), rgba(255,255,255,.24) 100%);
+  background: linear-gradient(90deg, #fff 0%, #fff var(--x8-progress, 0%), rgba(255,255,255,.52) var(--x8-progress, 0%), rgba(255,255,255,.52) var(--x8-buffered, 0%), rgba(255,255,255,.24) var(--x8-buffered, 0%), rgba(255,255,255,.24) 100%);
 }
 .x8-progress::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 8px;
-  height: 8px;
-  margin-top: -3px;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
   border: 0;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 5px rgba(255,255,255,.12), 0 2px 10px rgba(0,0,0,.45);
+  box-shadow: 0 0 0 7px rgba(255,255,255,.14), 0 2px 10px rgba(0,0,0,.45);
 }
 .x8-progress::-moz-range-track {
-  height: 2px;
+  height: 3px;
   border-radius: 999px;
   background: rgba(255,255,255,.26);
 }
 .x8-progress::-moz-range-progress {
-  height: 2px;
+  height: 3px;
   border-radius: 999px;
   background: #fff;
 }
 .x8-progress::-moz-range-thumb {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   border: 0;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 4px rgba(255,255,255,.16), 0 2px 8px rgba(0,0,0,.45);
+  box-shadow: 0 0 0 7px rgba(255,255,255,.14), 0 2px 8px rgba(0,0,0,.45);
 }
 .x8-control-row {
   width: 100%;

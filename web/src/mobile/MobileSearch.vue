@@ -801,6 +801,7 @@ onBeforeUnmount(() => {
 }
 .msr-word-grid button {
   min-width: 0;
+  max-width: 100%;
   height: 34px;
   border: 0;
   border-radius: 12px;

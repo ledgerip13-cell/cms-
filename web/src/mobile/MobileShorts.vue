@@ -463,6 +463,7 @@ let feedSeed = Date.now()
 let hasMoreFeed = true
 let scrollRaf = 0
 let activeTimer = 0
+let cleanFallbackTimer = 0
 let fullCommitTimer = 0
 let pendingFullEpIndex = null
 let fullScrollActive = false
@@ -1087,6 +1088,7 @@ async function reload(options = {}) {
 }
 
 function stopVideo() {
+  clearCleanFallbackWatchdog()
   if (hls) {
     hls.destroy()
     hls = null
@@ -1329,6 +1331,42 @@ async function tryNextShortsLine(unit, triedLineIds = new Set()) {
   return nextUnit
 }
 
+function clearCleanFallbackWatchdog() {
+  if (cleanFallbackTimer) {
+    window.clearTimeout(cleanFallbackTimer)
+    cleanFallbackTimer = 0
+  }
+}
+function cleanFallbackUrlForUnit(unit) {
+  const r = unit?.lastResolve
+  if (r?.rule !== 'hls_clean') return ''
+  const fallback = String(r?.fallbackUrl || '').trim()
+  return fallback && fallback !== playUrl.value ? fallback : ''
+}
+async function tryCleanFallbackForUnit(unit, reason = '清洗线路播放失败', seq = playSeq) {
+  if (seq !== playSeq || activeUnit.value?.key !== unit?.key) return false
+  const fallback = cleanFallbackUrlForUnit(unit)
+  if (!fallback) return false
+  clearCleanFallbackWatchdog()
+  unit.lastResolve = { ...(unit.lastResolve || {}), url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
+  unit.resumeHistory = { ...(unit.resumeHistory || {}), epIndex: unit.epIndex, progressSec: currentSec.value, durationSec: durationSec.value }
+  const retrySeq = ++playSeq
+  playingUnit = unit
+  notifyWarning(`${reason}，已回退原始线路`)
+  await attachVideo(fallback, 'm3u8', retrySeq, unit)
+  return true
+}
+function scheduleCleanFallbackWatchdog(url, seq, unit) {
+  clearCleanFallbackWatchdog()
+  if (!cleanFallbackUrlForUnit(unit)) return
+  cleanFallbackTimer = window.setTimeout(() => {
+    cleanFallbackTimer = 0
+    const video = getVideo()
+    if (seq !== playSeq || activeUnit.value?.key !== unit?.key || playUrl.value !== url || Number(video?.readyState || 0) >= 2) return
+    void tryCleanFallbackForUnit(unit, '清洗线路起播超时', seq)
+  }, 9000)
+}
+
 async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
   const unit = activeUnit.value || playingUnit
   if (!unit?.vod?.id || !unit?.channel?.id) return false
@@ -1349,6 +1387,7 @@ async function recoverShortsPlaybackLine(reason = '当前线路播放失败') {
       } catch {}
     }
   }
+  if (await tryCleanFallbackForUnit(unit, '清洗线路播放失败')) return true
   rememberLineFailure(unit)
   const tried = new Set([Number(unit.channel.id)])
   try {
@@ -1443,6 +1482,10 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
   video.autoplay = true
   video.playsInline = true
   video.addEventListener('loadedmetadata', () => applyShortsHistorySeek(video, attachedUnit), { once: true })
+  const markReady = () => clearCleanFallbackWatchdog()
+  video.addEventListener('loadeddata', markReady, { once: true })
+  video.addEventListener('canplay', markReady, { once: true })
+  scheduleCleanFallbackWatchdog(url, seq, attachedUnit)
   if (hls) hls.destroy()
   hls = null
   if ((kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)) && Hls.isSupported()) {
@@ -1458,7 +1501,7 @@ async function attachVideo(url, kind, seq = playSeq, unit = activeUnit.value) {
     })
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data?.fatal && hls === currentHls && seq === playSeq && activeUnit.value?.key === attachedUnit.key) {
-        void recoverShortsPlaybackLine('当前线路播放失败，已暂停')
+        void recoverShortsPlaybackLine('当前线路播放失败')
       }
     })
   } else {

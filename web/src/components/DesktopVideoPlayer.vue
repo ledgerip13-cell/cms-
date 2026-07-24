@@ -22,6 +22,7 @@
       :poster="poster"
       @click="onVideoClick"
       @timeupdate="syncState"
+      @progress="syncState"
       @loadedmetadata="onLoadedMetadata"
       @loadeddata="updateNativeQualityLabel"
       @canplay="updateNativeQualityLabel"
@@ -55,7 +56,7 @@
     </button>
 
     <div v-if="kind !== 'iframe' && src" class="desktop-video-toolbar" @click.stop @mousemove.stop="showControls">
-      <input class="desktop-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :style="{ '--desktop-progress': progressPercent + '%' }" @input="seekVideo" />
+      <input class="desktop-progress" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :style="{ '--desktop-progress': progressPercent + '%', '--desktop-buffered': bufferedPercent + '%' }" @input="seekVideo" />
       <div class="desktop-control-row">
         <div class="desktop-control-left">
           <button type="button" :title="playing ? '暂停' : '播放'" @click="togglePlay">
@@ -194,6 +195,7 @@ const playing = ref(false)
 const muted = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const bufferedEnd = ref(0)
 const playbackRate = ref(1)
 const autoNextLocal = ref(true)
 const skipIntroOutro = ref(false)
@@ -208,6 +210,7 @@ let introSkippedSrc = ''
 let outroSkippedSrc = ''
 
 const progressPercent = computed(() => duration.value ? Math.min(100, Math.max(0, currentTime.value / duration.value * 100)) : 0)
+const bufferedPercent = computed(() => duration.value ? Math.min(100, Math.max(progressPercent.value, (bufferedEnd.value / duration.value) * 100)) : 0)
 const playbackRateLabel = computed(() => rateLabel(playbackRate.value))
 const playConfig = computed(() => props.playConfig || {})
 const subtitleOptions = computed(() => (Array.isArray(props.subtitles) ? props.subtitles : [])
@@ -276,6 +279,7 @@ function loadSource() {
   closePops()
   currentTime.value = 0
   duration.value = 0
+  bufferedEnd.value = 0
   nativeQualityLabel.value = ''
   playing.value = false
   introSkippedSrc = ''
@@ -331,9 +335,22 @@ function syncState() {
   applySkipRanges()
   currentTime.value = Number(video.currentTime) || 0
   duration.value = Number(video.duration) || 0
+  bufferedEnd.value = bufferedEndFor(video, currentTime.value)
   muted.value = Boolean(video.muted)
   playing.value = !video.paused
   emit('state', { currentTime: currentTime.value, duration: duration.value, muted: muted.value, playing: playing.value })
+}
+function bufferedEndFor(video, current) {
+  const ranges = video?.buffered
+  if (!ranges?.length) return 0
+  let end = 0
+  for (let i = 0; i < ranges.length; i += 1) {
+    const start = Number(ranges.start(i)) || 0
+    const rangeEnd = Number(ranges.end(i)) || 0
+    if (current >= start && current <= rangeEnd) return rangeEnd
+    end = Math.max(end, rangeEnd)
+  }
+  return end
 }
 function onPause() {
   playing.value = false
@@ -645,12 +662,12 @@ defineExpose({
 .desktop-video-toolbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; padding: 0 16px 14px; background: linear-gradient(180deg, transparent, rgba(0,0,0,.78)); opacity: 0; transform: translateY(16px); transition: opacity .18s, transform .18s; pointer-events: none; }
 .desktop-video-player.controls-visible .desktop-video-toolbar,
 .desktop-video-player:hover .desktop-video-toolbar { opacity: 1; transform: none; pointer-events: auto; }
-.desktop-progress { width: 100%; height: 18px; margin: 0 0 6px; appearance: none; background: transparent; cursor: pointer; display: block; }
-.desktop-progress::-webkit-slider-runnable-track { height: 3px; border-radius: 99px; background: linear-gradient(90deg, #e50914 var(--desktop-progress, 0%), rgba(255,255,255,.32) 0); }
-.desktop-progress::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; margin-top: -3.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(229,9,20,.2); }
+.desktop-progress { width: 100%; height: 34px; margin: -8px 0 0; appearance: none; background: transparent; cursor: pointer; display: block; touch-action: pan-x; }
+.desktop-progress::-webkit-slider-runnable-track { height: 3px; border-radius: 99px; background: linear-gradient(90deg, #e50914 0%, #e50914 var(--desktop-progress, 0%), rgba(255,255,255,.56) var(--desktop-progress, 0%), rgba(255,255,255,.56) var(--desktop-buffered, 0%), rgba(255,255,255,.32) var(--desktop-buffered, 0%), rgba(255,255,255,.32) 100%); }
+.desktop-progress::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 7px rgba(229,9,20,.22), 0 2px 10px rgba(0,0,0,.35); }
 .desktop-progress::-moz-range-track { height: 3px; border-radius: 99px; background: rgba(255,255,255,.32); }
 .desktop-progress::-moz-range-progress { height: 3px; border-radius: 99px; background: #e50914; }
-.desktop-progress::-moz-range-thumb { width: 10px; height: 10px; border: 0; border-radius: 50%; background: #fff; }
+.desktop-progress::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 7px rgba(229,9,20,.22), 0 2px 10px rgba(0,0,0,.35); }
 .desktop-control-row { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .desktop-control-left,
 .desktop-control-right { display: flex; align-items: center; gap: 8px; min-width: 0; }

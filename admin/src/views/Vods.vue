@@ -26,6 +26,7 @@
         </el-button>
         <el-button :icon="CollectionTag" @click="backfillSubs">补全小类</el-button>
         <el-button type="danger" plain @click="openCleanup">影片清理</el-button>
+        <el-button type="primary" plain @click="openPlaybackDiagnose">播放诊断</el-button>
         <span class="vod-count">去重后 {{ total }} 部</span>
       </div>
     </div>
@@ -259,29 +260,38 @@
       </div>
       <div class="sec-title" style="margin:16px 0 10px">播放线路 · {{ cur.lines?.length }} 条(按源优先级)</div>
       <el-collapse v-model="active">
-        <el-collapse-item v-for="l in cur.lines" :key="l.id" :name="l.id">
+        <el-collapse-item v-for="l in cur.lines" :key="l.id" :name="String(l.id)">
           <template #title>
             <el-tag size="small" type="success">{{ l.sourceName }}</el-tag>
             <span style="margin:0 10px">flag={{ l.flag }}</span>
             <span style="color:var(--text-3)">{{ l.epCount }} 集</span>
             <span style="margin-left:10px;color:#64748b">健康 {{ l.score ?? 0 }} · 成功 {{ l.playSuccessCount || 0 }} / 失败 {{ l.playFailureCount || 0 }}</span>
+            <el-button size="small" link type="primary" class="line-title-action" @click.stop="diagnoseFirstEpisode(l)">诊断第1集</el-button>
           </template>
-          <div class="line-health">
-            <span>平均 {{ l.avgResponseMs || l.checkMs || 0 }}ms</span>
-            <span>最近成功 {{ fmtDate(l.lastSuccessAt) || '—' }}</span>
-            <span>最近失败 {{ fmtDate(l.lastFailureAt) || '—' }}</span>
-            <span v-if="l.healthReason">原因 {{ l.healthReason }}</span>
-          </div>
-          <div class="eps">
-            <span v-for="(e,i) in visibleEpisodes(l)" :key="i" class="ep-wrap">
-              <el-tag size="small" effect="plain" class="ep" @click="copy(e.url)" :title="e.url">{{ e.name }}</el-tag>
-              <el-button size="small" link type="primary" @click="diagnoseEp(l, e, i)">诊断</el-button>
-            </span>
-            <div v-if="l.episodes.length>60" class="episode-more">
-              <span>共 {{ l.episodes.length }} 集</span>
-              <el-button size="small" link type="primary" @click="toggleEpisodes(l)">
-                {{ isEpisodesExpanded(l) ? '收起' : '展开全部' }}
-              </el-button>
+          <div v-for="ch in lineChannels(l)" :key="ch.id || ch.flag" class="line-channel">
+            <div v-if="lineChannels(l).length > 1" class="line-channel-title">
+              <b>{{ ch.sourceName || l.sourceName }}</b>
+              <span>flag={{ ch.flag }} · {{ ch.epCount || ch.episodes?.length || 0 }} 集 · 健康 {{ ch.score ?? 0 }}</span>
+              <el-button size="small" link type="primary" @click="diagnoseFirstEpisode(ch)">诊断第1集</el-button>
+            </div>
+            <div class="line-health">
+              <span>平均 {{ ch.avgResponseMs || ch.checkMs || 0 }}ms</span>
+              <span>最近成功 {{ fmtDate(ch.lastSuccessAt) || '—' }}</span>
+              <span>最近失败 {{ fmtDate(ch.lastFailureAt) || '—' }}</span>
+              <span v-if="ch.healthReason">原因 {{ ch.healthReason }}</span>
+            </div>
+            <div class="eps">
+              <span v-for="(e,i) in visibleEpisodes(ch)" :key="i" class="ep-wrap">
+                <el-tag size="small" effect="plain" class="ep" @click="copy(e.url)" :title="e.url">{{ e.name }}</el-tag>
+                <el-button size="small" link type="primary" @click="diagnoseEp(ch, e, i)">诊断</el-button>
+              </span>
+              <div v-if="(ch.episodes?.length || 0)>60" class="episode-more">
+                <span>共 {{ ch.episodes.length }} 集</span>
+                <el-button size="small" link type="primary" @click="toggleEpisodes(ch)">
+                  {{ isEpisodesExpanded(ch) ? '收起' : '展开全部' }}
+                </el-button>
+              </div>
+              <el-empty v-if="!ch.episodes?.length" description="该线路暂无集数数据" :image-size="48" />
             </div>
           </div>
         </el-collapse-item>
@@ -514,6 +524,106 @@
     <el-empty v-else-if="cleanupPreview?.samples?.length" description="候选已全部排除" :image-size="64" />
   </el-dialog>
 
+  <el-dialog v-model="playbackDiagnoseDlg" title="播放链接诊断 / 死链治理" width="880">
+    <el-form :model="playbackDiagnoseForm" label-width="92px">
+      <div class="play-diagnose-grid">
+        <el-form-item label="片名/演员">
+          <el-input v-model="playbackDiagnoseForm.kw" clearable placeholder="片名 / 演员 / 别名" @change="resetPlaybackDiagnose" />
+        </el-form-item>
+        <el-form-item label="影片ID">
+          <el-input-number v-model="playbackDiagnoseForm.vodId" :min="0" controls-position="right" @change="resetPlaybackDiagnose" />
+        </el-form-item>
+        <el-form-item label="主分类">
+          <el-select v-model="playbackDiagnoseForm.categoryNames" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部主分类" @change="onPlaybackDiagnoseCategoryChange">
+            <el-option v-for="t in types" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="子分类">
+          <el-select v-model="playbackDiagnoseForm.subType" clearable filterable
+            :disabled="playbackDiagnoseCategoryNames.length !== 1"
+            :loading="cleanupSubtypesLoading"
+            :placeholder="playbackDiagnoseSubtypesPlaceholder"
+            @change="resetPlaybackDiagnose">
+            <el-option v-for="t in cleanupSubtypes" :key="t.name" :label="`${t.name || '未分类'}(${t.count || 0})`" :value="t.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="采集源">
+          <el-select v-model="playbackDiagnoseForm.sourceId" clearable filterable placeholder="全部源" @change="resetPlaybackDiagnose">
+            <el-option v-for="s in sourceOptions" :key="s.id" :label="`${s.name}${s.enabled ? '' : '（已禁用）'}`" :value="s.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="影片状态">
+          <el-select v-model="playbackDiagnoseForm.status" clearable placeholder="全部状态" @change="resetPlaybackDiagnose">
+            <el-option label="在线" value="online" />
+            <el-option label="下架" value="offline" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="线路健康">
+          <el-select v-model="playbackDiagnoseForm.lineHealth" clearable placeholder="全部线路" @change="resetPlaybackDiagnose">
+            <el-option label="仅失效" value="dead" />
+            <el-option label="仅可用" value="alive" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="清洗状态">
+          <el-select v-model="playbackDiagnoseForm.cleanStatus" clearable placeholder="全部" @change="resetPlaybackDiagnose">
+            <el-option label="已清洗" value="cleaned" />
+            <el-option label="未清洗" value="uncleaned" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="执行上限">
+          <el-input-number v-model="playbackDiagnoseForm.limit" :min="1" :max="100" controls-position="right" @change="resetPlaybackDiagnose" />
+        </el-form-item>
+        <el-form-item label="回写健康">
+          <el-switch v-model="playbackDiagnoseForm.markHealth" inline-prompt active-text="回写" inactive-text="只看" />
+        </el-form-item>
+      </div>
+    </el-form>
+    <div class="diagnose-actions">
+      <el-button type="primary" plain :loading="playbackDiagnoseLoading" @click="previewPlaybackDiagnose">预检</el-button>
+      <el-button type="danger" :disabled="!playbackDiagnosePreview?.playCount" :loading="playbackDiagnoseLoading" @click="executePlaybackDiagnose">执行诊断</el-button>
+    </div>
+    <el-alert v-if="playbackDiagnosePreview" class="diagnose-summary" type="warning" :closable="false" show-icon
+      :title="`命中 ${playbackDiagnosePreview.playCount || 0} 条线路，涉及 ${playbackDiagnosePreview.vodCount || 0} 部影片，本次最多处理 ${playbackDiagnosePreview.limit || playbackDiagnoseForm.limit} 条`" />
+    <el-table v-if="playbackDiagnosePreview?.samples?.length" :data="playbackDiagnosePreview.samples" size="small" max-height="260">
+      <el-table-column prop="vodId" label="影片ID" width="78" />
+      <el-table-column prop="vodName" label="片名" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="typeName" label="分类" width="92" show-overflow-tooltip />
+      <el-table-column prop="subType" label="子分类" width="100" show-overflow-tooltip />
+      <el-table-column prop="sourceName" label="源" width="120" show-overflow-tooltip />
+      <el-table-column prop="flag" label="flag" width="90" show-overflow-tooltip />
+      <el-table-column label="健康" width="120">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.alive ? 'success' : 'danger'">{{ row.alive ? '可用' : '失效' }}</el-tag>
+          <span class="muted"> {{ row.score ?? 0 }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="healthReason" label="原因" min-width="160" show-overflow-tooltip />
+    </el-table>
+    <template v-if="playbackDiagnoseResult">
+      <div class="diagnose-result-summary">
+        <el-tag type="success">可播 {{ playbackDiagnoseResult.playable || 0 }}</el-tag>
+        <el-tag type="danger">失败 {{ playbackDiagnoseResult.failed || 0 }}</el-tag>
+        <el-tag type="info">{{ playbackDiagnoseResult.markHealth ? '已回写健康' : '未回写' }}</el-tag>
+      </div>
+      <el-table :data="playbackDiagnoseResult.results || []" size="small" max-height="340">
+        <el-table-column label="状态" width="70">
+          <template #default="{ row }"><el-tag size="small" :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '可播' : '失败' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="vodName" label="片名" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="sourceName" label="源" width="110" show-overflow-tooltip />
+        <el-table-column prop="flag" label="flag" width="82" show-overflow-tooltip />
+        <el-table-column prop="epName" label="集数" width="90" show-overflow-tooltip />
+        <el-table-column prop="summary" label="诊断结果" min-width="220" show-overflow-tooltip />
+        <el-table-column label="地址" width="92" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.url" size="small" link type="primary" @click="copy(row.url)">复制</el-button>
+            <el-button v-if="row.url" size="small" link type="primary" @click="openUrl(row.url)">打开</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="diagOpen" title="线路播放诊断" width="720">
     <div v-if="diag.line" class="diag-head">
       <div>
@@ -681,6 +791,22 @@ const vodMenuOpenedAt = ref({})
 const diagOpen = ref(false)
 const diag = ref({ loading: false, line: null, ep: null, epIndex: 0, result: null, probe: '' })
 const cleanupDlg = ref(false)
+const playbackDiagnoseDlg = ref(false)
+const playbackDiagnoseLoading = ref(false)
+const playbackDiagnosePreview = ref(null)
+const playbackDiagnoseResult = ref(null)
+const playbackDiagnoseForm = ref({
+  kw: '',
+  vodId: 0,
+  categoryNames: [],
+  subType: '',
+  sourceId: '',
+  status: 'online',
+  lineHealth: '',
+  cleanStatus: '',
+  limit: 30,
+  markHealth: true,
+})
 
 // 清洗广告
 const cleanDlg = ref(false); const cleanForm = reactive({ strategyIds: [], epMode: 'all' }); const cleanSubmitting = ref(false)
@@ -761,9 +887,19 @@ const cleanupSelectedCategoryNames = computed(() => {
       : []
   return [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))]
 })
+const playbackDiagnoseCategoryNames = computed(() => {
+  return [...new Set((Array.isArray(playbackDiagnoseForm.value.categoryNames) ? playbackDiagnoseForm.value.categoryNames : [])
+    .map(name => String(name || '').trim())
+    .filter(Boolean))]
+})
 const cleanupSubtypesPlaceholder = computed(() => {
   if (!cleanupSelectedCategoryNames.value.length) return '先选择主分类'
   if (cleanupSelectedCategoryNames.value.length > 1) return '多主分类时不可选子分类'
+  return '全部子分类'
+})
+const playbackDiagnoseSubtypesPlaceholder = computed(() => {
+  if (!playbackDiagnoseCategoryNames.value.length) return '先选择主分类'
+  if (playbackDiagnoseCategoryNames.value.length > 1) return '多主分类时不可选子分类'
   return '全部子分类'
 })
 const weekdayOptions = [
@@ -898,8 +1034,8 @@ async function onCleanupCategoryChange() {
   cleanupSubtypes.value = []
   if (names.length === 1) await loadCleanupSubtypes()
 }
-async function loadCleanupSubtypes() {
-  const type = cleanupSelectedCategoryNames.value[0]
+async function loadCleanupSubtypes(typeOverride = '') {
+  const type = typeOverride || cleanupSelectedCategoryNames.value[0]
   if (!type) return
   cleanupSubtypesLoading.value = true
   try {
@@ -948,9 +1084,70 @@ async function executeCleanup() {
     load()
   } catch (e) { ElMessage.error(e.message || '清理失败') } finally { cleanupLoading.value = false }
 }
+function resetPlaybackDiagnose() {
+  playbackDiagnosePreview.value = null
+  playbackDiagnoseResult.value = null
+}
+function playbackDiagnosePayload() {
+  const vodId = Number(playbackDiagnoseForm.value.vodId) || 0
+  const sourceId = Number(playbackDiagnoseForm.value.sourceId) || 0
+  return {
+    ...playbackDiagnoseForm.value,
+    vodId: vodId > 0 ? vodId : undefined,
+    sourceId: sourceId > 0 ? sourceId : undefined,
+    categoryNames: playbackDiagnoseCategoryNames.value,
+    limit: Math.max(1, Math.min(100, Number(playbackDiagnoseForm.value.limit) || 30)),
+  }
+}
+function openPlaybackDiagnose() {
+  playbackDiagnoseDlg.value = true
+  resetPlaybackDiagnose()
+  if (playbackDiagnoseCategoryNames.value.length === 1 && !cleanupSubtypes.value.length) loadCleanupSubtypes(playbackDiagnoseCategoryNames.value[0])
+}
+async function onPlaybackDiagnoseCategoryChange() {
+  resetPlaybackDiagnose()
+  playbackDiagnoseForm.value.subType = ''
+  cleanupSubtypes.value = []
+  if (playbackDiagnoseCategoryNames.value.length === 1) await loadCleanupSubtypes(playbackDiagnoseCategoryNames.value[0])
+}
+async function previewPlaybackDiagnose() {
+  playbackDiagnoseLoading.value = true
+  try {
+    const r = await api.previewPlaybackDiagnose(playbackDiagnosePayload())
+    if (!r.ok) return ElMessage.error(r.error || '预检失败')
+    playbackDiagnosePreview.value = r
+    playbackDiagnoseResult.value = null
+  } catch (e) {
+    ElMessage.error(e.message || '预检失败')
+  } finally {
+    playbackDiagnoseLoading.value = false
+  }
+}
+async function executePlaybackDiagnose() {
+  const payload = playbackDiagnosePayload()
+  const ok = await ElMessageBox.confirm(
+    payload.markHealth ? '确认执行播放链接诊断并回写线路健康状态？' : '确认执行播放链接诊断？本次不回写健康状态。',
+    '执行播放诊断',
+    { type: 'warning' }
+  ).then(() => true).catch(() => false)
+  if (!ok) return
+  playbackDiagnoseLoading.value = true
+  try {
+    const r = await api.executePlaybackDiagnose(payload)
+    if (!r.ok) return ElMessage.error(r.error || '执行失败')
+    playbackDiagnoseResult.value = r
+    playbackDiagnosePreview.value = { ...(playbackDiagnosePreview.value || {}), playCount: r.total, limit: payload.limit }
+    ElMessage.success(`诊断完成：可播 ${r.playable || 0}，失败 ${r.failed || 0}`)
+    if (payload.markHealth) load()
+  } catch (e) {
+    ElMessage.error(e.message || '执行失败')
+  } finally {
+    playbackDiagnoseLoading.value = false
+  }
+}
 async function openDetail(row) {
   cur.value = await api.vod(row.id)
-  active.value = cur.value.lines?.length ? [cur.value.lines[0].id] : []
+  active.value = cur.value.lines?.length ? [String(cur.value.lines[0].id)] : []
   expandedEpisodes.value = {}
   drawer.value = true
 }
@@ -1066,6 +1263,10 @@ function noteVodMenuVisibility(row, visible) {
   if (!row?.id || !visible) return
   vodMenuOpenedAt.value = { ...vodMenuOpenedAt.value, [row.id]: Date.now() }
 }
+function lineChannels(line) {
+  const channels = Array.isArray(line?.channels) ? line.channels : []
+  return channels.length ? channels : [line].filter(Boolean)
+}
 function isEpisodesExpanded(line) {
   return Boolean(expandedEpisodes.value[line.id])
 }
@@ -1115,6 +1316,13 @@ async function diagnoseEp(line, ep, visibleIndex, fresh = false) {
   } catch (e) {
     diag.value = { loading: false, line, ep, epIndex, result: { ok: false, error: e.message || '解析失败' }, probe: '' }
   }
+}
+function diagnoseFirstEpisode(line) {
+  const channels = lineChannels(line)
+  const target = channels.find(ch => Array.isArray(ch?.episodes) && ch.episodes.length) || line
+  const ep = Array.isArray(target?.episodes) ? target.episodes[0] : null
+  if (!target?.id || !ep) return ElMessage.warning('该线路暂无可诊断集数')
+  diagnoseEp(target, ep, 0)
 }
 function openUrl(url) {
   if (!url) return
@@ -1285,6 +1493,10 @@ watch(() => route.query.kw, (kw) => {
 .blurb { margin-top:14px; font-size:13px; color:#667085; line-height:1.7; max-height:120px; overflow:auto; }
 .eps { display: flex; flex-wrap: wrap; gap: 6px; }
 .line-health { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; color: #64748b; font-size: 12px; }
+.line-title-action { margin-left: auto; margin-right: 8px; }
+.line-channel + .line-channel { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e5e7eb; }
+.line-channel-title { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #64748b; font-size: 12px; }
+.line-channel-title b { color: #303133; }
 .ep { cursor: pointer; }
 .ep-wrap { display: inline-flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid #edf0f5; }
 .db-score { color: #ff9900; font-weight: 700; }
@@ -1314,6 +1526,11 @@ watch(() => route.query.kw, (kw) => {
 .merge-info code { color: #409eff; background: #f0f2f5; border-radius: 4px; padding: 1px 5px; word-break: break-all; }
 .cleanup-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 6px 0 12px; }
 .cleanup-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: #8a94a7; font-size: 12px; }
+.play-diagnose-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.play-diagnose-grid :deep(.el-select), .play-diagnose-grid :deep(.el-input-number) { width: 100%; }
+.diagnose-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 4px 0 12px; }
+.diagnose-summary { margin-bottom: 10px; }
+.diagnose-result-summary { display: flex; align-items: center; gap: 8px; margin: 12px 0 10px; }
 .kw-post-actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .kw-post-actions :deep(.el-checkbox) { margin-right: 0; }
 .year-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

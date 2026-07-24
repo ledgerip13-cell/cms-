@@ -267,6 +267,16 @@ function firstM3u8Media(text: string, baseUrl: string) {
   return { keyUrl, segmentUrl };
 }
 
+function nonVideoSegmentReason(probe: any) {
+  const contentType = String(probe?.contentType || "").toLowerCase();
+  const body = String(probe?.body || "");
+  if (contentType.startsWith("image/")) return `首分片疑似图片伪装：${probe.contentType}`;
+  if (body.includes("JFIF")) return "首分片疑似 JPEG 图片伪装";
+  if (body.includes("PNG") || body.includes("GIF89a") || body.includes("GIF87a")) return "首分片疑似图片伪装";
+  if (contentType.includes("text/html")) return `首分片返回 HTML：${probe.contentType}`;
+  return "";
+}
+
 function corsState(headers: Record<string, any>) {
   const allowOrigin = headerOf(headers, "access-control-allow-origin");
   const allowMethods = headerOf(headers, "access-control-allow-methods");
@@ -376,6 +386,8 @@ async function probePlayback(app: FastifyInstance, result: any) {
     const ts = await probeUrl(app, media.segmentUrl, { range: "bytes=0-2047", maxBytes: 256 * 1024, timeoutMs: 10000 });
     stages.push({ name: "first_ts", url: media.segmentUrl, ok: ts.ok, status: ts.status, contentType: ts.contentType, cors: ts.cors });
     if (!ts.ok) return { ok: false, summary: `首个 ts 探测失败：${ts.status || ts.body}`, stages };
+    const nonVideo = nonVideoSegmentReason(ts);
+    if (nonVideo) return { ok: false, summary: nonVideo, stages };
   }
   const corsFailures = stages.filter((s) => s.cors?.required && !s.cors?.ok);
   if (corsFailures.length) return { ok: false, summary: `CORS 不满足：${corsFailures.map((s) => s.name).join(",")}`, stages };
@@ -614,6 +626,22 @@ function visibleSourceChannels<T extends { alive: boolean; playKind?: string; ep
   return filtered.length ? filtered : channels;
 }
 
+function comparePublicPlaybackOrder(a: any, b: any) {
+  const aAlive = a?.alive !== false;
+  const bAlive = b?.alive !== false;
+  if (aAlive !== bAlive) return aAlive ? -1 : 1;
+  const aPriority = Number(a?.priority ?? 100);
+  const bPriority = Number(b?.priority ?? 100);
+  if (aPriority !== bPriority) return aPriority - bPriority;
+  const aScore = Number(a?.score) || 0;
+  const bScore = Number(b?.score) || 0;
+  if (bScore !== aScore) return bScore - aScore;
+  const aEpCount = Number(a?.epCount) || 0;
+  const bEpCount = Number(b?.epCount) || 0;
+  if (bEpCount !== aEpCount) return bEpCount - aEpCount;
+  return (Number(a?.id) || 0) - (Number(b?.id) || 0);
+}
+
 function bestPublicPlay(vod: any, playConfig: any = null) {
   const rows = (vod?.plays || [])
     .map((p: any) => {
@@ -642,12 +670,7 @@ function bestPublicPlay(vod: any, playConfig: any = null) {
     rows.length = 0;
     for (const group of bySource.values()) rows.push(...visibleSourceChannels(group, playConfig));
   }
-  rows.sort((a: any, b: any) => {
-    if (a.alive !== b.alive) return a.alive ? -1 : 1;
-    if (b.score !== a.score) return b.score - a.score;
-    if (b.epCount !== a.epCount) return b.epCount - a.epCount;
-    return a.priority - b.priority;
-  });
+  rows.sort(comparePublicPlaybackOrder);
   return rows[0] || null;
 }
 
@@ -802,6 +825,42 @@ function cleanupRuleWhere(input: any): any {
     };
   }
   throw new Error("不支持的清理规则");
+}
+
+function playbackDiagnoseScope(input: any) {
+  const categoryWhere = cleanupCategoryWhere(input);
+  const yWhere = cleanupYearWhere(input);
+  const vodId = Number(input?.vodId);
+  const kw = String(input?.kw || "").trim();
+  const status = String(input?.status || "").trim();
+  const vodFilters: any[] = [categoryWhere, yWhere];
+  if (Number.isInteger(vodId) && vodId > 0) vodFilters.push({ id: vodId });
+  if (status) vodFilters.push({ status });
+  if (kw) {
+    const aliasKw = normalizeName(kw);
+    vodFilters.push({
+      OR: [
+        { name: { contains: kw } },
+        { actor: { contains: kw } },
+        { director: { contains: kw } },
+        { aliases: { some: { note: { contains: kw } } } },
+        ...(aliasKw ? [{ aliases: { some: { fingerprint: { contains: aliasKw } } } }] : []),
+        { people: { some: { person: { name: { contains: kw } } } } },
+      ],
+    });
+  }
+  const sourceId = Number(input?.sourceId);
+  const playFilters: any[] = [];
+  if (Number.isInteger(sourceId) && sourceId > 0) playFilters.push({ sourceId });
+  if (input?.lineHealth === "dead") playFilters.push({ alive: false });
+  if (input?.lineHealth === "alive") playFilters.push({ alive: true });
+  if (input?.cleanStatus === "cleaned") playFilters.push({ hasCleanResult: true });
+  if (input?.cleanStatus === "uncleaned") playFilters.push({ hasCleanResult: false });
+  const vodWhere = mergeWhere(...vodFilters) || {};
+  const playOwnWhere = mergeWhere(...playFilters) || {};
+  const playWhere = mergeWhere(playOwnWhere, Object.keys(vodWhere).length ? { vod: vodWhere } : null) || {};
+  const scopedVodWhere = mergeWhere(vodWhere, Object.keys(playOwnWhere).length ? { plays: { some: playOwnWhere } } : { plays: { some: {} } }) || {};
+  return { playWhere, scopedVodWhere };
 }
 
 function parseAutoCollectWeekdays(value: unknown) {
@@ -1624,12 +1683,7 @@ export default async function vodRoutes(app: FastifyInstance) {
       playKind: p.playKind,
       episodes,
     }));
-    // 健康优选排序：存活优先 → 评分高优先 → 源优先级
-    const byHealth = (a: { alive: boolean; score: number; priority: number }, b: { alive: boolean; score: number; priority: number }) => {
-      if (a.alive !== b.alive) return a.alive ? -1 : 1;
-      if (b.score !== a.score) return b.score - a.score;
-      return a.priority - b.priority;
-    };
+    // 默认播放顺序：存活优先 → 后台源权重 → 健康分；有观看历史时前端再覆盖选线。
     // 按源分组：每个源可能有多条 flag 通道，组内按健康分排序，默认选中组内第0个
     const bySource = new Map<number, typeof allChannels>();
     for (const c of allChannels) {
@@ -1638,7 +1692,7 @@ export default async function vodRoutes(app: FastifyInstance) {
     }
     const lines = [...bySource.values()]
       .map((channels) => {
-        const sorted = [...channels].sort(byHealth);
+        const sorted = [...channels].sort(comparePublicPlaybackOrder);
         const visibleChannels = visibleSourceChannels(sorted, playConfig);
         const best = visibleChannels[0] || sorted[0];
         return {
@@ -1655,7 +1709,7 @@ export default async function vodRoutes(app: FastifyInstance) {
           channels: visibleChannels.map((c) => ({ ...c, episodes: publicEpisodes(c.episodes) })), // 观众端按播放策略隐藏重复包装通道
         };
       })
-      .sort(byHealth);
+      .sort(comparePublicPlaybackOrder);
     return {
       ...cleanVodTextFields(vod),
       plays: undefined,
@@ -1820,6 +1874,129 @@ export default async function vodRoutes(app: FastifyInstance) {
       };
     });
 
+    secured.post("/api/admin/vods/play-diagnose/preview", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const limit = Math.max(1, Math.min(100, Number(b.limit) || 30));
+        const { playWhere, scopedVodWhere } = playbackDiagnoseScope(b);
+        const [playCount, vodCount, samples] = await Promise.all([
+          prisma.play.count({ where: playWhere }),
+          prisma.vod.count({ where: scopedVodWhere }),
+          prisma.play.findMany({
+            where: playWhere,
+            take: limit,
+            orderBy: [{ alive: "asc" }, { lastFailureAt: "desc" }, { id: "asc" }],
+            include: { vod: { select: { id: true, name: true, typeName: true, subType: true, status: true } }, source: { select: { id: true, name: true, enabled: true } } },
+          }),
+        ]);
+        return {
+          ok: true,
+          playCount,
+          vodCount,
+          limit,
+          samples: samples.map((p) => ({
+            id: p.id,
+            vodId: p.vodId,
+            vodName: p.vod.name,
+            typeName: p.vod.typeName,
+            subType: p.vod.subType,
+            status: p.vod.status,
+            sourceId: p.sourceId,
+            sourceName: p.source.name,
+            sourceEnabled: p.source.enabled,
+            flag: p.flag,
+            epCount: p.epCount,
+            alive: p.alive,
+            score: p.score,
+            hasCleanResult: p.hasCleanResult,
+            healthReason: p.healthReason,
+          })),
+        };
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
+    secured.post("/api/admin/vods/play-diagnose/execute", async (req, reply) => {
+      try {
+        const b = (req.body as any) || {};
+        const limit = Math.max(1, Math.min(100, Number(b.limit) || 30));
+        const markHealth = b.markHealth !== false;
+        const { playWhere } = playbackDiagnoseScope(b);
+        const plays = await prisma.play.findMany({
+          where: playWhere,
+          take: limit,
+          orderBy: [{ alive: "asc" }, { lastFailureAt: "desc" }, { id: "asc" }],
+          include: { vod: { select: { id: true, name: true, typeName: true, subType: true, status: true } }, source: { select: { id: true, name: true, enabled: true } } },
+        });
+        const auth = String(req.headers.authorization || "");
+        const results: any[] = [];
+        for (const play of plays) {
+          const episodes = parseEpisodes(play.episodes);
+          const ep = episodes[0];
+          let resolved: any = { ok: false, error: "播放集数不存在" };
+          let probe: any = { ok: false, summary: "播放集数不存在", stages: [] };
+          if (ep?.url) {
+            const r = await app.inject({
+              method: "GET",
+              url: `/api/resolve?vodId=${encodeURIComponent(String(play.vodId))}&playId=${encodeURIComponent(String(play.id))}&epIndex=0&diagnose=1&fresh=1`,
+              headers: {
+                authorization: auth,
+                "cf-connecting-ipv6": String(req.headers["cf-connecting-ipv6"] || ""),
+                "cf-connecting-ip": String(req.headers["cf-connecting-ip"] || ""),
+                "true-client-ip": String(req.headers["true-client-ip"] || ""),
+                "x-forwarded-for": String(req.headers["x-forwarded-for"] || ""),
+                "x-real-ip": String(req.headers["x-real-ip"] || ""),
+                "user-agent": String(req.headers["user-agent"] || ""),
+              },
+            });
+            try { resolved = JSON.parse(r.payload || "{}"); } catch { resolved = { ok: false, error: r.payload || "解析失败" }; }
+            if (r.statusCode >= 400 && !resolved?.error) resolved.error = `resolve HTTP ${r.statusCode}`;
+            probe = await probePlayback(app, resolved);
+          }
+          const playable = Boolean(resolved?.ok && resolved?.url && probe?.ok);
+          const summary = String(probe?.summary || resolved?.error || "未知结果").slice(0, 300);
+          if (markHealth) {
+            await prisma.play.update({
+              where: { id: play.id },
+              data: {
+                alive: playable,
+                score: playable ? Math.max(80, Number(play.score) || 0) : Math.min(-80, Number(play.score) || 0),
+                healthReason: summary,
+                ...(playable ? { lastSuccessAt: new Date(), playSuccessCount: { increment: 1 } } : { lastFailureAt: new Date(), playFailureCount: { increment: 1 } }),
+              },
+            });
+          }
+          results.push({
+            playId: play.id,
+            vodId: play.vodId,
+            vodName: play.vod.name,
+            typeName: play.vod.typeName,
+            subType: play.vod.subType,
+            sourceName: play.source.name,
+            flag: play.flag,
+            epName: ep?.name || "第1集",
+            ok: playable,
+            summary,
+            rule: resolved?.rule || "",
+            url: resolved?.url || "",
+            fallbackUrl: resolved?.fallbackUrl || "",
+            stages: probe?.stages || [],
+          });
+        }
+        return {
+          ok: true,
+          total: plays.length,
+          playable: results.filter((row) => row.ok).length,
+          failed: results.filter((row) => !row.ok).length,
+          markHealth,
+          results,
+        };
+      } catch (e: any) {
+        return reply.code(400).send({ ok: false, error: e?.message || String(e) });
+      }
+    });
+
     secured.get("/api/admin/vods/:id", async (req, reply) => {
       const id = Number((req.params as any).id);
       const vod = await prisma.vod.findUnique({
@@ -1840,10 +2017,9 @@ export default async function vodRoutes(app: FastifyInstance) {
         lastSuccessAt: p.lastSuccessAt, lastFailureAt: p.lastFailureAt, healthReason: p.healthReason,
         playKind: p.playKind, episodes: parseEpisodes(p.episodes),
       }));
-      const byHealth = (a: any, b: any) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.score !== a.score ? b.score - a.score : a.priority - b.priority);
       const bySource = new Map<number, typeof channels>();
       for (const c of channels) { if (!bySource.has(c.sourceId)) bySource.set(c.sourceId, []); bySource.get(c.sourceId)!.push(c); }
-      const lines = [...bySource.values()].map((cs) => { const sorted = [...cs].sort(byHealth); return { ...sorted[0], channels: sorted }; }).sort(byHealth);
+      const lines = [...bySource.values()].map((cs) => { const sorted = [...cs].sort(comparePublicPlaybackOrder); return { ...sorted[0], channels: sorted }; }).sort(comparePublicPlaybackOrder);
       return { ...vod, aliasNames: vod.aliases.map(aliasDisplayName).filter(Boolean), plays: undefined, lines, skipConfig: publicSkipOverride((vod as any).skipConfig) };
     });
 

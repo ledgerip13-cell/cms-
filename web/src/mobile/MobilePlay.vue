@@ -505,6 +505,7 @@ let controlsTimer = 0
 let retryingLine = false
 let autoSwitchingLine = false
 let selfHealTried = false
+let cleanFallbackTimer = 0
 let bodyOverflowBeforeLandscape = ''
 let pageActive = false
 let loadSeq = 0
@@ -797,6 +798,7 @@ function nextPlaybackSeq() {
 }
 
 function clearPlaybackMedia() {
+  clearCleanFallbackWatchdog()
   if (hls) {
     hls.destroy()
     hls = null
@@ -1678,6 +1680,41 @@ function applyRoutePlaybackSelection() {
   syncPendingHistorySeek()
 }
 
+function cleanFallbackUrl() {
+  const r = currentResolve.value
+  if (r?.rule !== 'hls_clean') return ''
+  const fallback = String(r?.fallbackUrl || '').trim()
+  return fallback && fallback !== curUrl.value ? fallback : ''
+}
+function clearCleanFallbackWatchdog(url = '') {
+  if (cleanFallbackTimer && (!url || url === curUrl.value)) {
+    window.clearTimeout(cleanFallbackTimer)
+    cleanFallbackTimer = 0
+  }
+}
+function tryCleanFallback(seq = playbackSeq, reason = '清洗线路播放失败') {
+  if (!isPlaybackCurrent(seq)) return false
+  const fallback = cleanFallbackUrl()
+  if (!fallback) return false
+  clearCleanFallbackWatchdog()
+  const video = videoEl.value
+  pendingSeekSec.value = Math.max(0, Math.floor(Number(video?.currentTime) || currentTime.value || 0))
+  const previous = currentResolve.value || {}
+  currentResolve.value = { ...previous, url: fallback, rule: 'hls_clean_fallback', fallbackUrl: '' }
+  showNotice(`${reason}，已回退原始线路`)
+  playDirect(fallback, 'm3u8', nextPlaybackSeq())
+  return true
+}
+function scheduleCleanFallbackWatchdog(url, seq) {
+  clearCleanFallbackWatchdog()
+  if (!cleanFallbackUrl()) return
+  cleanFallbackTimer = window.setTimeout(() => {
+    cleanFallbackTimer = 0
+    const video = videoEl.value
+    if (!isPlaybackCurrent(seq) || curUrl.value !== url || Number(video?.readyState || 0) >= 2) return
+    tryCleanFallback(seq, '清洗线路起播超时')
+  }, 9000)
+}
 function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
   if (!isPlaybackCurrent(seq)) return
   clearPlaybackMedia()
@@ -1691,6 +1728,10 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
     const isM3u8 = kind === 'm3u8' || /\.m3u8(\?|$)/i.test(url)
     const nativeHls = isM3u8 && video.canPlayType('application/vnd.apple.mpegurl')
     video.addEventListener('loadedmetadata', () => applyHistorySeek(video), { once: true })
+    const markReady = () => clearCleanFallbackWatchdog(url)
+    video.addEventListener('loadeddata', markReady, { once: true })
+    video.addEventListener('canplay', markReady, { once: true })
+    scheduleCleanFallbackWatchdog(url, seq)
     if (nativeHls) {
       video.src = url
       try { video.load() } catch {}
@@ -1720,6 +1761,7 @@ function playDirect(url, kind = '', seq = nextPlaybackSeq()) {
       hlsInstance.on(Hls.Events.ERROR, (_, data) => {
         if (!isPlaybackCurrent(seq) || hls !== hlsInstance) return
         if (!data?.fatal) return
+        if (tryCleanFallback(seq)) return
         handlePlaybackError()
       })
     } else {
@@ -1864,6 +1906,7 @@ function tryJinpaiSelfHeal() {
 
 function handlePlaybackError() {
   if (tryJinpaiSelfHeal()) return
+  if (tryCleanFallback(playbackSeq)) return
   void tryNextLine('播放失败')
 }
 
