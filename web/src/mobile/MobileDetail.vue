@@ -93,14 +93,27 @@
           <h2>播放线路</h2>
           <span>{{ selectedLineName }}</span>
         </header>
-        <div class="md-line-tabs">
-          <button v-for="(line, index) in lines" :key="line.id || index" type="button" :class="{ on: selectedLineIndex === index }" @click="selectedLineIndex = index">
+        <div ref="lineTabsEl" class="md-line-tabs">
+          <button v-for="(line, index) in lines" :key="line.id || index" type="button" :class="{ on: selectedLineIndex === index, watched: lineHasHistory(line) }" @click="setSelectedLine(index)">
             {{ lineLabel(line, index) }}
+            <em v-if="lineHasHistory(line)">最近看过</em>
           </button>
         </div>
-        <div class="md-episodes">
-          <button v-for="ep in visibleEpisodes" :key="ep.index" type="button" @click="playSelected(ep.index)">
-            {{ ep.name || `第${ep.index + 1}集` }}
+        <div v-if="episodeRanges.length > 1" ref="episodeRangesEl" class="md-episode-ranges">
+          <button v-for="range in episodeRanges" :key="range.start" type="button" :class="{ on: activeRangeStart === range.start }" @click="selectEpisodeRange(range.start)">
+            {{ range.label }}
+          </button>
+        </div>
+        <button v-if="resumeEntry" class="md-resume-episode" type="button" @click="playSelected(resumeEntry.epIndex)">
+          <span>上次看到 第{{ resumeEntry.epIndex + 1 }}集</span>
+          <em>{{ historyProgressText }}</em>
+          <i :style="{ width: historyProgressPercent }"></i>
+        </button>
+        <div ref="episodesEl" class="md-episodes">
+          <button v-for="ep in visibleEpisodes" :key="ep.index" type="button" :class="{ resume: isHistoryEpisode(ep.index) }" @click="playSelected(ep.index)">
+            <span>{{ ep.name || `第${ep.index + 1}集` }}</span>
+            <em v-if="isHistoryEpisode(ep.index)">{{ historyProgressText }}</em>
+            <i v-if="isHistoryEpisode(ep.index)" :style="{ width: historyProgressPercent }"></i>
           </button>
         </div>
       </section>
@@ -125,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, imgUrl } from '../api'
 import { openAuthDialog } from '../authDialog'
@@ -141,19 +154,70 @@ const loading = ref(true)
 const followed = ref(false)
 const introOpen = ref(false)
 const selectedLineIndex = ref(0)
+const activeRangeStart = ref(0)
+const historyState = ref(null)
+const historyLineStates = ref({})
+const lineTabsEl = ref(null)
+const episodeRangesEl = ref(null)
+const episodesEl = ref(null)
 const headBg = ref('.94')
 let headRaf = 0
 let loadSeq = 0
+const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
+const EPISODE_GROUP_SIZE = 40
 
 const intro = computed(() => String(vod.value.officialIntro || vod.value.blurb || '').trim())
 const lines = computed(() => Array.isArray(vod.value.lines) ? vod.value.lines : [])
 const selectedLine = computed(() => lines.value[selectedLineIndex.value] || lines.value[0] || null)
-const episodes = computed(() => {
+const selectedChannel = computed(() => {
   const line = selectedLine.value
-  const channel = Array.isArray(line?.channels) && line.channels.length ? line.channels[0] : line
-  return Array.isArray(channel?.episodes) ? channel.episodes : []
+  return Array.isArray(line?.channels) && line.channels.length ? line.channels[0] : line
 })
-const visibleEpisodes = computed(() => episodes.value.map((ep, index) => ({ ...ep, index })).slice(0, 60))
+const episodes = computed(() => Array.isArray(selectedChannel.value?.episodes) ? selectedChannel.value.episodes : [])
+const episodeRanges = computed(() => {
+  const total = episodes.value.length
+  if (!total) return []
+  const ranges = []
+  for (let start = 0; start < total; start += EPISODE_GROUP_SIZE) {
+    const end = Math.min(total, start + EPISODE_GROUP_SIZE)
+    ranges.push({ start, end, label: `${start + 1}-${end}` })
+  }
+  return ranges
+})
+const activeRange = computed(() => {
+  const ranges = episodeRanges.value
+  return ranges.find(item => item.start === activeRangeStart.value) || ranges[0] || { start: 0, end: 0, label: '' }
+})
+const visibleEpisodes = computed(() => episodes.value.map((ep, index) => ({ ...ep, index })).slice(activeRange.value.start, activeRange.value.end))
+const historyForSelectedLine = computed(() => {
+  const channelId = Number(selectedChannel.value?.id || 0)
+  const lineId = Number(selectedLine.value?.id || 0)
+  const byChannel = channelId ? historyLineStates.value?.[channelId] : null
+  const byLine = lineId ? historyLineStates.value?.[lineId] : null
+  return byChannel || byLine || (lineMatchesHistory(selectedLine.value) ? historyState.value : null)
+})
+const resumeEntry = computed(() => {
+  const row = historyForSelectedLine.value
+  if (!row) return null
+  const epIndex = Math.max(0, Number(row.epIndex) || 0)
+  if (epIndex >= episodes.value.length && episodes.value.length) return null
+  return { ...row, epIndex }
+})
+const historyProgressText = computed(() => {
+  const row = resumeEntry.value
+  const progress = Number(row?.progress || row?.progressSec || 0)
+  const duration = Number(row?.duration || row?.durationSec || 0)
+  if (duration > 0) return `${Math.round(Math.max(0, Math.min(100, (progress / duration) * 100)))}%`
+  if (progress > 0) return formatTime(progress)
+  return '已看过'
+})
+const historyProgressPercent = computed(() => {
+  const row = resumeEntry.value
+  const progress = Number(row?.progress || row?.progressSec || 0)
+  const duration = Number(row?.duration || row?.durationSec || 0)
+  if (!duration) return '18%'
+  return `${Math.max(8, Math.min(100, (progress / duration) * 100))}%`
+})
 const actors = computed(() => peopleByRole('actor').slice(0, 12))
 const directors = computed(() => peopleByRole('director').slice(0, 6))
 const actorsFallback = computed(() => actors.value.length ? actors.value : splitNames(vod.value.actor).slice(0, 12).map(name => ({ id: 0, name })))
@@ -224,6 +288,93 @@ function hideBrokenImg(event) {
 function lineLabel(line, index = 0) {
   return line?.sourceName || line?.flag || `线路 ${index + 1}`
 }
+function lineChannels(line) {
+  return Array.isArray(line?.channels) && line.channels.length ? line.channels : [line].filter(Boolean)
+}
+function lineMatchesHistory(line) {
+  const targetId = Number(historyState.value?.lineId || 0)
+  if (!targetId) return false
+  return lineChannels(line).some(item => Number(item?.id || 0) === targetId) || Number(line?.id || 0) === targetId
+}
+function lineHasHistory(line) {
+  return lineMatchesHistory(line) || lineChannels(line).some(item => historyLineStates.value?.[Number(item?.id || 0)])
+}
+function setSelectedLine(index) {
+  selectedLineIndex.value = Math.max(0, Math.min(lines.value.length - 1, Number(index) || 0))
+  activeRangeStart.value = 0
+  focusPlaybackContext()
+}
+function selectEpisodeRange(start) {
+  activeRangeStart.value = Math.max(0, Number(start) || 0)
+  focusPlaybackContext()
+}
+function selectedPlaybackLineId() {
+  return selectedChannel.value?.id || selectedLine.value?.id
+}
+function playSelected(epIndex = 0) {
+  if (!vod.value.id) return
+  const lineId = selectedPlaybackLineId()
+  router.push({ path: `/m/play/${vod.value.id}`, query: { ...(lineId ? { line: lineId } : {}), ep: Math.max(0, Number(epIndex) || 0) } })
+}
+function isHistoryEpisode(index) {
+  return Boolean(resumeEntry.value && Number(resumeEntry.value.epIndex) === Number(index))
+}
+function formatTime(sec) {
+  const value = Math.max(0, Math.floor(Number(sec) || 0))
+  const minutes = Math.floor(value / 60)
+  const seconds = value % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+function readLocalHistory(vodId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(MOBILE_HISTORY_KEY) || '{}')
+    const row = data?.[vodId]
+    return row?.latest || row || null
+  } catch {
+    return null
+  }
+}
+function readLocalLineHistories(vodId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(MOBILE_HISTORY_KEY) || '{}')
+    return data?.[vodId]?.lineHistories || {}
+  } catch {
+    return {}
+  }
+}
+function normalizeLineHistories(value) {
+  if (!value) return {}
+  if (Array.isArray(value)) {
+    return value.reduce((acc, item) => {
+      const id = Number(item?.lineId || 0)
+      if (id) acc[id] = item
+      return acc
+    }, {})
+  }
+  return Object.entries(value).reduce((acc, [key, item]) => {
+    const id = Number(item?.lineId || key || 0)
+    if (id) acc[id] = item
+    return acc
+  }, {})
+}
+function applyHistorySelection(history, lineHistories) {
+  historyState.value = history || null
+  historyLineStates.value = normalizeLineHistories(lineHistories)
+  const targetId = Number(history?.lineId || 0)
+  if (!targetId || !lines.value.length) return
+  const lineIndex = lines.value.findIndex(line => lineMatchesHistory(line))
+  if (lineIndex >= 0) selectedLineIndex.value = lineIndex
+  const epIndex = Math.max(0, Number(history?.epIndex) || 0)
+  activeRangeStart.value = Math.floor(epIndex / EPISODE_GROUP_SIZE) * EPISODE_GROUP_SIZE
+  focusPlaybackContext()
+}
+function focusPlaybackContext() {
+  nextTick(() => {
+    lineTabsEl.value?.querySelector?.('button.on')?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    episodeRangesEl.value?.querySelector?.('button.on')?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    episodesEl.value?.querySelector?.('button.resume')?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  })
+}
 function heatText(value) {
   if (typeof value === 'string' && value.trim()) return value.trim()
   const n = Math.max(0, Math.round(Number(value) || 0))
@@ -237,11 +388,6 @@ function goBack() {
 }
 function goDetail(id) {
   if (id) router.push(`/m/detail/${id}`)
-}
-function playSelected(epIndex = 0) {
-  if (!vod.value.id) return
-  const line = selectedLine.value
-  router.push({ path: `/m/play/${vod.value.id}`, query: { ...(line?.id ? { line: line.id } : {}), ep: Math.max(0, Number(epIndex) || 0) } })
 }
 function openPerson(person) {
   const id = Number(person?.id || 0)
@@ -285,11 +431,15 @@ async function loadDetail(id) {
   followed.value = false
   introOpen.value = false
   selectedLineIndex.value = 0
+  activeRangeStart.value = 0
+  historyState.value = null
+  historyLineStates.value = {}
   try {
     const data = await api.vod(id)
     if (seq !== loadSeq) return
     vod.value = data || {}
     document.title = vod.value.name ? `${vod.value.name} - 详情` : document.title
+    applyHistorySelection(readLocalHistory(id), readLocalLineHistories(id))
     loading.value = false
     const [items, state] = await Promise.all([
       api.related({ id, type: vod.value.typeName, sub: vod.value.subType, limit: 8 }).catch(() => []),
@@ -298,6 +448,7 @@ async function loadDetail(id) {
     if (seq !== loadSeq) return
     related.value = Array.isArray(items) ? items : []
     followed.value = Boolean(state?.followed)
+    if (state?.history) applyHistorySelection(state.history, state.lineHistories)
   } catch {
     if (seq === loadSeq) vod.value = {}
   } finally {
@@ -316,6 +467,7 @@ function onPageScroll() {
 watch(() => route.params.id, (id) => {
   if (id) loadDetail(id)
 }, { immediate: true })
+watch([selectedLineIndex, activeRangeStart], focusPlaybackContext)
 onMounted(() => {
   syncHeadBg()
   window.addEventListener('scroll', onPageScroll, { passive: true })
@@ -577,20 +729,97 @@ onBeforeUnmount(() => {
   gap: 8px;
   overflow-x: auto;
   padding: 14px 16px 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.md-line-tabs::-webkit-scrollbar { display: none; }
 .md-line-tabs button {
   flex: 0 0 auto;
-  height: 34px;
+  min-height: 34px;
   border-radius: 8px;
   padding: 0 13px;
+  display: inline-grid;
+  align-content: center;
+  gap: 2px;
   background: #f1f3f6;
   color: #626b7a;
   font-size: 13px;
+}
+.md-line-tabs button em {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  opacity: .76;
+}
+.md-line-tabs button.watched:not(.on) {
+  color: #f04438;
+  background: #fff1ef;
 }
 .md-line-tabs button.on {
   background: #1f2530;
   color: #fff;
   box-shadow: none;
+}
+.md-episode-ranges {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 16px 0;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.md-episode-ranges::-webkit-scrollbar { display: none; }
+.md-episode-ranges button {
+  flex: 0 0 auto;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 11px;
+  color: #697281;
+  background: #f4f6f8;
+  font-size: 12px;
+  font-weight: 700;
+}
+.md-episode-ranges button.on {
+  color: #fff;
+  background: #1f2530;
+}
+.md-resume-episode {
+  position: relative;
+  width: calc(100% - 32px);
+  min-height: 42px;
+  margin: 12px 16px 0;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 12px;
+  color: #f04438;
+  background: #fff1ef;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+.md-resume-episode span,
+.md-resume-episode em {
+  position: relative;
+  z-index: 1;
+}
+.md-resume-episode em {
+  flex: 0 0 auto;
+  font-style: normal;
+  color: #9f2b22;
+  font-size: 12px;
+}
+.md-resume-episode i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: #f04438;
 }
 .md-episodes {
   padding: 12px 14px 16px;
@@ -599,6 +828,7 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .md-episodes button {
+  position: relative;
   height: 38px;
   border-radius: 8px;
   background: #f6f7f9;
@@ -607,8 +837,33 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   overflow: hidden;
+}
+.md-episodes button span,
+.md-episodes button em {
+  position: relative;
+  z-index: 1;
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.md-episodes button em {
+  margin-top: 1px;
+  color: #f04438;
+  font-size: 10px;
+  font-style: normal;
+}
+.md-episodes button i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: #f04438;
+}
+.md-episodes button.resume {
+  color: #f04438;
+  background: #fff6f4;
+  box-shadow: inset 0 0 0 1px #ffd6cf;
 }
 .md-related {
   display: grid;

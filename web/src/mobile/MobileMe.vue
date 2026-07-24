@@ -86,7 +86,7 @@
         </div>
         <button v-if="!user" class="mme-login" type="button" @click="login">登录 / 注册</button>
         <div class="mme-stats" :class="{ muted: !user }">
-          <button type="button" @click="user ? scrollTo('history') : login()">
+          <button type="button" @click="scrollTo('history')">
             <strong>{{ histories.length }}</strong>
             <span>观看记录</span>
           </button>
@@ -98,7 +98,7 @@
       </section>
 
       <section class="mme-quick">
-        <button type="button" @click="user ? scrollTo('history') : login()">
+        <button type="button" @click="scrollTo('history')">
           <svg viewBox="0 0 24 24" v-html="icon('clock')"></svg>
           <span>观看历史</span>
         </button>
@@ -126,16 +126,12 @@
       <div v-if="loading" class="mme-watch-list">
         <div v-for="i in 3" :key="i" class="mme-watch mme-sk"><div></div><b></b><p></p></div>
       </div>
-      <div v-else-if="!user" class="mme-empty">
-        <strong>还没有登录</strong>
-        <span>登录后会在这里显示最近观看</span>
-      </div>
       <div v-else-if="!histories.length" class="mme-empty">
         <strong>暂无观看历史</strong>
-        <span>去首页挑一部开始看</span>
+        <span>{{ user ? '去首页挑一部开始看' : '游客记录会保存在本机' }}</span>
       </div>
       <div v-else class="mme-watch-list">
-        <article v-for="item in visibleHistories" :key="item.id || item.vodId" class="mme-watch" @click="goPlay(item.vod?.id || item.vodId)">
+        <article v-for="item in visibleHistories" :key="item.id || item.vodId" class="mme-watch" @click="goPlay(item)">
           <div class="mme-watch-cover">
             <img v-if="item.vod" class="m-img-fade" :src="poster(item.vod)" :alt="item.vod.name" loading="lazy" @load="onImgLoad" @error="onImgError($event)" />
             <span>{{ item.epName || `第${Number(item.epIndex || 0) + 1}集` }}</span>
@@ -220,6 +216,7 @@ const emailMsg = ref('')
 const passwordMsg = ref('')
 const emailForm = reactive({ email: '' })
 const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const MOBILE_HISTORY_KEY = 'vcms.mobile.play.history.v1'
 
 const displayName = computed(() => user.value?.nickname || user.value?.username || '我的')
 const userLine = computed(() => {
@@ -258,9 +255,16 @@ function logout() {
   settingsOpen.value = false
   notifySuccess('已退出登录')
 }
-function goPlay(id) {
+function goPlay(item) {
+  const id = typeof item === 'object' ? (item?.vod?.id || item?.vodId) : item
   if (!id) return
-  router.push(`/m/play/${id}`)
+  const query = typeof item === 'object'
+    ? {
+        ...(item.lineId ? { line: item.lineId } : {}),
+        ep: Math.max(0, Number(item.epIndex) || 0),
+      }
+    : {}
+  router.push({ path: `/m/play/${id}`, query })
 }
 function goTheater() {
   router.push('/m/theater')
@@ -343,11 +347,48 @@ function clearMobileCache() {
   keys.forEach(key => localStorage.removeItem(key))
   notifySuccess(keys.length ? '缓存已清理' : '暂无可清理缓存')
 }
+function readLocalHistoryRows(limit = 50) {
+  try {
+    const data = JSON.parse(localStorage.getItem(MOBILE_HISTORY_KEY) || '{}')
+    return Object.values(data || {})
+      .map(item => item?.latest || item)
+      .filter(item => Number(item?.vodId) > 0)
+      .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0))
+      .slice(0, limit)
+  } catch {
+    return []
+  }
+}
+async function loadLocalHistories(limit = 50) {
+  const rows = readLocalHistoryRows(limit)
+  const settled = await Promise.all(rows.map(async (row) => {
+    const vodId = Number(row.vodId) || 0
+    if (!vodId) return null
+    const vod = await api.vod(vodId).catch(() => null)
+    return {
+      id: `local-${vodId}-${row.lineId || 0}-${row.epIndex || 0}`,
+      vodId,
+      lineId: row.lineId,
+      epIndex: Number(row.epIndex) || 0,
+      epName: row.epName,
+      progressSec: Number(row.progress) || Number(row.progressSec) || 0,
+      durationSec: Number(row.duration) || Number(row.durationSec) || 0,
+      updatedAt: row.updatedAt,
+      vod,
+    }
+  }))
+  return settled.filter(Boolean)
+}
 async function load() {
   loading.value = true
   try {
-    const fresh = await refreshUser()
-    if (!fresh && !user.value) return
+    const fresh = await refreshUser().catch(() => null)
+    if (!fresh && !user.value) {
+      histories.value = await loadLocalHistories(50)
+      follows.value = []
+      recs.value = []
+      return
+    }
     const [historyRows, followRows, recData] = await Promise.all([
       api.history(50).catch(() => []),
       api.follows(50).catch(() => []),

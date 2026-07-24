@@ -245,10 +245,6 @@
 
     <section v-if="vod.id && !playerLandscape" class="mp-action-panel">
       <div class="mp-action-strip">
-        <button v-if="interactionConfig.ratingsEnabled" type="button" :class="{ on: myRating > 0 && myRating <= 2 }" @click="submitRating(2)">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h4V3Zm2 0v10.5l4.1 7.2a1.7 1.7 0 0 0 3.1-.95V15h2.2a2.6 2.6 0 0 0 2.55-3.1l-1.2-6.2A3.4 3.4 0 0 0 18.4 3H11Z" /></svg>
-          <span>点踩</span>
-        </button>
         <button v-if="interactionConfig.reportsEnabled" type="button" @click="openReport">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
           <span>报错</span>
@@ -2256,14 +2252,24 @@ onDeactivated(() => {
   white-space: nowrap;
 }
 .mp-icon-btn {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: #fff;
   pointer-events: auto;
 }
 .mp-icon-btn svg { filter: drop-shadow(0 1px 6px rgba(0,0,0,.72)); }
+.mp-landscape-btn {
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
 .mp-landscape-btn svg {
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.1;
+  stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -2871,12 +2877,11 @@ onDeactivated(() => {
 }
 .mp-action-strip {
   display: flex;
-  gap: 4px;
-  padding: 0 10px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 14px;
+  overflow: visible;
 }
-.mp-action-strip::-webkit-scrollbar { display: none; }
 .mp-action-strip button {
   flex: 0 0 58px;
   height: 44px;
@@ -3205,16 +3210,23 @@ onDeactivated(() => {
 .mp-title-row p {
   margin: 8px 0 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 5px;
+  max-width: 100%;
+  overflow: hidden;
   color: #767b86;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: var(--small-text-max-weight);
+  white-space: nowrap;
 }
 .mp-title-row p span {
-  padding: 4px 7px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 6px;
   border-radius: 8px;
   background: #f2f3f5;
+  text-overflow: ellipsis;
 }
 .mp-title-actions {
   flex: 0 0 auto;
