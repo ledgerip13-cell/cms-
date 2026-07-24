@@ -7,7 +7,7 @@
         </button>
         <strong>{{ playerTitle }}</strong>
         <button v-if="mode === 'hls' && curUrl && !accessBlock" class="mp-icon-btn mp-landscape-btn" type="button" :aria-label="playerLandscape ? '退出横屏' : '横屏播放'" @click.stop="toggleLandscape">
-          <svg viewBox="0 0 24 24" v-html="icon(playerLandscape ? 'close' : 'ratio')"></svg>
+          <svg viewBox="0 0 24 24" :class="{ 'mp-ratio-icon': !playerLandscape }" v-html="icon(playerLandscape ? 'close' : 'ratio')"></svg>
         </button>
       </div>
       <div class="mp-bg"></div>
@@ -2266,6 +2266,10 @@ onDeactivated(() => {
   stroke-width: 2.1;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.mp-landscape-btn .mp-ratio-icon {
+  fill: currentColor;
+  stroke: none;
 }
 .mp-state,
 .mp-lock,
